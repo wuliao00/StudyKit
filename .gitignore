@@ -1,0 +1,29 @@
+# Android / Gradle / IDE
+*.iml
+.gradle/
+.idea/
+build/
+app/build/
+captures/
+local.properties
+
+# 签名与构建产物
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# 例外：Gradle Wrapper 需要纳入版本控制
+!gradle/wrapper/gradle-wrapper.jar
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 本地临时调试文件（根目录以下划线开头的文件）
+_*.png
+_*.xml
+_*.txt
+_*.log
+_*.db
+_*.bin

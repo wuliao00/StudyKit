@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 拍照临时文件目录（getExternalFilesDir(null)/camera） -->
+    <external-files-path
+        name="camera"
+        path="camera/" />
+    <cache-path
+        name="cache"
+        path="." />
+    <files-path
+        name="files"
+        path="." />
+</paths>
