@@ -100,6 +100,15 @@ StudyKit/
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## ⬇️ 下载
+
+> 不想自行构建？可直接下载已打包的安装包（APK），安装到安卓手机即可使用。
+
+| 渠道 | 链接 / 口令 | 说明 |
+| --- | --- | --- |
+| 夸克网盘 | 口令：`/~23753aU0cK~:/`，链接：[https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h](https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h) | 提取码 `5Q3h`；打开夸克 APP 粘贴整段口令内容即可获取 |
+| 蓝奏云 | [https://www.ilanzou.com/s/h5bKvvNR?code=4449](https://www.ilanzou.com/s/h5bKvvNR?code=4449) | 直接打开链接下载即可 |
+
 ## 📸 运行截图
 
 > 以下截图均为真机实测截图。
