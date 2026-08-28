@@ -12,8 +12,4 @@
     <exclude
         domain="external"
         path="camera" />
-    <!-- 内部缓存目录 -->
-    <exclude
-        domain="cache"
-        path="." />
 </full-backup-content>
