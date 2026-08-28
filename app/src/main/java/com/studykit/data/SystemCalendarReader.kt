@@ -30,7 +30,7 @@ data class SystemEvent(
 
 /**
  * 系统日历读取器：纯 ContentResolver 封装，只读查询 [CalendarContract]。
- * 需要 READ_CALENDARS 运行时权限；调用方应在授权后再调用。
+ * 需要 READ_CALENDAR 运行时权限；调用方应在授权后再调用。
  */
 class SystemCalendarReader(private val context: Context) {
 

@@ -141,12 +141,19 @@ fun MistakeListScreen(
             file?.delete()
         }
     }
+    // 相机权限被拒后展示引导文案
+    var showCameraRationale by remember { androidx.compose.runtime.mutableStateOf(false) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) launchCamera(context) { file, uri ->
-            pendingUriFile = file
-            takePictureLauncher.launch(uri)
+        if (granted) {
+            showCameraRationale = false
+            launchCamera(context) { file, uri ->
+                pendingUriFile = file
+                takePictureLauncher.launch(uri)
+            }
+        } else {
+            showCameraRationale = true
         }
     }
 
@@ -176,6 +183,15 @@ fun MistakeListScreen(
             text = "共 ${mistakes.size} 道错题",
             style = DesignTokens.Caption,
         )
+
+        if (showCameraRationale) {
+            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Text(
+                text = "拍照录入需要相机权限。请在系统设置 → 应用 → StudyKit → 权限中允许「相机」，" +
+                    "或再次点击右上角「拍照录入」重新发起授权。",
+                style = DesignTokens.Caption.copy(color = DesignTokens.Warning),
+            )
+        }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         SubjectFilterRow(subjects = subjects, selected = selected, onSelect = viewModel::selectSubject)

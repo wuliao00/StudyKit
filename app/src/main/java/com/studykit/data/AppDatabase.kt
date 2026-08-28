@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.studykit.BuildConfig
 import com.studykit.data.dao.BookDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
@@ -84,7 +85,8 @@ abstract class AppDatabase : RoomDatabase() {
         private val SeedCallback = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
-                DemoSeeder.seed(db)
+                // 仅 Debug 构建播种演示数据，Release 首装保持空库
+                if (BuildConfig.DEBUG) DemoSeeder.seed(db)
             }
         }
     }

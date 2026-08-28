@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12 以下（API <= 30）全量备份规则（android:fullBackupContent）。
+    排除可重建的数据库与相机临时文件；错题图片为用户原始数据，保留在备份中。
+-->
+<full-backup-content>
+    <!-- Room 数据库（可由应用重建，Debug 构建还会重新播种演示数据） -->
+    <exclude
+        domain="database"
+        path="." />
+    <!-- 相机拍照临时目录（外部存储私有目录，用后即删） -->
+    <exclude
+        domain="external"
+        path="camera" />
+    <!-- 内部缓存目录 -->
+    <exclude
+        domain="cache"
+        path="." />
+</full-backup-content>

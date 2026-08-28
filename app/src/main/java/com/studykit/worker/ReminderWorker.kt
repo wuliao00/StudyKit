@@ -17,7 +17,6 @@ import androidx.work.WorkerParameters
 import com.studykit.MainActivity
 import com.studykit.R
 import com.studykit.StudyKitApp
-import com.studykit.data.entity.Word
 
 /**
  * 复习提醒 Worker（每 6 小时由 [ReminderScheduler] 周期触发）：
@@ -52,9 +51,9 @@ class ReminderWorker(
         val container = (context.applicationContext as StudyKitApp).container
         val now = System.currentTimeMillis()
 
+        // 到期条件均由 SQL WHERE 过滤，避免全表载入内存
         val dueMistakes = container.mistakeRepository.getDueForReview(now)
-        val dueWords = container.wordRepository.getAll()
-            .filter { it.status != Word.STATUS_MASTERED && it.nextReviewAt <= now }
+        val dueWords = container.wordRepository.getDueForReview(now)
 
         if (dueMistakes.isEmpty() && dueWords.isEmpty()) {
             Log.i(TAG, "无到期复习内容，本次不发通知")

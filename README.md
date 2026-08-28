@@ -1,8 +1,13 @@
 # StudyKit 学习助手
 
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF.svg?logo=kotlin)
+![Platform](https://img.shields.io/badge/Platform-Android-3DDC84.svg?logo=android)
+![API](https://img.shields.io/badge/API-26%2B-green.svg)
+
 > 一款纯本地存储的安卓学习管理应用：背单词 / 刷题、习惯打卡、读书笔记、错题整理，四大模块 + 日历视图增强，所有数据都保存在你自己的手机上。
 
-![banner](sk_gate.png)
+![banner](docs/screenshots/sk_gate.png)
 
 ## ✨ 应用简介
 
@@ -44,7 +49,7 @@ StudyKit 是一款面向学生和自学者的一站式学习助手，采用 iOS 
 | Navigation Compose | 底部导航与页面路由 |
 | WorkManager | 定时打卡提醒任务 |
 | Coil | 封面图片加载 |
-| DataStore | 轻量偏好设置存储 |
+| Kotlin Coroutines + StateFlow | 协程异步与响应式状态管理（应用无偏好设置存储，全部 UI 状态由 StateFlow 驱动） |
 
 构建环境：JDK 17+ / Gradle 8.11 / AGP 8.7.3，`compileSdk 35`、`minSdk 26`。
 
@@ -71,6 +76,8 @@ StudyKit/
 │       │   ├── util/                 # 工具类
 │       │   └── worker/               # WorkManager 提醒任务
 │       └── res/                      # 资源文件
+├── docs/
+│   └── screenshots/                  # 运行截图（真机实测）
 ├── gradle/wrapper/                   # Gradle Wrapper
 ├── build.gradle.kts                  # 根构建脚本
 └── settings.gradle.kts
@@ -117,46 +124,46 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | | |
 |:---:|:---:|
-| <img src="sk_gate.png" width="280" alt="启动引导页"> | <img src="sk_install_check.png" width="280" alt="安装完成检查"> |
+| <img src="docs/screenshots/sk_gate.png" width="280" alt="启动引导页"> | <img src="docs/screenshots/sk_install_check.png" width="280" alt="安装完成检查"> |
 
 ### 学习模块（背单词 / 刷题）
 
 | | | |
 |:---:|:---:|:---:|
-| <img src="sk_study_home.png" width="260" alt="学习首页"> | <img src="sk_study_card.png" width="260" alt="单词卡片"> | <img src="sk_study_quiz.png" width="260" alt="题库练习"> |
-| <img src="fin_study.png" width="260" alt="学习模块最终效果"> | <img src="fin_quiz.png" width="260" alt="刷题最终效果"> | |
+| <img src="docs/screenshots/sk_study_home.png" width="260" alt="学习首页"> | <img src="docs/screenshots/sk_study_card.png" width="260" alt="单词卡片"> | <img src="docs/screenshots/sk_study_quiz.png" width="260" alt="题库练习"> |
+| <img src="docs/screenshots/fin_study.png" width="260" alt="学习模块最终效果"> | <img src="docs/screenshots/fin_quiz.png" width="260" alt="刷题最终效果"> | |
 
 ### 习惯打卡模块
 
 | | | |
 |:---:|:---:|:---:|
-| <img src="sk_habit_list.png" width="260" alt="习惯列表"> | <img src="sk_habit_calendar.png" width="260" alt="打卡日历"> | <img src="imp_habit_list.png" width="260" alt="习惯列表（改进版）"> |
-| <img src="imp_habit_count.png" width="260" alt="完成次数计数"> | <img src="imp_makeup.png" width="260" alt="补卡功能"> | <img src="fin_habit.png" width="260" alt="习惯模块最终效果"> |
+| <img src="docs/screenshots/sk_habit_list.png" width="260" alt="习惯列表"> | <img src="docs/screenshots/sk_habit_calendar.png" width="260" alt="打卡日历"> | <img src="docs/screenshots/imp_habit_list.png" width="260" alt="习惯列表（改进版）"> |
+| <img src="docs/screenshots/imp_habit_count.png" width="260" alt="完成次数计数"> | <img src="docs/screenshots/imp_makeup.png" width="260" alt="补卡功能"> | <img src="docs/screenshots/fin_habit.png" width="260" alt="习惯模块最终效果"> |
 
 ### 读书笔记模块
 
 | | | |
 |:---:|:---:|:---:|
-| <img src="sk_book_shelf.png" width="260" alt="书架"> | <img src="sk_book_detail.png" width="260" alt="书籍详情"> | <img src="fin_book.png" width="260" alt="读书模块最终效果"> |
+| <img src="docs/screenshots/sk_book_shelf.png" width="260" alt="书架"> | <img src="docs/screenshots/sk_book_detail.png" width="260" alt="书籍详情"> | <img src="docs/screenshots/fin_book.png" width="260" alt="读书模块最终效果"> |
 
 ### 错题整理模块
 
 | | | |
 |:---:|:---:|:---:|
-| <img src="sk_mistake_list.png" width="260" alt="错题列表"> | <img src="sk_mistake_detail.png" width="260" alt="错题详情"> | <img src="fin_mistake_list.png" width="260" alt="错题列表（最终版）"> |
-| <img src="fin_mistake.png" width="260" alt="错题模块最终效果"> | <img src="imp_export.png" width="260" alt="错题导出"> | |
+| <img src="docs/screenshots/sk_mistake_list.png" width="260" alt="错题列表"> | <img src="docs/screenshots/sk_mistake_detail.png" width="260" alt="错题详情"> | <img src="docs/screenshots/fin_mistake_list.png" width="260" alt="错题列表（最终版）"> |
+| <img src="docs/screenshots/fin_mistake.png" width="260" alt="错题模块最终效果"> | <img src="docs/screenshots/imp_export.png" width="260" alt="错题导出"> | |
 
 ### 日历增强
 
 | | | |
 |:---:|:---:|:---:|
-| <img src="sk_calendar.png" width="260" alt="全局日历视图"> | <img src="sk_calendar_day.png" width="260" alt="按日查看明细"> | <img src="fin_calendar.png" width="260" alt="日历最终效果"> |
+| <img src="docs/screenshots/sk_calendar.png" width="260" alt="全局日历视图"> | <img src="docs/screenshots/sk_calendar_day.png" width="260" alt="按日查看明细"> | <img src="docs/screenshots/fin_calendar.png" width="260" alt="日历最终效果"> |
 
 ### 数据存储
 
 | |
 |:---:|
-| <img src="sk_db.png" width="280" alt="Room 数据库验证"> |
+| <img src="docs/screenshots/sk_db.png" width="280" alt="Room 数据库验证"> |
 
 ## 🙏 致谢
 

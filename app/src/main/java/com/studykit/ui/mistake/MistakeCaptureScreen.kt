@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppMultilineTextField
@@ -84,7 +87,12 @@ fun MistakeCaptureScreen(
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         val captured = pending
-        if (captured != null && captured.exists()) {
+        // 磁盘 IO 移出组合：produceState 在 IO 线程异步校验临时文件是否存在，
+        // 初值乐观置 true 避免新照片进入时闪烁回退文案
+        val capturedExists by produceState(initialValue = captured != null, key1 = captured) {
+            value = withContext(Dispatchers.IO) { captured?.exists() == true }
+        }
+        if (captured != null && capturedExists) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AsyncImage(
                     model = captured,

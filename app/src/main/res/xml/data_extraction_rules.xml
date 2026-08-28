@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+（API 31+）数据提取规则（android:dataExtractionRules）。
+    云备份与设备迁移均排除可重建的数据库与相机临时文件；
+    错题图片为用户原始数据，保留在备份中。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Room 数据库（可由应用重建） -->
+        <exclude
+            domain="database"
+            path="." />
+        <!-- 相机拍照临时目录 -->
+        <exclude
+            domain="external"
+            path="camera" />
+        <!-- 内部缓存目录 -->
+        <exclude
+            domain="cache"
+            path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude
+            domain="database"
+            path="." />
+        <exclude
+            domain="external"
+            path="camera" />
+        <exclude
+            domain="cache"
+            path="." />
+    </device-transfer>
+</data-extraction-rules>

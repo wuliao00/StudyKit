@@ -12,6 +12,9 @@ class WordRepository(private val wordDao: WordDao) {
 
     suspend fun getAll(): List<Word> = wordDao.getAll()
 
+    /** 到期待复习且未掌握的单词（复习提醒用，SQL 下推过滤） */
+    suspend fun getDueForReview(now: Long): List<Word> = wordDao.getDueForReview(now)
+
     fun observeByStatus(status: String): Flow<List<Word>> = wordDao.observeByStatus(status)
 
     fun observeCount(): Flow<Int> = wordDao.observeCount()

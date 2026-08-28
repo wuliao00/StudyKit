@@ -18,6 +18,13 @@ interface WordDao {
     @Query("SELECT * FROM words ORDER BY created_at DESC")
     suspend fun getAll(): List<Word>
 
+    /** 到期待复习且未掌握的单词（复习提醒用，WHERE 条件下推 SQL，避免全量内存过滤） */
+    @Query(
+        "SELECT * FROM words WHERE status != 'MASTERED' AND next_review_at <= :now " +
+            "ORDER BY next_review_at ASC",
+    )
+    suspend fun getDueForReview(now: Long): List<Word>
+
     @Query("SELECT * FROM words WHERE status = :status ORDER BY created_at DESC")
     fun observeByStatus(status: String): Flow<List<Word>>
 

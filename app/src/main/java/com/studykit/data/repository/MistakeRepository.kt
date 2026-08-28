@@ -17,6 +17,9 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
 
     fun observeById(id: Long): Flow<Mistake?> = mistakeDao.observeById(id)
 
+    /** 按 id 单次查询（删除等操作前取最新记录用，不依赖 UI 缓存） */
+    suspend fun getById(id: Long): Mistake? = mistakeDao.getById(id)
+
     /** 到期且未掌握的错题（复习提醒用） */
     suspend fun getDueForReview(now: Long): List<Mistake> = mistakeDao.getDueForReview(now)
 

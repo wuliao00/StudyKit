@@ -25,6 +25,10 @@ interface MistakeDao {
     @Query("SELECT * FROM mistakes WHERE id = :id")
     fun observeById(id: Long): Flow<Mistake?>
 
+    /** 按 id 单次查询（删除等操作前取最新记录用，不依赖 UI 缓存） */
+    @Query("SELECT * FROM mistakes WHERE id = :id")
+    suspend fun getById(id: Long): Mistake?
+
     /** 到期且未掌握的错题（复习提醒用） */
     @Query("SELECT * FROM mistakes WHERE mastered = 0 AND review_at IS NOT NULL AND review_at <= :now")
     suspend fun getDueForReview(now: Long): List<Mistake>

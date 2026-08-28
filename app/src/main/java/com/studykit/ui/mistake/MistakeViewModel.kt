@@ -140,11 +140,13 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 删除错题（含图片文件清理） */
+    /** 删除错题（含图片文件清理）；按 id 从数据库查询，避免依赖可能过期的 UI 缓存 */
     fun delete(id: Long, onDeleted: () -> Unit) {
         viewModelScope.launch {
-            val mistake = detail.value
-            mistake?.imagePath?.let { MistakeImageStore.delete(getApplication(), it) }
+            val mistake = repository.getById(id)
+            mistake?.imagePath?.let {
+                withContext(Dispatchers.IO) { MistakeImageStore.delete(getApplication(), it) }
+            }
             repository.delete(id)
             onDeleted()
         }

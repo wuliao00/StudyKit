@@ -5,7 +5,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * 演示数据播种器。在数据库首次创建（onCreate）时调用，保证可重复执行（幂等）。
+ * 演示数据播种器。仅在 Debug 构建的数据库首次创建（onCreate）时调用，
+ * 保证可重复执行（幂等）；Release 首装不播种，避免真实用户得到假数据。
  */
 object DemoSeeder {
 

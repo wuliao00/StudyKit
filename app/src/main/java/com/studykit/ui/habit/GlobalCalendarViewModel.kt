@@ -18,11 +18,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
-/** READ_CALENDARS 权限字符串（不依赖 SDK 常量，避免编译环境差异） */
-const val PermissionReadCalendars = "android.permission.READ_CALENDARS"
-
-/** 部分厂商框架（如 vivo）将日历权限改名为单数形式，需兼容 */
+/** 官方日历读权限（AOSP 定义即为单数 READ_CALENDAR，不依赖 SDK 常量避免编译环境差异） */
 const val PermissionReadCalendar = "android.permission.READ_CALENDAR"
+
+/** 历史遗留的复数形式（早期版本误声明），仅作为极端 ROM 的兼容回退保留 */
+const val PermissionReadCalendars = "android.permission.READ_CALENDARS"
 
 /** 系统日历加载状态 */
 data class SystemCalendarUiState(
@@ -58,21 +58,21 @@ class GlobalCalendarViewModel(application: Application) : AndroidViewModel(appli
     private val _system = MutableStateFlow(SystemCalendarUiState())
     val system: StateFlow<SystemCalendarUiState> = _system
 
-    /** 日历读取权限是否已授权（兼容两种权限名） */
+    /** 日历读取权限是否已授权（官方名优先，兼容历史遗留的复数形式） */
     fun hasCalendarPermission(): Boolean {
         val pm = getApplication<Application>().packageManager
-        return pm.checkPermission(PermissionReadCalendars, getApplication<Application>().packageName) ==
+        return pm.checkPermission(PermissionReadCalendar, getApplication<Application>().packageName) ==
             PackageManager.PERMISSION_GRANTED ||
-            pm.checkPermission(PermissionReadCalendar, getApplication<Application>().packageName) ==
+            pm.checkPermission(PermissionReadCalendars, getApplication<Application>().packageName) ==
             PackageManager.PERMISSION_GRANTED
     }
 
-    /** 待申请的日历权限：优先系统实际定义的名称（vivo 框架为 READ_CALENDAR） */
+    /** 待申请的日历权限：优先官方 READ_CALENDAR，仅当 ROM 未定义时回退历史遗留名称 */
     fun calendarPermissionToRequest(): String {
         val pm = getApplication<Application>().packageManager
-        return listOf(PermissionReadCalendars, PermissionReadCalendar).firstOrNull { permission ->
+        return listOf(PermissionReadCalendar, PermissionReadCalendars).firstOrNull { permission ->
             runCatching { pm.getPermissionInfo(permission, 0) }.isSuccess
-        } ?: PermissionReadCalendars
+        } ?: PermissionReadCalendar
     }
 
     /** 权限结果回调：授权后立即拉取系统日历 */
