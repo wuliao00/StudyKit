@@ -1,5 +1,7 @@
 # StudyKit 学习助手
 
+[简体中文](README.md) | [English](README.en.md) | [Русский](README.ru.md)
+
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF.svg?logo=kotlin)
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84.svg?logo=android)
