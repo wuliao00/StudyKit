@@ -1,12 +1,9 @@
 package com.studykit.ui.nav
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.Icons.Outlined
@@ -23,9 +20,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -40,7 +39,6 @@ import com.studykit.ui.book.BookShelfScreen
 import com.studykit.ui.book.BookViewModel
 import com.studykit.ui.book.ExcerptEditScreen
 import com.studykit.ui.book.ReviewEditScreen
-import com.studykit.ui.components.EmptyState
 import com.studykit.ui.habit.GlobalCalendarScreen
 import com.studykit.ui.habit.GlobalCalendarViewModel
 import com.studykit.ui.habit.HabitCalendarScreen
@@ -51,14 +49,16 @@ import com.studykit.ui.mistake.MistakeCaptureScreen
 import com.studykit.ui.mistake.MistakeDetailScreen
 import com.studykit.ui.mistake.MistakeListScreen
 import com.studykit.ui.mistake.MistakeViewModel
+import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.study.CardStudyScreen
 import com.studykit.ui.study.QuestionCreateScreen
+import com.studykit.ui.study.QuizScreen
 import com.studykit.ui.study.StudyHomeScreen
 import com.studykit.ui.study.StudyViewModel
 import com.studykit.ui.study.WordCreateScreen
 import com.studykit.ui.study.WordListScreen
-import com.studykit.ui.study.QuizScreen
-import com.studykit.ui.theme.DesignTokens
+import com.studykit.ui.theme.AppTheme
 
 /** 底部 Tab 定义 */
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
@@ -69,6 +69,12 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
 }
 
 private val Tabs = listOf(Tab.Study, Tab.Habit, Tab.Book, Tab.Mistake)
+
+/**
+ * 目的地路由是否落在这四个底部 Tab 之内。
+ * `NavBackStackEntry.destination.route` 可空，这里显式收口，避免把 `String?` 直接丢进 `Set<String>.contains`。
+ */
+private fun Set<String>.isTabRoute(route: String?): Boolean = route != null && route in this
 
 object HabitRoutes {
     const val LIST = "habit"
@@ -116,6 +122,7 @@ fun AppNav() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = Tabs.any { it.route == currentRoute }
+    val tabRoutes = remember { Tabs.map { it.route }.toSet() }
     val habitViewModel: HabitViewModel = viewModel()
     val globalCalendarViewModel: GlobalCalendarViewModel = viewModel()
     val bookViewModel: BookViewModel = viewModel()
@@ -123,7 +130,7 @@ fun AppNav() {
     val mistakeViewModel: MistakeViewModel = viewModel()
 
     Scaffold(
-        containerColor = DesignTokens.Background,
+        containerColor = AppTheme.colors.background,
         bottomBar = {
             if (showBottomBar) {
                 AppBottomBar(
@@ -145,6 +152,36 @@ fun AppNav() {
             navController = navController,
             startDestination = Tab.Study.route,
             modifier = Modifier.padding(innerPadding),
+            // Tab 之间只做淡入淡出（无方向语义）；进入子页 = 右侧推入，返回 = 向左滑出。
+            // 判定入/退场两端都取自同一个 `Tabs` 列表，新增 Tab 时不必再改转场。
+            enterTransition = {
+                if (tabRoutes.isTabRoute(targetState.destination.route)) {
+                    fadeIn(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                } else {
+                    MotionSpec.navEnter()
+                }
+            },
+            exitTransition = {
+                if (tabRoutes.isTabRoute(initialState.destination.route)) {
+                    fadeOut(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                } else {
+                    MotionSpec.navExit()
+                }
+            },
+            popEnterTransition = {
+                if (tabRoutes.isTabRoute(targetState.destination.route)) {
+                    fadeIn(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                } else {
+                    MotionSpec.navPopEnter()
+                }
+            },
+            popExitTransition = {
+                if (tabRoutes.isTabRoute(initialState.destination.route)) {
+                    fadeOut(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                } else {
+                    MotionSpec.navPopExit()
+                }
+            },
         ) {
             composable(Tab.Study.route) {
                 StudyHomeScreen(
@@ -356,50 +393,43 @@ private fun AppBottomBar(
     currentRoute: String?,
     onTabSelected: (Tab) -> Unit,
 ) {
-    NavigationBar(containerColor = DesignTokens.Card) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    // tonalElevation = 0：Material3 会按容器色做色调叠加，置 0 才能让 card 原色呈现
+    NavigationBar(
+        containerColor = colors.card,
+        tonalElevation = 0.dp,
+    ) {
         Tabs.forEach { tab ->
             val selected = currentRoute == tab.route
+            val interaction = remember(tab) { MutableInteractionSource() }
+            // pressScale 是 @Composable，只能在 item 组合层取值；graphicsLayer 块非组合，故在里面只读 State
+            val scale by rememberPressScale(interaction)
             NavigationBarItem(
                 selected = selected,
                 onClick = { onTabSelected(tab) },
+                interactionSource = interaction,
                 icon = {
                     Icon(
                         imageVector = tab.icon,
                         contentDescription = tab.label,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        },
                     )
                 },
-                label = { Text(text = tab.label, style = DesignTokens.Caption) },
+                label = { Text(text = tab.label, style = texts.caption) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = DesignTokens.Accent,
-                    selectedTextColor = DesignTokens.Accent,
-                    unselectedIconColor = DesignTokens.SecondaryText,
-                    unselectedTextColor = DesignTokens.SecondaryText,
-                    indicatorColor = DesignTokens.Accent.copy(alpha = 0.10f),
+                    // 图标是非文本元素（3:1 达标）；文案按 T1 裁定走 accentInk，
+                    // accent 在 card 上只有 3.04:1，撑不起 13sp 文本 AA。
+                    selectedIconColor = colors.accent,
+                    selectedTextColor = colors.accentInk,
+                    unselectedIconColor = colors.secondaryText,
+                    unselectedTextColor = colors.secondaryText,
+                    indicatorColor = colors.accentSoft,
                 ),
             )
-        }
-    }
-}
-
-/** 其余三个模块的占位页 */
-@Composable
-private fun PlaceholderTab(title: String, caption: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DesignTokens.Background)
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
-    ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
-        Text(text = title, style = DesignTokens.LargeTitle)
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            EmptyState(title = "${title}模块", caption = caption)
         }
     }
 }
