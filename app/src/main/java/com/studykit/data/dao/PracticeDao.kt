@@ -20,4 +20,8 @@ interface PracticeDao {
 
     @Query("SELECT COUNT(*) FROM practice_records")
     fun observeTotal(): Flow<Int>
+
+    /** 学习活跃日统计用：全部作答时间戳 */
+    @Query("SELECT at FROM practice_records")
+    fun observeActivityTimestamps(): Flow<List<Long>>
 }

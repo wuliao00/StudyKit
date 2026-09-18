@@ -58,4 +58,7 @@ class QuestionRepository(
         practiceDao.observeByQuestion(questionId)
 
     fun observeTotalRecords(): Flow<Int> = practiceDao.observeTotal()
+
+    /** 全部作答时间戳（连续学习天数/今日完成数用） */
+    fun observePracticeTimestamps(): Flow<List<Long>> = practiceDao.observeActivityTimestamps()
 }

@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 /** 解析题目的 options_json（JSONArray 字符串）为选项列表 */
@@ -26,12 +28,14 @@ fun parseOptions(optionsJson: String): List<String> = try {
     emptyList()
 }
 
-/** 学习首页状态：今日待复习 / 单词总数 / 已掌握 / 未掌握错题数 */
+/** 学习首页状态：今日待复习 / 单词总数 / 已掌握 / 未掌握错题数 / 连续学习天数 / 今日完成次数 */
 data class StudyHomeUiState(
     val dueCount: Int = 0,
     val totalCount: Int = 0,
     val masteredCount: Int = 0,
     val mistakeCount: Int = 0,
+    val streakDays: Int = 0,
+    val todayDone: Int = 0,
 )
 
 /** 卡片学习会话状态：队列快照 + 当前下标 + 认识/不认识统计 */
@@ -84,13 +88,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     val homeState: StateFlow<StudyHomeUiState> = combine(
         wordRepository.observeAll(),
         mistakeRepository.observeUnmasteredCount(),
-    ) { words, unmasteredMistakes ->
+        wordRepository.observeReviewTimestamps(),
+        questionRepository.observePracticeTimestamps(),
+    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps ->
         val now = System.currentTimeMillis()
+        // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val all = reviewTimestamps + practiceTimestamps
         StudyHomeUiState(
             dueCount = words.count { it.status != Word.STATUS_MASTERED && it.nextReviewAt <= now },
             totalCount = words.size,
             masteredCount = words.count { it.status == Word.STATUS_MASTERED },
             mistakeCount = unmasteredMistakes,
+            streakDays = StudyStreak.streakDays(all, zone, today),
+            todayDone = all.count { it >= dayStart },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudyHomeUiState())
 

@@ -34,4 +34,7 @@ class WordRepository(private val wordDao: WordDao) {
         wordDao.insertReview(
             WordReview(uuid = UUID.randomUUID().toString(), wordId = wordId, correct = correct),
         )
+
+    /** 全部复习时间戳（连续学习天数/今日完成数用） */
+    fun observeReviewTimestamps(): Flow<List<Long>> = wordDao.observeReviewTimestamps()
 }

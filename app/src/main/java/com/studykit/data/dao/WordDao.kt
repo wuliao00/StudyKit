@@ -45,4 +45,8 @@ interface WordDao {
 
     @Insert
     suspend fun insertReview(review: WordReview): Long
+
+    /** 学习活跃日统计用：全部复习时间戳 */
+    @Query("SELECT reviewed_at FROM word_reviews")
+    fun observeReviewTimestamps(): Flow<List<Long>>
 }
