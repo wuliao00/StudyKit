@@ -63,9 +63,9 @@ fun ConfettiBurst(
     }
     val progress = remember(trigger) { Animatable(initialValue = 0f) }
     LaunchedEffect(trigger) {
-        progress.snapTo(value = 0f)
+        progress.snapTo(targetValue = 0f)
         progress.animateTo(
-            target = 1f,
+            targetValue = 1f,
             animationSpec = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing),
         )
     }
