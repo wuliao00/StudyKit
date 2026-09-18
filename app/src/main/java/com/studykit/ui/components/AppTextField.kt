@@ -4,18 +4,20 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
+/** 单行输入：细标签 + 文本 + accent 光标 + 底部 1dp 分割线（错误态转 warning）。 */
 @Composable
 fun AppTextField(
     value: String,
@@ -26,36 +28,39 @@ fun AppTextField(
     isError: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Column(modifier = modifier) {
         if (label != null) {
             Text(
-                text     = label,
-                style    = DesignTokens.Caption,
+                text = label,
+                style = texts.caption,
                 modifier = Modifier.padding(bottom = DesignTokens.SpacingXs),
             )
         }
         BasicTextField(
-            value         = value,
+            value = value,
             onValueChange = onValueChange,
-            textStyle     = DesignTokens.Body,
+            textStyle = texts.body,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            modifier      = Modifier.fillMaxWidth(),
-            singleLine    = true,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            cursorBrush = SolidColor(colors.accent),
             decorationBox = { innerTextField ->
                 Column {
                     if (value.isEmpty() && placeholder != null) {
                         Text(
-                            text  = placeholder,
-                            style = DesignTokens.Body.copy(color = DesignTokens.SecondaryText),
+                            text = placeholder,
+                            style = texts.body.copy(color = colors.secondaryText),
                         )
                     }
                     innerTextField()
                     Spacer(modifier = Modifier.height(DesignTokens.SpacingSm))
                     Canvas(modifier = Modifier.fillMaxWidth()) {
                         drawLine(
-                            color       = if (isError) DesignTokens.Warning else DesignTokens.Divider,
-                            start       = Offset(0f, size.height),
-                            end         = Offset(size.width, size.height),
+                            color = if (isError) colors.warning else colors.divider,
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
                             strokeWidth = 1f,
                         )
                     }

@@ -21,10 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /**
- * 空态占位：圆形图标容器 + 标题 + 说明文字。
+ * 空态占位：72dp 圆形 accentSoft 图标容器 + 标题 + 说明文字。
+ * 图标为纯图形元素，取 `accentInk` 以保证在浅底上仍达对比度。
  */
 @Composable
 fun EmptyState(
@@ -33,34 +35,36 @@ fun EmptyState(
     caption: String? = null,
     icon: ImageVector = Icons.Outlined.DateRange,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Column(
-        modifier             = modifier.fillMaxWidth(),
-        horizontalAlignment  = Alignment.CenterHorizontally,
-        verticalArrangement  = Arrangement.Center,
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
+                .size(72.dp)
                 .clip(CircleShape)
-                .background(DesignTokens.Accent.copy(alpha = 0.10f)),
+                .background(colors.accentSoft),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector     = icon,
+                imageVector = icon,
                 contentDescription = null,
-                tint            = DesignTokens.Accent,
-                modifier        = Modifier.size(28.dp),
+                tint = colors.accentInk,
+                modifier = Modifier.size(32.dp),
             )
         }
         Spacer(Modifier.height(DesignTokens.SpacingMd))
-        Text(text = title, style = DesignTokens.CardTitle, textAlign = TextAlign.Center)
+        Text(text = title, style = texts.cardTitle, textAlign = TextAlign.Center)
         if (caption != null) {
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
-                text      = caption,
-                style     = DesignTokens.Caption,
+                text = caption,
+                style = texts.caption,
                 textAlign = TextAlign.Center,
-                modifier  = Modifier.padding(horizontal = DesignTokens.SpacingXl),
+                modifier = Modifier.padding(horizontal = DesignTokens.SpacingXl),
             )
         }
     }

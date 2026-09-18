@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /**
@@ -26,35 +28,38 @@ fun AppMultilineTextField(
     placeholder: String? = null,
     minLines: Int = 4,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Column(modifier = modifier) {
         if (label != null) {
             Text(
-                text     = label,
-                style    = DesignTokens.Caption,
+                text = label,
+                style = texts.caption,
                 modifier = Modifier.padding(bottom = DesignTokens.SpacingXs),
             )
         }
         BasicTextField(
-            value         = value,
+            value = value,
             onValueChange = onValueChange,
-            textStyle     = DesignTokens.Body,
-            modifier      = Modifier.fillMaxWidth(),
-            minLines      = minLines,
+            textStyle = texts.body,
+            modifier = Modifier.fillMaxWidth(),
+            minLines = minLines,
+            cursorBrush = SolidColor(colors.accent),
             decorationBox = { innerTextField ->
                 Column {
                     if (value.isEmpty() && placeholder != null) {
                         Text(
-                            text  = placeholder,
-                            style = DesignTokens.Body.copy(color = DesignTokens.SecondaryText),
+                            text = placeholder,
+                            style = texts.body.copy(color = colors.secondaryText),
                         )
                     }
                     innerTextField()
                     Spacer(modifier = Modifier.height(DesignTokens.SpacingSm))
                     Canvas(modifier = Modifier.fillMaxWidth()) {
                         drawLine(
-                            color       = DesignTokens.Divider,
-                            start       = Offset(0f, size.height),
-                            end         = Offset(size.width, size.height),
+                            color = colors.divider,
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
                             strokeWidth = 1f,
                         )
                     }
