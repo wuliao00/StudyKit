@@ -19,6 +19,10 @@ import kotlin.random.Random
 /**
  * 一次性彩带爆发（纯 Canvas 自绘，零图片素材、零依赖）：庆祝「打卡成功 / 连击达成」等瞬时反馈。
  *
+ * **宿主容器**：粒子会飞越画布矩形（初速 + 重力把尾迹甩到框外），所以必须挂在**裁剪容器之外**的
+ * 全屏层上，推荐写法 `Box(Modifier.fillMaxSize()) { 页面内容(); ConfettiBurst(trigger, Modifier.matchParentSize()) }`
+ * ——`matchParentSize` 取父 Box 尺寸且不参与父测量；放进 `AppCard`/`clip(...)` 里会被裁成方框。
+ *
  * 行为契约：[trigger] 每次变化（equals 比较）即重新播种粒子并从画布中心偏上处重播一次；
  * 归一化进度 `t >= 1` 后不再绘制，因此常驻组合也没有绘制开销。
  * **首次组合也会播放一次**——若只想在事件发生时庆祝，请把 `trigger` 传成事件标识
@@ -26,9 +30,12 @@ import kotlin.random.Random
  *
  * 粒子形态由 `trigger.hashCode()` 播种，同一 trigger 稳定、不同 trigger 打散，
  * 无需跨设备一致（只影响观感，不参与任何业务判定）。
+ * **注意**：`Unit`/`object`/未覆写 `hashCode` 的实例走的是 identity hashCode，
+ * 因此这类 trigger 的粒子形状只在**同一次进程运行内**稳定，冷启动后会换一套（观感无碍，勿作断言依据）。
  *
  * @param particleCount 粒子数；默认 56 颗在 1.1s 内足够热闹又不至于掉帧。
- * @param durationMillis 单次爆发总时长；尾段（后 30%）统一淡出。
+ * @param durationMillis 单次爆发总时长；每颗粒子在自身尾段（`pt > 0.7`）淡出，
+ *   而非整场统一淡出，因此晚播种的粒子不会刚出现就被整体 alpha 抹掉。
  */
 @Composable
 fun ConfettiBurst(
@@ -62,7 +69,8 @@ fun ConfettiBurst(
         }
     }
     val progress = remember(trigger) { Animatable(initialValue = 0f) }
-    LaunchedEffect(trigger) {
+    // durationMillis 入键：改时长即重播，否则旧时长跑完的 progress 停在 1f，新配置不会再出画
+    LaunchedEffect(trigger, durationMillis) {
         progress.snapTo(targetValue = 0f)
         progress.animateTo(
             targetValue = 1f,
@@ -82,7 +90,7 @@ fun ConfettiBurst(
             val dist = p.v * pt * w
             val x = cx + p.cosA * dist
             val y = cy + p.sinA * dist * 0.8f + p.g * pt * pt * h * 0.4f
-            val alpha = if (t > 0.7f) (1f - t) / 0.3f else 1f
+            val alpha = if (pt > 0.7f) (1f - pt) / 0.3f else 1f
             val pw = p.wf * w
             val ph = pw * p.aspect
             rotate(degrees = p.spin * pt * 360f, pivot = Offset(x = x, y = y)) {

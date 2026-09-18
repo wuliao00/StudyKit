@@ -178,10 +178,11 @@ fun StudyHomeScreen(
  * `todayDone` 统计的是**复习/练习次数**（会话数），不是学习天数，因此文案只报「今日待办」计数、
  * 不出现「天」字；「连续 X 天」只属于 [FlameBadge]（`streakDays`，由单词复习与题目练习共同驱动）。
  * 标题用「待办」而非「任务」：`dueCount` 含逾期项，「任务」会高估今日口径。
- * `RingGauge` 有左上角锚定的自绘特性，调用侧保持正方形容器（88dp）使其居中。
  *
  * 参数只收 hero 渲染所需的三个字段（而非整个 [StudyHomeUiState]）：
  * `mistakeCount/totalCount` 等其余字段变化时不触发本卡重组。
+ * 容器保持 88dp 正方形：`RingGauge` 已在容器内双向居中（弧不再锚定左上角），但直径仍取
+ * `minDimension`，正方形才能让环的大小与容器高度解耦。
  */
 @Composable
 private fun TodayHeroCard(
