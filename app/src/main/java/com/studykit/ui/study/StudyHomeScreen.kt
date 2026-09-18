@@ -99,7 +99,11 @@ fun StudyHomeScreen(
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
-        TodayHeroCard(state = state)
+        TodayHeroCard(
+            todayDone = state.todayDone,
+            dueCount = state.dueCount,
+            streakDays = state.streakDays,
+        )
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
@@ -169,18 +173,29 @@ fun StudyHomeScreen(
 
 /**
  * 今日任务 hero 卡：左侧 88dp 进度环（完成次数 / 今日总任务，达成转 gold），
- * 右侧「今日任务」标题 + `todayDone / total` 大数 + 连续学习火焰徽章。
+ * 右侧「今日待办」标题 + `todayDone / total` 大数 + 连续学习火焰徽章。
  *
- * `todayDone` 统计的是**复习/练习次数**（会话数），不是学习天数，因此文案只报「今日任务」计数、
+ * `todayDone` 统计的是**复习/练习次数**（会话数），不是学习天数，因此文案只报「今日待办」计数、
  * 不出现「天」字；「连续 X 天」只属于 [FlameBadge]（`streakDays`，由单词复习与题目练习共同驱动）。
+ * 标题用「待办」而非「任务」：`dueCount` 含逾期项，「任务」会高估今日口径。
  * `RingGauge` 有左上角锚定的自绘特性，调用侧保持正方形容器（88dp）使其居中。
+ *
+ * 参数只收 hero 渲染所需的三个字段（而非整个 [StudyHomeUiState]）：
+ * `mistakeCount/totalCount` 等其余字段变化时不触发本卡重组。
  */
 @Composable
-private fun TodayHeroCard(state: StudyHomeUiState, modifier: Modifier = Modifier) {
+private fun TodayHeroCard(
+    todayDone: Int,
+    dueCount: Int,
+    streakDays: Int,
+    modifier: Modifier = Modifier,
+) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val total = state.todayDone + state.dueCount
-    val progress = if (total == 0) 1f else state.todayDone.toFloat() / total
+    val total = todayDone + dueCount
+    // 空日（total == 0）显示空环而非满环：gold/达成态须由真实完成数驱动，
+    // progress >= 1f 在 0/0 下不再可能
+    val progress = if (total == 0) 0f else todayDone.toFloat() / total
     AppCard(modifier = modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -193,15 +208,15 @@ private fun TodayHeroCard(state: StudyHomeUiState, modifier: Modifier = Modifier
                     strokeWidth = 9.dp,
                     color = if (progress >= 1f && total > 0) colors.gold else colors.accent,
                 )
-                Text(text = "${state.todayDone}", style = texts.statValue.copy(fontSize = 28.sp))
+                Text(text = "$todayDone", style = texts.statValue.copy(fontSize = 28.sp))
             }
             Spacer(Modifier.width(DesignTokens.SpacingLg))
             Column(Modifier.weight(1f)) {
-                Text(text = "今日任务", style = texts.caption)
+                Text(text = "今日待办", style = texts.caption)
                 Spacer(Modifier.height(DesignTokens.SpacingXs))
-                Text(text = "${state.todayDone} / $total", style = texts.pageTitle)
+                Text(text = "$todayDone / $total", style = texts.pageTitle)
                 Spacer(Modifier.height(DesignTokens.SpacingSm))
-                if (state.streakDays > 0) FlameBadge(days = state.streakDays)
+                if (streakDays > 0) FlameBadge(days = streakDays)
             }
         }
     }
