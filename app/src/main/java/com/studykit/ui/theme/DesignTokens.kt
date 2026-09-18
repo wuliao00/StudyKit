@@ -63,8 +63,8 @@ object DesignTokens {
     val CardPadding: Dp          = 16.dp
 
     // ── 圆角 ──────────────────────────────────────────────────────────────
-    val CornerRadius: Dp     = 14.dp
-    val CornerRadiusLg: Dp   = 16.dp
+    val CornerRadius: Dp     = 16.dp
+    val CornerRadiusLg: Dp   = 20.dp
 
     // ── 阴影 ──────────────────────────────────────────────────────────────
     val ShadowElevation: Dp  = 2.dp

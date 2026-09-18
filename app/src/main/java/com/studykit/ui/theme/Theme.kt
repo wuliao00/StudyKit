@@ -1,46 +1,54 @@
 package com.studykit.ui.theme
 
+import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-private val AppLightColorScheme = lightColorScheme(
-    primary         = DesignTokens.Accent,
-    onPrimary       = Color.White,
-    background      = DesignTokens.Background,
-    onBackground    = DesignTokens.PrimaryText,
-    surface         = DesignTokens.Card,
-    onSurface       = DesignTokens.PrimaryText,
-    surfaceVariant  = DesignTokens.Background,
-    outline         = DesignTokens.Divider,
-)
-
-private val AppTypography = Typography(
-    headlineLarge = DesignTokens.LargeTitle,
-    headlineMedium = DesignTokens.PageTitle,
-    titleLarge = DesignTokens.CardTitle,
-    bodyLarge = DesignTokens.Body,
-    bodyMedium = DesignTokens.Auxiliary,
-    labelMedium = DesignTokens.Caption,
-)
-
-private val AppShapes = Shapes(
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(DesignTokens.CornerRadius),
-    large  = androidx.compose.foundation.shape.RoundedCornerShape(DesignTokens.CornerRadiusLg),
+private fun scheme(dark: Boolean, c: AppColors) = if (dark) darkColorScheme(
+    primary = c.accent, onPrimary = c.card,
+    background = c.background, onBackground = c.primaryText,
+    surface = c.card, onSurface = c.primaryText,
+    surfaceVariant = c.background, outline = c.divider,
+    error = c.warning, onError = c.card,
+) else lightColorScheme(
+    primary = c.accent, onPrimary = c.card,
+    background = c.background, onBackground = c.primaryText,
+    surface = c.card, onSurface = c.primaryText,
+    surfaceVariant = c.background, outline = c.divider,
+    error = c.warning, onError = c.card,
 )
 
 @Composable
-fun StudyKitTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = AppLightColorScheme,
-        typography  = AppTypography,
-        shapes      = AppShapes,
-        content     = content,
-    )
+fun StudyKitTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
+    val colors = if (darkTheme) DarkColors else LightColors
+    val vals = remember(colors) { AppThemeVals(colors, buildAppTexts(colors)) }
+    val view = LocalView.current
+    SideEffect {
+        (view.context as? Activity)?.window?.let {
+            WindowCompat.getInsetsController(it, view).isAppearanceLightStatusBars = !darkTheme
+        }
+    }
+    CompositionLocalProvider(LocalAppTheme provides vals) {
+        MaterialTheme(
+            colorScheme = scheme(darkTheme, colors),
+            shapes = Shapes(
+                medium = RoundedCornerShape(DesignTokens.CornerRadius),
+                large = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+            ),
+            content = content,
+        )
+    }
 }
