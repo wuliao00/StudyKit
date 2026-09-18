@@ -10,6 +10,7 @@ object Palette {
     val LightPrimaryText = Color(0xFF1F1D1A)
     val LightSecondaryText = Color(0xFF8A857C)
     val LightAccent = Color(0xFF00A78E)
+    val LightAccentInk = Color(0xFF00735F)   // 文本/图标专用深accent：白底对比度 5.8:1（accent 仅 3.0:1 不达标）
     val LightSuccess = Color(0xFF34C759)
     val LightGold = Color(0xFFFFB300)
     val LightWarning = Color(0xFFFF5A52)
@@ -20,6 +21,7 @@ object Palette {
     val DarkPrimaryText = Color(0xFFF0EDE6)
     val DarkSecondaryText = Color(0xFF9A958B)
     val DarkAccent = Color(0xFF33C7AB)
+    val DarkAccentInk = Color(0xFF65D7C2)    // DarkAccent 同色相提亮版：暖黑底上文本更清晰
     val DarkSuccess = Color(0xFF4CD07D)
     val DarkGold = Color(0xFFFFC94D)
     val DarkWarning = Color(0xFFFF7A73)

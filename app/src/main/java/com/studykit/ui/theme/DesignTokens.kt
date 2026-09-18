@@ -65,6 +65,7 @@ object DesignTokens {
     // ── 圆角 ──────────────────────────────────────────────────────────────
     val CornerRadius: Dp     = 16.dp
     val CornerRadiusLg: Dp   = 20.dp
+    val CornerRadiusXl: Dp   = 26.dp   // 胶囊按钮专用（52dp 高度的一半）
 
     // ── 阴影 ──────────────────────────────────────────────────────────────
     val ShadowElevation: Dp  = 2.dp
