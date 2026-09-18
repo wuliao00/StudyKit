@@ -48,14 +48,14 @@ data class AppTexts(
 )
 
 fun buildAppTexts(c: AppColors): AppTexts = AppTexts(
-    largeTitle = TextStyle(34.sp, FontWeight.Bold, color = c.primaryText),
-    pageTitle = TextStyle(22.sp, FontWeight.SemiBold, color = c.primaryText),
-    cardTitle = TextStyle(17.sp, FontWeight.Medium, color = c.primaryText),
-    body = TextStyle(17.sp, color = c.primaryText),
-    aux = TextStyle(15.sp, color = c.primaryText),
-    caption = TextStyle(13.sp, color = c.secondaryText),
-    statValue = TextStyle(34.sp, FontWeight.Bold, letterSpacing = (-0.5).sp, color = c.primaryText),
-    heroNumber = TextStyle(40.sp, FontWeight.Bold, letterSpacing = (-1).sp, color = c.primaryText),
+    largeTitle = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, color = c.primaryText),
+    pageTitle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = c.primaryText),
+    cardTitle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, color = c.primaryText),
+    body = TextStyle(fontSize = 17.sp, color = c.primaryText),
+    aux = TextStyle(fontSize = 15.sp, color = c.primaryText),
+    caption = TextStyle(fontSize = 13.sp, color = c.secondaryText),
+    statValue = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp, color = c.primaryText),
+    heroNumber = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp, color = c.primaryText),
 )
 
 @Immutable
