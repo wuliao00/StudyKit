@@ -1,5 +1,6 @@
 package com.studykit.ui.study
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -26,21 +28,32 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.motion.StaggeredIn
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /**
- * 学习首页（学习 Tab）：页标题 + 录入入口、统计磁贴、三张入口卡片。
+ * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
+ * 颜色与文字样式统一取 `AppTheme`；间距/圆角仍走 [DesignTokens] 的 dp 常量。
  */
 @Composable
 fun StudyHomeScreen(
@@ -51,6 +64,8 @@ fun StudyHomeScreen(
     onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
 
     Column(
@@ -64,24 +79,27 @@ fun StudyHomeScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = "学习", style = DesignTokens.LargeTitle)
+            Text(text = "学习", style = texts.largeTitle)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onAddWord) {
                 Icon(
                     imageVector = Icons.Filled.Add,
                     contentDescription = null,
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
                 Spacer(Modifier.width(DesignTokens.SpacingXs))
                 Text(
                     text = "录入",
-                    style = DesignTokens.Auxiliary.copy(
-                        color = DesignTokens.Accent,
+                    style = texts.aux.copy(
+                        color = colors.accentInk,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
             }
         }
+
+        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        TodayHeroCard(state = state)
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
@@ -104,52 +122,129 @@ fun StudyHomeScreen(
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
 
-        EntryCard(
-            icon = Icons.Outlined.Star,
-            iconColor = DesignTokens.Accent,
-            title = "背单词",
-            caption = "今日待复习 ${state.dueCount} 个 · 卡片翻面记忆",
-            onClick = onOpenWords,
-        )
+        StaggeredIn(index = 0) {
+            EntryCard(
+                icon = Icons.Outlined.Star,
+                iconColor = colors.accent,
+                iconContainerColor = colors.accentSoft,
+                title = "背单词",
+                caption = "今日待复习 ${state.dueCount} 个 · 卡片翻面记忆",
+                onClick = onOpenWords,
+            )
+        }
         Spacer(Modifier.height(DesignTokens.SpacingMd))
-        EntryCard(
-            icon = Icons.Outlined.CheckCircle,
-            iconColor = DesignTokens.Success,
-            title = "题库练习",
-            caption = "按学科刷题 · 答错自动入错题本",
-            onClick = onStartQuiz,
-            trailing = {
-                IconButton(onClick = onAddQuestion) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = "录入题目",
-                        tint = DesignTokens.Accent,
-                    )
-                }
-            },
-        )
+        StaggeredIn(index = 1) {
+            EntryCard(
+                icon = Icons.Outlined.CheckCircle,
+                iconColor = colors.success,
+                iconContainerColor = colors.successSoft,
+                title = "题库练习",
+                caption = "按学科刷题 · 答错自动入错题本",
+                onClick = onStartQuiz,
+                trailing = {
+                    IconButton(onClick = onAddQuestion) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "录入题目",
+                            tint = colors.accentInk,
+                        )
+                    }
+                },
+            )
+        }
         Spacer(Modifier.height(DesignTokens.SpacingMd))
-        EntryCard(
-            icon = Icons.Outlined.Close,
-            iconColor = DesignTokens.Warning,
-            title = "错题本",
-            caption = "${state.mistakeCount} 道待掌握",
-            onClick = onOpenMistakes,
-        )
+        StaggeredIn(index = 2) {
+            EntryCard(
+                icon = Icons.Outlined.Close,
+                iconColor = colors.warning,
+                iconContainerColor = colors.warningSoft,
+                title = "错题本",
+                caption = "${state.mistakeCount} 道待掌握",
+                onClick = onOpenMistakes,
+            )
+        }
         Spacer(Modifier.height(DesignTokens.SpacingLg))
     }
 }
 
-/** 入口卡片：圆形图标 + 标题 + 说明，可选尾部操作按钮 */
+/**
+ * 今日任务 hero 卡：左侧 88dp 进度环（完成次数 / 今日总任务，达成转 gold），
+ * 右侧「今日任务」标题 + `todayDone / total` 大数 + 连续学习火焰徽章。
+ *
+ * `todayDone` 统计的是**复习/练习次数**（会话数），不是学习天数，因此文案只报「今日任务」计数、
+ * 不出现「天」字；「连续 X 天」只属于 [FlameBadge]（`streakDays`，由单词复习与题目练习共同驱动）。
+ * `RingGauge` 有左上角锚定的自绘特性，调用侧保持正方形容器（88dp）使其居中。
+ */
+@Composable
+private fun TodayHeroCard(state: StudyHomeUiState, modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val total = state.todayDone + state.dueCount
+    val progress = if (total == 0) 1f else state.todayDone.toFloat() / total
+    AppCard(modifier = modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(88.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                RingGauge(
+                    progress = progress,
+                    modifier = Modifier.fillMaxSize(),
+                    strokeWidth = 9.dp,
+                    color = if (progress >= 1f && total > 0) colors.gold else colors.accent,
+                )
+                Text(text = "${state.todayDone}", style = texts.statValue.copy(fontSize = 28.sp))
+            }
+            Spacer(Modifier.width(DesignTokens.SpacingLg))
+            Column(Modifier.weight(1f)) {
+                Text(text = "今日任务", style = texts.caption)
+                Spacer(Modifier.height(DesignTokens.SpacingXs))
+                Text(text = "${state.todayDone} / $total", style = texts.pageTitle)
+                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                if (state.streakDays > 0) FlameBadge(days = state.streakDays)
+            }
+        }
+    }
+}
+
+/** 连续学习火焰徽章：进场时 0.4 → 1 的 snap spring 弹入，goldSoft 底 + gold 文案 */
+@Composable
+private fun FlameBadge(days: Int) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    var born by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { born = true }
+    val s by animateFloatAsState(
+        targetValue = if (born) 1f else 0.4f,
+        animationSpec = MotionSpec.snap,
+        label = "flame",
+    )
+    Box(
+        modifier = Modifier
+            .graphicsLayer { scaleX = s; scaleY = s }
+            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+            .background(colors.goldSoft)
+            .padding(horizontal = DesignTokens.SpacingSm, vertical = 4.dp),
+    ) {
+        Text(
+            text = "🔥 连续 $days 天",
+            style = texts.caption.copy(color = colors.gold, fontWeight = FontWeight.SemiBold),
+        )
+    }
+}
+
+/** 入口卡片：圆形图标（soft 底色）+ 标题 + 说明，可选尾部操作按钮；点击默认 ripple */
 @Composable
 private fun EntryCard(
     icon: ImageVector,
     iconColor: Color,
+    iconContainerColor: Color,
     title: String,
     caption: String,
     onClick: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val texts = AppTheme.texts
     AppCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -160,7 +255,7 @@ private fun EntryCard(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(iconColor.copy(alpha = 0.12f)),
+                    .background(iconContainerColor),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -172,9 +267,9 @@ private fun EntryCard(
             }
             Spacer(Modifier.width(DesignTokens.SpacingMd))
             Column(Modifier.weight(1f)) {
-                Text(text = title, style = DesignTokens.CardTitle)
+                Text(text = title, style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
-                Text(text = caption, style = DesignTokens.Caption)
+                Text(text = caption, style = texts.caption)
             }
             trailing?.invoke()
         }
