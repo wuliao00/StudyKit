@@ -179,8 +179,11 @@ fun CardStudyScreen(
                         .fillMaxWidth(),
                     label = "cardSwitch",
                 ) { idx ->
+                    // index 与 queue 来自同一份快照，理论上不会错位；但 session 是异步推进的，
+                    // AnimatedContent 转场期间旧 idx 仍可能被重组一次 —— getOrNull 兜底，宁可不画也不崩。
+                    val card = state.queue.getOrNull(idx) ?: return@AnimatedContent
                     SwipeRatingCard(
-                        word = state.queue[idx],
+                        word = card,
                         onGrade = { known ->
                             if (known) viewModel.markKnown() else viewModel.markUnknown()
                         },
@@ -188,6 +191,62 @@ fun CardStudyScreen(
                 }
             }
         }
+    }
+}
+
+// ── 滑动判定：纯函数，零 Compose / 零 Android 依赖 ───────────────────────────
+// 抽出来的唯一动机是可测性：阈值 / 甩速 / 同向这套规则是本页最容易「手感回归」的地方，
+// 留在 Composable 里就只能靠真机试手势。数值与 [MotionSpec] 的调校保持一致，
+// 改数值请连 SwipeDecisionTest 一起改。
+
+/** 位移阈值比例：拖过卡片宽度的 33% 即判定（与 [MotionSpec] 的手感调校一致） */
+private const val SwipeDistanceRatio = 0.33f
+
+/** 甩速阈值（px/s）：位移没到阈值时用它补判，方向必须与位移同号 */
+private const val SwipeVelocityFloor = 900f
+
+/** [SwipeRatingCard] 一次拖拽结束的三态结论 */
+internal enum class SwipeDecision {
+    /** 位移与速度都不够 —— 回弹 */
+    NONE,
+
+    /** 右滑够格 —— 认识 */
+    KNOWN,
+
+    /** 左滑够格 —— 不认识 */
+    UNKNOWN,
+}
+
+/**
+ * 位移阈值（px）：`宽 * [SwipeDistanceRatio]`，并夹到至少 1px。
+ *
+ * `onSizeChanged` 测量到真实宽度之前 `widthPx` 是 0，不夹紧会得到「阈值 0、碰一下就判定」
+ * 以及后续 `offsetX / threshold` 的除零。
+ */
+internal fun swipeThresholdPx(widthPx: Int): Float =
+    (widthPx * SwipeDistanceRatio).coerceAtLeast(1f)
+
+/**
+ * 判定一次拖拽结束该往哪个方向结算：只做算术，不读快照/组合状态，因此可在 JVM 单测里直取。
+ *
+ * 规则：
+ *  - 位移越过 `±[swipeThresholdPx]` 即按**位移方向**判定；
+ *  - 位移未过阈但甩速越过 `±[SwipeVelocityFloor]` px/s，且甩速与位移**同号**才补判
+ *    （往回拽的途中松手不该结算，故不同号一律不算）；
+ *  - 位移为 0 时速度分支必然不成立（没有可依据的方向）。
+ *
+ * 位移已过阈时速度不再参与方向判断：反向甩速不会推翻位移结论，只会让卡片飞得更快。
+ */
+internal fun decideSwipe(offsetX: Float, velocityX: Float, widthPx: Int): SwipeDecision {
+    val threshold = swipeThresholdPx(widthPx = widthPx)
+    return when {
+        offsetX > threshold ||
+            (velocityX > SwipeVelocityFloor && offsetX > 0f) -> SwipeDecision.KNOWN
+
+        offsetX < -threshold ||
+            (velocityX < -SwipeVelocityFloor && offsetX < 0f) -> SwipeDecision.UNKNOWN
+
+        else -> SwipeDecision.NONE
     }
 }
 
@@ -207,11 +266,14 @@ fun CardStudyScreen(
  * 带着倾斜、翻到背面时还会跟着 `rotationY` 镜像成反字。挂在布局根上时它就是一个稳定的角落提示，
  * 只有透明度跟拖拽位移变化（发起结算即刻归零）。
  *
- * 手势阈值与 [MotionSpec] 保持一致：位移越过 `宽 * 0.33f`，或松手甩速越过 ±900f px/s
- * （且方向与位移同号）即结算；飞出目标 ±`宽 * 1.5f` 走 `MotionSpec.flyOut()`，否则
- * [MotionSpec.snap] 回弹。翻面走 [MotionSpec.flip] spring，逐帧跟手、不设时长。
+ * 手势阈值与 [MotionSpec] 保持一致，判定本身抽成纯函数 [decideSwipe]（位移越过 `宽 * 0.33f`，
+ * 或松手甩速越过 ±900f px/s 且与位移同号即结算）；飞出目标 ±`宽 * 1.5f` 走 `MotionSpec.flyOut()`，
+ * 否则 [MotionSpec.snap] 回弹。翻面走 [MotionSpec.flip] spring，逐帧跟手、不设时长。
  *
  * 语义与墨墨一致：左右滑都**不要求**先翻面即可评价，只有「认识」按钮要求已翻面。
+ *
+ * 结算一旦发起（`graded` 置真）就同时关掉拖拽手势与两颗按钮：飞出动画期间再起手会把
+ * `animateTo` cancel 掉，`onGradeNow` 便永远执行不到，而 `graded` 已置真 ⇒ 该卡再也无法评价（软锁）。
  *
  * @param onGrade 结算当前卡（`true` = 认识）。同一张卡只会回调一次，见上方 `claim()` 守卫。
  */
@@ -261,8 +323,7 @@ private fun SwipeRatingCard(
         }
     }
 
-    val threshold = { (widthPx * 0.33f).coerceAtLeast(1f) }
-    val drag = offsetX.value / threshold()
+    val drag = offsetX.value / swipeThresholdPx(widthPx = widthPx)
     val knownA = if (graded.value) 0f else drag.coerceIn(0f, 1f)
     val unknownA = if (graded.value) 0f else (-drag).coerceIn(0f, 1f)
     val dragState = rememberDraggableState { dx ->
@@ -290,18 +351,27 @@ private fun SwipeRatingCard(
                     .draggable(
                         state = dragState,
                         orientation = Orientation.Horizontal,
+                        // 修软锁：graded 之后彻底关掉手势。飞出途中再起手会 snapTo/animateTo 抢
+                        // 同一个 Animatable，把 flyAndGrade 的 animateTo cancel 掉，
+                        // 于是 onGradeNow 永不执行、而该卡又已 claim ⇒ 这张卡再也评不了。
+                        enabled = !graded.value,
                         onDragStopped = { velocity ->
                             val w = widthPx.toFloat().coerceAtLeast(1f)
-                            when {
-                                offsetX.value > threshold() ||
-                                    (velocity > 900f && offsetX.value > 0f) ->
-                                    flyAndGrade(w * 1.5f, true)
+                            when (
+                                decideSwipe(
+                                    offsetX = offsetX.value,
+                                    velocityX = velocity,
+                                    widthPx = widthPx,
+                                )
+                            ) {
+                                SwipeDecision.KNOWN ->
+                                    flyAndGrade(targetPx = w * 1.5f, known = true)
 
-                                offsetX.value < -threshold() ||
-                                    (velocity < -900f && offsetX.value < 0f) ->
-                                    flyAndGrade(-w * 1.5f, false)
+                                SwipeDecision.UNKNOWN ->
+                                    flyAndGrade(targetPx = -w * 1.5f, known = false)
 
-                                else -> scope.launch {
+                                // 回弹同理：已发起结算就不碰 Animatable（否则照样掐掉飞行）
+                                SwipeDecision.NONE -> if (!graded.value) scope.launch {
                                     offsetX.animateTo(
                                         targetValue = 0f,
                                         animationSpec = MotionSpec.snap,
@@ -374,6 +444,8 @@ private fun SwipeRatingCard(
         Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd)) {
             OutlinedButton(
                 onClick = { grade(false) },
+                // 判定进行中（飞出途中 graded 已置真）两颗按钮一起失效，避免与手势抢同一张卡
+                enabled = !graded.value,
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp),
@@ -385,7 +457,7 @@ private fun SwipeRatingCard(
             }
             OutlinedButton(
                 onClick = { grade(true) },
-                enabled = flipped,
+                enabled = flipped && !graded.value,
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp),
