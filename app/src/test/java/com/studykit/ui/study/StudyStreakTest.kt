@@ -29,7 +29,16 @@ class StudyStreakTest {
         assertEquals(0, StudyStreak.streakDays(listOf(ts("2026-09-15")), zone, today))
     }
     @Test fun `同一天多次只算一天`() {
-        assertEquals(1, StudyStreak.streakDays(listOf(ts("2026-09-18"), ts("2026-09-18")), zone, today))
+        // 两条不同毫秒（00:00 与 13:00 同属 09-18）：若去重回归成「按时间戳条数计」会得 2，
+        // 相同毫秒传两次则无法判别
+        assertEquals(
+            1,
+            StudyStreak.streakDays(
+                timestampsMs = listOf(ts("2026-09-18"), ts("2026-09-18") + 13 * 3600_000),
+                zone = zone,
+                today = today,
+            ),
+        )
     }
 
     // ── 以下为 brief 5 例之外的边界补充 ─────────────────────────────────

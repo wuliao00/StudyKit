@@ -8,11 +8,13 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -103,9 +105,13 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             masteredCount = words.count { it.status == Word.STATUS_MASTERED },
             mistakeCount = unmasteredMistakes,
             streakDays = StudyStreak.streakDays(all, zone, today),
-            todayDone = all.count { it >= dayStart },
+            todayDone = all.count { it in dayStart..now },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudyHomeUiState())
+    }
+        // Room 的 flowOn 只作用上游，combine 变换（全量时间戳拼接 + HashSet 重建）默认落在
+        // stateIn 的收集线程（Main.immediate），显式切到 Default 避免大列表在主线程重建
+        .flowOn(context = Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudyHomeUiState())
 
     /** 单词列表（单词列表页使用） */
     val words: StateFlow<List<Word>> = wordRepository.observeAll()
