@@ -13,6 +13,7 @@ import com.studykit.ui.theme.DesignTokens
 
 /**
  * 通用卡片：20dp 圆角 + 1dp 柔光描边 + 1dp 低阴影（「描边代替阴影」的暖纸感观感）。
+ * 卡面取 `colors.card`，**随主题变化**（浅色 `#FFFFFF`／夜间 `#26241F`），不是固定白色。
  * 颜色显式来自 [AppTheme.colors]，不依赖 MaterialTheme 的局部覆写。
  */
 @Composable

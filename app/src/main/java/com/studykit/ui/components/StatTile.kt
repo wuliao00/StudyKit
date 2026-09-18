@@ -15,8 +15,8 @@ import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /**
- * 统计磁贴：34sp 大数字（[AppTheme.texts.statValue]）+ 小号说明标签，用于页面顶部概览。
- * 与 [AppCard] 同款描边观感，零阴影。
+ * 统计磁贴：34sp 大数字（[AppTheme.texts.statValue]，`maxLines = 1` 防 4 位数换行）+ 小号说明标签，
+ * 用于页面顶部概览。与 [AppCard] 同款描边观感，零阴影；卡面 `colors.card` 随主题变化。
  */
 @Composable
 fun StatTile(
@@ -35,7 +35,7 @@ fun StatTile(
         shadowElevation = 0.dp,
     ) {
         Column(modifier = Modifier.padding(DesignTokens.CardPadding)) {
-            Text(text = value, style = texts.statValue)
+            Text(text = value, style = texts.statValue, maxLines = 1)
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(text = label, style = texts.caption)
         }

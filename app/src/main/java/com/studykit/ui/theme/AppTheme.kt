@@ -17,14 +17,17 @@ import androidx.compose.ui.unit.sp
  * `AppTheme.colors.*`，不要依赖 `MaterialTheme.colorScheme.*`，否则夜间主题会拿到未覆写的默认色。
  *
  * `accentInk` = accent 的「墨水」变体，专用于纯文字/图标场景（描边按钮文案、空态图标等），
- * 因为浅色主题下 accent(#00A78E) 在白底只有 3.0:1 对比度，不满足正文文本 AA；大面积实底按钮仍用
- * accent 容器 + `card`（白）文字，无需替换。
+ * 因为浅色主题下 accent(#00A78E) 在白底只有 3.04:1，不满足正文文本 AA。
+ *
+ * `onAccent` = 实底 accent/accentInk 容器上的文字色：浅色为纯白（accentInk 上 5.81:1），夜间为暖墨
+ * `#1C1B18`（accentInk #65D7C2 上 9.88:1，白字只有 1.74:1）。注意 `card` **随主题变化**
+ * （light `#FFFFFF` / dark `#26241F`），不能再被当作「白」来给文字着色。
  */
 @Immutable
 data class AppColors(
     val background: Color, val card: Color,
     val primaryText: Color, val secondaryText: Color,
-    val accent: Color, val accentSoft: Color, val accentInk: Color,
+    val accent: Color, val accentSoft: Color, val accentInk: Color, val onAccent: Color,
     val success: Color, val successSoft: Color,
     val gold: Color, val goldSoft: Color,
     val warning: Color, val warningSoft: Color,
@@ -35,7 +38,7 @@ val LightColors = AppColors(
     background = Palette.LightBackground, card = Palette.LightCard,
     primaryText = Palette.LightPrimaryText, secondaryText = Palette.LightSecondaryText,
     accent = Palette.LightAccent, accentSoft = Palette.LightAccent.copy(alpha = 0.10f),
-    accentInk = Palette.LightAccentInk,
+    accentInk = Palette.LightAccentInk, onAccent = Palette.LightOnAccent,
     success = Palette.LightSuccess, successSoft = Palette.LightSuccess.copy(alpha = 0.10f),
     gold = Palette.LightGold, goldSoft = Palette.LightGold.copy(alpha = 0.14f),
     warning = Palette.LightWarning, warningSoft = Palette.LightWarning.copy(alpha = 0.10f),
@@ -46,7 +49,7 @@ val DarkColors = AppColors(
     background = Palette.DarkBackground, card = Palette.DarkCard,
     primaryText = Palette.DarkPrimaryText, secondaryText = Palette.DarkSecondaryText,
     accent = Palette.DarkAccent, accentSoft = Palette.DarkAccent.copy(alpha = 0.16f),
-    accentInk = Palette.DarkAccentInk,
+    accentInk = Palette.DarkAccentInk, onAccent = Palette.DarkOnAccent,
     success = Palette.DarkSuccess, successSoft = Palette.DarkSuccess.copy(alpha = 0.16f),
     gold = Palette.DarkGold, goldSoft = Palette.DarkGold.copy(alpha = 0.18f),
     warning = Palette.DarkWarning, warningSoft = Palette.DarkWarning.copy(alpha = 0.16f),
