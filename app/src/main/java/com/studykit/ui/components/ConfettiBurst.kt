@@ -24,7 +24,11 @@ import kotlin.random.Random
  * ——`matchParentSize` 取父 Box 尺寸且不参与父测量；放进 `AppCard`/`clip(...)` 里会被裁成方框。
  *
  * 行为契约：[trigger] 每次变化（equals 比较）即重新播种粒子并从画布中心偏上处重播一次；
- * 归一化进度 `t >= 1` 后不再绘制，因此常驻组合也没有绘制开销。
+ * [particleCount] 与 [durationMillis] 同样进入重播判定（改参数等于换了一次事件，
+ * 否则旧时长跑完的进度会停在 `1f`，新配置再也画不出东西）。
+ * 绘制门控是**开区间** `0 < t < 1`：`t` 由 `LaunchedEffect` 从 0 补到 1，`t <= 0`（还没开跑）
+ * 与 `t >= 1`（已经放完）时 draw 块直接 return。因此「常驻组合不烧绘制」不是靠静默循环空转，
+ * 而是动画结束后 `t` 不再变化、Canvas 收不到失效通知，既不出画也不重绘。
  * **首次组合也会播放一次**——若只想在事件发生时庆祝，请把 `trigger` 传成事件标识
  * （如 `lastCheckInAt`）或用 `if (show) ConfettiBurst(trigger = Unit)` 控制挂载时机。
  *
@@ -69,8 +73,9 @@ fun ConfettiBurst(
         }
     }
     val progress = remember(trigger) { Animatable(initialValue = 0f) }
-    // durationMillis 入键：改时长即重播，否则旧时长跑完的 progress 停在 1f，新配置不会再出画
-    LaunchedEffect(trigger, durationMillis) {
+    // 三个键缺一不可：durationMillis / particleCount 不入键的话，旧配置跑完的 progress 停在 1f，
+    // 改参数只会重新播种粒子却再也不出画（等于换了个隐形配置）。
+    LaunchedEffect(trigger, durationMillis, particleCount) {
         progress.snapTo(targetValue = 0f)
         progress.animateTo(
             targetValue = 1f,
