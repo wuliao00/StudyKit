@@ -181,13 +181,21 @@ fun AppNav() {
                 }
             },
         ) {
+            // 子页 navigate 一律带 `launchSingleTop = true`（终审波 4）：这些入口都是
+            // 「按钮 → 推一层」的手势，连点两下在没有该 flag 时会把同一个 route 压两份，
+            // 用户按第一次返回只弹掉重复的那层，看起来就像「返回键没反应」。
+            // Tab 切换那两处（下方的 onOpenMistakes 与 AppBottomBar 的 onTabSelected）本来就有，
+            // 这里照同一写法补齐；带参数的子页（书/错题/习惯详情）同样只与**同参数**的栈顶合并，
+            // 先 A 后 B 仍各占一层，不影响波 2 修的「写错目标行」。
             composable(Tab.Study.route) {
                 StudyHomeScreen(
                     viewModel = studyViewModel,
-                    onOpenWords = { navController.navigate(StudyRoutes.WORDS) },
+                    onOpenWords = {
+                        navController.navigate(StudyRoutes.WORDS) { launchSingleTop = true }
+                    },
                     onStartQuiz = {
                         studyViewModel.resetQuiz()
-                        navController.navigate(StudyRoutes.QUIZ)
+                        navController.navigate(StudyRoutes.QUIZ) { launchSingleTop = true }
                     },
                     onOpenMistakes = {
                         navController.navigate(Tab.Mistake.route) {
@@ -198,30 +206,48 @@ fun AppNav() {
                             restoreState = true
                         }
                     },
-                    onAddWord = { navController.navigate(StudyRoutes.WORD_CREATE) },
-                    onAddQuestion = { navController.navigate(StudyRoutes.QUESTION_CREATE) },
+                    onAddWord = {
+                        navController.navigate(StudyRoutes.WORD_CREATE) { launchSingleTop = true }
+                    },
+                    onAddQuestion = {
+                        navController.navigate(StudyRoutes.QUESTION_CREATE) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Habit.route) {
                 HabitListScreen(
                     viewModel = habitViewModel,
-                    onOpenHabit = { habitId -> navController.navigate(HabitRoutes.calendar(habitId)) },
-                    onAddClick = { navController.navigate(HabitRoutes.CREATE) },
-                    onOpenCalendar = { navController.navigate(HabitRoutes.CALENDAR_GLOBAL) },
+                    onOpenHabit = { habitId ->
+                        navController.navigate(HabitRoutes.calendar(habitId)) { launchSingleTop = true }
+                    },
+                    onAddClick = {
+                        navController.navigate(HabitRoutes.CREATE) { launchSingleTop = true }
+                    },
+                    onOpenCalendar = {
+                        navController.navigate(HabitRoutes.CALENDAR_GLOBAL) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Book.route) {
                 BookShelfScreen(
                     viewModel = bookViewModel,
-                    onOpenBook = { bookId -> navController.navigate(BookRoutes.detail(bookId)) },
-                    onAddClick = { navController.navigate(BookRoutes.CREATE) },
+                    onOpenBook = { bookId ->
+                        navController.navigate(BookRoutes.detail(bookId)) { launchSingleTop = true }
+                    },
+                    onAddClick = {
+                        navController.navigate(BookRoutes.CREATE) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Mistake.route) {
                 MistakeListScreen(
                     viewModel = mistakeViewModel,
-                    onOpenDetail = { id -> navController.navigate(MistakeRoutes.detail(id)) },
-                    onOpenCapture = { navController.navigate(MistakeRoutes.CAPTURE) },
+                    onOpenDetail = { id ->
+                        navController.navigate(MistakeRoutes.detail(id)) { launchSingleTop = true }
+                    },
+                    onOpenCapture = {
+                        navController.navigate(MistakeRoutes.CAPTURE) { launchSingleTop = true }
+                    },
                 )
             }
 
@@ -255,7 +281,7 @@ fun AppNav() {
                     onBack = { navController.popBackStack() },
                     onStartStudy = {
                         studyViewModel.startCardSession()
-                        navController.navigate(StudyRoutes.CARDS)
+                        navController.navigate(StudyRoutes.CARDS) { launchSingleTop = true }
                     },
                 )
             }
@@ -263,7 +289,9 @@ fun AppNav() {
                 CardStudyScreen(
                     viewModel = studyViewModel,
                     onBack = { navController.popBackStack() },
-                    onAddWord = { navController.navigate(StudyRoutes.WORD_CREATE) },
+                    onAddWord = {
+                        navController.navigate(StudyRoutes.WORD_CREATE) { launchSingleTop = true }
+                    },
                 )
             }
             composable(StudyRoutes.QUIZ) {
@@ -323,11 +351,21 @@ fun AppNav() {
                     bookId = entry.arguments?.getLong("bookId") ?: 0L,
                     viewModel = bookViewModel,
                     onBack = { navController.popBackStack() },
-                    onEditBook = { bookId -> navController.navigate(BookRoutes.edit(bookId)) },
-                    onAddExcerpt = { bookId -> navController.navigate(BookRoutes.excerptCreate(bookId)) },
-                    onEditExcerpt = { excerptId -> navController.navigate(BookRoutes.excerptEdit(excerptId)) },
-                    onAddReview = { bookId -> navController.navigate(BookRoutes.reviewCreate(bookId)) },
-                    onEditReview = { reviewId -> navController.navigate(BookRoutes.reviewEdit(reviewId)) },
+                    onEditBook = { bookId ->
+                        navController.navigate(BookRoutes.edit(bookId)) { launchSingleTop = true }
+                    },
+                    onAddExcerpt = { bookId ->
+                        navController.navigate(BookRoutes.excerptCreate(bookId)) { launchSingleTop = true }
+                    },
+                    onEditExcerpt = { excerptId ->
+                        navController.navigate(BookRoutes.excerptEdit(excerptId)) { launchSingleTop = true }
+                    },
+                    onAddReview = { bookId ->
+                        navController.navigate(BookRoutes.reviewCreate(bookId)) { launchSingleTop = true }
+                    },
+                    onEditReview = { reviewId ->
+                        navController.navigate(BookRoutes.reviewEdit(reviewId)) { launchSingleTop = true }
+                    },
                 )
             }
             composable(BookRoutes.CREATE) {
