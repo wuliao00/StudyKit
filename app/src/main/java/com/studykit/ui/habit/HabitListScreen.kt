@@ -605,11 +605,14 @@ private fun HabitCard(
             Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 不再给标题加 weight：真机上 `weight(1f, fill = false)` 会把习惯名压成「…」。
-                    // 药丸不折行已由 AppPill 的 `maxLines = 1` 保证，标题保持自然宽度。
+                    // 标题必须是**带 weight 的那一个**：Row 先量无 weight 的药丸（拿到自身固有宽度），
+                    // 再把剩下的宽度给标题。反过来（标题无 weight）药丸就会被挤成「已达…」，
+                    // 而 `weight(1f, fill = false)` 实测会把标题压成「…」——两个方向都真机踩过。
+                    // 于是长习惯名由省略号收尾，状态药丸永远完整。
                     Text(
                         text = item.habit.name,
                         style = texts.cardTitle,
+                        modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
