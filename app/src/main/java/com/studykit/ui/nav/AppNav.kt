@@ -2,7 +2,6 @@ package com.studykit.ui.nav
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.Icons.Outlined
@@ -129,26 +128,33 @@ fun AppNav() {
 
     // ── 边到边与键盘（终审 I11 / 波 4 项 2）────────────────────────────────
     // `MainActivity.enableEdgeToEdge()` + targetSdk 35 ⇒ 内容绘制在系统栏之下，insets 全部
-    // 由 Compose 侧消费。全仓只有这一层碰 insets（`grep imePadding|safeDrawingPadding|
-    // windowInsetsPadding|consumeWindowInsets` 在改动前命中 0），所以「谁消费键盘」这件事
-    // 必须在这里说死，否则很容易长出第二处补偿：
+    // 由 Compose 侧消费。改动前全仓碰 insets 的只有下面那一枚 `Modifier.padding(innerPadding)`
+    // （`grep imePadding|safeDrawingPadding|windowInsetsPadding|consumeWindowInsets|
+    // statusBarsPadding|navigationBarsPadding` 在改动前只命中 AppNav 的 Scaffold 本身），
+    // 页面一侧从来没有第二处补偿 —— 所以「谁消费键盘」只需要在这一层说死。
     //
-    // 1. `Modifier.padding(innerPadding)` 是**普通布局留白**，不会 `consumeWindowInsets`，
-    //    下游读到的 `LocalWindowInsets` 仍是满的；
-    // 2. Material3 `Scaffold` 的默认 `contentWindowInsets` 是 `WindowInsets.safeDrawing`，
+    // 结论：**键盘的唯一消费者就是这里的 `innerPadding`**，理由是 Compose insets 的传播规则：
+    // 1. Material3 `Scaffold` 的默认 `contentWindowInsets` 是 `WindowInsets.safeDrawing`，
     //    而 safeDrawing = systemBars ∪ displayCutout ∪ captionBar ∪ **ime** ——
-    //    键盘其实已经被算进 `innerPadding.bottom` 了；
-    // 3. 于是「保留默认 + 再叠 `.imePadding()`」= 同一段键盘高度补偿**两次**：
-    //    键盘一弹起，NavHost 的可用高度会被啃掉约两个键盘（约 600dp），表单页直接塌成一条。
+    //    键盘高度本就已经算进 `innerPadding.bottom`（有底栏时是 bottomBarHeight +
+    //    max(safeDrawing.bottom − bottomBarHeight, 0)，键盘高出底栏的部分照样落进来）；
+    // 2. `Modifier.padding(innerPadding)` 是**普通布局留白**，不 `consumeWindowInsets`，
+    //    所以下游读到的 `LocalWindowInsets` 仍是满的 —— 在这之上再叠一枚 `.imePadding()`
+    //    等于把同一段键盘高度补**两次**（本波真按这个写法提过：NavHost 可用高度被啃掉约两个
+    //    键盘，表单页直接塌成一条），brief 的「保留 padding(innerPadding) 再叠 imePadding」
+    //    按字面执行是个回归，不是修复；
+    // 3. 曾想把 Scaffold 口径收窄成「不含 ime」再交给 `.imePadding()` 独占，本版
+    //    Compose Foundation 没有 `WindowInsets.padding` 这个成员（CI 两次编译报错：
+    //    先 "Function invocation 'padding(...)' expected"，改成调用后又只剩 `Modifier.padding`
+    //    的候选），而 `safeDrawing` 这条路径既编译确定、又额外带住 captionBar（桌面/自由窗口）。
     //
-    // 故这里把 Scaffold 的口径**显式收窄**为 `WindowInsets.padding`（= systemBars ∪
-    // displayCutout ∪ captionBar，不含 ime），系统栏与刘海仍由 innerPadding 负责；
-    // 键盘从此只有**一个**消费者 —— NavHost 上的 `.imePadding()`。
-    // 七张表单页（单词/题目/习惯/书/摘录/评述录入 + 错题拍照）与错题详情对话框都在这棵子树里，
-    // 页面自身不再各自补 `.imePadding()`（重复补偿即本条要防的事）。
+    // 于是这里把默认值**显式写出来**：它不再是一句 Material3 的隐式默认，而是本仓的一条约定 ——
+    // 七张表单页（单词/题目/习惯/书/摘录/评述录入 + 错题拍照）的键盘补偿只有这一处，
+    // 页面内不得再补 `.imePadding()` / `.safeDrawingPadding()`。各页根 `Column` 本来就是
+    // `verticalScroll`，NavHost 一缩就能滚到保存按钮。
     Scaffold(
         containerColor = AppTheme.colors.background,
-        contentWindowInsets = WindowInsets.padding(),
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
             if (showBottomBar) {
                 AppBottomBar(
@@ -169,10 +175,9 @@ fun AppNav() {
         NavHost(
             navController = navController,
             startDestination = Tab.Study.route,
-            // `padding(innerPadding)` 管系统栏 / 刘海 / 底栏，`.imePadding()` 是全仓**唯一**
-            // 的键盘消费者（Scaffold 的 contentWindowInsets 已收窄为不含 ime 的 `padding`，
-            // 见上方注释）—— 页面里不要再补第二枚 `.imePadding()`。
-            modifier = Modifier.padding(innerPadding).imePadding(),
+            // 系统栏 / 刘海 / 底栏 / 键盘全部由上面 Scaffold 的 `innerPadding` 一处补偿，
+            // 这里只做那一层留白 —— 再补一枚 `.imePadding()` 就是双份键盘高度（波 4 踩过）。
+            modifier = Modifier.padding(innerPadding),
             // Tab 之间只做淡入淡出（无方向语义），且成对走 MotionSpec.fadeEnter/fadeExit，
             // 不再在这里裸写 `fadeIn(tween(...))`；进入子页 = 新页自右侧推入、当前页向左让位，
             // 返回 = 当前页向右滑出、上一页自左侧滑入（见 MotionSpec.navPopExit / navPopEnter）。
