@@ -1,6 +1,8 @@
 package com.studykit.ui.nav
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.Icons.Outlined
@@ -125,8 +127,28 @@ fun AppNav() {
     val studyViewModel: StudyViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
 
+    // ── 边到边与键盘（终审 I11 / 波 4 项 2）────────────────────────────────
+    // `MainActivity.enableEdgeToEdge()` + targetSdk 35 ⇒ 内容绘制在系统栏之下，insets 全部
+    // 由 Compose 侧消费。全仓只有这一层碰 insets（`grep imePadding|safeDrawingPadding|
+    // windowInsetsPadding|consumeWindowInsets` 在改动前命中 0），所以「谁消费键盘」这件事
+    // 必须在这里说死，否则很容易长出第二处补偿：
+    //
+    // 1. `Modifier.padding(innerPadding)` 是**普通布局留白**，不会 `consumeWindowInsets`，
+    //    下游读到的 `LocalWindowInsets` 仍是满的；
+    // 2. Material3 `Scaffold` 的默认 `contentWindowInsets` 是 `WindowInsets.safeDrawing`，
+    //    而 safeDrawing = systemBars ∪ displayCutout ∪ captionBar ∪ **ime** ——
+    //    键盘其实已经被算进 `innerPadding.bottom` 了；
+    // 3. 于是「保留默认 + 再叠 `.imePadding()`」= 同一段键盘高度补偿**两次**：
+    //    键盘一弹起，NavHost 的可用高度会被啃掉约两个键盘（约 600dp），表单页直接塌成一条。
+    //
+    // 故这里把 Scaffold 的口径**显式收窄**为 `WindowInsets.padding`（= systemBars ∪
+    // displayCutout ∪ captionBar，不含 ime），系统栏与刘海仍由 innerPadding 负责；
+    // 键盘从此只有**一个**消费者 —— NavHost 上的 `.imePadding()`。
+    // 七张表单页（单词/题目/习惯/书/摘录/评述录入 + 错题拍照）与错题详情对话框都在这棵子树里，
+    // 页面自身不再各自补 `.imePadding()`（重复补偿即本条要防的事）。
     Scaffold(
         containerColor = AppTheme.colors.background,
+        contentWindowInsets = WindowInsets.padding,
         bottomBar = {
             if (showBottomBar) {
                 AppBottomBar(
@@ -147,7 +169,10 @@ fun AppNav() {
         NavHost(
             navController = navController,
             startDestination = Tab.Study.route,
-            modifier = Modifier.padding(innerPadding),
+            // `padding(innerPadding)` 管系统栏 / 刘海 / 底栏，`.imePadding()` 是全仓**唯一**
+            // 的键盘消费者（Scaffold 的 contentWindowInsets 已收窄为不含 ime 的 `padding`，
+            // 见上方注释）—— 页面里不要再补第二枚 `.imePadding()`。
+            modifier = Modifier.padding(innerPadding).imePadding(),
             // Tab 之间只做淡入淡出（无方向语义），且成对走 MotionSpec.fadeEnter/fadeExit，
             // 不再在这里裸写 `fadeIn(tween(...))`；进入子页 = 新页自右侧推入、当前页向左让位，
             // 返回 = 当前页向右滑出、上一页自左侧滑入（见 MotionSpec.navPopExit / navPopEnter）。
