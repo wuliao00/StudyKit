@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -53,7 +54,11 @@ class GlobalCalendarViewModel(application: Application) : AndroidViewModel(appli
                 val date = runCatching { LocalDate.parse(checkIn.date) }.getOrNull() ?: return@mapNotNull null
                 date to (nameById[checkIn.habitId] ?: "习惯")
             }.groupBy({ it.first }, { it.second })
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+        }
+            // 全量打卡逐条 `LocalDate.parse` + 两次 map 查找 + groupBy：整段下推到 Default
+            // （终审 I7，写法与 `StudyViewModel.homeState` 一致）
+            .flowOn(context = Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val _system = MutableStateFlow(SystemCalendarUiState())
     val system: StateFlow<SystemCalendarUiState> = _system

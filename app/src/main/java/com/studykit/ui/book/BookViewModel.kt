@@ -9,12 +9,14 @@ import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.Excerpt
 import com.studykit.util.OneShotGate
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -73,7 +75,10 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
                 finishedCount = items.count { it.isFinished },
                 excerptCount  = excerptCount,
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookShelfUiState())
+        }
+            // 整表 map + 两趟 count：进度每写一次都要重算，别落在主线（终审 I7）
+            .flowOn(context = Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BookShelfUiState())
 
     /** 单书流：供编辑页回填数据 */
     fun observeBook(bookId: Long): Flow<Book?> = repository.observeById(bookId)

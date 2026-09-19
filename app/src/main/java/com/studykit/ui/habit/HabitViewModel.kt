@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -170,6 +171,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                 maxStreak         = items.maxOfOrNull { it.streak } ?: 0,
             )
         }
+        // 逐条 `LocalDate.parse` + 求和 + 连续天数回溯都在这一段，习惯多、打卡记录厚时
+        // 不该压在主线（终审 I7）；写法与 `StudyViewModel.homeState` 一致
+        .flowOn(context = Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HabitListUiState())
 
     // ── 日历页状态 ────────────────────────────────────────────────────────

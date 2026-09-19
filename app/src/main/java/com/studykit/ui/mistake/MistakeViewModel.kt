@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -102,7 +103,11 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     val mistakes: StateFlow<List<Mistake>> =
         combine(unmastered, mastered, _showMastered) { todo, done, masteredOnly ->
             if (masteredOnly) done else todo
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }
+            // 与 `StudyViewModel.homeState` 同一口径（终审 I7）：combine 的变换跑在
+            // stateIn 的收集线程（Main.immediate）上，显式切到 Default 再交给状态流
+            .flowOn(context = Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * 两态并集，只用于派生「学科 chips」与「库里到底有没有错题」。
@@ -111,16 +116,20 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
      */
     private val allMistakes: StateFlow<List<Mistake>> =
         combine(unmastered, mastered) { todo, done -> todo + done }
+            // `todo + done` 每次写入都整表复制一份，题量大时不该压在主线（终审 I7）
+            .flowOn(context = Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 数据中 distinct 出的学科列表 */
     val subjects: StateFlow<List<String>> = allMistakes
         .map { list -> list.map { it.subject }.distinct() }
+        .flowOn(context = Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 一道错题都没有时为 false —— 用来区分空态文案「错题本还是空的」与「全部已掌握」 */
     val hasAnyMistake: StateFlow<Boolean> = allMistakes
         .map { it.isNotEmpty() }
+        .flowOn(context = Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** 按学科分组（应用筛选后），组内按创建时间倒序（DAO 已保证） */
@@ -128,7 +137,10 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         val filtered = if (filter == null) list else list.filter { it.subject == filter }
         filtered.groupBy { it.subject }
             .map { (subject, items) -> SubjectGroup(subject, items) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+        // 筛选 + groupBy + 建组：本模块最重的一段映射，留出 Default 线程跑（终审 I7）
+        .flowOn(context = Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun selectSubject(subject: String?) {
         _subjectFilter.value = subject
