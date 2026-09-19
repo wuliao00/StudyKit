@@ -152,7 +152,8 @@ fun AppNav() {
             navController = navController,
             startDestination = Tab.Study.route,
             modifier = Modifier.padding(innerPadding),
-            // Tab 之间只做淡入淡出（无方向语义）；进入子页 = 右侧推入，返回 = 向左滑出。
+            // Tab 之间只做淡入淡出（无方向语义）；进入子页 = 新页自右侧推入、当前页向左让位，
+            // 返回 = 当前页向右滑出、上一页自左侧滑入（见 MotionSpec.navPopExit / navPopEnter）。
             // 判定入/退场两端都取自同一个 `Tabs` 列表，新增 Tab 时不必再改转场。
             enterTransition = {
                 if (tabRoutes.isTabRoute(targetState.destination.route)) {
@@ -296,7 +297,13 @@ fun AppNav() {
                 LaunchedEffect(mistakeId) { mistakeViewModel.openDetail(mistakeId) }
                 MistakeDetailScreen(
                     viewModel = mistakeViewModel,
-                    onBack = { navController.popBackStack() },
+                    // 仅当本 entry 仍是栈顶时才 pop：详情页「标记掌握」的弹跳会在 popExit 的 280ms 里
+                    // 继续留在组合中，若期间用户已用系统返回/手势返回，无脑 popBackStack 会连列表页
+                    // 一起弹掉（多弹一层，落到「学习」）。页面侧另有一道一次性门（leaveOnce），
+                    // 这条兜底管的是不走页面 lambda 的那类返回。
+                    onBack = {
+                        if (navController.currentBackStackEntry == entry) navController.popBackStack()
+                    },
                 )
             }
             composable(MistakeRoutes.CAPTURE) {
