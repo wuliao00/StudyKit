@@ -1,9 +1,6 @@
 package com.studykit.ui.habit
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,10 +22,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -43,22 +40,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EmptyState
+import com.studykit.ui.components.HeatmapWeeks
+import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -72,47 +72,15 @@ private data class SheetTarget(
     val isMakeUp: Boolean,
 )
 
-/** 目标进度环：底环为分割线色，进度弧为强调色，达成后转金色 */
-@Composable
-private fun ProgressRing(progress: Float, modifier: Modifier = Modifier) {
-    val animated by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(DesignTokens.AnimDurationMs, easing = DesignTokens.AnimEasing),
-        label = "progressRing",
-    )
-    val arcColor = if (progress >= 1f) DesignTokens.Gold else DesignTokens.Accent
-    Canvas(modifier = modifier) {
-        val strokeWidth = 5.dp.toPx()
-        val inset = strokeWidth / 2f
-        val arcSize = size.minDimension - strokeWidth
-        val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
-        drawArc(
-            color = DesignTokens.Divider,
-            startAngle = 0f,
-            sweepAngle = 360f,
-            useCenter = false,
-            topLeft = topLeft,
-            size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-            style = Stroke(strokeWidth),
-        )
-        if (animated > 0f) {
-            drawArc(
-                color = arcColor,
-                startAngle = -90f,
-                sweepAngle = 360f * animated,
-                useCenter = false,
-                topLeft = topLeft,
-                size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                style = Stroke(strokeWidth, cap = StrokeCap.Round),
-            )
-        }
-    }
-}
-
 /**
  * 圆形打卡按钮：未打卡为描边空心；打卡后变实心成功色，
  * 并伴随一次「弹跳」缩放动效（0.86 按压 → 1.18 回弹）。
  * 数量型/已打卡（改备注）点击交由调用方路由到打卡弹层。
+ *
+ * 动效全部走 [MotionSpec] 的 spring（`press` 按压回弹 / `snap` 填充淡入），不再用 tween：
+ * 逐帧跟随 vsync，高刷屏按 90/120Hz 渲染。填充色只能整色换、不能逐帧插值
+ * （`MotionSpec.press/snap` 都是 `spring<Float>`），于是把「实心 ↔ 透明」降成一格 alpha
+ * 用同一个 Float spring 补间，观感等价，也不用自造 Color spring。
  */
 @Composable
 private fun CheckInButton(
@@ -120,6 +88,7 @@ private fun CheckInButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = AppTheme.colors
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     var appeared by remember { mutableStateOf(false) }
@@ -131,7 +100,7 @@ private fun CheckInButton(
         }
         if (checked) {
             pop = true
-            delay(DesignTokens.AnimDurationMs.toLong())
+            delay(MotionSpec.FadeMs.toLong())
             pop = false
         }
     }
@@ -141,12 +110,13 @@ private fun CheckInButton(
             pop -> 1.18f
             else -> 1f
         },
-        animationSpec = tween(200, easing = DesignTokens.AnimEasing),
+        animationSpec = MotionSpec.press,
         label = "checkScale",
     )
-    val fill by animateColorAsState(
-        targetValue = if (checked) DesignTokens.Success else Color.Transparent,
-        animationSpec = tween(200, easing = DesignTokens.AnimEasing),
+    // spring 会过冲，alpha 可能短暂越过 1f，故显式钳制
+    val fillAlpha by animateFloatAsState(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = MotionSpec.snap,
         label = "checkFill",
     )
     Box(
@@ -154,10 +124,10 @@ private fun CheckInButton(
             .size(52.dp)
             .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(CircleShape)
-            .background(fill)
+            .background(colors.success.copy(alpha = fillAlpha.coerceIn(0f, 1f)))
             .border(
                 width = 2.dp,
-                color = if (checked) DesignTokens.Success else DesignTokens.SecondaryText.copy(alpha = 0.45f),
+                color = if (checked) colors.success else colors.secondaryText.copy(alpha = 0.45f),
                 shape = CircleShape,
             )
             .clickable(
@@ -177,7 +147,9 @@ private fun CheckInButton(
             Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = null,
-                tint = DesignTokens.Card,
+                // 勾落在 success 实底上：旧值 DesignTokens.Card 是硬白，夜间主题会把深墨勾
+                // 压在亮绿上（1.9:1）；onAccent 才是「实底 accent/success 容器上的字色」令牌
+                tint = colors.onAccent,
                 modifier = Modifier.size(26.dp),
             )
         }
@@ -191,7 +163,22 @@ private fun countdownText(item: HabitItemUi): String = when {
     else -> "已超额 ${-item.remainingDays} 天"
 }
 
-/** 习惯列表页：页标题 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口 */
+/** 热力图窗口宽度：卡片文案「近 N 周坚持」与网格列数同源，改这里即同时改两处 */
+private const val HEATMAP_WEEKS = 8
+
+/** 热力图画布高度：7 行 × 12dp 方格 + 6 × 4dp 间距（[HeatmapWeeks] 取宽高中较小者定边长并居中） */
+private val heatmapCanvasHeight: Dp = 108.dp
+
+/**
+ * 习惯列表页：页标题 + 日历入口 + 近 8 周热力图 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口。
+ *
+ * 颜色与文字样式统一取 `AppTheme`（`gold` 仍是达成态专用色），间距/圆角仍走 [DesignTokens] 的 dp 常量。
+ * 进度环改用共享组件 [RingGauge]（达成换色逻辑保留在本页），打卡庆祝改用 [ConfettiBurst]：
+ * 叠在**页面级** `Box` 的 `matchParentSize` 层上，而不是卡片内部 —— 打卡成功的卡片会在同一帧
+ * 从「待打卡」迁进默认折叠的「今日已打卡」区而卸载，卡片内的粒子根本出不了画；
+ * 且 [AppCard] 的 Surface 带圆角裁剪，会把飞越框外的粒子切成方框（见 ConfettiBurst KDoc）。
+ * 列表条目挂 `Modifier.animateItem()`：卡片在待打卡/已打卡两区之间搬家时有让位与淡入淡出。
+ */
 @Composable
 fun HabitListScreen(
     viewModel: HabitViewModel,
@@ -199,10 +186,32 @@ fun HabitListScreen(
     onAddClick: () -> Unit,
     onOpenCalendar: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var expandedDone by remember { mutableStateOf(false) }
     var sheetTarget by remember { mutableStateOf<SheetTarget?>(null) }
+
+    // 庆祝事件 = (刚打上卡的习惯 id, 事件序号)；序号保证同一习惯二次触发也会重播粒子
+    var celebration by remember { mutableStateOf<Pair<Long, Int>?>(null) }
+    var celebrationCount by remember { mutableStateOf(0) }
+    // null = 还没见过任何一帧非空数据；用它把「冷启动时早已打好的卡」挡在事件之外
+    var checkedIdsSnapshot by remember { mutableStateOf<Set<Long>?>(null) }
+    LaunchedEffect(state.items) {
+        val checked = state.items.filter { it.checkedInToday }.mapTo(mutableSetOf()) { it.habit.id }
+        val previous = checkedIdsSnapshot
+        if (previous == null) {
+            if (state.items.isNotEmpty()) checkedIdsSnapshot = checked
+            return@LaunchedEffect
+        }
+        checkedIdsSnapshot = checked
+        val newcomer = (checked - previous).firstOrNull()
+        if (newcomer != null) {
+            celebrationCount += 1
+            celebration = newcomer to celebrationCount
+        }
+    }
 
     /** 打开打卡弹层（先读取当日既有记录用于预填） */
     fun openSheet(habit: Habit) {
@@ -222,128 +231,147 @@ fun HabitListScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
-    ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = DesignTokens.PageHorizontalPadding),
         ) {
-            Text(text = "习惯", style = DesignTokens.LargeTitle)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onAddClick) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = DesignTokens.Accent,
-                )
-                Spacer(Modifier.width(DesignTokens.SpacingXs))
-                Text(
-                    text = "添加",
-                    style = DesignTokens.Auxiliary.copy(
-                        color = DesignTokens.Accent,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
-        CalendarEntryCard(onClick = onOpenCalendar)
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
-            StatTile(
-                value = "${state.checkedTodayCount}",
-                label = "今日已打卡",
-                modifier = Modifier.weight(1f),
-            )
-            StatTile(
-                value = "${state.items.size}",
-                label = "习惯总数",
-                modifier = Modifier.weight(1f),
-            )
-            StatTile(
-                value = "${state.maxStreak}",
-                label = "最长连续",
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
-
-        if (state.items.isEmpty()) {
-            Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
-            EmptyState(
-                title = "还没有习惯",
-                caption = "每天坚持一小步，21 天养成一个习惯",
-            )
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
-            AppButton(text = "创建第一个习惯", onClick = onAddClick)
-        } else {
-            val pending = state.items.filter { !it.checkedInToday }
-            val done = state.items.filter { it.checkedInToday }
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd),
-                modifier = Modifier.fillMaxSize(),
+            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                items(pending, key = { it.habit.id }) { item ->
-                    HabitCard(
-                        item = item,
-                        onClick = { onOpenHabit(item.habit.id) },
-                        onCheckIn = { onCheckInClick(item) },
+                Text(text = "习惯", style = texts.largeTitle)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onAddClick) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = colors.accentInk,
+                    )
+                    Spacer(Modifier.width(DesignTokens.SpacingXs))
+                    Text(
+                        text = "添加",
+                        style = texts.aux.copy(
+                            color = colors.accentInk,
+                            fontWeight = FontWeight.Medium,
+                        ),
                     )
                 }
-                if (done.isNotEmpty()) {
-                    item(key = "done_fold_header") {
-                        DoneFoldHeader(
-                            count = done.size,
-                            expanded = expandedDone,
-                            onToggle = { expandedDone = !expandedDone },
+            }
+
+            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            CalendarEntryCard(onClick = onOpenCalendar)
+            // 空账号不出全灰热力图（没有任何事实可画时它只是噪声），有习惯才亮出这一卡
+            if (state.items.isNotEmpty()) {
+                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                HeatmapCard(activeDays = state.items.flatMap { it.checkedDates }.toSet())
+            }
+            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+                StatTile(
+                    value = "${state.checkedTodayCount}",
+                    label = "今日已打卡",
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    value = "${state.items.size}",
+                    label = "习惯总数",
+                    modifier = Modifier.weight(1f),
+                )
+                StatTile(
+                    value = "${state.maxStreak}",
+                    label = "最长连续",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.height(DesignTokens.SpacingLg))
+
+            if (state.items.isEmpty()) {
+                Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+                EmptyState(
+                    title = "还没有习惯",
+                    caption = "每天坚持一小步，21 天养成一个习惯",
+                )
+                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                AppButton(text = "创建第一个习惯", onClick = onAddClick)
+            } else {
+                val pending = state.items.filter { !it.checkedInToday }
+                val done = state.items.filter { it.checkedInToday }
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(pending, key = { it.habit.id }) { item ->
+                        HabitCard(
+                            item = item,
+                            modifier = Modifier.animateItem(),
+                            onClick = { onOpenHabit(item.habit.id) },
+                            onCheckIn = { onCheckInClick(item) },
                         )
                     }
-                    if (expandedDone) {
-                        items(done, key = { "done_${it.habit.id}" }) { item ->
-                            HabitCard(
-                                item = item,
-                                onClick = { onOpenHabit(item.habit.id) },
-                                onCheckIn = { onCheckInClick(item) },
+                    if (done.isNotEmpty()) {
+                        item(key = "done_fold_header") {
+                            DoneFoldHeader(
+                                count = done.size,
+                                expanded = expandedDone,
+                                onToggle = { expandedDone = !expandedDone },
+                                modifier = Modifier.animateItem(),
                             )
                         }
+                        if (expandedDone) {
+                            items(done, key = { "done_${it.habit.id}" }) { item ->
+                                HabitCard(
+                                    item = item,
+                                    modifier = Modifier.animateItem(),
+                                    onClick = { onOpenHabit(item.habit.id) },
+                                    onCheckIn = { onCheckInClick(item) },
+                                )
+                            }
+                        }
                     }
+                    item(key = "record_actions") {
+                        RecordActionsCard(
+                            onShare = { viewModel.shareAchievement() },
+                            onExport = { viewModel.exportCsv() },
+                        )
+                    }
+                    item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }
                 }
-                item(key = "record_actions") {
-                    RecordActionsCard(
-                        onShare = { viewModel.shareAchievement() },
-                        onExport = { viewModel.exportCsv() },
-                    )
-                }
-                item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }
             }
         }
-    }
 
-    sheetTarget?.let { target ->
-        CheckInSheet(
-            habit = target.habit,
-            date = target.date,
-            existing = target.existing,
-            isMakeUp = target.isMakeUp,
-            onDismiss = { sheetTarget = null },
-            onConfirm = { note, amount ->
-                viewModel.submitCheckIn(target.habit, target.date, note, amount)
-                sheetTarget = null
-            },
-        )
+        celebration?.let { (habitId, event) ->
+            ConfettiBurst(
+                trigger = habitId to event,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+
+        sheetTarget?.let { target ->
+            CheckInSheet(
+                habit = target.habit,
+                date = target.date,
+                existing = target.existing,
+                isMakeUp = target.isMakeUp,
+                onDismiss = { sheetTarget = null },
+                onConfirm = { note, amount ->
+                    viewModel.submitCheckIn(target.habit, target.date, note, amount)
+                    sheetTarget = null
+                },
+            )
+        }
     }
 }
 
 /** 全局日历入口卡片：打卡记录 × 系统日程 */
 @Composable
 private fun CalendarEntryCard(onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     AppCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -354,28 +382,50 @@ private fun CalendarEntryCard(onClick: () -> Unit) {
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(DesignTokens.Accent.copy(alpha = 0.10f)),
+                    .background(colors.accentSoft),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.DateRange,
                     contentDescription = null,
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                     modifier = Modifier.size(22.dp),
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingMd))
             Column(Modifier.weight(1f)) {
-                Text(text = "日历", style = DesignTokens.CardTitle)
+                Text(text = "日历", style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
-                Text(text = "打卡记录 × 系统日程，看看明天的安排", style = DesignTokens.Caption)
+                Text(text = "打卡记录 × 系统日程，看看明天的安排", style = texts.caption)
             }
             Icon(
-                imageVector = Icons.Filled.KeyboardArrowRight,
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "进入日历",
-                tint = DesignTokens.SecondaryText,
+                tint = colors.secondaryText,
             )
         }
+    }
+}
+
+/**
+ * 近 8 周打卡热力图卡：全部习惯的打卡日期并集，格子只区分「打过 / 没打过」。
+ *
+ * 语义提醒：热力图按天聚合，多个习惯同日打卡也只是一个格子（不是更深的色阶），
+ * 「窗口起点早于习惯创建日」的那几天同样落在灰格子里 —— 与 GitHub 一样的读法。
+ */
+@Composable
+private fun HeatmapCard(activeDays: Set<LocalDate>) {
+    val texts = AppTheme.texts
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = "近 $HEATMAP_WEEKS 周坚持", style = texts.cardTitle)
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        HeatmapWeeks(
+            activeDays = activeDays,
+            weeks = HEATMAP_WEEKS,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(heatmapCanvasHeight),
+        )
     }
 }
 
@@ -385,14 +435,17 @@ private fun DoneFoldHeader(
     count: Int,
     expanded: Boolean,
     onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = tween(DesignTokens.AnimDurationMs, easing = DesignTokens.AnimEasing),
+        animationSpec = MotionSpec.snap,
         label = "foldArrow",
     )
     AppCard(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle),
     ) {
@@ -401,31 +454,31 @@ private fun DoneFoldHeader(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(DesignTokens.Success.copy(alpha = 0.10f)),
+                    .background(colors.successSoft),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Filled.Check,
                     contentDescription = null,
-                    tint = DesignTokens.Success,
+                    tint = colors.success,
                     modifier = Modifier.size(22.dp),
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingMd))
             Column(Modifier.weight(1f)) {
-                Text(text = "今日已打卡 · $count", style = DesignTokens.CardTitle)
+                Text(text = "今日已打卡 · $count", style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
-                Text(text = "完成的事，安静地收在这里", style = DesignTokens.Caption)
+                Text(text = "完成的事，安静地收在这里", style = texts.caption)
             }
             Text(
                 text = if (expanded) "收起" else "展开",
-                style = DesignTokens.Caption.copy(color = DesignTokens.Accent),
+                style = texts.caption.copy(color = colors.accentInk),
             )
             Spacer(Modifier.width(DesignTokens.SpacingXs))
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (expanded) "收起" else "展开",
-                tint = DesignTokens.Accent,
+                tint = colors.accentInk,
                 modifier = Modifier.graphicsLayer(rotationZ = arrowRotation),
             )
         }
@@ -438,12 +491,14 @@ private fun RecordActionsCard(
     onShare: () -> Unit,
     onExport: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     AppCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "记录与分享", style = DesignTokens.CardTitle)
+        Text(text = "记录与分享", style = texts.cardTitle)
         Spacer(Modifier.height(2.dp))
         Text(
             text = "生成「我坚持了 X 天」分享文本，或导出全部打卡记录",
-            style = DesignTokens.Caption,
+            style = texts.caption,
         )
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
@@ -451,15 +506,15 @@ private fun RecordActionsCard(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-                    .background(DesignTokens.Accent.copy(alpha = 0.10f))
+                    .background(colors.accentSoft)
                     .clickable(onClick = onShare)
                     .padding(vertical = DesignTokens.SpacingSm),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "分享成就",
-                    style = DesignTokens.Auxiliary.copy(
-                        color = DesignTokens.Accent,
+                    style = texts.aux.copy(
+                        color = colors.accentInk,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -468,15 +523,15 @@ private fun RecordActionsCard(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-                    .background(DesignTokens.Accent.copy(alpha = 0.10f))
+                    .background(colors.accentSoft)
                     .clickable(onClick = onExport)
                     .padding(vertical = DesignTokens.SpacingSm),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "导出记录（CSV）",
-                    style = DesignTokens.Auxiliary.copy(
-                        color = DesignTokens.Accent,
+                    style = texts.aux.copy(
+                        color = colors.accentInk,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -487,16 +542,19 @@ private fun RecordActionsCard(
 
 /**
  * 习惯卡片：图标 + 名称（达成标记）+ 进度文案 + 倒计时 + 最近备注 + 进度环 + 打卡按钮。
- * 达成后整体转金色态。
+ * 达成后整体转金色态；进度环用共享组件 [RingGauge]，换色策略仍留在本页（达成 = gold）。
  */
 @Composable
 private fun HabitCard(
     item: HabitItemUi,
     onClick: () -> Unit,
     onCheckIn: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     AppCard(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
     ) {
@@ -506,19 +564,18 @@ private fun HabitCard(
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(
-                        if (item.achieved) DesignTokens.Gold.copy(alpha = 0.12f)
-                        else DesignTokens.Accent.copy(alpha = 0.10f),
+                        if (item.achieved) colors.goldSoft else colors.accentSoft,
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = habitIconEmoji(item.habit.icon), fontSize = DesignTokens.Auxiliary.fontSize)
+                Text(text = habitIconEmoji(item.habit.icon), fontSize = texts.aux.fontSize)
             }
             Spacer(Modifier.width(DesignTokens.SpacingMd))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = item.habit.name,
-                        style = DesignTokens.CardTitle,
+                        style = texts.cardTitle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -527,13 +584,13 @@ private fun HabitCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(DesignTokens.Gold.copy(alpha = 0.15f))
+                                .background(colors.goldSoft)
                                 .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
                         ) {
                             Text(
                                 text = "已达成",
-                                style = DesignTokens.Caption.copy(
-                                    color = DesignTokens.Gold,
+                                style = texts.caption.copy(
+                                    color = colors.gold,
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                             )
@@ -547,13 +604,13 @@ private fun HabitCard(
                     } else {
                         "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
                     },
-                    style = DesignTokens.Caption,
+                    style = texts.caption,
                 )
                 Spacer(Modifier.height(1.dp))
                 Text(
                     text = countdownText(item),
-                    style = DesignTokens.Caption.copy(
-                        color = if (item.achieved) DesignTokens.Gold else DesignTokens.SecondaryText,
+                    style = texts.caption.copy(
+                        color = if (item.achieved) colors.gold else colors.secondaryText,
                         fontWeight = if (item.achieved) FontWeight.Medium else FontWeight.Normal,
                     ),
                 )
@@ -561,7 +618,7 @@ private fun HabitCard(
                     Spacer(Modifier.height(1.dp))
                     Text(
                         text = "「${item.latestNote}」",
-                        style = DesignTokens.Caption,
+                        style = texts.caption,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -569,15 +626,17 @@ private fun HabitCard(
             }
             Spacer(Modifier.width(DesignTokens.SpacingSm))
             Box(contentAlignment = Alignment.Center) {
-                ProgressRing(
+                RingGauge(
                     progress = item.progress,
                     modifier = Modifier.size(52.dp),
+                    strokeWidth = 5.dp,
+                    color = if (item.achieved) colors.gold else colors.accent,
                 )
                 Text(
                     text = if (item.achieved) "✓" else "${(item.progress * 100).toInt()}%",
-                    style = DesignTokens.Caption.copy(
+                    style = texts.caption.copy(
                         fontWeight = FontWeight.Medium,
-                        color = if (item.achieved) DesignTokens.Gold else DesignTokens.PrimaryText,
+                        color = if (item.achieved) colors.gold else colors.primaryText,
                     ),
                 )
             }

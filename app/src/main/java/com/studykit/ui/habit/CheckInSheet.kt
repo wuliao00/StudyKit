@@ -21,6 +21,7 @@ import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 import java.time.LocalDate
 
@@ -28,6 +29,10 @@ import java.time.LocalDate
  * 打卡弹层：今日打卡 / 补打卡 / 数量追加共用。
  * - 天数型：填写备注（默认带入习惯默认文案）
  * - 数量型：必填本次数量（可多次累加），备注可选
+ *
+ * 颜色与文字样式取自 `AppTheme`（弹层底色 `card` 随主题变化，夜间不再是硬白），
+ * 间距/圆角仍取 [DesignTokens] 的 dp 常量；提示文案走 `accentInk` 而非 `accent`
+ * （T1 裁定：accent 作纯文字在浅底只有 3.04:1，不达 AA）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +44,8 @@ fun CheckInSheet(
     onDismiss: () -> Unit,
     onConfirm: (note: String, amount: Double) -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val isCountType = habit.targetCount > 0
     var note by rememberSaveable { mutableStateOf(existing?.note?.ifBlank { habit.defaultText } ?: habit.defaultText) }
     var amountText by rememberSaveable { mutableStateOf("") }
@@ -55,7 +62,7 @@ fun CheckInSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
-        containerColor = DesignTokens.Card,
+        containerColor = colors.card,
         shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
     ) {
         androidx.compose.foundation.layout.Column(
@@ -64,14 +71,14 @@ fun CheckInSheet(
                 .padding(horizontal = DesignTokens.PageHorizontalPadding)
                 .padding(bottom = DesignTokens.SpacingXl),
         ) {
-            Text(text = title, style = DesignTokens.PageTitle)
+            Text(text = title, style = texts.pageTitle)
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
                 text = buildString {
                     append("${habit.name} · ${date.monthValue}月${date.dayOfMonth}日")
                     if (isMakeUp) append("（补卡限过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内）")
                 },
-                style = DesignTokens.Caption,
+                style = texts.caption,
             )
 
             if (isCountType) {
@@ -79,8 +86,8 @@ fun CheckInSheet(
                 if (existing != null) {
                     Text(
                         text = "今日已累计 ${formatAmount(existing.amount)} ${habit.unit}，目标 ${formatAmount(habit.targetCount)} ${habit.unit}",
-                        style = DesignTokens.Caption.copy(
-                            color = DesignTokens.Accent,
+                        style = texts.caption.copy(
+                            color = colors.accentInk,
                             fontWeight = FontWeight.Medium,
                         ),
                     )
