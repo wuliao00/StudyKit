@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -508,6 +510,10 @@ private fun RecordActionsCard(
             Box(
                 modifier = Modifier
                     .weight(1f)
+                    // 两块都只有约 36dp 高（15sp 文案 + 上下 8dp），不到 48dp 最小可点目标
+                    // （终审 I9）。挂在链首只撑大**不可见的点击槽位**，
+                    // clip/background 在它下游 ⇒ 看到的色块大小与配色一分不动。
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(AppTheme.radius.md))
                     .background(colors.accentSoft)
                     .clickable(onClick = onShare)
@@ -525,6 +531,7 @@ private fun RecordActionsCard(
             Box(
                 modifier = Modifier
                     .weight(1f)
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(AppTheme.radius.md))
                     .background(colors.accentSoft)
                     .clickable(onClick = onExport)
@@ -571,7 +578,13 @@ private fun HabitCard(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = habitIconEmoji(item.habit.icon), fontSize = texts.aux.fontSize)
+                // 表情图标位：纯装饰（紧邻的习惯名就是它的等价朗读），不清掉语义的话
+                // TalkBack 会在每个习惯前多念一个表情名（「书本 阅读」「靶子 刷题」，终审 I9）。
+                Text(
+                    text = habitIconEmoji(item.habit.icon),
+                    fontSize = texts.aux.fontSize,
+                    modifier = Modifier.clearAndSetSemantics { },
+                )
             }
             Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
@@ -630,6 +643,15 @@ private fun HabitCard(
                 )
                 Text(
                     text = if (item.achieved) "✓" else "${(item.progress * 100).toInt()}%",
+                    // 达成态这里画的是一个「✓」字符，而同一张卡上已经有「已达成」药丸与
+                    // 「目标已达成」那一行 —— 三处同义，读屏只需要一份（终审 I9），故把
+                    // 这枚对勾标成装饰性。**未达成时不摘**：那串百分比是唯一一处播报进度，
+                    // 清掉就等于把进度对读屏彻底弄丢了。图形（环 + 对勾）不受影响。
+                    modifier = if (item.achieved) {
+                        Modifier.clearAndSetSemantics { }
+                    } else {
+                        Modifier
+                    },
                     style = texts.caption.copy(
                         fontWeight = FontWeight.Medium,
                         color = if (item.achieved) colors.goldInk else colors.primaryText,

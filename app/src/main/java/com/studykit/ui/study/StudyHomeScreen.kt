@@ -38,6 +38,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -248,8 +250,18 @@ private fun FlameBadge(days: Int) {
     AppPill(
         container = colors.goldSoft,
         ink = colors.goldInk,
+        // 🔥 是这枚徽章的**装饰**符号（旁边「连续 N 天」就是它的等价文字），留着会让 TalkBack
+        // 念成「火焰 连续 5 天」（终审 I9）。图形照旧绘制，只把朗读换成去掉表情的那句：
+        // clearAndSetSemantics 会清掉 AppPill 内部 Text 的语义，再由这里给一条等价的。
         label = "🔥 连续 $days 天",
-        modifier = Modifier.graphicsLayer { scaleX = s; scaleY = s },
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = s
+                scaleY = s
+            }
+            .clearAndSetSemantics {
+                contentDescription = "连续学习 $days 天"
+            },
     )
 }
 

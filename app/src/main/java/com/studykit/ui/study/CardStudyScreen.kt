@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -506,6 +507,10 @@ private fun SwipeRatingCard(
  * 可见性用 90° 硬切（`alpha = if (visible) 1f else 0f`）：此刻平面正好侧立、投影宽度为 0，
  * 切换点肉眼不可见，也不会出现「两面同时半透明互相透出」的穿帮。
  *
+ * 语义与 alpha 同源：外层翻面平面是 `clickable` 节点，它会把**两面**的文字合并成一条朗读，
+ * 所以 [visible] 为假时整棵子树用 `clearAndSetSemantics` 摘掉 —— TalkBack 任一刻只报朝前的
+ * 那一面（正面＝单词，翻面后＝释义），而不是把两句念在一起。
+ *
  * @param mirrored 背面专用：在自身 `graphicsLayer` 上再转 180°，抵消父层的镜像，
  *   否则背面文字会左右反写。
  */
@@ -525,7 +530,12 @@ private fun CardFace(
                     rotationY = 180f
                     cameraDistance = 16f * density
                 }
-            },
+            }
+            // 两面恒在组合里（翻面要有东西可转），朝后的那面只是 alpha=0 —— 图形上看不见，
+            // 但在 a11y 树里照样存在，TalkBack 会把单词和释义一起念成一句（终审 I9）。
+            // 空块的 clearAndSetSemantics 把整棵子树从语义里摘掉：正面可读单词、
+            // 翻过去之后可读释义，任何时刻只报当前可见的那一面。不影响绘制与布局。
+            .then(if (visible) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
         Column(
             modifier = Modifier

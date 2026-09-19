@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -261,7 +262,10 @@ fun MistakeDetailScreen(
                 Spacer(Modifier.height(AppTheme.space.md))
                 AsyncImage(
                     model = imageFile,
-                    contentDescription = current.title,
+                    // 不写 current.title：标题就在上方一行，重复一次是噪声（终审 I9）。
+                    // 但这枚图**可点**（点开灯箱），清空描述会留下一个「未加标签的按钮」，
+                    // 反而更糟 —— 故换成它真正做的事。
+                    contentDescription = "查看大图",
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -385,6 +389,9 @@ private fun ReviewOption(label: String, onClick: () -> Unit) {
     val texts = AppTheme.texts
     Box(
         modifier = Modifier
+            // 约 34dp 高，够不上 48dp 最小可点目标（终审 I9）。挂在链首 ⇒ 只撑大不可见的
+            // 点击槽位，`clip/background` 在它下游，药丸本身的形状与配色一分不动。
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(colors.accentSoft)
             .clickable(onClick = onClick)

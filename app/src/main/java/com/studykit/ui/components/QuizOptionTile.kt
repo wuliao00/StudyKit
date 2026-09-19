@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
@@ -126,6 +128,23 @@ fun QuizOptionTile(
         enabled = enabled,
         interactionSource = interaction,
         modifier = modifier
+            // 四态此前**只**靠描边配色 + 字母位上那枚已按装饰处理的 ✓/✗ 表达（终审 I10）：
+            // 读屏听到的永远只是一行选项文字，既不知道用户选了哪个，也不知道判对没判对。
+            // 这里把相位写进 stateDescription —— TalkBack 会把它念成该节点的状态后缀。
+            //
+            // 为什么不用 `role = Role.RadioButton` / `selected`：那两个要挂在**与 clickable 同一个**
+            // 语义节点上才不自相矛盾，而本组件的可点节点是 `Surface(onClick)` 内部生成的，
+            // 我们从外层 modifier 去写 role 会与它的 OnClick 语义打架。stateDescription 与
+            // clickable 的语义无重叠，是 brief 明列的可选项之一，且不动任何视觉。
+            .semantics {
+                when (state) {
+                    QuizOptionState.Selected -> stateDescription = "已选中"
+                    QuizOptionState.Correct -> stateDescription = "正确答案"
+                    QuizOptionState.Wrong -> stateDescription = "你选的，回答错误"
+                    // 未选中 / 未判定：不给状态后缀，免得每道题都空念四声「未选中」
+                    QuizOptionState.Idle -> Unit
+                }
+            }
             .fillMaxWidth()
             .graphicsLayer {
                 // 锁定时按压位彻底让路：禁用后 interaction 不会再收到 Release，

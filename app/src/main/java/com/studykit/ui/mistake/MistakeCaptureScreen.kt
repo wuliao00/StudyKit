@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -133,6 +136,8 @@ fun MistakeCaptureScreen(
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                // N 选一的学科表单值 ⇒ 单选组（终审 I10 的同类站点，与题目录入的答案选择器同修）
+                modifier = Modifier.selectableGroup(),
             ) {
                 subjects.forEach { subject ->
                     SubjectOption(
@@ -217,10 +222,19 @@ private fun SubjectOption(label: String, selected: Boolean, onClick: () -> Unit)
     )
     Box(
         modifier = Modifier
+            // 约 34dp 高，够不上 48dp 最小可点目标（终审 I9）。挂在链首 ⇒ 撑大的只是不可见的
+            // 点击槽位，`clip/background/border` 都在它下游，三档颜色的交叉补间一分不动。
+            .minimumInteractiveComponentSize()
             .clip(shape)
             .background(container)
             .border(width = 1.dp, color = stroke, shape = shape)
-            .clickable(onClick = onClick)
+            // `selectable` 顶掉 `clickable`：多挂 Role.RadioButton + 选中态，indication 仍走
+            // 本地默认 ⇒ ripple 与三档颜色补间一分不动（终审 I10 同类站点）
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
     ) {
         Text(

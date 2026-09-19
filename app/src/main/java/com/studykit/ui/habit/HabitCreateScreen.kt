@@ -2,7 +2,6 @@ package com.studykit.ui.habit
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -102,6 +105,10 @@ fun HabitCreateScreen(
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
             verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            // 十二选一的图标选择器：整行标成单选组，读屏才会在组内横滑并播报「已选中」
+            // （终审 I10 的同类站点，brief 点名的是题目录入的答案选择器，这里同一套缺陷）。
+            // 纯语义修饰，不改布局、不改 ripple。
+            modifier = Modifier.selectableGroup(),
         ) {
             IconOptions.forEach { option ->
                 val selected = option == icon
@@ -117,7 +124,12 @@ fun HabitCreateScreen(
                             color = if (selected) colors.accent else colors.divider,
                             shape = CircleShape,
                         )
-                        .clickable { icon = option },
+                        // 48dp 见方，本就不需要 minimumInteractiveComponentSize
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { icon = option },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(text = option, fontSize = texts.pageTitle.fontSize)
@@ -128,7 +140,11 @@ fun HabitCreateScreen(
         Spacer(Modifier.height(AppTheme.space.lg))
         Text(text = "打卡类型", style = texts.caption)
         Spacer(Modifier.height(AppTheme.space.sm))
-        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            // 天数型 / 数量型是二选一的表单值 ⇒ 整行标成单选组（终审 I10 同类站点）
+            modifier = Modifier.selectableGroup(),
+        ) {
             TypeChip(
                 title = "天数型",
                 subtitle = "坚持 N 天",
@@ -174,12 +190,19 @@ fun HabitCreateScreen(
         Spacer(Modifier.height(AppTheme.space.lg))
         Text(text = if (isCountType) "目标期限（天）" else "目标天数", style = texts.caption)
         Spacer(Modifier.height(AppTheme.space.sm))
-        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            // 五选一的表单值 ⇒ 单选组（终审 I10 同类站点）
+            modifier = Modifier.selectableGroup(),
+        ) {
             TargetOptions.forEach { option ->
                 val selected = option == targetDays
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        // 格体约 36dp 高，不到 48dp 最小可点目标（终审 I9）。挂链首只撑
+                        // 不可见的点击槽位，clip/background/border 在它下游 ⇒ 磁贴一分不变。
+                        .minimumInteractiveComponentSize()
                         .clip(RoundedCornerShape(AppTheme.radius.md))
                         .background(
                             if (selected) colors.accentInk else colors.card,
@@ -189,7 +212,11 @@ fun HabitCreateScreen(
                             color = if (selected) colors.accentInk else colors.divider,
                             shape = RoundedCornerShape(AppTheme.radius.md),
                         )
-                        .clickable { targetDays = option }
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { targetDays = option },
+                        )
                         .padding(vertical = AppTheme.space.sm),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -253,7 +280,14 @@ private fun TypeChip(
                 color = if (selected) colors.accent else colors.divider,
                 shape = RoundedCornerShape(AppTheme.radius.md),
             )
-            .clickable(onClick = onClick)
+            // `selectable` 顶掉原 `clickable`：多挂 Role.RadioButton + 选中态，
+            // indication 仍走本地默认 ⇒ ripple 与配色一分不动（终审 I10 同类站点）。
+            // 磁贴本身两行文案 + 16dp 内边距，已在 48dp 之上，不需要 minimumInteractiveComponentSize。
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(AppTheme.space.card),
     ) {
         Text(

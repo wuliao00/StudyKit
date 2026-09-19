@@ -2,7 +2,6 @@ package com.studykit.ui.study
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.components.AppButton
@@ -150,7 +153,11 @@ fun QuestionCreateScreen(
                 Text(text = "正确答案", style = texts.caption)
                 Spacer(Modifier.height(AppTheme.space.sm))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 这是一组「四选一」，读屏必须知道它是个单选组：横向滑动浏览选项、
+                        // 并播报「已选中/未选中」（终审 I10）。纯语义修饰，不参与布局。
+                        .selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 ) {
                     listOf("A", "B", "C", "D").forEachIndexed { index, letter ->
@@ -158,6 +165,10 @@ fun QuestionCreateScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
+                                // 格体约 36dp 高（15sp 字母 + 上下 8dp），够不上 48dp 最小可点
+                                // 目标（终审 I9）。挂在链首：撑大的只是不可见的点击槽位，
+                                // 下面 clip/background/border 都在它下游，磁贴本身一分不变。
+                                .minimumInteractiveComponentSize()
                                 .clip(RoundedCornerShape(AppTheme.radius.md))
                                 .background(if (selected) colors.successSoft else colors.background)
                                 .border(
@@ -165,7 +176,15 @@ fun QuestionCreateScreen(
                                     color = if (selected) colors.success else colors.divider,
                                     shape = RoundedCornerShape(AppTheme.radius.md),
                                 )
-                                .clickable { answerIndex = index }
+                                // `selectable` 而非 `clickable`：给语义挂上 Role.RadioButton + 选中态。
+                                // 它把 interactionSource / indication 一律传 null，而 clickable 对
+                                // null indication 的定义就是「用本地默认 indication」⇒ ripple 照旧，
+                                // 视觉与手感一分不改。
+                                .selectable(
+                                    selected = selected,
+                                    role = Role.RadioButton,
+                                    onClick = { answerIndex = index },
+                                )
                                 .padding(vertical = AppTheme.space.sm),
                             contentAlignment = Alignment.Center,
                         ) {

@@ -482,7 +482,10 @@ private fun AppBottomBar(
                 icon = {
                     Icon(
                         imageVector = tab.icon,
-                        contentDescription = tab.label,
+                        // `contentDescription = null`：这一项**同时**有图标和 `label = Text(tab.label)`，
+                        // 二者被合并进同一个语义节点。这里再给 tab.label 就等于念两遍「学习 学习」
+                        // （终审 I9；T5 起就挂着这条 carry，本波落地）。图标纯装饰，文字那份即等价朗读。
+                        contentDescription = null,
                         modifier = Modifier.graphicsLayer {
                             scaleX = scale
                             scaleY = scale

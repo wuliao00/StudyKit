@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -155,6 +156,10 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
     Box(
         modifier = Modifier
+            // 本体只有约 34dp 高（15sp 文字 + 上下 8dp），低于 48dp 的最小可点目标（终审 I9）。
+            // 挂在链首：撑大的是**不可见的点击槽位**，clip/background 都在它下游，
+            // 药丸画出来仍是原来那么大，只是它在所属行里占的槽变 48dp 高。
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(container)
             .clickable(onClick = onClick)
@@ -432,7 +437,9 @@ private fun MistakeItem(
                 Spacer(Modifier.width(AppTheme.space.md))
                 AsyncImage(
                     model = imageFile,
-                    contentDescription = mistake.title,
+                    // 缩略图就在标题旁边、标题本身就是那份朗读 —— 这里再给 mistake.title 等于
+                    // 念两遍（终审 I9）。列表行本身可点，行名由标题文字承担，故图片按装饰处理。
+                    contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(72.dp)
