@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -115,11 +116,15 @@ object MotionSpec {
      * [CardSwitchOutMs]，这条 slide 的 spring 当时以「页内内联字面量」的形式留报，
      * 本波（波 4 项 4）按裁定原样搬进来 —— **dampingRatio / stiffness 一分未改**。
      *
+     * 类型是 [IntOffset] 而不是这里其余规格的 `<Float>`：它喂的是
+     * `slideInHorizontally(animationSpec: FiniteAnimationSpec<IntOffset>)`，
+     * 原来那行内联字面量就是从那个参数位反推出来的类型，收成具名常量必须把类型写出来。
+     *
      * 它与 [stagger] 近乎同值（0.78 / 260 vs 0.8 / 260）但**刻意不合并**：
      * 两者管的是两个动作（列表逐级进场 vs 单张卡片换页），等值取舍会直接改到翻卡手感，
      * 而那属于动效调参、要等设备走查。留两枚具名常量，正是为了让那次调参只改一处。
      */
-    val cardSwitch = spring<Float>(dampingRatio = 0.8f, stiffness = 260f)
+    val cardSwitch = spring<IntOffset>(dampingRatio = 0.8f, stiffness = 260f)
 
     fun flyOut() = spring<Float>(dampingRatio = 0.62f, stiffness = 550f)
 

@@ -148,7 +148,7 @@ fun AppNav() {
     // 页面自身不再各自补 `.imePadding()`（重复补偿即本条要防的事）。
     Scaffold(
         containerColor = AppTheme.colors.background,
-        contentWindowInsets = WindowInsets.padding,
+        contentWindowInsets = WindowInsets.padding(),
         bottomBar = {
             if (showBottomBar) {
                 AppBottomBar(
