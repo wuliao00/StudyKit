@@ -573,7 +573,9 @@ private fun SessionSummary(
     val texts = AppTheme.texts
     // animateIntAsState 首帧直接落在 target，不会有「0 → N」的滚动，
     // 因此与 `FlameBadge` 同法：先记 born，再让目标值从 0 变到真值触发一次补间。
-    var born by remember { mutableStateOf(false) }
+    // saveable：转屏后 born 恢复为 true ⇒ 目标值不再从 0 起步，两个计数不会凭空重播一遍
+    // （与 QuizScreen 的 `born`、本页 `flipped/pending` 同一条纪律）。
+    var born by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { born = true }
     val shownKnown by animateIntAsState(
         targetValue = if (born) knownCount else 0,

@@ -31,7 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -228,7 +228,8 @@ private fun TodayHeroCard(
 private fun FlameBadge(days: Int) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    var born by remember { mutableStateOf(false) }
+    // saveable：转屏后 born 直接恢复为 true ⇒ 目标值不再从 0.4f 起步，徽章不会凭空再弹一次
+    var born by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { born = true }
     val s by animateFloatAsState(
         targetValue = if (born) 1f else 0.4f,
