@@ -13,7 +13,7 @@
 
 ## ✨ Overview
 
-StudyKit is an all-in-one learning assistant for students and self-learners, featuring an iOS-style minimalist design language guided by the principles of "clarity, deference, and depth." The app runs completely offline, with no network requests or account system. All data is stored locally in a Room database — your privacy is fully protected.
+StudyKit is an all-in-one learning assistant for students and self-learners, built on the v2 "warm paper" dual-theme token system (colors, typography and motion are all dispatched from `ui/theme` and `ui/motion`), which replaces the v1 iOS-style single-theme minimalist tokens. The app runs completely offline, with no network requests or account system. All data is stored locally in a Room database — your privacy is fully protected.
 
 - Day/night dual themes and high-frame-rate interaction motion: a warm-paper light palette and a warm-black dark palette switch automatically with the system, while card flips, check-ins and session results all run on spring animations that follow 90/120Hz refresh rates frame by frame
 
@@ -53,6 +53,7 @@ StudyKit is an all-in-one learning assistant for students and self-learners, fea
 | Navigation Compose | Bottom navigation and page routing |
 | WorkManager | Scheduled check-in reminder tasks |
 | Coil | Cover image loading |
+| androidx.profileinstaller + hand-written baseline profile | Install-time AOT pre-compilation of the startup chain and first-frame hot paths (rules in `app/src/main/baseline-prof.txt`; the CI release job asserts they are packaged as `assets/dexopt/baseline.prof*` in the APK) |
 | Kotlin Coroutines + StateFlow | Coroutine-based async and reactive state management (the app has no preference storage; all UI state is driven by StateFlow) |
 
 Build environment: JDK 17+ / Gradle 8.11 / AGP 8.7.3, with `compileSdk 35` and `minSdk 26`.
@@ -76,9 +77,11 @@ StudyKit/
 │       │   │   ├── study/            #   Study (words / question bank)
 │       │   │   ├── components/       #   Shared components
 │       │   │   ├── nav/              #   Navigation
-│       │   │   └── theme/            #   Theme (iOS minimalist style tokens)
+│       │   │   ├── motion/           #   Motion specs (MotionSpec springs)
+│       │   │   └── theme/            #   Theme (v2 warm-paper dual-theme tokens)
 │       │   ├── util/                 # Utilities
 │       │   └── worker/               # WorkManager reminder tasks
+│       ├── baseline-prof.txt         # Hand-written baseline profile (ART text rules)
 │       └── res/                      # Resources
 ├── docs/
 │   └── screenshots/                  # Screenshots (from real devices)

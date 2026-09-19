@@ -29,10 +29,20 @@
 ### 修复
 - 刷题选项作答后仍可点击 / 触发 ripple 的锁定缺口；详情页返回出现「双弹」的转场竞态
 - 品牌色作文字时不达 AA 的站点（判定文案、状态标签、百分比读数等）全部改用 ink 变体
+- 夜间冷启动顶部「白条闪一下」：新增 `values-night/themes.xml`，窗口状态栏底色直接给夜间暖黑
+  `#1C1B18`（浅色档同步从 v1 的 `#F8F8FA` 改为暖纸底 `#FAF8F2`；两档均仅 API < 35 生效，
+  edge-to-edge 下由 Compose 承担）
+- 启动图标残留的 iOS 蓝 `#007AFF` 改为品牌青绿 `#00A78E`
 
 ### 构建
 - CI 单元测试 73 项（热力图网格、连续天数、滑动判定、书脊色带等纯函数）
 - `versionCode = 2` / `versionName = "2.0.0"`
+- 接入 `androidx.profileinstaller`，并把 `app/src/main/baseline-prof.txt` 重写为 **ART 文本 profile
+  语法**（55 条规则，覆盖启动链、主题/动效令牌层、底栏导航、四 Tab 首帧与背单词热路径）；
+  旧文件里 `Lcom/studykit/ui/theme/** { * }` 那类 R8 keep 写法会被 profile 解析器静默丢弃
+- CI 新增 `release-build` job：`./gradlew --no-daemon assembleRelease` 校验 release（R8 混淆 +
+  资源收缩）可编译，并用 `unzip -l` 断言产物内确有 `assets/dexopt/baseline.prof*`，缺失即 fail。
+  仓库无 signingConfig，该 job 只产未签名包，**不签名、不上传、不发布**
 
 ## [1.0.0] - 2026-08-28
 

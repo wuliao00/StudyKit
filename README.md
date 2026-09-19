@@ -13,7 +13,7 @@
 
 ## ✨ 应用简介
 
-StudyKit 是一款面向学生和自学者的一站式学习助手，采用 iOS 风格的极简设计语言，遵循「清晰、顺从、深度」的设计原则。应用完全离线运行，无任何网络请求与账号体系，所有数据通过 Room 数据库保存在本地，隐私无忧。
+StudyKit 是一款面向学生和自学者的一站式学习助手，设计语言为 v2 的「暖纸感」双主题令牌体系（配色、排版、动效统一由 `ui/theme` 与 `ui/motion` 下发），已不再沿用 v1 的 iOS 风格单主题极简令牌。应用完全离线运行，无任何网络请求与账号体系，所有数据通过 Room 数据库保存在本地，隐私无忧。
 
 - 日/夜双主题与高帧率交互动效：浅色暖纸 / 夜间暖黑两套令牌随系统自动切换，翻卡、打卡、结算全程 spring 驱动，逐帧跟随 90/120Hz 刷新率
 
@@ -53,6 +53,7 @@ StudyKit 是一款面向学生和自学者的一站式学习助手，采用 iOS 
 | Navigation Compose | 底部导航与页面路由 |
 | WorkManager | 定时打卡提醒任务 |
 | Coil | 封面图片加载 |
+| androidx.profileinstaller + 手写 baseline profile | 安装期预编译启动链与首帧热路径（规则见 `app/src/main/baseline-prof.txt`，CI 的 release job 断言其已编入 APK 的 `assets/dexopt/baseline.prof*`） |
 | Kotlin Coroutines + StateFlow | 协程异步与响应式状态管理（应用无偏好设置存储，全部 UI 状态由 StateFlow 驱动） |
 
 构建环境：JDK 17+ / Gradle 8.11 / AGP 8.7.3，`compileSdk 35`、`minSdk 26`。
@@ -76,9 +77,11 @@ StudyKit/
 │       │   │   ├── study/            #   学习（单词/题库）
 │       │   │   ├── components/       #   通用组件
 │       │   │   ├── nav/              #   导航
-│       │   │   └── theme/            #   主题（iOS 极简风格令牌）
+│       │   │   ├── motion/           #   动效规格（MotionSpec spring 常量）
+│       │   │   └── theme/            #   主题（v2 双主题暖纸色板令牌）
 │       │   ├── util/                 # 工具类
 │       │   └── worker/               # WorkManager 提醒任务
+│       ├── baseline-prof.txt         # 手写 baseline profile（ART 文本规则）
 │       └── res/                      # 资源文件
 ├── docs/
 │   └── screenshots/                  # 运行截图（真机实测）

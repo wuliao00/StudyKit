@@ -44,7 +44,7 @@ v2.0 目标：
 
 新增 `ui/motion/MotionSpec.kt`：集中定义 spring 规格（按压、回弹、进入、退场、飞出）与时长常量，替换全部 `tween(DesignTokens.AnimDurationMs)`。spring 逐帧跟随 vsync，在高刷屏上自然按 90/120Hz 渲染。
 
-- **全局转场**：NavHost 子页 push/slide 进、pop 出（`slideIntoContainer`/`material3` 转场）；底部 Tab 切换淡入；与预测式返回手势兼容。
+- **全局转场**：NavHost 子页 push/slide 进、pop 出（`slideIntoContainer`/`material3` 转场）；底部 Tab 切换淡入。**预测式返回手势（原写「兼容」，实为 M2 待办）**：M1 只做了普通 pop 转场，未接 `predictivePopSpec`、manifest 也未加 `enableOnBackInvokedCallback`（navigation-compose 2.8.5 的该参数与系统左缘手势必须真机验证，本机无 SDK 无法核验，加 flag 的风险大于收益；清单见「7. 构建与验证」）。
 - **背单词卡片（重点）**：真 3D 翻面（`graphicsLayer` rotationY + cameraDistance，spring 驱动）；滑动评价——右滑=认识、左滑=不认识，拖拽时卡片倾斜、彩色遮罩与文字透明度跟手，越阈值松手飞出，未到位回弹；底部按钮保留（可达性与替代输入）。
 - **庆祝时刻**：一轮复习结算、习惯目标达成时播放 Canvas 粒子彩带 + 数字滚动（IntState 动画）。
 - **微交互**：列表项 staggered 淡入上移；打卡按钮、折叠箭头、选项点击全部换 spring；按压 0.96 回弹。
@@ -110,6 +110,8 @@ v2.0 目标：
 ## 7. 构建与验证
 
 - 复用现有 `.github/workflows/ci.yml`（push/PR 触发 lint + `testDebugUnitTest` + `assembleDebug`），仅补一步 `actions/upload-artifact` 上传 debug APK，供真机验证；Release 签名不在本次范围。
+- M1 收尾实际口径（2026-09-19 更正）：CI 为两个 job —— `build`（lint / 单测 / debug，并上传 debug 产物，`if-no-files-found: error`）与 `release-build`（`assembleRelease` 只编译不签名、不上传，并用 `unzip -l` 断言 baseline profile 已进 APK）。§2 的「与预测式返回手势兼容」已按此降级。
+- **M2 待办清单（M1 遗留，需真机）**：①预测式返回手势（`predictivePopSpec` + manifest `enableOnBackInvokedCallback`，要验证系统左缘手势与本页横滑/纵滚的边界）；②§5 录入自动化五件套；③baseline profile 的真机收益复测（安装期 AOT 后重测冷启动与翻卡帧率）。
 - 里程碑顺序：M1 合入并出 APK → 用户真机确认观感 → M2 开发（导入页面直接使用 M1 新设计语言）。
 - 文档同步：README 三语 + CHANGELOG 记 v2.0；词库商店需补「数据来源与许可」说明（kajweb/dict 词表许可核对）。
 
