@@ -82,7 +82,10 @@ fun AppButton(
     val containerColor = if (enabled) colors.accentInk else disabledTint
     val borderColor = if (enabled) toneStroke else disabledTint
     val labelStyle = texts.body.copy(fontWeight = FontWeight.Medium, color = labelColor)
-    val contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
+    val contentPadding = PaddingValues(
+        horizontal = AppTheme.space.lg,
+        vertical = AppTheme.space.sm,
+    )
     val buttonModifier = modifier
         .fillMaxWidth()
         .height(AppTheme.size.pill)

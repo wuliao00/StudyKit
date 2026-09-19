@@ -166,6 +166,12 @@ object AppTheme {
 
     /** 阴影 */
     object elevation {
+        /** 无抬升：只靠描边分层的容器（如 [com.studykit.ui.components.StatTile]）取这档，不写裸 0.dp */
+        val none: Dp = 0.dp
+
+        /** 一丝抬升：[com.studykit.ui.components.AppCard] 那类「柔光描边已经负责分层」的卡面 */
+        val hairline: Dp = 1.dp
+
         /** 卡片与浮层的默认抬升 */
         val low: Dp = 2.dp
     }

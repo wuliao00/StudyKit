@@ -11,7 +11,9 @@ import androidx.compose.ui.unit.dp
 import com.studykit.ui.theme.AppTheme
 
 /**
- * 通用卡片：20dp 圆角 + 1dp 柔光描边 + 1dp 低阴影（「描边代替阴影」的暖纸感观感）。
+ * 通用卡片：20dp 圆角 + 1dp 柔光描边 + 一丝抬升（`AppTheme.elevation.hairline`，
+ * 「描边代替阴影」的暖纸感观感）。描边已经负责把卡面与页面底色分层，阴影只留这一丝；
+ * 若设备走查判定它太贴地，改取 `AppTheme.elevation.low` 只是一个令牌的宽度。
  * 卡面取 `colors.card`，**随主题变化**（浅色 `#FFFFFF`／夜间 `#26241F`），不是固定白色。
  * 颜色显式来自 [AppTheme.colors]，不依赖 MaterialTheme 的局部覆写。
  */
@@ -27,7 +29,7 @@ fun AppCard(
         color = colors.card,
         contentColor = colors.primaryText,
         border = BorderStroke(1.dp, colors.divider.copy(alpha = 0.6f)),
-        shadowElevation = 1.dp,
+        shadowElevation = AppTheme.elevation.hairline,
     ) {
         Column(modifier = Modifier.padding(AppTheme.space.card)) {
             content()

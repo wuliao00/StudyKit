@@ -40,7 +40,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
@@ -209,7 +208,11 @@ private fun TodayHeroCard(
                     strokeWidth = 9.dp,
                     color = if (progress >= 1f && total > 0) colors.goldInk else colors.accent,
                 )
-                Text(text = "$todayDone", style = texts.statValue.copy(fontSize = 28.sp))
+                // 环心读数用既有的 statValue 原样：这里此前是 `statValue.copy(fontSize = 28.sp)`，
+                // 凭空造了一个刻度外的字号。statValue 本就是「粗体 + (-0.5)sp 字距」的大数字档，
+                // 与 28sp 那份是同一血脉（pageTitle 是 22sp SemiBold，换了等于换一档字重），
+                // 且刷题结果页 132dp 环的环心数字用的就是它 —— 两页的环心数同一档。
+                Text(text = "$todayDone", style = texts.statValue)
             }
             Spacer(Modifier.width(AppTheme.space.lg))
             Column(Modifier.weight(1f)) {

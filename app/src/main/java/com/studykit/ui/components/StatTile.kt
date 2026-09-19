@@ -31,7 +31,7 @@ fun StatTile(
         color = colors.card,
         contentColor = colors.primaryText,
         border = BorderStroke(1.dp, colors.divider.copy(alpha = 0.6f)),
-        shadowElevation = 0.dp,
+        shadowElevation = AppTheme.elevation.none,
     ) {
         Column(modifier = Modifier.padding(AppTheme.space.card)) {
             Text(text = value, style = texts.statValue, maxLines = 1)
