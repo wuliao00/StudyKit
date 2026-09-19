@@ -1,7 +1,6 @@
 package com.studykit.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
@@ -11,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.rotate
+import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import kotlin.math.cos
 import kotlin.math.sin
@@ -79,7 +79,7 @@ fun ConfettiBurst(
         progress.snapTo(targetValue = 0f)
         progress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = durationMillis, easing = MotionSpec.Easing),
         )
     }
     Canvas(modifier = modifier) {

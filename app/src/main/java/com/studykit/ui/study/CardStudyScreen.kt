@@ -2,7 +2,6 @@ package com.studykit.ui.study
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.spring
@@ -586,12 +585,12 @@ private fun SessionSummary(
     LaunchedEffect(Unit) { born = true }
     val shownKnown by animateIntAsState(
         targetValue = if (born) knownCount else 0,
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = MotionSpec.CountUpMs, easing = MotionSpec.Easing),
         label = "summaryKnown",
     )
     val shownUnknown by animateIntAsState(
         targetValue = if (born) unknownCount else 0,
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = MotionSpec.CountUpMs, easing = MotionSpec.Easing),
         label = "summaryUnknown",
     )
     val total = knownCount + unknownCount

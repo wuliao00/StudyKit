@@ -2,6 +2,7 @@ package com.studykit.ui.motion
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -60,6 +61,15 @@ object MotionSpec {
      * 由各列表页共用（书架等），故收在这里而不是散在调用方的 private 常量里。
      */
     const val StaggerIndexCap = 8
+
+    /**
+     * 补间曲线的统一缓动：时长类动画（[FadeMs]、[NavExitFadeMs]、[CountUpMs]）一律配这条。
+     * 收在这里是为了让页面不再各自 `import FastOutSlowInEasing`。
+     */
+    val Easing = FastOutSlowInEasing
+
+    /** 结算数字滚动（认识/不认识、正确率）的补间时长，Int 毫秒 */
+    const val CountUpMs = 700
 
     val press = spring<Float>(dampingRatio = 0.55f, stiffness = 420f)
     val snap = spring<Float>(dampingRatio = 0.72f, stiffness = 380f)

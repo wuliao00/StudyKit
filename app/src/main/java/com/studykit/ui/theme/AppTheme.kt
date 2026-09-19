@@ -140,7 +140,7 @@ object AppTheme {
         val card: Dp = 16.dp
     }
 
-    /** 圆角：与 `MaterialTheme.shapes` 同源（见 Theme.kt） */
+    /** 圆角：`md`/`lg` 即 `MaterialTheme.shapes` 的 medium/large（见 Theme.kt），`xl` 只用于胶囊按钮 */
     object radius {
         /** 常规卡片/药丸 */
         val md: Dp = 16.dp
@@ -148,8 +148,14 @@ object AppTheme {
         /** 大图、图片卡 */
         val lg: Dp = 20.dp
 
-        /** 胶囊按钮专用（52dp 高度的一半） */
+        /** 胶囊按钮专用，恒为 [size.pill] 高度的一半 */
         val xl: Dp = 26.dp
+    }
+
+    /** 尺寸：被圆角等其它令牌引用的固定度量 */
+    object size {
+        /** 主/次操作按钮与打卡圆钮的高度（`radius.xl` 即其一半） */
+        val pill: Dp = 52.dp
     }
 
     /** 阴影 */

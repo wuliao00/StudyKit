@@ -62,7 +62,7 @@ fun AppButton(
     val contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
     val buttonModifier = modifier
         .fillMaxWidth()
-        .height(52.dp)
+        .height(AppTheme.size.pill)
         .graphicsLayer { scaleX = scale; scaleY = scale }
 
     if (secondary) {

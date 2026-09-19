@@ -1,6 +1,5 @@
 package com.studykit.ui.study
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -37,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.ui.motion.MotionSpec
 import com.studykit.data.entity.Question
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
@@ -332,7 +332,7 @@ private fun QuizResult(
     LaunchedEffect(Unit) { born = true }
     val shownPercent by animateIntAsState(
         targetValue = if (born) percent else 0,
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = MotionSpec.CountUpMs, easing = MotionSpec.Easing),
         label = "quizAccuracy",
     )
     val progress = if (total == 0) 0f else percent / 100f

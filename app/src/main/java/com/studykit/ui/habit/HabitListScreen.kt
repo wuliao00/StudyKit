@@ -121,7 +121,7 @@ private fun CheckInButton(
     )
     Box(
         modifier = modifier
-            .size(52.dp)
+            .size(AppTheme.size.pill)
             .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(CircleShape)
             .background(colors.successSoft.copy(alpha = colors.successSoft.alpha * fillAlpha.coerceIn(0f, 1f)))
@@ -630,7 +630,7 @@ private fun HabitCard(
             Box(contentAlignment = Alignment.Center) {
                 RingGauge(
                     progress = item.progress,
-                    modifier = Modifier.size(52.dp),
+                    modifier = Modifier.size(AppTheme.size.pill),
                     strokeWidth = 5.dp,
                     color = if (item.achieved) colors.goldInk else colors.accent,
                 )

@@ -21,7 +21,7 @@ object Palette {
     val LightWarning = Color(0xFFFF5A52)
     val LightWarningInk = Color(0xFFC0332C)  // 5.60:1 / 5.27:1 / 5.02:1（warningSoft＝warning 10% 压白）；warning 本身仅 3.07:1
     val LightDivider = Color(0xFFE7E2D8)
-    val LightHeatIdle = Color(0xFFE7E2D8)    // 热力图空格＝divider 满不透明（1.29:1 vs 卡面）；此前 divider@50% 只有 1.13:1
+    val LightHeatIdle = LightDivider          // 热力图空格直接取 divider 满不透明（1.29:1 vs 卡面）；此前 divider@50% 只有 1.13:1
     val LightLightbox = Color(0xFF000000)    // 全屏看图的取景框黑（不随主题变，两主题同值）
     // 深色（暖黑，非纯黑）
     val DarkBackground = Color(0xFF1C1B18)
@@ -32,13 +32,13 @@ object Palette {
     val DarkAccentInk = Color(0xFF65D7C2)    // DarkAccent 同色相提亮版：暖黑底上文本更清晰
     val DarkOnAccent = Color(0xFF1C1B18)     // 实底按钮文字色（暖墨）：accentInk #65D7C2 上 9.88:1；白字在此底仅 1.74:1
     val DarkSuccess = Color(0xFF4CD07D)
-    // 夜间墨水＝品牌色本身：暖黑卡面 #26241F 上三者分别有 7.84 / 10.12 / 6.12:1，
-    // 压在各自 soft 柔底（提亮后的暗卡）上也有 5.65 / 6.46 / 4.66:1，无需再提亮
-    val DarkSuccessInk = Color(0xFF4CD07D)
+    // 夜间墨水＝品牌色本身（故直接取别名，改品牌色时墨水自动跟上）：暖黑卡面 #26241F 上
+    // 三者分别有 7.84 / 10.12 / 6.12:1，压在各自 soft 柔底（提亮后的暗卡）上也有 5.65 / 6.46 / 4.66:1
+    val DarkSuccessInk = DarkSuccess
     val DarkGold = Color(0xFFFFC94D)
-    val DarkGoldInk = Color(0xFFFFC94D)
+    val DarkGoldInk = DarkGold
     val DarkWarning = Color(0xFFFF7A73)
-    val DarkWarningInk = Color(0xFFFF7A73)
+    val DarkWarningInk = DarkWarning
     val DarkDivider = Color(0xFF3A372F)
     val DarkHeatIdle = Color(0xFF454136)     // 热力图空格：比 divider 再提一档（1.52:1 vs 卡面，与 accent 实底格 4.80:1）；divider 满不透明只 1.30:1、@50% 仅 1.14:1
     val DarkLightbox = Color(0xFF000000)     // 同浅色：灯箱取景框不随主题变

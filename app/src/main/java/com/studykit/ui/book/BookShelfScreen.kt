@@ -46,11 +46,12 @@ import com.studykit.ui.theme.AppTheme
 private val SpineBandWidth: Dp = 6.dp
 
 /**
- * 状态标签（柔底药丸）：`在读 = accentSoft + accentInk`、`读完 = successSoft + primaryText`。
+ * 状态标签（柔底药丸）：`在读 = accentSoft + accentInk`、`读完 = successSoft + successInk`。
  *
- * 旧写法是「Success/Accent 实色 12% 底 + 同色文字」，而 accent 作文字色只有 3.04:1（T1 裁定：
- * 文本态必须走 `accentInk`）；success 作文字色同样只有 ≈2.2:1，故读完态药丸的墨色取 `primaryText`
- * —— 容器已经是 successSoft，颜色语义由容器承担，不必再让文字去扛对比度。
+ * 旧写法是「Success/Accent 实色 12% 底 + 同色文字」，而品牌色作文字色在浅色卡上只有
+ * 3.04:1（accent）/ ≈2.2:1（success），都不达文本 AA（T1 裁定：文本态一律走 `*Ink`）。
+ * T15 补齐 `successInk` 后，两态墨色统一取本族 ink 而非 `primaryText`：容器负责「有状态」，
+ * 墨色负责「哪个状态」，色觉之外也能靠深浅读出区别。
  */
 @Composable
 private fun StatusTag(finished: Boolean) {

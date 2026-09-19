@@ -50,7 +50,7 @@ fun HeatmapWeeks(
     val cells = remember(today, cols) { buildHeatmapCells(today, cols) }
     val activeDayCount = cells.sumOf { column -> column.count { it != null && it in activeDays } }
     val idleColor = colors.heatIdle
-    val gap = 4.dp
+    val gap = AppTheme.space.xs
     Canvas(
         modifier = modifier.semantics {
             contentDescription = "近 $cols 周打卡热力图，$activeDayCount 天有打卡"
