@@ -10,12 +10,14 @@ import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.Excerpt
 import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -90,22 +92,40 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
     fun observeReview(reviewId: Long): Flow<BookReview?> = repository.observeReview(reviewId)
 
     // ── 详情页状态 ──────────────────────────────────────────────────────
-    private val _detail = MutableStateFlow<BookDetailUi?>(null)
-    val detail: StateFlow<BookDetailUi?> = _detail
-    private var detailJob: Job? = null
+    /** 页面请求的书本 id（route 上的 `bookId`），由页面自己的 LaunchedEffect 写入 */
+    private val _detailId = MutableStateFlow<Long?>(null)
+    val detailId: StateFlow<Long?> = _detailId
+
+    /**
+     * 详情页状态。
+     *
+     * 旧写法是 `viewModelScope.launch { combine(...).collect { _detail.value = it } }`
+     * （终审 I12）：订阅挂在 `viewModelScope` 上，离开详情页后它照样跟着书摘/书评的每次
+     * 写库重算一遍。改成 flatMapLatest + `stateIn(WhileSubscribed(5_000))`，形态与
+     * `MistakeViewModel.detailState`、`HabitViewModel.detail` 一致：无人订阅即退订。
+     */
+    // flatMapLatest 仍是实验 API：opt-in 只挂在调用点
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val detail: StateFlow<BookDetailUi?> = _detailId
+        .flatMapLatest { id ->
+            if (id == null) {
+                flowOf(null)
+            } else {
+                combine(
+                    repository.observeById(id),
+                    repository.observeExcerpts(id),
+                    repository.observeReviews(id),
+                ) { book, excerpts, reviews ->
+                    if (book == null) null else BookDetailUi(book, excerpts, reviews)
+                }
+            }
+        }
+        // 这一段只是把三条流拼成一个不可变快照，没有 transform/分组/解析，故不加 flowOn
+        // （终审 I7 的自查口径：纯组装直传不加）
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun loadDetail(bookId: Long) {
-        if (_detail.value?.book?.id == bookId) return
-        detailJob?.cancel()
-        detailJob = viewModelScope.launch {
-            combine(
-                repository.observeById(bookId),
-                repository.observeExcerpts(bookId),
-                repository.observeReviews(bookId),
-            ) { book, excerpts, reviews ->
-                if (book == null) null else BookDetailUi(book, excerpts, reviews)
-            }.collect { _detail.value = it }
-        }
+        _detailId.value = bookId
     }
 
     // ── 书籍操作 ────────────────────────────────────────────────────────
@@ -145,7 +165,7 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 页码步进（+/-），越界自动夹取到 0..totalPages；到达总页数时标记读完 */
     fun stepProgress(delta: Int) {
-        val book = _detail.value?.book ?: return
+        val book = detail.value?.book ?: return
         val target = (book.currentPage + delta).coerceIn(0, book.totalPages)
         viewModelScope.launch {
             if (target >= book.totalPages && book.status == Book.STATUS_READING) {
@@ -159,7 +179,7 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 直接标记读完 */
     fun markFinished() {
-        val book = _detail.value?.book ?: return
+        val book = detail.value?.book ?: return
         if (book.status == Book.STATUS_FINISHED) return
         viewModelScope.launch {
             repository.markFinished(book.id)

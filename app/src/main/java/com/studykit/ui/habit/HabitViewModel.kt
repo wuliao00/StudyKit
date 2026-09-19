@@ -10,13 +10,13 @@ import com.studykit.data.entity.Habit
 import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -177,29 +177,48 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HabitListUiState())
 
     // ── 日历页状态 ────────────────────────────────────────────────────────
-    private val _detail = MutableStateFlow<HabitDetailUi?>(null)
-    val detail: StateFlow<HabitDetailUi?> = _detail
-    private var detailJob: Job? = null
+    /** 页面请求的习惯 id（route 上的 `habitId`），由页面自己的 LaunchedEffect 写入 */
+    private val _detailId = MutableStateFlow<Long?>(null)
+    val detailId: StateFlow<Long?> = _detailId
+
+    /**
+     * 日历页状态。
+     *
+     * 旧写法是 `viewModelScope.launch { combine(...).collect { _detail.value = it } }`
+     * （终审 I12）：`viewModelScope` 要活到 VM 销毁，页面早就关了这条订阅还在，
+     * 之后每次打卡写库都白算一遍全量 parse + 连续天数。换成 flatMapLatest +
+     * `stateIn(WhileSubscribed(5_000))` —— 与本页 [uiState]、`MistakeViewModel.detailState`
+     * 同一形态：离开页面 5s 后自动退订，期间回到页面还能拿上一份值，不会闪空态。
+     */
+    // flatMapLatest 仍是实验 API：按调用点局部 opt-in（与 [uiState] 同一理由）
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val detail: StateFlow<HabitDetailUi?> = _detailId
+        .flatMapLatest { id ->
+            if (id == null) {
+                flowOf(null)
+            } else {
+                combine(
+                    repository.observeAll(),
+                    repository.observeCheckIns(id),
+                ) { habits, checkIns ->
+                    val habit = habits.firstOrNull { it.id == id } ?: return@combine null
+                    val dates = checkIns.toLocalDates()
+                    HabitDetailUi(
+                        habit          = habit,
+                        checkedDates   = dates,
+                        totalCheckDays = dates.size,
+                        totalAmount    = checkIns.sumOf { it.amount },
+                        streak         = habitStreak(dates),
+                    )
+                }
+            }
+        }
+        // 这一段同样逐条 parse + 回溯连续天数，跟着 [uiState] 一起下推 Default（终审 I7）
+        .flowOn(context = Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun loadDetail(habitId: Long) {
-        if (_detail.value?.habit?.id == habitId) return
-        detailJob?.cancel()
-        detailJob = viewModelScope.launch {
-            combine(
-                repository.observeAll(),
-                repository.observeCheckIns(habitId),
-            ) { habits, checkIns ->
-                val habit = habits.firstOrNull { it.id == habitId } ?: return@combine null
-                val dates = checkIns.toLocalDates()
-                HabitDetailUi(
-                    habit          = habit,
-                    checkedDates   = dates,
-                    totalCheckDays = dates.size,
-                    totalAmount    = checkIns.sumOf { it.amount },
-                    streak         = habitStreak(dates),
-                )
-            }.collect { _detail.value = it }
-        }
+        _detailId.value = habitId
     }
 
     /** 查某习惯某日的既有打卡记录（打卡弹层预填用） */
