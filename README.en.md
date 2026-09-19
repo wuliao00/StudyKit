@@ -15,6 +15,8 @@
 
 StudyKit is an all-in-one learning assistant for students and self-learners, featuring an iOS-style minimalist design language guided by the principles of "clarity, deference, and depth." The app runs completely offline, with no network requests or account system. All data is stored locally in a Room database — your privacy is fully protected.
 
+- Day/night dual themes and high-frame-rate interaction motion: a warm-paper light palette and a warm-black dark palette switch automatically with the system, while card flips, check-ins and session results all run on spring animations that follow 90/120Hz refresh rates frame by frame
+
 ## 📦 Four Core Modules
 
 ### 📚 Study Module (Vocabulary / Quizzes)
