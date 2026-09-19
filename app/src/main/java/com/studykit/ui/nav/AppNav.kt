@@ -18,7 +18,6 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -294,9 +293,12 @@ fun AppNav() {
                 arguments = listOf(navArgument("mistakeId") { type = NavType.LongType }),
             ) { entry ->
                 val mistakeId = entry.arguments?.getLong("mistakeId") ?: 0L
-                LaunchedEffect(mistakeId) { mistakeViewModel.openDetail(mistakeId) }
+                // `openDetail` 不在这里发：发在 entry 里时本页首帧读到的仍是上一道错题的 detail，
+                // 用户却在 B 的 route 上，此时任何写动作都会落到 A（终审 C1）。
+                // 现在只把 route 上的 id 交下去，页面自己用它当渲染与动作的准绳。
                 MistakeDetailScreen(
                     viewModel = mistakeViewModel,
+                    mistakeId = mistakeId,
                     // 仅当本 entry 仍是栈顶时才 pop：详情页「标记掌握」的弹跳会在 popExit 的 280ms 里
                     // 继续留在组合中，若期间用户已用系统返回/手势返回，无脑 popBackStack 会连列表页
                     // 一起弹掉（多弹一层，落到「学习」）。页面侧另有一道一次性门（leaveOnce），

@@ -90,7 +90,12 @@ fun HabitCalendarScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     LaunchedEffect(habitId) { viewModel.loadDetail(habitId) }
-    val detail by viewModel.detail.collectAsStateWithLifecycle()
+    // 只认「答的就是本习惯」的应答（终审 C1 的同类站点）：`loadDetail` 是异步的，换习惯进来的
+    // 那一帧 VM 里留着的还是上一个习惯的 detail —— 页面下方所有 `detail?.` 都会跟着渲染错的题，
+    // 补打卡弹层更会把卡打到另一个习惯上（`submitCheckIn(habit, …)` 的 habit 就取自这里）。
+    // 挡成 null 后本页的 safe-call 兜底自动退回「加载中」的空网格形态，不需要新造视觉。
+    val detail = viewModel.detail.collectAsStateWithLifecycle().value
+        ?.takeIf { it.habit.id == habitId }
     var month by remember { mutableStateOf(YearMonth.now()) }
     // 翻月方向：+1 = 往未来（新网格从右侧进），-1 = 回过去。与 month 同一帧写入，
     // 因此 AnimatedContent 触发转场时读到的就是本次手势的方向。

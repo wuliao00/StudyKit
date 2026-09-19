@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -66,6 +67,11 @@ private fun sourceLabel(source: String): String = when (source) {
  * 错题详情页：大图查看（点击放大）+ 内容/备注 + 学科/来源/时间信息，
  * 操作：编辑学科、设置复习时间（快捷项）、标记已掌握、删除。
  *
+ * **route 上的 `mistakeId` 是本页唯一的准绳**（终审 C1）：`openDetail` 由本页 `LaunchedEffect` 发起，
+ * VM 交出的行要与它比过才敢渲染（[renderMistakeDetail]），比对不过就是加载态 —— 加载态里整棵内容树
+ * 不组合，故「标记掌握 / 设复习时间 / 删除 / 改学科」四条写路径没有一条能在数据还没答到这一道时按下；
+ * 四条写路径传的也都是 `mistakeId` 本身，而不是渲染出来的那一行的 id。
+ *
  * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量；
  * 「标记掌握 / 已掌握 / 删除」这类**文字**走 `successInk/warningInk`（品牌色作字在浅色主题不达 AA）。
  *
@@ -83,11 +89,16 @@ private fun sourceLabel(source: String): String = when (source) {
 @Composable
 fun MistakeDetailScreen(
     viewModel: MistakeViewModel,
+    mistakeId: Long,
     onBack: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val mistake by viewModel.detail.collectAsStateWithLifecycle()
+    // 请求由**页面**发起（与 `BookDetailScreen` / `HabitCalendarScreen` 同一套纪律）：
+    // 放在 `AppNav` 的 entry 里时，本页首帧读到的仍是上一道错题的 detail —— 见 [renderMistakeDetail]。
+    LaunchedEffect(mistakeId) { viewModel.openDetail(mistakeId) }
+    val detailState by viewModel.detailState.collectAsStateWithLifecycle()
+    val render = renderMistakeDetail(state = detailState, mistakeId = mistakeId)
     var showFullImage by remember { mutableStateOf(false) }
     var showSubjectDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -120,8 +131,35 @@ fun MistakeDetailScreen(
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
     val reviewFormat = remember { SimpleDateFormat("MM月dd日", Locale.getDefault()) }
 
-    val current = mistake
-    if (current == null) {
+    // ── 页相一：VM 还没答到这一道 → 加载态。整棵内容树（含标记掌握 / 设复习时间 / 删除 /
+    //    编辑学科四类写动作）都不组合，也就没有任何一条路径能写到别的行上去。
+    if (render is MistakeDetailRender.Loading) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = AppTheme.space.pageH),
+        ) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            IconButton(onClick = { leaveOnce() }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    // 图标落在页面底色上，按 T1 裁定走 accentInk（accent 仅 3.04:1）
+                    tint = colors.accentInk,
+                )
+            }
+            Spacer(Modifier.height(AppTheme.space.xl * 2))
+            // 与 `CardStudyScreen` 会话装载中的 loading 同一枚观感，不新造视觉
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(color = colors.accent)
+            }
+        }
+        return
+    }
+
+    // ── 页相二：答完了但库里没有这一行（被别处删了）
+    if (render is MistakeDetailRender.Missing) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = AppTheme.space.pageH),
         ) {
@@ -139,6 +177,9 @@ fun MistakeDetailScreen(
         return
     }
 
+    val current = (render as MistakeDetailRender.Ready).mistake
+    // 到这里 `current.id == mistakeId` 是由 [renderMistakeDetail] 保证的：
+    // 下面所有写动作一律喂 route 上的 [mistakeId]，不喂渲染出来的行。
     val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -164,7 +205,7 @@ fun MistakeDetailScreen(
                     TextButton(
                         onClick = {
                             if (!masteredBounce) {
-                                viewModel.markMastered(current.id)
+                                viewModel.markMastered(mistakeId)
                                 masteredBounce = true
                             }
                         },
@@ -261,9 +302,9 @@ fun MistakeDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
             ) {
-                ReviewOption("明天") { viewModel.setReviewAt(current.id, dayOffset(1)) }
-                ReviewOption("三天后") { viewModel.setReviewAt(current.id, dayOffset(3)) }
-                ReviewOption("一周后") { viewModel.setReviewAt(current.id, dayOffset(7)) }
+                ReviewOption("明天") { viewModel.setReviewAt(mistakeId, dayOffset(1)) }
+                ReviewOption("三天后") { viewModel.setReviewAt(mistakeId, dayOffset(3)) }
+                ReviewOption("一周后") { viewModel.setReviewAt(mistakeId, dayOffset(7)) }
             }
 
             // ── 学科归类 ──────────────────────────────────────────────────
@@ -291,7 +332,7 @@ fun MistakeDetailScreen(
             initial = current.subject,
             onDismiss = { showSubjectDialog = false },
             onConfirm = { subject ->
-                viewModel.updateSubject(current.id, subject)
+                viewModel.updateSubject(mistakeId, subject)
                 showSubjectDialog = false
             },
         )
@@ -306,7 +347,7 @@ fun MistakeDetailScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteDialog = false
-                    viewModel.delete(current.id) { leaveOnce() }
+                    viewModel.delete(mistakeId) { leaveOnce() }
                 }) {
                     Text(text = "删除", color = colors.warningInk)
                 }

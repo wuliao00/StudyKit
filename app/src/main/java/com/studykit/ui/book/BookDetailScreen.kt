@@ -135,7 +135,11 @@ fun BookDetailScreen(
             }
         }
 
-        val ui = detail
+        // 只认「答的就是本书」的应答（终审 C1 的同类站点）：`loadDetail(bookId)` 是异步的，
+        // 换书进来的那一帧 VM 里留着的还是上一本书的 detail。不挡的话这里渲染的是上一本书，
+        // 而 -10 / +10 / 标记读完 走的是 `viewModel.stepProgress()`（它读 VM 当前 detail），
+        // 进度与「读完」会写到另一本书上。
+        val ui = detail?.takeIf { it.book.id == bookId }
         if (ui == null) {
             Spacer(Modifier.height(AppTheme.space.xl * 2))
             Text(

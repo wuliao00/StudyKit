@@ -27,6 +27,50 @@ import java.io.File
 data class SubjectGroup(val subject: String, val items: List<Mistake>)
 
 /**
+ * 详情页的一次数据应答。
+ *
+ * [id] 是这条应答所属的错题 id —— 页面必须拿 route 上的 `mistakeId` 与它比对，比对不过就还在
+ * 加载态（否则「上一道题的行」会被当成当前页的内容渲染，见 [MistakeViewModel.detailState]）。
+ * [answered] 标记数据库是否已就这个 id 完成过一次读取：只有它是 true 时
+ * [mistake] == null 才读得出「库里确实没有这一行」，否则只是「还没回话」。
+ */
+data class MistakeDetailState(
+    val id: Long? = null,
+    val mistake: Mistake? = null,
+    val answered: Boolean = false,
+)
+
+/** 错题详情页面相：由「route id」与「VM 应答」两者的比对唯一决定 */
+internal sealed interface MistakeDetailRender {
+
+    /** 还没答到这一道（首次读取在飞，或 VM 仍在答上一道）→ 只出加载态，页面上没有任何写动作 */
+    internal data object Loading : MistakeDetailRender
+
+    /** 已答完且库里确实没有这一行（被别处删掉了）→ 出「不存在」文案 */
+    internal data object Missing : MistakeDetailRender
+
+    /** 应答的行就是 `mistakeId` 那道题：渲染与动作都以它为准 */
+    internal data class Ready(val mistake: Mistake) : MistakeDetailRender
+}
+
+/**
+ * 页相判定（纯函数，零 Android 依赖，可在 JVM 单测里直取）：
+ * `id` 不同或还没答完 → [MistakeDetailRender.Loading]；答完且没有行 →
+ * [MistakeDetailRender.Missing]；否则 [MistakeDetailRender.Ready]。
+ *
+ * 顺序不能反：不匹配时 [MistakeDetailState.mistake] 里躺着的可能是**另一道**题的行，
+ * 直接判「非空即渲染」就是终审 C1 的写错目标行。
+ */
+internal fun renderMistakeDetail(
+    state: MistakeDetailState,
+    mistakeId: Long,
+): MistakeDetailRender = when {
+    state.id != mistakeId || !state.answered -> MistakeDetailRender.Loading
+    state.mistake == null -> MistakeDetailRender.Missing
+    else -> MistakeDetailRender.Ready(state.mistake)
+}
+
+/**
  * 错题模块 ViewModel：列表（学科筛选 + 分组）、拍照录入、详情操作。
  */
 class MistakeViewModel(application: Application) : AndroidViewModel(application) {
@@ -94,14 +138,31 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // ── 详情 ──────────────────────────────────────────────────────────────
+    /** 页面请求的错题 id（route 上的 `mistakeId` 是唯一准绳，由页面自己写进来） */
     private val _detailId = MutableStateFlow<Long?>(null)
+    val detailId: StateFlow<Long?> = _detailId
+
+    /**
+     * 详情页的**应答**：每条都带上「它回答的是哪个 id」与「数据库是否已就这个 id 完成过一次读取」。
+     *
+     * 老写法是 `StateFlow<Mistake?>` + 「非空就直接渲染」：`openDetail(B)` 之后 Room 还没回话，
+     * 流里留着的仍是 A 的行，于是页面在 B 的 route 上渲染 A，此时点「标记掌握 / 删除 / 设复习时间」
+     * 全部写到 A 行（终审 C1）。现在页面必须拿 route 上的 id 与 [MistakeDetailState.id] 比过才敢渲染，
+     * 见 [renderMistakeDetail]。
+     */
     // flatMapLatest 仍是实验 API：opt-in 只挂在调用点，不给整个类加
     @OptIn(ExperimentalCoroutinesApi::class)
-    val detail: StateFlow<Mistake?> = _detailId
+    val detailState: StateFlow<MistakeDetailState> = _detailId
         .flatMapLatest { id ->
-            if (id == null) flowOf(null) else repository.observeById(id)
+            if (id == null) {
+                flowOf(MistakeDetailState(answered = true))
+            } else {
+                repository.observeById(id).map { row ->
+                    MistakeDetailState(id = id, mistake = row, answered = true)
+                }
+            }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MistakeDetailState())
 
     fun openDetail(id: Long) {
         _detailId.value = id
