@@ -1,8 +1,5 @@
 package com.studykit.ui.nav
 
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -151,33 +148,34 @@ fun AppNav() {
             navController = navController,
             startDestination = Tab.Study.route,
             modifier = Modifier.padding(innerPadding),
-            // Tab 之间只做淡入淡出（无方向语义）；进入子页 = 新页自右侧推入、当前页向左让位，
+            // Tab 之间只做淡入淡出（无方向语义），且成对走 MotionSpec.fadeEnter/fadeExit，
+            // 不再在这里裸写 `fadeIn(tween(...))`；进入子页 = 新页自右侧推入、当前页向左让位，
             // 返回 = 当前页向右滑出、上一页自左侧滑入（见 MotionSpec.navPopExit / navPopEnter）。
             // 判定入/退场两端都取自同一个 `Tabs` 列表，新增 Tab 时不必再改转场。
             enterTransition = {
                 if (tabRoutes.isTabRoute(targetState.destination.route)) {
-                    fadeIn(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                    MotionSpec.fadeEnter()
                 } else {
                     MotionSpec.navEnter()
                 }
             },
             exitTransition = {
                 if (tabRoutes.isTabRoute(initialState.destination.route)) {
-                    fadeOut(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                    MotionSpec.fadeExit()
                 } else {
                     MotionSpec.navExit()
                 }
             },
             popEnterTransition = {
                 if (tabRoutes.isTabRoute(targetState.destination.route)) {
-                    fadeIn(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                    MotionSpec.fadeEnter()
                 } else {
                     MotionSpec.navPopEnter()
                 }
             },
             popExitTransition = {
                 if (tabRoutes.isTabRoute(initialState.destination.route)) {
-                    fadeOut(animationSpec = tween(durationMillis = MotionSpec.FadeMs))
+                    MotionSpec.fadeExit()
                 } else {
                     MotionSpec.navPopExit()
                 }

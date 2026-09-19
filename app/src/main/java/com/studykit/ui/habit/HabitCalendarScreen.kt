@@ -4,8 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -164,11 +162,13 @@ fun HabitCalendarScreen(
                 targetState = month,
                 transitionSpec = {
                     val dir = if (slide >= 0) 1 else -1
-                    val enter = fadeIn(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) +
+                    // 淡入淡出走 MotionSpec 工厂（默认 FadeMs）；滑入仍按本页方向自己给 tween，
+                    // 因为动的是位移 lambda，工厂只管淡
+                    val enter = MotionSpec.fadeEnter() +
                         slideInHorizontally(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) {
                             it / 6 * dir
                         }
-                    val exit = fadeOut(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) +
+                    val exit = MotionSpec.fadeExit() +
                         slideOutHorizontally(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) {
                             -it / 6 * dir
                         }

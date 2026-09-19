@@ -32,13 +32,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.theme.AppTheme
 import kotlin.math.PI
 import kotlin.math.sin
-
-/** 抖动时长（ms）：一个 tween 把 0→1 走完即停，配合衰减包络总时长固定，不随帧数变化 */
-private const val ShakeDurationMs = 420
 
 /** 抖动首帧振幅（dp）：`× LocalDensity.density` 换成 px，随屏幕密度物理等宽 */
 private const val ShakeAmplitudeDp = 10f
@@ -51,7 +49,7 @@ enum class QuizOptionState { Idle, Selected, Correct, Wrong }
  * 按压走 [rememberPressScale]（`MotionSpec.press` spring）回弹，答错抖一下。
  *
  * 抖动的键与收敛：`LaunchedEffect(state)` 以「state 变成 [QuizOptionState.Wrong]」这个事件为键，
- * 420ms 的 tween 把进度 t 从 0 推到 1，位移取 `sin(6π·t) · 10dp · (1 - t)` —— 三个来回、
+ * `MotionSpec.ShakeMs`(420ms) 的 tween 把进度 t 从 0 推到 1，位移取 `sin(6π·t) · 10dp · (1 - t)` —— 三个来回、
  * 振幅线性衰减，t=1 时振幅天然归零，因此**不会循环播放**；`try/finally` 兜住「用户提前切题
  * 把 tween 取消」的情况，位移一定被 snap 回 0，不会留下半截偏移。
  * 转屏时 `remember { Animatable(...) }` 会重建，故另用一个 saveable 标记记住「本次 Wrong 已抖过」，
@@ -96,7 +94,7 @@ fun QuizOptionTile(
             try {
                 shake.animateTo(
                     targetValue = 1f,
-                    animationSpec = tween(durationMillis = ShakeDurationMs),
+                    animationSpec = tween(durationMillis = MotionSpec.ShakeMs),
                 )
             } finally {
                 shake.snapTo(targetValue = 0f)

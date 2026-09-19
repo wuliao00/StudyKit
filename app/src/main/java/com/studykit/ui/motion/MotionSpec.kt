@@ -3,7 +3,6 @@ package com.studykit.ui.motion
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -24,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -43,7 +41,7 @@ object MotionSpec {
     const val StaggerMs = 40L
 
     /**
-     * 导航**退场**页的淡出时长，Int 毫秒。**不早于**入场页的 `fadeIn(durationMillis = FadeMs)`：
+     * 导航**退场**页的淡出时长，Int 毫秒。**不早于**入场页的 [fadeEnter]（默认时长即 [FadeMs]）：
      * 转场期间两层同时半透明，若出场页先淡干净（原值 160ms < 220ms），
      * 在入场页尚未完全不透明的那 60ms 里会露出 `colors.background` 底色 —— 一道闪缝。
      * 只需要「出场比入场晚淡完」，故取 280 = FadeMs(220) + 60ms 余量，
@@ -54,17 +52,48 @@ object MotionSpec {
     const val NavExitFadeMs = 280
 
     /**
+     * **切卡**入场的淡入时长，Int 毫秒（`CardStudyScreen` 的 AnimatedContent）。
+     * 短于 [FadeMs]：切卡是逐张推进的高频动作，220ms 会让「下一张」读起来黏手；
+     * 与并行的 slide spring（ζ=0.8 / k=260）合起来是「卡片滑进来 + 顺手淡一下」。
+     */
+    const val CardSwitchInMs = 180
+
+    /**
+     * **切卡**退场的淡出时长，Int 毫秒。**短于**入场的那条 [CardSwitchInMs]：
+     * 与导航退场（[NavExitFadeMs]，那里要晚于入场免得露底色）方向相反，因为这里旧卡是
+     * 「被新卡推走」，早点淡干净才不挡新卡。
+     */
+    const val CardSwitchOutMs = 120
+
+    /**
+     * 答错抖动（[com.studykit.ui.components.QuizOptionTile]）的总时长，Int 毫秒。
+     * 一个 tween 把 0→1 走完即停，配合线性衰减包络，总时长固定、不随帧数变化。
+     */
+    const val ShakeMs = 420
+
+    /**
      * 错峰入场（[StaggeredIn]）的下标限幅：`minOf(index, StaggerIndexCap)`。
      *
      * 每级 [StaggerMs](40ms)，8 级封顶 = 320ms，与首屏入场序列同量级；
      * 不限幅时第 40 项要等 1.6s 才开始淡入，长列表首屏下方一片空白。
-     * 由各列表页共用（书架等），故收在这里而不是散在调用方的 private 常量里。
+     * 调用方目前只有书架一处（其余列表页还没接错峰入场），但仍收在这里而不是退回调用方的
+     * private 常量：限幅值与 [StaggerMs]/[StaggeredIn] 是同一份语义，分开写迟早对不上。
      */
     const val StaggerIndexCap = 8
 
     /**
-     * 补间曲线的统一缓动：时长类动画（[FadeMs]、[NavExitFadeMs]、[CountUpMs]）一律配这条。
-     * 收在这里是为了让页面不再各自 `import FastOutSlowInEasing`。
+     * 时长类补间的统一缓动（FastOutSlowIn）。收在这里是为了让页面不再各自
+     * `import FastOutSlowInEasing`。
+     *
+     * **显式**挂这条曲线的站点：淡入淡出工厂 [fadeEnter]/[fadeExit]（因而 [FadeMs]、
+     * [NavExitFadeMs]、[CardSwitchInMs]、[CardSwitchOutMs] 全部由它兜住）、
+     * 数字滚动 [CountUpMs]（刷题正确率、小结计数）、[com.studykit.ui.components.ConfettiBurst] 的粒子。
+     *
+     * 仍**不传** easing、靠 `tween` 默认值的两类分支：月网格翻月的
+     * `slideIn/OutHorizontally(tween(FadeMs))`，以及颜色交叉补间（筛选 chip、学科选项、
+     * 两页日历的日格 `animateColorAsState`）。它们的默认曲线恰好也是 FastOutSlowIn，
+     * 观感一致 —— 但那份一致来自框架默认值，不是本仓库的结构保证；本波按裁定只把
+     * **淡入淡出**收进工厂，滑入与颜色补间要收成工厂得等动效走查之后。
      */
     val Easing = FastOutSlowInEasing
 
@@ -79,10 +108,27 @@ object MotionSpec {
     /** 错峰入场（[StaggeredIn]）的位移/淡入 spring：轻微过冲后落位 */
     val stagger = spring<Float>(dampingRatio = 0.78f, stiffness = 260f)
 
-    fun dpSpring() = spring<Dp>(
-        dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 600f,
-    )
     fun flyOut() = spring<Float>(dampingRatio = 0.62f, stiffness = 550f)
+
+    /**
+     * 淡入工厂：**页面与内容转场**的淡入一律走这里，不再在页面里裸写
+     * `fadeIn(tween(...))` —— 于是 [Easing] 那条曲线由结构保证，不再只是一句注释宣称。
+     *
+     * 默认 [FadeMs]；切卡这类更短促的转场显式传 [CardSwitchInMs]。
+     * 与 [fadeExit] 成对使用（同一个 `AnimatedContent` / `NavHost` 的 in 与 out），
+     * 命名沿 [navEnter]/[navExit] 那一套 in/out 对偶。
+     */
+    fun fadeEnter(durationMillis: Int = FadeMs): EnterTransition =
+        fadeIn(animationSpec = tween(durationMillis = durationMillis, easing = Easing))
+
+    /**
+     * 淡出工厂：[fadeEnter] 的另一半，与它同一个规格入口。
+     *
+     * 默认 [FadeMs]；导航退场要显式传 [NavExitFadeMs]（晚于入场淡完，免得露出窗口底色），
+     * 切卡退场传 [CardSwitchOutMs]（早于新卡淡到位）。
+     */
+    fun fadeExit(durationMillis: Int = FadeMs): ExitTransition =
+        fadeOut(animationSpec = tween(durationMillis = durationMillis, easing = Easing))
 
     /**
      * push 时**入场**页：从右侧推入（`slideInHorizontally` 的 lambda 是**动画起点**的偏移量，
@@ -90,7 +136,7 @@ object MotionSpec {
      */
     fun navEnter(): EnterTransition =
         slideInHorizontally(spring(dampingRatio = 0.85f, stiffness = 240f)) { it / 3 } +
-            fadeIn(animationSpec = tween(durationMillis = FadeMs))
+            fadeEnter()
 
     /**
      * push 时**出场**页：向左被推走 + 淡出。
@@ -104,17 +150,17 @@ object MotionSpec {
      */
     fun navExit(): ExitTransition =
         slideOutHorizontally(spring(dampingRatio = 0.9f, stiffness = 300f)) { -it / 4 } +
-            fadeOut(animationSpec = tween(durationMillis = NavExitFadeMs))
+            fadeExit(durationMillis = NavExitFadeMs)
 
     /** pop（返回）时**入场**页：从左侧回到位（起点偏左）+ 淡入 */
     fun navPopEnter(): EnterTransition =
         slideInHorizontally(spring(dampingRatio = 0.85f, stiffness = 240f)) { -it / 4 } +
-            fadeIn(animationSpec = tween(durationMillis = FadeMs))
+            fadeEnter()
 
     /** pop（返回）时**出场**页：向右滑出（终点偏右，与 [navPopEnter] 同向）+ 淡出 */
     fun navPopExit(): ExitTransition =
         slideOutHorizontally(spring(dampingRatio = 0.9f, stiffness = 300f)) { it / 3 } +
-            fadeOut(animationSpec = tween(durationMillis = NavExitFadeMs))
+            fadeExit(durationMillis = NavExitFadeMs)
 }
 
 /**

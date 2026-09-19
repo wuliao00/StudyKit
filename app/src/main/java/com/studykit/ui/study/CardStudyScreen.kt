@@ -6,8 +6,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -165,11 +163,16 @@ fun CardStudyScreen(
                 AnimatedContent(
                     targetState = state.index,
                     transitionSpec = {
+                        // 淡入淡出成对走 MotionSpec 工厂：时长是规格常量（切卡比导航短促），
+                        // 曲线由工厂兜住，这里不再裸写 tween(180)/tween(120)
                         val enter = slideInHorizontally(
                             animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
-                        ) { it / 3 } + fadeIn(animationSpec = tween(durationMillis = 180))
-                        val exit = slideOutHorizontally { -it / 3 } +
-                            fadeOut(animationSpec = tween(durationMillis = 120))
+                        ) { it / 3 } + MotionSpec.fadeEnter(
+                            durationMillis = MotionSpec.CardSwitchInMs,
+                        )
+                        val exit = slideOutHorizontally { -it / 3 } + MotionSpec.fadeExit(
+                            durationMillis = MotionSpec.CardSwitchOutMs,
+                        )
                         enter.togetherWith(exit)
                     },
                     modifier = Modifier
