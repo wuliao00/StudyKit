@@ -65,18 +65,11 @@ import java.time.format.DateTimeFormatter
 import java.time.Instant
 import java.time.ZoneId
 
-private val WeekHeader = listOf("一", "二", "三", "四", "五", "六", "日")
+// 表头与网格格数（WeekHeader / MonthGridCells / padToFullWeeks）在 `MonthGridCommon.kt`，
+// 与 `HabitCalendarScreen` 共用一份。下面这几样只有本页用得到，故留在原处：
+// 星期全称只服务「8月28日 周五」这类日期文案，习惯日历页的网格用的是单字表头。
 private val WeekdayZh = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 private val TimeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-/**
- * 月历网格固定 6 行（6 行 × 7 列 = 42 格）。
- *
- * 与 [HabitCalendarScreen] 同一处理：不满 6 行的月份用空位补齐，否则 5↔6 行交替时
- * [AnimatedContent] 的两帧内容不等高，转场收束那一帧卡片会突跳，本页还在 `verticalScroll` 里、
- * 会把下方 DayDetailCard 一起顶一下。纯结构常量（行列数），不是新的 dp 度量。
- */
-private const val MonthGridCells = 6 * 7
 
 /** 中文星期：如「周五」 */
 private fun chineseWeekday(date: LocalDate): String = WeekdayZh[date.dayOfWeek.value - 1]
@@ -306,8 +299,10 @@ private fun PermissionNoticeCard(onRetry: () -> Unit) {
  *
  * 翻月用 [AnimatedContent] 换整片表头+网格：淡入淡出叠 1/6 宽的横向短距滑入，
  * 方向由本页 `slide` 记录（点左箭头 = 从左侧进），月份标题不参与转场。
- * 网格恒 6 行（[MonthGridCells]）使转场两帧等高；转场期间只有 `shownMonth == month`
- * 的那一片可点，出场的旧网格降级为纯动效，避免陈旧点击与 TalkBack 读两遍日期。
+ * 网格恒 6 行（[MonthGridCells] + [padToFullWeeks]）使转场两帧等高 —— 本页还挂在
+ * `verticalScroll` 里，两帧不等高时除了卡片自己抖一下，会连着把下方 DayDetailCard 一起顶一格；
+ * 转场期间只有 `shownMonth == month` 的那一片可点，出场的旧网格降级为纯动效，
+ * 避免陈旧点击与 TalkBack 读两遍日期。
  */
 @Composable
 private fun MonthCard(
@@ -393,9 +388,10 @@ private fun MonthCard(
                 val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
                 val days = List(leadingBlanks) { null } +
                     (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
-                // 固定 6 行：不足 42 格的月用空位补齐。行高仍由 weight + aspectRatio 自己算、
-                // 行距仍是行尾的 `AppTheme.space.sm`，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
-                val cells = days + List(MonthGridCells - days.size) { null }
+                // 固定 6 行：不足 42 格的月用空位补齐（[padToFullWeeks]，与习惯日历页同一份）。
+                // 行高仍由 weight + aspectRatio 自己算、行距仍是行尾的 `AppTheme.space.sm`，
+                // 故「6×(cell+gap)」是布局推出来的，不新增任何 dp
+                val cells = padToFullWeeks(days = days)
 
                 cells.chunked(7).forEach { row ->
                     Row(

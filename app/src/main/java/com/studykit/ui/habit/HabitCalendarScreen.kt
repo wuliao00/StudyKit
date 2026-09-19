@@ -53,19 +53,11 @@ import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.YearMonth
 
-private val WeekHeader = listOf("一", "二", "三", "四", "五", "六", "日")
-
-/**
- * 月历网格固定 6 行（6 行 × 7 列 = 42 格）。
- *
- * 28/29/30 天的月份、以及月初不落在周一的月份原本只铺 5 行，翻月时 [AnimatedContent] 的两帧
- * 内容不等高，转场收束那一帧卡片会突跳一行的量；不足 42 格一律用空位补齐，网格恒为 6 行。
- * 纯结构常量（行列数），不是新的 dp 度量。
- */
-private const val MonthGridCells = 6 * 7
-
 /**
  * 习惯打卡日历页：月视图网格 + 月份切换 + 底部统计。
+ *
+ * 网格骨架（表头 [WeekHeader]、恒 6 行 [MonthGridCells]、补齐 [padToFullWeeks]）与
+ * `GlobalCalendarScreen` 共用 `ui/habit/MonthGridCommon.kt` 那一份。
  *
  * 颜色与文字样式统一取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  * 动效三处：
@@ -200,9 +192,10 @@ fun HabitCalendarScreen(
                     val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
                     val days = List(leadingBlanks) { null } +
                         (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
-                    // 固定 6 行：不足 42 格的月用空位补齐。行高仍由 weight + aspectRatio 自己算、
-                    // 行距仍是行尾的 `AppTheme.space.sm`，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
-                    val cells = days + List(MonthGridCells - days.size) { null }
+                    // 固定 6 行：不足 42 格的月用空位补齐（[padToFullWeeks]，与全局日历页同一份）。
+                    // 行高仍由 weight + aspectRatio 自己算、行距仍是行尾的 `AppTheme.space.sm`，
+                    // 故「6×(cell+gap)」是布局推出来的，不新增任何 dp
+                    val cells = padToFullWeeks(days = days)
 
                     cells.chunked(7).forEach { row ->
                         Row(
