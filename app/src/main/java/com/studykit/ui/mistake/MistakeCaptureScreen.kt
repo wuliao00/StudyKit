@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,9 @@ import com.studykit.ui.theme.AppTheme
  * （夜间卡面 `#26241F` 与照片暗部同亮度时，没有描边会看不出图片边界）；
  * 学科选项的选中态底色/描边/墨色用 `animateColorAsState` + `tween(MotionSpec.FadeMs)` 交叉补间
  * （`MotionSpec` 的 spring 都是 `Float` 向，颜色补间按映射表走 tween 分支）。
+ *
+ * 四个表单字段（已选学科 / 新学科 / 标题 / 备注）一律 `rememberSaveable`：转屏不再吞掉已输入内容，
+ * 与其余五个录入页（单词 / 题目 / 习惯 / 书籍 / 书摘·书评）同一条纪律（终审 C3）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -68,10 +72,10 @@ fun MistakeCaptureScreen(
     val texts = AppTheme.texts
     val pending by viewModel.pendingCapture.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
-    var selectedSubject by remember { mutableStateOf("") }
-    var newSubject by remember { mutableStateOf("") }
-    var title by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var selectedSubject by rememberSaveable { mutableStateOf("") }
+    var newSubject by rememberSaveable { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf("") }
+    var note by rememberSaveable { mutableStateOf("") }
 
     val finalSubject = newSubject.ifBlank { selectedSubject }
 

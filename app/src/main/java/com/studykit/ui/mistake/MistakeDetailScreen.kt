@@ -100,7 +100,9 @@ fun MistakeDetailScreen(
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     val render = renderMistakeDetail(state = detailState, mistakeId = mistakeId)
     var showFullImage by remember { mutableStateOf(false) }
-    var showSubjectDialog by remember { mutableStateOf(false) }
+    // 学科对话框带的是**用户输入**，故开合与文本一起 saveable（终审 C3 的同类站点）：
+    // 转屏后对话框还在、已输入的学科还在。删除确认与看图浮层不留输入，仍按瞬时态处理。
+    var showSubjectDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     // 回弹进行中：true 之后按钮要继续留在屏幕上，否则动画第一帧就被 mastered 状态变更抹掉
     var masteredBounce by rememberSaveable { mutableStateOf(false) }
@@ -439,7 +441,9 @@ private fun SubjectEditDialog(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    var value by remember { mutableStateOf(initial) }
+    var value by rememberSaveable { mutableStateOf(initial) }
+    // 注：`rememberSaveable` 的初始值只在没有存档时生效，所以转屏后保留的是用户改过的那份，
+    // 不会被 `initial` 盖回去；对话框关闭再重开（组合槽回收）时才重新回填当前学科。
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = "编辑学科归类", style = texts.cardTitle) },

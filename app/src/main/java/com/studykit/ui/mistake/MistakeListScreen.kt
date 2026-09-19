@@ -3,6 +3,7 @@ package com.studykit.ui.mistake
 import android.Manifest
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -32,7 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -203,27 +206,37 @@ fun MistakeListScreen(
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
 
     // ── 拍照流程：CAMERA 权限 → TakePicture → 暂存临时文件 → 跳录入页 ────────
-    var pendingUriFile by remember { androidx.compose.runtime.mutableStateOf<File?>(null) }
+    // 相机是另一个进程，拍照期间本进程可能被回收：`remember` 里的 `File` 会随之消失，
+    // 回投时拿到 null 就**静默丢图**。File/Uri 不可 Bundle 化，故只存绝对路径字符串
+    // （`rememberSaveable` 存得住），回投时再还原成 File；临时文件落在应用外部目录，
+    // 进程重建后仍在磁盘上（终审 C3）。
+    var pendingPhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
     ) { success ->
-        val file = pendingUriFile
+        val file = pendingPhotoPath?.let(::File)
+        pendingPhotoPath = null
         if (success && file != null && file.exists() && file.length() > 0) {
             viewModel.setPendingCapture(file)
             onOpenCapture()
         } else {
             file?.delete()
+            // 用户确实拍了照却没留下文件（进程重建后被系统清掉、或写盘失败）时说明白，
+            // 而不是让他以为已经拍完了；主动取消（success=false）不该打扰。
+            if (success) {
+                Toast.makeText(context, "没拿到照片，请重新拍照", Toast.LENGTH_SHORT).show()
+            }
         }
     }
-    // 相机权限被拒后展示引导文案
-    var showCameraRationale by remember { androidx.compose.runtime.mutableStateOf(false) }
+    // 相机权限被拒后展示引导文案（saveable：转屏不会把这段指引抹掉，只剩一个没反应的按钮）
+    var showCameraRationale by rememberSaveable { mutableStateOf(false) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
             showCameraRationale = false
             launchCamera(context) { file, uri ->
-                pendingUriFile = file
+                pendingPhotoPath = file.absolutePath
                 takePictureLauncher.launch(uri)
             }
         } else {
