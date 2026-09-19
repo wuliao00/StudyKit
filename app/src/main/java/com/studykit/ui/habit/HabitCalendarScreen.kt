@@ -52,21 +52,35 @@ import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.YearMonth
 
 private val WeekHeader = listOf("一", "二", "三", "四", "五", "六", "日")
 
 /**
+ * 月历网格固定 6 行（6 行 × 7 列 = 42 格）。
+ *
+ * 28/29/30 天的月份、以及月初不落在周一的月份原本只铺 5 行，翻月时 [AnimatedContent] 的两帧
+ * 内容不等高，转场收束那一帧卡片会突跳一行的量；不足 42 格一律用空位补齐，网格恒为 6 行。
+ * 纯结构常量（行列数），不是新的 dp 度量。
+ */
+private const val MonthGridCells = 6 * 7
+
+/**
  * 习惯打卡日历页：月视图网格 + 月份切换 + 底部统计。
  *
  * 颜色与文字样式统一取 `AppTheme`；间距/圆角仍走 [DesignTokens] 的 dp 常量（T15 才迁度量）。
  * 动效三处：
- * - 已打卡日格的底色用 `tween(MotionSpec.FadeMs)` 补间（[MotionSpec] 的 spring 全是 `Float` 向，
- *   `animateColorAsState` 要 `Color` 向规格，故颜色走映射表规定的 tween 分支，不自造新规格）；
- * - 同一格用 `MotionSpec.press` 把整枚日格弹到 1.08 倍，形成「水波」式的落定反馈；
+ * - 已打卡日格的底色与数字墨色**错峰**淡入（[MotionSpec] 的 spring 全是 `Float` 向，
+ *   `animateColorAsState` 要 `Color` 向规格，故颜色走映射表规定的 tween 分支，不自造新规格）：
+ *   底色 `tween(MotionSpec.FadeMs / 3)` 提前落定、墨色仍 `tween(MotionSpec.FadeMs)`。同速补间时
+ *   f≈0.2–0.8 那一段是「半透明 accentInk 托着半透明白字」，实测对比 ≈1.06:1，数字像糊了一层；
+ * - 打卡那一刻整格用 `MotionSpec.press` **弹一下**（1.08 → 回落 1f，见 [DayCell]），不常驻缩放，
+ *   否则整月打过卡的格子会比没打的高出一圈，月历基线参差不齐；
  * - 翻月时表头与网格整片走 `AnimatedContent`（淡入 + 1/6 宽的短距横向滑入，方向跟着点的箭头走），
- *   「X 年 X 月」标题行留在转场之外只改文案。
+ *   「X 年 X 月」标题行留在转场之外只改文案；网格恒为 6 行使两帧等高，且**出场那一帧的旧网格不可点击**
+ *   （`shownMonth != month` 时把日格的 onClick 置空），消除 TalkBack 读到两个日期与陈旧点击。
  */
 @Composable
 fun HabitCalendarScreen(
@@ -180,8 +194,11 @@ fun HabitCalendarScreen(
                     val checkedDates = detail?.checkedDates ?: emptySet()
                     val today = LocalDate.now()
                     val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
-                    val cells = List(leadingBlanks) { null } +
+                    val days = List(leadingBlanks) { null } +
                         (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
+                    // 固定 6 行：不足 42 格的月用空位补齐。行高仍由 weight + aspectRatio 自己算、
+                    // 行距仍是行尾的 SpacingSm，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
+                    val cells = days + List(MonthGridCells - days.size) { null }
 
                     cells.chunked(7).forEach { row ->
                         Row(
@@ -191,22 +208,27 @@ fun HabitCalendarScreen(
                         ) {
                             row.forEach { date ->
                                 if (date == null) {
-                                    Spacer(Modifier.weight(1f))
+                                    // 空格子与日格同样占满一格：否则整行皆空的补位行会塌成 padding 高，
+                                    // 6 行的固定高度也就白定了
+                                    Spacer(Modifier.weight(1f).aspectRatio(1f))
                                 } else {
                                     val checked = date in checkedDates
                                     val makeUpEligible = !checked && canMakeUp(date, today)
+                                    // 转场期间出场的旧月网格只负责动效，不再吃点击：否则 220ms 里
+                                    // 屏幕上是两个月份，TalkBack 也会把同一批日期读第二遍
+                                    val interactive = shownMonth == month
                                     DayCell(
                                         date = date,
                                         checked = checked,
                                         isToday = date == today,
                                         makeUpEligible = makeUpEligible,
-                                        onClick = if (makeUpEligible) ({ makeUpDate = date }) else null,
+                                        onClick = if (interactive && makeUpEligible) ({ makeUpDate = date }) else null,
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
                             }
                             // 补齐最后一行空位，保持等宽
-                            repeat(7 - row.size) { Spacer(Modifier.weight(1f)) }
+                            repeat(7 - row.size) { Spacer(Modifier.weight(1f).aspectRatio(1f)) }
                         }
                     }
                 }
@@ -262,9 +284,14 @@ fun HabitCalendarScreen(
  * 日历单日格：已打卡 = 实底强调色（墨水容器 + onAccent 数字，双主题各自达 AA），
  * 今天 = accent 描边圈，可补卡 = 次级灰描边圈。
  *
- * 打卡那一刻底色用 `tween(MotionSpec.FadeMs)` 淡入、整格用 `MotionSpec.press` 弹到 1.08 倍，
- * 两帧叠加就是本页的「水波」反馈；缩放落在整枚日格而不是只有数字，圆角与描边才会跟着一起长，
- * 不会露出「字大了圈没大」的错位。
+ * 打卡那一刻的两处动效是**错峰**的：底色只走 `tween(MotionSpec.FadeMs / 3)` 先落定，数字墨色
+ * 仍走完整的 `tween(MotionSpec.FadeMs)`。两条补间同速时，中段（f≈0.2–0.8）是「半透明 accentInk
+ * 托着半透明白字」，对比 ≈1.06:1 —— 数字会糊掉约 130ms；让底色提前站稳，剩下的时间里字始终
+ * 压在已实底的圈上。墨色仍必须补间（不能立刻变 onAccent），否则浅色主题那 200ms 是白字压白卡。
+ *
+ * 缩放不再是「已打卡即常驻 1.08」（整月看会参差不齐），而是照抄 `HabitListScreen` 打卡按钮的
+ * 写法：`checked` 由 false→true 那一帧弹到 1.08、`MotionSpec.FadeMs` 后回落 1f。缩放落在整枚
+ * 日格而不是只有数字，圆角与描边才会跟着一起长，不会露出「字大了圈没大」的错位。
  */
 @Composable
 private fun DayCell(
@@ -279,11 +306,10 @@ private fun DayCell(
     val texts = AppTheme.texts
     val cellColor by animateColorAsState(
         targetValue = if (checked) colors.accentInk else Color.Transparent,
-        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs / 3),
         label = "dayCellColor",
     )
-    // 字色与底色同一条补间：否则打卡那一刻数字立刻变 onAccent（浅色主题＝白），
-    // 底色却还在「透明 → accentInk」的路上，那 200ms 里白字压在白卡上等于数字消失。
+    // 字色补间比底色长（见 KDoc）：底色已在 1/3 处站稳，这一条走完 FadeMs 全程
     val inkColor by animateColorAsState(
         targetValue = when {
             checked   -> colors.onAccent
@@ -294,8 +320,23 @@ private fun DayCell(
         animationSpec = tween(durationMillis = MotionSpec.FadeMs),
         label = "dayCellInk",
     )
+    // 一次性弹跳：appeared 只压掉「这一格第一次出现」的那一帧（翻月/重组不重播）；
+    // 之后 checked 由 false→true 才弹，弹完落回 1f
+    var appeared by remember { mutableStateOf(false) }
+    var pop by remember { mutableStateOf(false) }
+    LaunchedEffect(checked) {
+        if (!appeared) {
+            appeared = true
+            return@LaunchedEffect
+        }
+        if (checked) {
+            pop = true
+            delay(MotionSpec.FadeMs.toLong())
+            pop = false
+        }
+    }
     val cellScale by animateFloatAsState(
-        targetValue = if (checked) 1.08f else 1f,
+        targetValue = if (pop) 1.08f else 1f,
         animationSpec = MotionSpec.press,
         label = "dayCellScale",
     )

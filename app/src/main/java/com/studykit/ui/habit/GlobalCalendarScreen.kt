@@ -71,6 +71,15 @@ private val WeekHeader = listOf("一", "二", "三", "四", "五", "六", "日")
 private val WeekdayZh = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 private val TimeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
+/**
+ * 月历网格固定 6 行（6 行 × 7 列 = 42 格）。
+ *
+ * 与 [HabitCalendarScreen] 同一处理：不满 6 行的月份用空位补齐，否则 5↔6 行交替时
+ * [AnimatedContent] 的两帧内容不等高，转场收束那一帧卡片会突跳，本页还在 `verticalScroll` 里、
+ * 会把下方 DayDetailCard 一起顶一下。纯结构常量（行列数），不是新的 dp 度量。
+ */
+private const val MonthGridCells = 6 * 7
+
 /** 中文星期：如「周五」 */
 private fun chineseWeekday(date: LocalDate): String = WeekdayZh[date.dayOfWeek.value - 1]
 
@@ -94,8 +103,10 @@ private fun eventTimeText(event: SystemEvent): String {
  * 颜色与文字样式统一取 `AppTheme`（间距/圆角/阴影仍走 [DesignTokens] 的 dp 常量，T15 再迁）。
  * 实底强调色容器（明日卡、选中日格）一律 `accentInk` 底 + `onAccent` 字，与 [AppButton] 的
  * 实底按钮同一套；描边与圆点这类不带文字的元素仍用 `accent`。
- * 动效：选中日格底色 `tween(MotionSpec.FadeMs)` + 整格 `MotionSpec.press` 弹到 1.08 倍；
- * 翻月时表头与网格整片走 `AnimatedContent`（淡入 + 1/6 宽短距滑入，方向跟手势）。
+ * 动效：选中日格的底色与数字墨色**错峰**淡入（底色 `tween(MotionSpec.FadeMs / 3)` 提前落定、
+ * 墨色仍 `tween(MotionSpec.FadeMs)`，同速时中段的半实底托半透明白字只有 ≈1.06:1），整格再按
+ * `MotionSpec.press` 弹到 1.08 倍；翻月时表头与网格整片走 `AnimatedContent`（淡入 + 1/6 宽短距
+ * 滑入，方向跟手势），网格恒为 6 行使两帧等高，出场那一帧的旧网格 `enabled = false` 不吃点击。
  */
 @Composable
 fun GlobalCalendarScreen(
@@ -297,6 +308,8 @@ private fun PermissionNoticeCard(onRetry: () -> Unit) {
  *
  * 翻月用 [AnimatedContent] 换整片表头+网格：淡入淡出叠 1/6 宽的横向短距滑入，
  * 方向由本页 `slide` 记录（点左箭头 = 从左侧进），月份标题不参与转场。
+ * 网格恒 6 行（[MonthGridCells]）使转场两帧等高；转场期间只有 `shownMonth == month`
+ * 的那一片可点，出场的旧网格降级为纯动效，避免陈旧点击与 TalkBack 读两遍日期。
  */
 @Composable
 private fun MonthCard(
@@ -379,8 +392,11 @@ private fun MonthCard(
 
                 val today = LocalDate.now()
                 val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
-                val cells = List(leadingBlanks) { null } +
+                val days = List(leadingBlanks) { null } +
                     (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
+                // 固定 6 行：不足 42 格的月用空位补齐。行高仍由 weight + aspectRatio 自己算、
+                // 行距仍是行尾的 SpacingSm，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
+                val cells = days + List(MonthGridCells - days.size) { null }
 
                 cells.chunked(7).forEach { row ->
                     Row(
@@ -390,7 +406,9 @@ private fun MonthCard(
                     ) {
                         row.forEach { date ->
                             if (date == null) {
-                                Spacer(Modifier.weight(1f))
+                                // 空格子与日格同样占满一格：否则整行皆空的补位行会塌成 padding 高，
+                                // 6 行的固定高度也就白定了
+                                Spacer(Modifier.weight(1f).aspectRatio(1f))
                             } else {
                                 GlobalDayCell(
                                     date = date,
@@ -398,12 +416,14 @@ private fun MonthCard(
                                     isSelected = date == selectedDate,
                                     hasCheckIn = date in checkInsByDate,
                                     hasEvent = date in eventsByDate,
+                                    // 转场期间出场的那一片只负责动效，不再改选中态
+                                    enabled = shownMonth == month,
                                     onClick = { onSelectDate(date) },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
                         }
-                        repeat(7 - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(7 - row.size) { Spacer(Modifier.weight(1f).aspectRatio(1f)) }
                     }
                 }
             }
@@ -439,8 +459,17 @@ private fun LegendDot(color: Color, label: String) {
  * 月历单日格：选中为实底强调色（`accentInk` 底 + `onAccent` 字），今天描边；
  * 下方叠加打卡点（`success`）与事件徽标（`accent`）。
  *
- * 选中那一刻底色用 `tween(MotionSpec.FadeMs)` 补间、整格用 `MotionSpec.press` 弹到 1.08 倍，
- * 两个日格之间切换时旧的格回落、新的格弹起，即本页的「水波」反馈。
+ * 选中那一刻底色与数字墨色**错峰**补间：底色 `tween(MotionSpec.FadeMs / 3)` 提前落定，墨色仍
+ * `tween(MotionSpec.FadeMs)`。同速补间时中段（f≈0.2–0.8）是「半透明 accentInk 托半透明白字」，
+ * 对比 ≈1.06:1，数字会糊掉约 130ms；墨色本身仍必须补间，否则一上来就是 onAccent（浅色＝白）
+ * 压在还没实底的白卡上。整格用 `MotionSpec.press` 弹到 1.08 倍，两个日格之间切换时旧的格回落、
+ * 新的格弹起，即本页的「水波」反馈。
+ *
+ * 这里的 1.08 是**常驻**在选中格上的（简报字面要求，且选中格全屏只一枚，不会有习惯日历那种
+ * 整月参差不齐的问题）；那页改成了 `checked` 翻真时弹一下即回落，见 `HabitCalendarScreen.DayCell`。
+ *
+ * `enabled` 供翻月转场把出场的那一片降级为纯动效：`clickable(enabled = false)` 既不吃手势，
+ * 也不再挂 accessibility action，TalkBack 于是只读得到当前月份那一遍日期。
  */
 @Composable
 private fun GlobalDayCell(
@@ -449,6 +478,7 @@ private fun GlobalDayCell(
     isSelected: Boolean,
     hasCheckIn: Boolean,
     hasEvent: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -456,12 +486,12 @@ private fun GlobalDayCell(
     val texts = AppTheme.texts
     val cellColor by animateColorAsState(
         targetValue = if (isSelected) colors.accentInk else Color.Transparent,
-        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs / 3),
         label = "globalDayColor",
     )
-    // 字色与底色同一条补间：否则选中那一刻数字立刻变 onAccent（浅色主题＝白），底色却还在
-    // 「透明 → accentInk」的路上，那 200ms 里白字压在白卡上等于数字消失。
-    // 下面两枚圆点选中时也复用这个值，一起从常规墨色过渡到实底上的反白。
+    // 墨色走完整 FadeMs、底色只走 1/3（见 KDoc 的错峰理由）：底色已在路上落定，
+    // 这一条负责把数字从常规墨色缓到实底上的反白，中途不再出现「白字压白卡」。
+    // 下面两枚圆点选中时也复用这个值，一起过渡，避免同一类闪烁。
     val inkColor by animateColorAsState(
         targetValue = when {
             isSelected -> colors.onAccent
@@ -479,7 +509,7 @@ private fun GlobalDayCell(
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -619,6 +649,11 @@ private fun DayDetailCard(
 private fun EventRow(event: SystemEvent) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    // 这里保持位置参只是沿用 T3 起 `RoundedCornerShape(DesignTokens.CornerRadius)` 的既有写法。
+    // 澄清一处以讹传讹：T11 记的「@JvmInline value class 命名实参会撞 internal 构造器」那条陷阱
+    // 只属于 androidx.compose.ui.geometry.CornerRadius(radiusX = …)（见 HeatmapWeeks.kt 就地注释），
+    // 与 RoundedCornerShape 无关；后者的真实约束是四角重载的默认值（只写 topStart = 会把另三角
+    // 落成 0）。T15 迁度量时按这条判，别把它当成「圆角构造一律位置参」的规矩。
     val shape = RoundedCornerShape(DesignTokens.CornerRadius)
     Row(
         modifier = Modifier
