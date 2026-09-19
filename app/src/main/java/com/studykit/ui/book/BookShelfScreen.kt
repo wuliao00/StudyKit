@@ -47,12 +47,6 @@ import com.studykit.ui.theme.DesignTokens
 private val SpineBandWidth: Dp = 6.dp
 
 /**
- * 入场错峰的下标上限（T2 裁定：列表里调用 [StaggeredIn] 必须由调用方限幅，
- * 否则第 20 本书要等 800ms 才开始淡入，首屏下方一片空白）。
- */
-private const val StaggerIndexCap = 8
-
-/**
  * 状态标签（柔底药丸）：`在读 = accentSoft + accentInk`、`读完 = successSoft + primaryText`。
  *
  * 旧写法是「Success/Accent 实色 12% 底 + 同色文字」，而 accent 作文字色只有 3.04:1（T1 裁定：
@@ -157,7 +151,7 @@ fun BookShelfScreen(
                 // 不会丢失各自的入场状态（StaggeredIn 的 shown 跟着条目 identity 走）。
                 itemsIndexed(state.items, key = { _, item -> item.book.id }) { index, item ->
                     StaggeredIn(
-                        index = minOf(index, StaggerIndexCap),
+                        index = minOf(index, MotionSpec.StaggerIndexCap),
                         modifier = Modifier.animateItem(),
                     ) {
                         BookCard(

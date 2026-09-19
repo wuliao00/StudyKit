@@ -42,13 +42,24 @@ object MotionSpec {
     const val StaggerMs = 40L
 
     /**
-     * 导航**退场**页的淡出时长，Int 毫秒。必须**长于**入场页的 `fadeIn(FadeMs)`：
+     * 导航**退场**页的淡出时长，Int 毫秒。**不早于**入场页的 `fadeIn(durationMillis = FadeMs)`：
      * 转场期间两层同时半透明，若出场页先淡干净（原值 160ms < 220ms），
      * 在入场页尚未完全不透明的那 60ms 里会露出 `colors.background` 底色 —— 一道闪缝。
-     * 280 = FadeMs(220) + 60ms 余量；不打算把入场页的 slide spring 沉降（≈600ms）也拉长，
-     * 那会让每次推页都显得黏手，闪缝只需要「出场比入场晚淡完」即可消掉。
+     * 只需要「出场比入场晚淡完」，故取 280 = FadeMs(220) + 60ms 余量，
+     * 不必去拉长入场页的 slide spring 沉降（[navEnter] 的 ζ=0.85 / k=240，
+     * 按 4/(ζω₀)、ω₀=√k≈15.5 rad/s 估算约 300ms，取 1% 判据也只到 ~350ms）——
+     * 把沉降拖长会让每次推页都显得黏手。
      */
     const val NavExitFadeMs = 280
+
+    /**
+     * 错峰入场（[StaggeredIn]）的下标限幅：`minOf(index, StaggerIndexCap)`。
+     *
+     * 每级 [StaggerMs](40ms)，8 级封顶 = 320ms，与首屏入场序列同量级；
+     * 不限幅时第 40 项要等 1.6s 才开始淡入，长列表首屏下方一片空白。
+     * 由各列表页共用（书架等），故收在这里而不是散在调用方的 private 常量里。
+     */
+    const val StaggerIndexCap = 8
 
     val press = spring<Float>(dampingRatio = 0.55f, stiffness = 420f)
     val snap = spring<Float>(dampingRatio = 0.72f, stiffness = 380f)
@@ -69,7 +80,7 @@ object MotionSpec {
      */
     fun navEnter(): EnterTransition =
         slideInHorizontally(spring(dampingRatio = 0.85f, stiffness = 240f)) { it / 3 } +
-            fadeIn(tween(FadeMs))
+            fadeIn(animationSpec = tween(durationMillis = FadeMs))
 
     /**
      * push 时**出场**页：向左被推走 + 淡出。
@@ -83,17 +94,17 @@ object MotionSpec {
      */
     fun navExit(): ExitTransition =
         slideOutHorizontally(spring(dampingRatio = 0.9f, stiffness = 300f)) { -it / 4 } +
-            fadeOut(tween(NavExitFadeMs))
+            fadeOut(animationSpec = tween(durationMillis = NavExitFadeMs))
 
     /** pop（返回）时**入场**页：从左侧回到位（起点偏左）+ 淡入 */
     fun navPopEnter(): EnterTransition =
         slideInHorizontally(spring(dampingRatio = 0.85f, stiffness = 240f)) { -it / 4 } +
-            fadeIn(tween(FadeMs))
+            fadeIn(animationSpec = tween(durationMillis = FadeMs))
 
     /** pop（返回）时**出场**页：向右滑出（终点偏右，与 [navPopEnter] 同向）+ 淡出 */
     fun navPopExit(): ExitTransition =
         slideOutHorizontally(spring(dampingRatio = 0.9f, stiffness = 300f)) { it / 3 } +
-            fadeOut(tween(NavExitFadeMs))
+            fadeOut(animationSpec = tween(durationMillis = NavExitFadeMs))
 }
 
 /**
@@ -121,8 +132,9 @@ fun rememberPressScale(source: MutableInteractionSource): State<Float> {
  * 同理，长列表快速滚动时刚进入视口的条目会重播一次入场（`remember` 重建）。
  *
  * `index` 由**调用方**提供，语义是「本次入场序列内的序号」，不是数据下标：
- * 请传**视口局部**下标（如 `LazyColumn` 首屏可见区间的相对位置）并自行限幅，建议 `minOf(index, 8)`
- * —— 每级 [StaggerMs](40ms)，不限幅时第 40 项要等 1.6s 才开始入场，首屏看起来像空白。
+ * 请传**视口局部**下标（如 `LazyColumn` 首屏可见区间的相对位置）并自行限幅
+ * —— `minOf(index, StaggerIndexCap)`（常量见 [StaggerIndexCap]），每级 [StaggerMs](40ms)，
+ * 不限幅时第 40 项要等 1.6s 才开始入场，首屏看起来像空白。
  * 限幅后 8 项之后（≥320ms）同帧开始，观感上仍是「逐条铺开」而不会有可见等待。
  */
 @Composable
