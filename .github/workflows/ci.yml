@@ -30,3 +30,57 @@ jobs:
         with:
           name: StudyKit-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  # 只做两件事：证明 release（R8 混淆 + 资源收缩）编得起来，以及 baseline profile
+  # 真的被编进了产物。仓库内没有 signingConfig，AGP 产出 app-release-unsigned.apk，
+  # 本 job 不签名、不引入任何密钥、不上传 release 产物（未签名的包上传没有意义）。
+  release-build:
+    name: Release Build (unsigned) / Baseline Profile Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble unsigned release
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Assert baseline profile is packaged in the release APK
+        run: |
+          set -euo pipefail
+          if ! ls app/build/outputs/apk/release/*.apk >/dev/null 2>&1; then
+            echo "::error::release 构建没有产出任何 APK（app/build/outputs/apk/release/ 为空）"
+            exit 1
+          fi
+          apk="$(ls app/build/outputs/apk/release/*.apk | head -n 1)"
+          echo "检查产物：${apk}"
+          # 用 unzip -l 而非 apktool：ubuntu runner 自带 unzip，不额外引入依赖。
+          listing="${RUNNER_TEMP}/apk-contents.txt"
+          unzip -l "${apk}" | tee "${listing}"
+          # AGP 把 src/main/baseline-prof.txt 编成 ART 二进制 profile 放进 assets/dexopt/，
+          # 具体文件名随 AGP 版本而变（baseline.prof / baseline.prof00 / baseline.profm 等），
+          # 故按前缀匹配，不把字面量写死。
+          matched="$(grep -E 'assets/dexopt/baseline\.prof' "${listing}" || true)"
+          if [ -z "${matched}" ]; then
+            echo "::error::APK 里没有 assets/dexopt/baseline.prof*：baseline profile 未被打进产物（规则被静默丢弃或 art-profile 任务未参与构建）"
+            exit 1
+          fi
+          echo "匹配到的 profile 条目："
+          printf '%s\n' "${matched}"
+          # 只要有一条非 0 字节即算编入（同名多条目时不能被第一个空条目误判）。
+          entry="$(printf '%s\n' "${matched}" | awk '$1 + 0 > 0 { print; exit }')"
+          if [ -z "${entry}" ]; then
+            echo "::error::baseline profile 产物全为 0 字节：规则一条都没编进去"
+            exit 1
+          fi
+          echo "✅ baseline profile 已编入 ${apk} → ${entry}" | tee -a "${GITHUB_STEP_SUMMARY}"
