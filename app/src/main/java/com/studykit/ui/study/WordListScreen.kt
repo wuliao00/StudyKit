@@ -36,7 +36,6 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 单词熟练度指示：12dp 状态色点 + 「柔底药丸」状态标签。
@@ -46,10 +45,9 @@ import com.studykit.ui.theme.DesignTokens
  * 于是三态在「一眼扫过」时就能分辨 —— 只有色点时浅色卡上 `divider` 点几乎不可见、
  * `accent` 与 `success` 又只差一点色差，状态差异被抹平了。
  *
- * 药丸文字墨色只取既有令牌：`已掌握 → successSoft 底 + primaryText`（`onSuccess` 尚未落地，
- * 深墨在 10%/16% soft 底上两主题都达 AA）、`学习中 → accentSoft 底 + accentInk`（T1 裁定：
- * 文本态 accent 仅 3.04:1）、`新词 → Transparent + secondaryText`。
- * 不自造 ink 令牌 —— `successInk/warningInk` 归 T15 批次。
+ * 药丸文字墨色取本族 ink：`已掌握 → successSoft 底 + successInk`（T15 墨水批次：浅色压深后
+ * 压在这层柔底 4.96:1、夜间品牌色本身 5.65:1，两主题都达 AA）、`学习中 → accentSoft 底 + accentInk`
+ * （T1 裁定：文本态 accent 仅 3.04:1）、`新词 → Transparent + secondaryText`。
  *
  * 色点仍是纯装饰（同一行已有等价文案），故不加 `semantics`/`contentDescription`，
  * 避免读屏把状态念两遍。
@@ -64,7 +62,7 @@ private fun WordStatusIndicator(status: String) {
         else -> "新词" to colors.divider
     }
     val (pillColor, pillInk) = when (status) {
-        Word.STATUS_MASTERED -> colors.successSoft to colors.primaryText
+        Word.STATUS_MASTERED -> colors.successSoft to colors.successInk
         Word.STATUS_LEARNING -> colors.accentSoft to colors.accentInk
         else -> Color.Transparent to colors.secondaryText
     }
@@ -75,11 +73,11 @@ private fun WordStatusIndicator(status: String) {
                 .clip(CircleShape)
                 .background(dotColor),
         )
-        Spacer(Modifier.width(DesignTokens.SpacingSm))
+        Spacer(Modifier.width(AppTheme.space.sm))
         Box(
             modifier = Modifier
-                .background(color = pillColor, shape = RoundedCornerShape(DesignTokens.CornerRadius))
-                .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
+                .background(color = pillColor, shape = RoundedCornerShape(AppTheme.radius.md))
+                .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -93,7 +91,7 @@ private fun WordStatusIndicator(status: String) {
 /**
  * 单词列表页：开始学习主按钮 + 全部单词（单词 + 释义一行 + 熟练度色点与柔底药丸标签）。
  *
- * 颜色与文字样式统一取 `AppTheme`，间距/圆角仍走 [DesignTokens] 的 dp 常量。
+ * 颜色与文字样式统一取 `AppTheme`，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  * 列表条目挂 `Modifier.animateItem()`（[androidx.compose.foundation.lazy.LazyItemScope]）：
  * 录入回来的新词淡入、背完/删除的条目淡出，其余条目位置用 spring 补间让路，
  * 不再出现「整列瞬间跳一格」。进出动画要求条目带 `key`，本页以 `word.id` 为键
@@ -113,9 +111,9 @@ fun WordListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -125,7 +123,7 @@ fun WordListScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "单词库", style = texts.pageTitle)
             Spacer(Modifier.weight(1f))
             Text(
@@ -134,15 +132,15 @@ fun WordListScreen(
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         AppButton(
             text = "开始学习（今日待复习 ${home.dueCount} 个）",
             onClick = onStartStudy,
         )
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
 
         if (words.isEmpty()) {
-            Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+            Spacer(Modifier.height(AppTheme.space.xl * 2))
             EmptyState(
                 title = "还没有单词",
                 caption = "回到学习首页，点击右上角「录入」添加第一个单词",
@@ -150,7 +148,7 @@ fun WordListScreen(
             )
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(words, key = { it.id }) { word ->
@@ -164,7 +162,7 @@ fun WordListScreen(
                                 text = word.word,
                                 style = texts.cardTitle,
                             )
-                            Spacer(Modifier.width(DesignTokens.SpacingMd))
+                            Spacer(Modifier.width(AppTheme.space.md))
                             Text(
                                 text = word.meaning,
                                 style = texts.caption,
@@ -175,7 +173,7 @@ fun WordListScreen(
                         }
                     }
                 }
-                item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }
+                item { Spacer(Modifier.height(AppTheme.space.md)) }
             }
         }
     }

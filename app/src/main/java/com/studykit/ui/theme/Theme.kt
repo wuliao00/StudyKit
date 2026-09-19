@@ -45,8 +45,8 @@ fun StudyKitTheme(
         MaterialTheme(
             colorScheme = scheme(darkTheme, colors),
             shapes = Shapes(
-                medium = RoundedCornerShape(DesignTokens.CornerRadius),
-                large = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+                medium = RoundedCornerShape(AppTheme.radius.md),
+                large = RoundedCornerShape(AppTheme.radius.lg),
             ),
             content = content,
         )

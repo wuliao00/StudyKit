@@ -49,11 +49,10 @@ import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
- * 颜色与文字样式统一取 `AppTheme`；间距/圆角仍走 [DesignTokens] 的 dp 常量。
+ * 颜色与文字样式统一取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  */
 @Composable
 fun StudyHomeScreen(
@@ -72,9 +71,9 @@ fun StudyHomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -87,7 +86,7 @@ fun StudyHomeScreen(
                     contentDescription = null,
                     tint = colors.accentInk,
                 )
-                Spacer(Modifier.width(DesignTokens.SpacingXs))
+                Spacer(Modifier.width(AppTheme.space.xs))
                 Text(
                     text = "录入",
                     style = texts.aux.copy(
@@ -98,15 +97,15 @@ fun StudyHomeScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         TodayHeroCard(
             todayDone = state.todayDone,
             dueCount = state.dueCount,
             streakDays = state.streakDays,
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
             StatTile(
                 value = "${state.dueCount}",
                 label = "今日待复习",
@@ -124,7 +123,7 @@ fun StudyHomeScreen(
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
 
         StaggeredIn(index = 0) {
             EntryCard(
@@ -136,7 +135,7 @@ fun StudyHomeScreen(
                 onClick = onOpenWords,
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         StaggeredIn(index = 1) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,
@@ -156,7 +155,7 @@ fun StudyHomeScreen(
                 },
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         StaggeredIn(index = 2) {
             EntryCard(
                 icon = Icons.Outlined.Close,
@@ -167,12 +166,13 @@ fun StudyHomeScreen(
                 onClick = onOpenMistakes,
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
     }
 }
 
 /**
- * 今日任务 hero 卡：左侧 88dp 进度环（完成次数 / 今日总任务，达成转 gold），
+ * 今日任务 hero 卡：左侧 88dp 进度环（完成次数 / 今日总任务，达成转 `goldInk`——
+ * 纯 `gold` 在浅色卡面只有 1.79:1，细环几乎看不见），
  * 右侧「今日待办」标题 + `todayDone / total` 大数 + 连续学习火焰徽章。
  *
  * `todayDone` 统计的是**复习/练习次数**（会话数），不是学习天数，因此文案只报「今日待办」计数、
@@ -207,23 +207,23 @@ private fun TodayHeroCard(
                     progress = progress,
                     modifier = Modifier.fillMaxSize(),
                     strokeWidth = 9.dp,
-                    color = if (progress >= 1f && total > 0) colors.gold else colors.accent,
+                    color = if (progress >= 1f && total > 0) colors.goldInk else colors.accent,
                 )
                 Text(text = "$todayDone", style = texts.statValue.copy(fontSize = 28.sp))
             }
-            Spacer(Modifier.width(DesignTokens.SpacingLg))
+            Spacer(Modifier.width(AppTheme.space.lg))
             Column(Modifier.weight(1f)) {
                 Text(text = "今日待办", style = texts.caption)
-                Spacer(Modifier.height(DesignTokens.SpacingXs))
+                Spacer(Modifier.height(AppTheme.space.xs))
                 Text(text = "$todayDone / $total", style = texts.pageTitle)
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
                 if (streakDays > 0) FlameBadge(days = streakDays)
             }
         }
     }
 }
 
-/** 连续学习火焰徽章：进场时 0.4 → 1 的 snap spring 弹入，goldSoft 底 + gold 文案 */
+/** 连续学习火焰徽章：进场时 0.4 → 1 的 snap spring 弹入，goldSoft 底 + goldInk 文案（T15 墨水批次：gold 作字仅 1.79:1，goldInk 压这层柔底 5.42:1） */
 @Composable
 private fun FlameBadge(days: Int) {
     val colors = AppTheme.colors
@@ -239,13 +239,13 @@ private fun FlameBadge(days: Int) {
     Box(
         modifier = Modifier
             .graphicsLayer { scaleX = s; scaleY = s }
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+            .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(colors.goldSoft)
-            .padding(horizontal = DesignTokens.SpacingSm, vertical = 4.dp),
+            .padding(horizontal = AppTheme.space.sm, vertical = 4.dp),
     ) {
         Text(
             text = "🔥 连续 $days 天",
-            style = texts.caption.copy(color = colors.gold, fontWeight = FontWeight.SemiBold),
+            style = texts.caption.copy(color = colors.goldInk, fontWeight = FontWeight.SemiBold),
         )
     }
 }
@@ -282,7 +282,7 @@ private fun EntryCard(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Text(text = title, style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))

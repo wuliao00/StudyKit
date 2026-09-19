@@ -7,6 +7,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
@@ -22,16 +24,38 @@ import androidx.compose.ui.unit.sp
  * `onAccent` = 实底 accent/accentInk 容器上的文字色：浅色为纯白（accentInk 上 5.81:1），夜间为暖墨
  * `#1C1B18`（accentInk #65D7C2 上 9.88:1，白字只有 1.74:1）。注意 `card` **随主题变化**
  * （light `#FFFFFF` / dark `#26241F`），不能再被当作「白」来给文字着色。
+ *
+ * ## 墨水令牌（T15 批次）
+ *
+ * `successInk / goldInk / warningInk` 是三个品牌色的**文字专用**变体，规则与 `accentInk` 相同：
+ * 品牌色本身只用于**填充、描边、色点、彩带粒子**这类非文本元素（浅色卡上 success 2.22:1、
+ * gold 1.79:1、warning 3.07:1，都不够文本 AA 的 4.5:1）；颜色一旦充当**文字**（含顶替文字槽位的
+ * 图形，如刷题选项字母位上的 ✓/✗），必须取对应的 `*Ink`。金色额外覆盖达成态的**细环**
+ * （`gold` 作环在浅色卡面几乎看不见）。
+ * 浅色压深（`#1A7A3C` / `#8A5A00` / `#C0332C`，实测卡面 5.39 / 5.93 / 5.60:1），
+ * 夜间沿用提亮后的品牌色（暖黑卡面上已是 7.84 / 10.12 / 6.12:1，再压深反而看不清）。
+ * **不在本批范围内**的仍是品牌色：soft 容器里与文案并排的装饰性图标（入口卡图标、图例点等），
+ * 它们旁边就有等价文字，按装饰元素处理。
+ *
+ * 需要「色块 + 文字」时优先 **soft 底 + ink 字**（`successSoft`+`successInk`、`warningSoft`+`warningInk`、
+ * `goldSoft`+`goldInk`，即 T10 药丸那一套），**不再增设** `onSuccess/onWarning`：原先「白字/白图压
+ * 实底」的三处（打卡勾、滑动角标、答案选择器）全部改成这一套，「白字压实底」只保留 accent 一处
+ * （`accentInk` + `onAccent`，见 [com.studykit.ui.components.AppButton]），其余实底配白字都会在浅色主题掉到 2.2:1 左右。
+ *
+ * `heatIdle` = 热力图「没打卡」格：卡面上要看得见但不抢戏（装饰性元素，只求可分辨、不套 AA）。
+ * `lightbox` = 全屏看图的取景框黑，两主题同为纯黑（照片对比不受界面底色影响），入库只为让页面里
+ * 不再出现硬编码色值。
  */
 @Immutable
 data class AppColors(
     val background: Color, val card: Color,
     val primaryText: Color, val secondaryText: Color,
     val accent: Color, val accentSoft: Color, val accentInk: Color, val onAccent: Color,
-    val success: Color, val successSoft: Color,
-    val gold: Color, val goldSoft: Color,
-    val warning: Color, val warningSoft: Color,
+    val success: Color, val successSoft: Color, val successInk: Color,
+    val gold: Color, val goldSoft: Color, val goldInk: Color,
+    val warning: Color, val warningSoft: Color, val warningInk: Color,
     val divider: Color,
+    val heatIdle: Color, val lightbox: Color,
 )
 
 val LightColors = AppColors(
@@ -40,9 +64,13 @@ val LightColors = AppColors(
     accent = Palette.LightAccent, accentSoft = Palette.LightAccent.copy(alpha = 0.10f),
     accentInk = Palette.LightAccentInk, onAccent = Palette.LightOnAccent,
     success = Palette.LightSuccess, successSoft = Palette.LightSuccess.copy(alpha = 0.10f),
+    successInk = Palette.LightSuccessInk,
     gold = Palette.LightGold, goldSoft = Palette.LightGold.copy(alpha = 0.14f),
+    goldInk = Palette.LightGoldInk,
     warning = Palette.LightWarning, warningSoft = Palette.LightWarning.copy(alpha = 0.10f),
+    warningInk = Palette.LightWarningInk,
     divider = Palette.LightDivider,
+    heatIdle = Palette.LightHeatIdle, lightbox = Palette.LightLightbox,
 )
 
 val DarkColors = AppColors(
@@ -51,9 +79,13 @@ val DarkColors = AppColors(
     accent = Palette.DarkAccent, accentSoft = Palette.DarkAccent.copy(alpha = 0.16f),
     accentInk = Palette.DarkAccentInk, onAccent = Palette.DarkOnAccent,
     success = Palette.DarkSuccess, successSoft = Palette.DarkSuccess.copy(alpha = 0.16f),
+    successInk = Palette.DarkSuccessInk,
     gold = Palette.DarkGold, goldSoft = Palette.DarkGold.copy(alpha = 0.18f),
+    goldInk = Palette.DarkGoldInk,
     warning = Palette.DarkWarning, warningSoft = Palette.DarkWarning.copy(alpha = 0.16f),
+    warningInk = Palette.DarkWarningInk,
     divider = Palette.DarkDivider,
+    heatIdle = Palette.DarkHeatIdle, lightbox = Palette.DarkLightbox,
 )
 
 @Immutable
@@ -88,4 +120,41 @@ object AppTheme {
         @Composable @ReadOnlyComposable get() = current.colors
     val texts: AppTexts
         @Composable @ReadOnlyComposable get() = current.texts
+
+    // ── 度量令牌：与主题无关的 dp 常量，取 `AppTheme.space.* / .radius.* / .elevation.*` ──
+    // 与 colors/texts 不同，这些是普通 `val`（不需要 CompositionLocal），任何位置都能直接读。
+    // 动效时长/缓动不在此处 —— 那份规格统一由 `ui/motion/MotionSpec.kt` 提供。
+
+    /** 间距：8dp 网格 + 页面/卡片两处专用内边距 */
+    object space {
+        val xs: Dp = 4.dp
+        val sm: Dp = 8.dp
+        val md: Dp = 16.dp
+        val lg: Dp = 24.dp
+        val xl: Dp = 32.dp
+
+        /** 页面左右留白（所有屏的根 Column 统一用） */
+        val pageH: Dp = 20.dp
+
+        /** 卡片内边距（[com.studykit.ui.components.AppCard] 内容列的 padding） */
+        val card: Dp = 16.dp
+    }
+
+    /** 圆角：与 `MaterialTheme.shapes` 同源（见 Theme.kt） */
+    object radius {
+        /** 常规卡片/药丸 */
+        val md: Dp = 16.dp
+
+        /** 大图、图片卡 */
+        val lg: Dp = 20.dp
+
+        /** 胶囊按钮专用（52dp 高度的一半） */
+        val xl: Dp = 26.dp
+    }
+
+    /** 阴影 */
+    object elevation {
+        /** 卡片与浮层的默认抬升 */
+        val low: Dp = 2.dp
+    }
 }

@@ -9,7 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 通用卡片：20dp 圆角 + 1dp 柔光描边 + 1dp 低阴影（「描边代替阴影」的暖纸感观感）。
@@ -24,13 +23,13 @@ fun AppCard(
     val colors = AppTheme.colors
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+        shape = RoundedCornerShape(AppTheme.radius.lg),
         color = colors.card,
         contentColor = colors.primaryText,
         border = BorderStroke(1.dp, colors.divider.copy(alpha = 0.6f)),
         shadowElevation = 1.dp,
     ) {
-        Column(modifier = Modifier.padding(DesignTokens.CardPadding)) {
+        Column(modifier = Modifier.padding(AppTheme.space.card)) {
             content()
         }
     }

@@ -26,7 +26,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /** 添加 / 编辑书籍页：书名、作者、总页数 */
 @Composable
@@ -61,9 +60,9 @@ fun BookEditScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -72,14 +71,14 @@ fun BookEditScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(
                 text = if (bookId == null) "添加书籍" else "编辑书籍",
                 style = texts.pageTitle,
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(
             value = title,
             onValueChange = { title = it },
@@ -87,7 +86,7 @@ fun BookEditScreen(
             placeholder = "例如：小王子",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(
             value = author,
             onValueChange = { author = it },
@@ -95,7 +94,7 @@ fun BookEditScreen(
             placeholder = "例如：圣-埃克苏佩里",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(
             value = totalPages,
             onValueChange = { if (it.all(Char::isDigit) && it.length <= 6) totalPages = it },
@@ -103,7 +102,7 @@ fun BookEditScreen(
             placeholder = "例如：97",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = if (bookId == null) "保存到书架" else "保存修改",
             enabled = loaded && title.isNotBlank() && totalPagesValue > 0,
@@ -111,6 +110,6 @@ fun BookEditScreen(
                 viewModel.saveBook(bookId, title, author, totalPagesValue) { onBack() }
             },
         )
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }

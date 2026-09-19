@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -50,7 +49,6 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import kotlinx.coroutines.delay
 import java.io.File
 import java.text.SimpleDateFormat
@@ -68,7 +66,8 @@ private fun sourceLabel(source: String): String = when (source) {
  * 错题详情页：大图查看（点击放大）+ 内容/备注 + 学科/来源/时间信息，
  * 操作：编辑学科、设置复习时间（快捷项）、标记已掌握、删除。
  *
- * 颜色与文字样式统一取 [AppTheme]，间距/圆角仍走 [DesignTokens] 的度量常量（T15 才迁度量）。
+ * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量；
+ * 「标记掌握 / 已掌握 / 删除」这类**文字**走 `successInk/warningInk`（品牌色作字在浅色主题不达 AA）。
  *
  * 「标记掌握」是本页唯一的手势动效：点击后按钮内文字用 `MotionSpec.press` **放大回弹**，
  * 过了放大峰值（[MotionSpec.FadeMs] 后）才 `popBackStack` —— 立刻返回会把这一帧吃掉，
@@ -124,9 +123,9 @@ fun MistakeDetailScreen(
     val current = mistake
     if (current == null) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = DesignTokens.PageHorizontalPadding),
+            modifier = Modifier.fillMaxSize().padding(horizontal = AppTheme.space.pageH),
         ) {
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Spacer(Modifier.height(AppTheme.space.sm))
             IconButton(onClick = { leaveOnce() }) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -147,9 +146,9 @@ fun MistakeDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = DesignTokens.PageHorizontalPadding),
+                .padding(horizontal = AppTheme.space.pageH),
         ) {
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Spacer(Modifier.height(AppTheme.space.sm))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { leaveOnce() }) {
                     Icon(
@@ -173,7 +172,7 @@ fun MistakeDetailScreen(
                         Text(
                             text = "标记掌握",
                             style = texts.aux.copy(
-                                color = colors.success,
+                                color = colors.successInk,
                                 fontWeight = FontWeight.Medium,
                             ),
                             // 缩放只走绘制层，不反过来把 TopBar 撑高
@@ -187,19 +186,19 @@ fun MistakeDetailScreen(
             }
 
             Text(text = current.title, style = texts.pageTitle)
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = "${current.subject} · ${sourceLabel(current.source)} · ${dateFormat.format(current.createdAt)}",
                 style = texts.caption,
             )
             // 回弹那一瞬按钮还在，两个标签同帧会互相抢读，故等动画交接完再显示
             if (current.mastered && !masteredBounce) {
-                Spacer(Modifier.height(DesignTokens.SpacingXs))
+                Spacer(Modifier.height(AppTheme.space.xs))
                 Text(
                     text = "已掌握",
-                    // success 作文字浅色 ≈2.2:1，successInk 归 T15 令牌批次（沿用既有做法）
+                    // success 作文字浅色只有 2.22:1，走 T15 墨水批次的 successInk（白卡 5.39:1）
                     style = texts.caption.copy(
-                        color = colors.success,
+                        color = colors.successInk,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -207,19 +206,19 @@ fun MistakeDetailScreen(
 
             // ── 大图 ──────────────────────────────────────────────────────
             if (imageFile != null && imageFile.exists()) {
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AsyncImage(
                     model = imageFile,
                     contentDescription = current.title,
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(DesignTokens.CornerRadiusLg))
+                        .clip(RoundedCornerShape(AppTheme.radius.lg))
                         // 图片卡：1dp divider 发丝描边，夜间卡面与照片暗部分层
                         .border(
                             width = 1.dp,
                             color = colors.divider,
-                            shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+                            shape = RoundedCornerShape(AppTheme.radius.lg),
                         )
                         .clickable { showFullImage = true },
                 )
@@ -227,40 +226,40 @@ fun MistakeDetailScreen(
 
             // ── 内容 / 备注 ──────────────────────────────────────────────
             if (current.content.isNotBlank()) {
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "题目内容",
                         style = texts.caption.copy(fontWeight = FontWeight.Medium),
                     )
-                    Spacer(Modifier.height(DesignTokens.SpacingXs))
+                    Spacer(Modifier.height(AppTheme.space.xs))
                     Text(text = current.content, style = texts.body)
                 }
             }
             if (current.note.isNotBlank()) {
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "备注",
                         style = texts.caption.copy(fontWeight = FontWeight.Medium),
                     )
-                    Spacer(Modifier.height(DesignTokens.SpacingXs))
+                    Spacer(Modifier.height(AppTheme.space.xs))
                     Text(text = current.note, style = texts.body)
                 }
             }
 
             // ── 复习时间 ──────────────────────────────────────────────────
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             Text(text = "复习提醒", style = texts.cardTitle)
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = current.reviewAt?.let { "已设置：${reviewFormat.format(it)}" } ?: "尚未设置复习时间",
                 style = texts.caption,
             )
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
-                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
             ) {
                 ReviewOption("明天") { viewModel.setReviewAt(current.id, dayOffset(1)) }
                 ReviewOption("三天后") { viewModel.setReviewAt(current.id, dayOffset(3)) }
@@ -268,16 +267,16 @@ fun MistakeDetailScreen(
             }
 
             // ── 学科归类 ──────────────────────────────────────────────────
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             AppButton(text = "编辑学科归类", secondary = true, onClick = { showSubjectDialog = true })
 
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             AppButton(
                 text = "删除错题",
                 secondary = true,
                 onClick = { showDeleteDialog = true },
             )
-            Spacer(Modifier.height(DesignTokens.SpacingXl))
+            Spacer(Modifier.height(AppTheme.space.xl))
         }
 
         // ── 全屏看图 ──────────────────────────────────────────────────────
@@ -309,7 +308,7 @@ fun MistakeDetailScreen(
                     showDeleteDialog = false
                     viewModel.delete(current.id) { leaveOnce() }
                 }) {
-                    Text(text = "删除", color = colors.warning)
+                    Text(text = "删除", color = colors.warningInk)
                 }
             },
             dismissButton = {
@@ -334,10 +333,10 @@ private fun ReviewOption(label: String, onClick: () -> Unit) {
     val texts = AppTheme.texts
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+            .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(colors.accentSoft)
             .clickable(onClick = onClick)
-            .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
+            .padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
     ) {
         Text(
             text = label,
@@ -362,11 +361,13 @@ private fun dayOffset(days: Int): Long {
  * 全屏看图：黑底占满，点击关闭。
  *
  * 底色**刻意不用** `colors.background`：这是照片灯箱，纯黑是取景框（两张照片对比时不受页面底色
- * 偏色影响），且夜间主题的暖纸底色会把白底题目照片糊成一片。它是**有意不入库**的硬色
- * （不随主题变，属取景框而非界面底色），故不进 AppTheme 令牌层。
+ * 偏色影响），且夜间主题的暖纸底色会把白底题目照片糊成一片。它不随主题变（两主题同为 `#000000`），
+ * 但仍是设计意图而非临时值，故 T15 收进 `colors.lightbox` 令牌 —— 页面里不再留任何硬编码色值；
+ * 允许写死色值的只有两处：`ui/theme/Palette.kt`（色板本体）与 `ui/book/BookSpine.kt`（书脊身份色，见其 KDoc）。
  */
 @Composable
 private fun FullImageOverlay(file: File, onDismiss: () -> Unit) {
+    val colors = AppTheme.colors
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -374,7 +375,7 @@ private fun FullImageOverlay(file: File, onDismiss: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(colors.lightbox)
                 .clickable(onClick = onDismiss),
             contentAlignment = Alignment.Center,
         ) {

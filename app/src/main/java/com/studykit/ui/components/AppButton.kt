@@ -20,10 +20,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
- * 主/次操作按钮：52dp 胶囊形（`CornerRadiusXl` 为高度一半）+ 按压 spring 回弹
+ * 主/次操作按钮：52dp 胶囊形（`AppTheme.radius.xl` 为高度一半）+ 按压 spring 回弹
  * （[rememberPressScale] → `MotionSpec.press`）。
  *
  * 颜色显式取自 [AppTheme.colors]，不依赖 MaterialTheme 的部分覆写：
@@ -72,7 +71,7 @@ fun AppButton(
             enabled = enabled,
             interactionSource = interaction,
             modifier = buttonModifier,
-            shape = RoundedCornerShape(DesignTokens.CornerRadiusXl),
+            shape = RoundedCornerShape(AppTheme.radius.xl),
             border = BorderStroke(1.5.dp, borderColor),
             contentPadding = contentPadding,
             colors = ButtonDefaults.outlinedButtonColors(
@@ -88,7 +87,7 @@ fun AppButton(
             enabled = enabled,
             interactionSource = interaction,
             modifier = buttonModifier,
-            shape = RoundedCornerShape(DesignTokens.CornerRadiusXl),
+            shape = RoundedCornerShape(AppTheme.radius.xl),
             contentPadding = contentPadding,
             // disabled* 槽位一并显式给值：M3 ButtonColors 在禁用时会改读 disabledContainerColor
             // （默认 onSurface 12% 灰），不覆写就拿不到我们的淡 accent 底。

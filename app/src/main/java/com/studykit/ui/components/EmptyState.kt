@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 空态占位：72dp 圆形 accentSoft 图标容器 + 标题 + 说明文字。
@@ -56,15 +55,15 @@ fun EmptyState(
                 modifier = Modifier.size(32.dp),
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         Text(text = title, style = texts.cardTitle, textAlign = TextAlign.Center)
         if (caption != null) {
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = caption,
                 style = texts.caption,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = DesignTokens.SpacingXl),
+                modifier = Modifier.padding(horizontal = AppTheme.space.xl),
             )
         }
     }

@@ -37,7 +37,6 @@ import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 题目录入页：学科 + 题干 + 4 选项 + 正确答案选择 + 解析，保存入 questions 表。
@@ -46,15 +45,12 @@ import com.studykit.ui.theme.DesignTokens
  * 解析；保存走 `AppButton`。页面自上而下错峰入场（标题行 → 三张卡 → 按钮，`StaggeredIn`
  * 每级 40ms，下标都是固定小值、无需 minOf 限幅）。
  *
- * 答案选择器的语义与迁移前一致，只换更贴切的令牌：选中项 = `success` 实底 + `onAccent` 字色 +
- * `SemiBold`，未选中 = `background` 底 + `divider` 描边 + `primaryText`；圆角仍取 `DesignTokens.CornerRadius`。
+ * 答案选择器：选中项 = `successSoft` 柔底 + `successInk` 字色 + `SemiBold` + `success` 描边，
+ * 未选中 = `background` 底 + `divider` 描边 + `primaryText`；圆角仍取 `AppTheme.radius.md`。
  * 未选中底色不再取 `card`——四格本来就落在 `AppCard` 的 `card` 面上，同色只剩 1dp 描边区分；
- * 换 `background` 后是「卡面上的浅凹槽」，两主题都能一眼看出可点。字色也不能用 `card`：
- * 它随主题变化（light `#FFFFFF` / dark `#26241F`），AppTheme KDoc 明确禁止把它当「白」着色，
- * 实底容器上的文字统一走 `onAccent`。
- * 浅色主题下 `onAccent`（即纯白）落在 `success` 上约 2.2:1、不足文本 AA —— 属 T15
- * `successInk/warningInk`（或 onSuccess/onWarning）令牌批次的已知债，本页按「令牌迁移不改语义」
- * 保留品牌色，不自造 ink 令牌；夜间同一处 `onAccent`（暖墨）约 8.7:1 已达标。
+ * 换 `background` 后是「卡面上的浅凹槽」，两主题都能一眼看出可点。
+ * 字色走 `successInk`（T15 墨水批次）：旧写法是 `success` 实底 + `onAccent`，浅色主题那格白字
+ * 压在亮绿上只有 2.2:1；白字/白图压实底按同一裁定只留给 accent 一处，其余一律「soft 底 + ink 字」。
  * 输入框沿用 T3 已迁移的 [AppTextField] / [AppMultilineTextField]（accent 光标、
  * divider 底线），本页不再重复给色。
  */
@@ -81,9 +77,9 @@ fun QuestionCreateScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         StaggeredIn(index = 0, modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
@@ -94,12 +90,12 @@ fun QuestionCreateScreen(
                         tint = colors.accentInk,
                     )
                 }
-                Spacer(Modifier.width(DesignTokens.SpacingXs))
+                Spacer(Modifier.width(AppTheme.space.xs))
                 Text(text = "录入题目", style = texts.pageTitle)
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         StaggeredIn(index = 1, modifier = Modifier.fillMaxWidth()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AppTextField(
@@ -108,7 +104,7 @@ fun QuestionCreateScreen(
                     label = "学科",
                     placeholder = "例如：数学",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppMultilineTextField(
                     value = stem,
                     onValueChange = { stem = it },
@@ -119,7 +115,7 @@ fun QuestionCreateScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         StaggeredIn(index = 2, modifier = Modifier.fillMaxWidth()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AppTextField(
@@ -128,21 +124,21 @@ fun QuestionCreateScreen(
                     label = "选项 A",
                     placeholder = "输入选项内容",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppTextField(
                     value = optionB,
                     onValueChange = { optionB = it },
                     label = "选项 B",
                     placeholder = "输入选项内容",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppTextField(
                     value = optionC,
                     onValueChange = { optionC = it },
                     label = "选项 C",
                     placeholder = "输入选项内容",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppTextField(
                     value = optionD,
                     onValueChange = { optionD = it },
@@ -150,33 +146,33 @@ fun QuestionCreateScreen(
                     placeholder = "输入选项内容",
                 )
 
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 Text(text = "正确答案", style = texts.caption)
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 ) {
                     listOf("A", "B", "C", "D").forEachIndexed { index, letter ->
                         val selected = index == answerIndex
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-                                .background(if (selected) colors.success else colors.background)
+                                .clip(RoundedCornerShape(AppTheme.radius.md))
+                                .background(if (selected) colors.successSoft else colors.background)
                                 .border(
                                     width = 1.dp,
                                     color = if (selected) colors.success else colors.divider,
-                                    shape = RoundedCornerShape(DesignTokens.CornerRadius),
+                                    shape = RoundedCornerShape(AppTheme.radius.md),
                                 )
                                 .clickable { answerIndex = index }
-                                .padding(vertical = DesignTokens.SpacingSm),
+                                .padding(vertical = AppTheme.space.sm),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = letter,
                                 style = texts.aux.copy(
-                                    color = if (selected) colors.onAccent else colors.primaryText,
+                                    color = if (selected) colors.successInk else colors.primaryText,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 ),
                             )
@@ -186,7 +182,7 @@ fun QuestionCreateScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         StaggeredIn(index = 3, modifier = Modifier.fillMaxWidth()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AppMultilineTextField(
@@ -199,7 +195,7 @@ fun QuestionCreateScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         StaggeredIn(index = 4, modifier = Modifier.fillMaxWidth()) {
             AppButton(
                 text = "保存题目",
@@ -211,6 +207,6 @@ fun QuestionCreateScreen(
                 },
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }

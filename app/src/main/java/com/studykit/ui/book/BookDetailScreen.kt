@@ -42,7 +42,6 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,12 +57,12 @@ private fun StepButton(text: String, onClick: () -> Unit, modifier: Modifier = M
     Box(
         modifier = modifier
             .height(44.dp)
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+            .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(colors.card)
             .border(
                 width = 1.dp,
                 color = colors.divider,
-                shape = RoundedCornerShape(DesignTokens.CornerRadius),
+                shape = RoundedCornerShape(AppTheme.radius.md),
             )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -115,9 +114,9 @@ fun BookDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -138,7 +137,7 @@ fun BookDetailScreen(
 
         val ui = detail
         if (ui == null) {
-            Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+            Spacer(Modifier.height(AppTheme.space.xl * 2))
             Text(
                 text = "加载中…",
                 style = texts.caption,
@@ -150,20 +149,20 @@ fun BookDetailScreen(
 
         // ── 标题区 ────────────────────────────────────────────────────────
         Text(text = ui.book.title, style = texts.largeTitle)
-        Spacer(Modifier.height(DesignTokens.SpacingXs))
+        Spacer(Modifier.height(AppTheme.space.xs))
         Text(
             text = ui.book.author.ifBlank { "佚名" },
             style = texts.aux.copy(color = colors.secondaryText),
         )
 
         // ── 进度卡 ────────────────────────────────────────────────────────
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppCard(modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "${ui.percent}%",
                     style = texts.largeTitle.copy(
-                        color = if (ui.isFinished) colors.success else colors.accentInk,
+                        color = if (ui.isFinished) colors.successInk else colors.accentInk,
                     ),
                 )
                 Spacer(Modifier.weight(1f))
@@ -172,7 +171,7 @@ fun BookDetailScreen(
                         text = "${ui.book.currentPage} / ${ui.book.totalPages} 页",
                         style = texts.aux,
                     )
-                    Spacer(Modifier.height(DesignTokens.SpacingXs))
+                    Spacer(Modifier.height(AppTheme.space.xs))
                     if (ui.isFinished) {
                         val finishedText = ui.book.finishedAt?.let {
                             "读完于 " + SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(it))
@@ -180,7 +179,7 @@ fun BookDetailScreen(
                         Text(
                             text = finishedText,
                             style = texts.caption.copy(
-                                color = colors.success,
+                                color = colors.successInk,
                                 fontWeight = FontWeight.Medium,
                             ),
                         )
@@ -190,19 +189,19 @@ fun BookDetailScreen(
                 }
             }
 
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
-            Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+            Spacer(Modifier.height(AppTheme.space.md))
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
                 StepButton(text = "-10", onClick = { viewModel.stepProgress(-10) }, modifier = Modifier.weight(1f))
                 StepButton(text = "+10", onClick = { viewModel.stepProgress(+10) }, modifier = Modifier.weight(1f))
                 if (!ui.isFinished) {
-                    // 完成态动作走 successSoft 柔底 + primaryText 墨色（与书架 StatusTag 同一族颜色）：
-                    // 旧写法是 Success 实底压 DesignTokens.Card 硬白字，浅色主题下白字只有 ≈1.8:1，
-                    // 夜间还会把深墨字压在亮绿上；柔底那一套两主题都达标。
+                    // 完成态动作走 successSoft 柔底 + successInk 墨色（与书架 StatusTag 同一族颜色）：
+                    // 旧写法是 success 实底压硬白字，浅色主题下白字只有 ≈2.2:1，夜间还会把深墨字压在
+                    // 亮绿上；白字压实底按 T15 裁定只留给 accent 一处，其余一律「soft 底 + ink 字」。
                     Box(
                         modifier = Modifier
                             .height(44.dp)
                             .weight(1.4f)
-                            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+                            .clip(RoundedCornerShape(AppTheme.radius.md))
                             .background(colors.successSoft)
                             .clickable(onClick = { viewModel.markFinished() }),
                         contentAlignment = Alignment.Center,
@@ -210,7 +209,7 @@ fun BookDetailScreen(
                         Text(
                             text = "标记读完",
                             style = texts.aux.copy(
-                                color = colors.primaryText,
+                                color = colors.successInk,
                                 fontWeight = FontWeight.SemiBold,
                             ),
                         )
@@ -220,13 +219,13 @@ fun BookDetailScreen(
         }
 
         // ── 书摘区块 ──────────────────────────────────────────────────────
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionHeader(title = "书摘")
-            Spacer(Modifier.width(DesignTokens.SpacingSm))
+            Spacer(Modifier.width(AppTheme.space.sm))
             Text(text = "${ui.excerpts.size} 条", style = texts.caption)
         }
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         if (ui.excerpts.isEmpty()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -237,19 +236,19 @@ fun BookDetailScreen(
                 )
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
                 ui.excerpts.forEach { excerpt ->
                     ExcerptItem(excerpt = excerpt, onClick = { onEditExcerpt(excerpt.id) })
                 }
             }
         }
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         AppButton(text = "添加书摘", secondary = true, onClick = { onAddExcerpt(bookId) })
 
         // ── 书评区块 ──────────────────────────────────────────────────────
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         SectionHeader(title = "书评")
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         if (ui.reviews.isEmpty()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -259,17 +258,17 @@ fun BookDetailScreen(
                     textAlign = TextAlign.Center,
                 )
             }
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             AppButton(text = "写书评", secondary = true, onClick = { onAddReview(bookId) })
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
                 ui.reviews.forEach { review ->
                     ReviewItem(review = review, onClick = { onEditReview(review.id) })
                 }
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }
 
@@ -296,10 +295,10 @@ private fun ExcerptItem(excerpt: Excerpt, onClick: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = DesignTokens.SpacingMd),
+                    .padding(start = AppTheme.space.md),
             ) {
                 Text(text = excerpt.content, style = texts.aux)
-                Spacer(Modifier.height(DesignTokens.SpacingXs))
+                Spacer(Modifier.height(AppTheme.space.xs))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = excerpt.pageNo?.let { "第 $it 页" } ?: "未记页码",
@@ -337,7 +336,7 @@ private fun ReviewItem(review: BookReview, onClick: () -> Unit) {
             .clickable(onClick = onClick),
     ) {
         RatingStars(rating = review.rating)
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Text(text = review.content, style = texts.body)
     }
 }

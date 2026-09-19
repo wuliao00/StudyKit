@@ -51,7 +51,6 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.YearMonth
@@ -70,7 +69,7 @@ private const val MonthGridCells = 6 * 7
 /**
  * 习惯打卡日历页：月视图网格 + 月份切换 + 底部统计。
  *
- * 颜色与文字样式统一取 `AppTheme`；间距/圆角仍走 [DesignTokens] 的 dp 常量（T15 才迁度量）。
+ * 颜色与文字样式统一取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  * 动效三处：
  * - 已打卡日格的底色与数字墨色**错峰**淡入（[MotionSpec] 的 spring 全是 `Float` 向，
  *   `animateColorAsState` 要 `Color` 向规格，故颜色走映射表规定的 tween 分支，不自造新规格）：
@@ -107,9 +106,9 @@ fun HabitCalendarScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -118,14 +117,14 @@ fun HabitCalendarScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(
                 text = detail?.habit?.name ?: "习惯日历",
                 style = texts.pageTitle,
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
 
         AppCard(modifier = Modifier.fillMaxWidth()) {
             // 月份切换
@@ -174,7 +173,7 @@ fun HabitCalendarScreen(
                 label = "habitMonthGrid",
             ) { shownMonth ->
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(Modifier.height(DesignTokens.SpacingXs))
+                    Spacer(Modifier.height(AppTheme.space.xs))
 
                     // 周一至周日表头
                     Row(modifier = Modifier.fillMaxWidth()) {
@@ -188,7 +187,7 @@ fun HabitCalendarScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(DesignTokens.SpacingSm))
+                    Spacer(Modifier.height(AppTheme.space.sm))
 
                     // 日期网格（周一为首列）
                     val checkedDates = detail?.checkedDates ?: emptySet()
@@ -197,14 +196,14 @@ fun HabitCalendarScreen(
                     val days = List(leadingBlanks) { null } +
                         (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
                     // 固定 6 行：不足 42 格的月用空位补齐。行高仍由 weight + aspectRatio 自己算、
-                    // 行距仍是行尾的 SpacingSm，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
+                    // 行距仍是行尾的 `AppTheme.space.sm`，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
                     val cells = days + List(MonthGridCells - days.size) { null }
 
                     cells.chunked(7).forEach { row ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = DesignTokens.SpacingSm),
+                                .padding(bottom = AppTheme.space.sm),
                         ) {
                             row.forEach { date ->
                                 if (date == null) {
@@ -235,16 +234,16 @@ fun HabitCalendarScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Text(
             text = "过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内漏打卡的日期（灰色圈）可点击补打卡",
             style = texts.caption,
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
 
         val isCountType = detail?.isCountType == true
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.md)) {
             StatTile(
                 value = if (isCountType) {
                     "${formatAmount(detail?.totalAmount ?: 0.0)} ${detail?.habit?.unit.orEmpty()}"

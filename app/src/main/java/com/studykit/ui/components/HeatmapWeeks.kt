@@ -16,10 +16,13 @@ import java.time.LocalDate
 
 /**
  * GitHub 风格打卡热力图：`weeks` 列（旧 → 新）× 7 行（周一至周日）的圆角方格。
- * 打过卡的日子填 `accent`，没打的填半透明 `divider`，**未来（末列今天之后）不画**。
+ * 打过卡的日子填 `accent`，没打的填 `heatIdle`（专用空格色），**未来（末列今天之后）不画**。
  *
- * 颜色显式取自 [AppTheme]（`AppTheme.colors.accent` / `.divider`），双主题各自达标，
- * 不依赖 MaterialTheme 的局部覆写。
+ * 颜色显式取自 [AppTheme]（`AppTheme.colors.accent` / `.heatIdle`），双主题各自达标，
+ * 不依赖 MaterialTheme 的局部覆写。空格用 `heatIdle` 而不是 `divider.copy(alpha = 0.5f)`：
+ * 后者压在卡面只有 1.13:1（浅色）/ 1.14:1（夜间），格子之间基本分不出来；`heatIdle` 是专门为
+ * 「卡面上要看得见的空格」提的一档（浅色＝divider 满不透明 1.29:1，夜间 `#454136` 1.52:1），
+ * 仍是装饰性元素、不套文本 AA。
  *
  * 实现取向：**单 Canvas 画整张**（56 个格子一次遍历，不是 56 个 `Box`），
  * 尺寸完全由调用方给，推荐 `Modifier.fillMaxWidth().height(108.dp)`。
@@ -46,7 +49,7 @@ fun HeatmapWeeks(
     val today = LocalDate.now()
     val cells = remember(today, cols) { buildHeatmapCells(today, cols) }
     val activeDayCount = cells.sumOf { column -> column.count { it != null && it in activeDays } }
-    val idleColor = colors.divider.copy(alpha = 0.5f)
+    val idleColor = colors.heatIdle
     val gap = 4.dp
     Canvas(
         modifier = modifier.semantics {

@@ -41,7 +41,6 @@ import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /** 书脊色带宽度：贴在卡片左边缘的装饰，不占内容排版宽度 */
 private val SpineBandWidth: Dp = 6.dp
@@ -58,11 +57,11 @@ private fun StatusTag(finished: Boolean) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val container = if (finished) colors.successSoft else colors.accentSoft
-    val ink = if (finished) colors.primaryText else colors.accentInk
+    val ink = if (finished) colors.successInk else colors.accentInk
     Box(
         modifier = Modifier
-            .background(color = container, shape = RoundedCornerShape(DesignTokens.CornerRadius))
-            .padding(horizontal = DesignTokens.SpacingSm, vertical = DesignTokens.SpacingXs),
+            .background(color = container, shape = RoundedCornerShape(AppTheme.radius.md))
+            .padding(horizontal = AppTheme.space.sm, vertical = AppTheme.space.xs),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -86,9 +85,9 @@ fun BookShelfScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -101,7 +100,7 @@ fun BookShelfScreen(
                     contentDescription = null,
                     tint = colors.accentInk,
                 )
-                Spacer(Modifier.width(DesignTokens.SpacingXs))
+                Spacer(Modifier.width(AppTheme.space.xs))
                 Text(
                     text = "添加",
                     style = texts.aux.copy(
@@ -112,8 +111,8 @@ fun BookShelfScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
             StatTile(
                 value = "${state.readingCount}",
                 label = "在读",
@@ -131,20 +130,20 @@ fun BookShelfScreen(
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
 
         if (state.items.isEmpty()) {
-            Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+            Spacer(Modifier.height(AppTheme.space.xl * 2))
             EmptyState(
                 title = "书架还是空的",
                 caption = "添加一本书，开始记录你的阅读旅程",
                 icon = Icons.Outlined.Favorite,
             )
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             AppButton(text = "添加第一本书", onClick = onAddClick)
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.space.md),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 // 按书 id 为键：新书记录插在首位（`ORDER BY started_at DESC`），既有卡片只会让位、
@@ -160,7 +159,7 @@ fun BookShelfScreen(
                         )
                     }
                 }
-                item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }
+                item { Spacer(Modifier.height(AppTheme.space.md)) }
             }
         }
     }
@@ -207,7 +206,7 @@ private fun BookCard(
                 StatusTag(finished = item.isFinished)
             }
 
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             LinearProgressIndicator(
                 progress = { animatedProgress.coerceIn(0f, 1f) },
                 modifier = Modifier
@@ -218,7 +217,7 @@ private fun BookCard(
                 trackColor = colors.divider,
                 strokeCap = StrokeCap.Round,
             )
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Spacer(Modifier.height(AppTheme.space.sm))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -231,7 +230,7 @@ private fun BookCard(
                 Text(
                     text = "${item.percent}%",
                     style = texts.caption.copy(
-                        color = if (item.isFinished) colors.success else colors.accentInk,
+                        color = if (item.isFinished) colors.successInk else colors.accentInk,
                         fontWeight = FontWeight.SemiBold,
                     ),
                 )
@@ -244,8 +243,8 @@ private fun BookCard(
                 .matchParentSize()
                 .clip(
                     RoundedCornerShape(
-                        topStart = DesignTokens.CornerRadiusLg,
-                        bottomStart = DesignTokens.CornerRadiusLg,
+                        topStart = AppTheme.radius.lg,
+                        bottomStart = AppTheme.radius.lg,
                     ),
                 ),
             contentAlignment = Alignment.CenterStart,

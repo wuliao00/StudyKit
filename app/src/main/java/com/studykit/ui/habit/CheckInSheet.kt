@@ -22,7 +22,6 @@ import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import java.time.LocalDate
 
 /**
@@ -31,7 +30,7 @@ import java.time.LocalDate
  * - 数量型：必填本次数量（可多次累加），备注可选
  *
  * 颜色与文字样式取自 `AppTheme`（弹层底色 `card` 随主题变化，夜间不再是硬白），
- * 间距/圆角仍取 [DesignTokens] 的 dp 常量；提示文案走 `accentInk` 而非 `accent`
+ * 间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量；提示文案走 `accentInk` 而非 `accent`
  * （T1 裁定：accent 作纯文字在浅底只有 3.04:1，不达 AA）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,16 +62,16 @@ fun CheckInSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = colors.card,
-        shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+        shape = RoundedCornerShape(AppTheme.radius.lg),
     ) {
         androidx.compose.foundation.layout.Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = DesignTokens.PageHorizontalPadding)
-                .padding(bottom = DesignTokens.SpacingXl),
+                .padding(horizontal = AppTheme.space.pageH)
+                .padding(bottom = AppTheme.space.xl),
         ) {
             Text(text = title, style = texts.pageTitle)
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = buildString {
                     append("${habit.name} · ${date.monthValue}月${date.dayOfMonth}日")
@@ -82,7 +81,7 @@ fun CheckInSheet(
             )
 
             if (isCountType) {
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 if (existing != null) {
                     Text(
                         text = "今日已累计 ${formatAmount(existing.amount)} ${habit.unit}，目标 ${formatAmount(habit.targetCount)} ${habit.unit}",
@@ -91,7 +90,7 @@ fun CheckInSheet(
                             fontWeight = FontWeight.Medium,
                         ),
                     )
-                    Spacer(Modifier.height(DesignTokens.SpacingSm))
+                    Spacer(Modifier.height(AppTheme.space.sm))
                 }
                 AppTextField(
                     value = amountText,
@@ -102,7 +101,7 @@ fun CheckInSheet(
                 )
             }
 
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             AppTextField(
                 value = note,
                 onValueChange = { note = it },
@@ -110,7 +109,7 @@ fun CheckInSheet(
                 placeholder = if (habit.defaultText.isNotBlank()) habit.defaultText else "写一句今天的感受…",
             )
 
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             AppButton(
                 text = when {
                     isMakeUp -> "确认补卡"

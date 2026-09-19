@@ -33,7 +33,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /** 可点击的 1-5 星评分行：已选强调色 / 未选分隔线色（星是图形而非文字，留在 accent） */
 @Composable
@@ -48,7 +47,7 @@ private fun RatingPicker(rating: Int, onRatingChange: (Int) -> Unit) {
                 tint = if (starValue <= rating) colors.accent else colors.divider,
                 modifier = Modifier
                     .size(36.dp)
-                    .padding(DesignTokens.SpacingXs)
+                    .padding(AppTheme.space.xs)
                     .clickable { onRatingChange(starValue) },
             )
         }
@@ -86,9 +85,9 @@ fun ReviewEditScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -97,19 +96,19 @@ fun ReviewEditScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(
                 text = if (reviewId == null) "写书评" else "编辑书评",
                 style = texts.pageTitle,
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         Text(text = "评分", style = texts.caption)
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         RatingPicker(rating = rating, onRatingChange = { rating = it })
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppMultilineTextField(
             value = content,
             onValueChange = { content = it },
@@ -118,7 +117,7 @@ fun ReviewEditScreen(
             minLines = 5,
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = "保存书评",
             enabled = loaded && content.isNotBlank() && resolvedBookId > 0L,
@@ -126,6 +125,6 @@ fun ReviewEditScreen(
                 viewModel.saveReview(reviewId, resolvedBookId, rating, content) { onBack() }
             },
         )
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }

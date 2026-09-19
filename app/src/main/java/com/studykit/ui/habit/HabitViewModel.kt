@@ -8,6 +8,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -128,6 +129,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as StudyKitApp).container.habitRepository
 
     // ── 列表页状态：习惯流 × 各习惯打卡流，自动响应打卡写入 ─────────────
+    // flatMapLatest 仍是实验 API：这里按调用点局部 opt-in，不给整个类挂 @OptIn（会把后续
+    // 新增实验 API 的调用一起静默掉）
+    @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<HabitListUiState> = repository.observeAll()
         .flatMapLatest { habits ->
             if (habits.isEmpty()) {

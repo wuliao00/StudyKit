@@ -59,7 +59,6 @@ import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -73,14 +72,15 @@ private data class SheetTarget(
 )
 
 /**
- * 圆形打卡按钮：未打卡为描边空心；打卡后变实心成功色，
+ * 圆形打卡按钮：未打卡为描边空心；打卡后铺一层 `successSoft`（勾走 `successInk`）+ `success` 描边，
  * 并伴随一次「弹跳」缩放动效（0.86 按压 → 1.18 回弹）。
  * 数量型/已打卡（改备注）点击交由调用方路由到打卡弹层。
  *
  * 动效全部走 [MotionSpec] 的 spring（`press` 按压回弹 / `snap` 填充淡入），不再用 tween：
  * 逐帧跟随 vsync，高刷屏按 90/120Hz 渲染。填充色只能整色换、不能逐帧插值
- * （`MotionSpec.press/snap` 都是 `spring<Float>`），于是把「实心 ↔ 透明」降成一格 alpha
- * 用同一个 Float spring 补间，观感等价，也不用自造 Color spring。
+ * （`MotionSpec.press/snap` 都是 `spring<Float>`），于是把「`successSoft` ↔ 透明」降成一格 alpha
+ * 用同一个 Float spring 补间（拿令牌自身的 alpha 去乘，落定值就是 `successSoft`），
+ * 观感等价，也不用自造 Color spring。
  */
 @Composable
 private fun CheckInButton(
@@ -124,7 +124,7 @@ private fun CheckInButton(
             .size(52.dp)
             .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(CircleShape)
-            .background(colors.success.copy(alpha = fillAlpha.coerceIn(0f, 1f)))
+            .background(colors.successSoft.copy(alpha = colors.successSoft.alpha * fillAlpha.coerceIn(0f, 1f)))
             .border(
                 width = 2.dp,
                 color = if (checked) colors.success else colors.secondaryText.copy(alpha = 0.45f),
@@ -147,9 +147,10 @@ private fun CheckInButton(
             Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = null,
-                // 勾落在 success 实底上：旧值 DesignTokens.Card 是硬白，夜间主题会把深墨勾
-                // 压在亮绿上（1.9:1）；onAccent 才是「实底 accent/success 容器上的字色」令牌
-                tint = colors.onAccent,
+                // 勾是这枚按钮唯一的「已打卡」图形，按 T15 墨水批次走 soft 底 + successInk：
+                // 旧写法是 success 实底压白勾（浅色主题 2.22:1），而白字/白图压实底只留给 accent 一处。
+                // 描边仍是 success 品牌色（非文本元素），两主题的绿都还在。
+                tint = colors.successInk,
                 modifier = Modifier.size(26.dp),
             )
         }
@@ -172,7 +173,8 @@ private val heatmapCanvasHeight: Dp = 108.dp
 /**
  * 习惯列表页：页标题 + 日历入口 + 近 8 周热力图 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口。
  *
- * 颜色与文字样式统一取 `AppTheme`（`gold` 仍是达成态专用色），间距/圆角仍走 [DesignTokens] 的 dp 常量。
+ * 颜色与文字样式统一取 `AppTheme`（达成态走 `goldInk`：金色作字/作细环在浅色主题不达 AA），
+ * 间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  * 进度环改用共享组件 [RingGauge]（达成换色逻辑保留在本页），打卡庆祝改用 [ConfettiBurst]：
  * 叠在**页面级** `Box` 的 `matchParentSize` 层上，而不是卡片内部 —— 打卡成功的卡片会在同一帧
  * 从「待打卡」迁进默认折叠的「今日已打卡」区而卸载，卡片内的粒子根本出不了画；
@@ -235,9 +237,9 @@ fun HabitListScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = DesignTokens.PageHorizontalPadding),
+                .padding(horizontal = AppTheme.space.pageH),
         ) {
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Spacer(Modifier.height(AppTheme.space.sm))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -250,7 +252,7 @@ fun HabitListScreen(
                         contentDescription = null,
                         tint = colors.accentInk,
                     )
-                    Spacer(Modifier.width(DesignTokens.SpacingXs))
+                    Spacer(Modifier.width(AppTheme.space.xs))
                     Text(
                         text = "添加",
                         style = texts.aux.copy(
@@ -261,15 +263,15 @@ fun HabitListScreen(
                 }
             }
 
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             CalendarEntryCard(onClick = onOpenCalendar)
             // 空账号不出全灰热力图（没有任何事实可画时它只是噪声），有习惯才亮出这一卡
             if (state.items.isNotEmpty()) {
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 HeatmapCard(activeDays = state.items.flatMap { it.checkedDates }.toSet())
             }
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
-            Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+            Spacer(Modifier.height(AppTheme.space.md))
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
                 StatTile(
                     value = "${state.checkedTodayCount}",
                     label = "今日已打卡",
@@ -287,22 +289,22 @@ fun HabitListScreen(
                 )
             }
 
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
 
             if (state.items.isEmpty()) {
-                Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+                Spacer(Modifier.height(AppTheme.space.xl * 2))
                 EmptyState(
                     title = "还没有习惯",
                     caption = "每天坚持一小步，21 天养成一个习惯",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 AppButton(text = "创建第一个习惯", onClick = onAddClick)
             } else {
                 val pending = state.items.filter { !it.checkedInToday }
                 val done = state.items.filter { it.checkedInToday }
 
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.space.md),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(pending, key = { it.habit.id }) { item ->
@@ -339,7 +341,7 @@ fun HabitListScreen(
                             onExport = { viewModel.exportCsv() },
                         )
                     }
-                    item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }
+                    item { Spacer(Modifier.height(AppTheme.space.md)) }
                 }
             }
         }
@@ -392,7 +394,7 @@ private fun CalendarEntryCard(onClick: () -> Unit) {
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Text(text = "日历", style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
@@ -418,7 +420,7 @@ private fun HeatmapCard(activeDays: Set<LocalDate>) {
     val texts = AppTheme.texts
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "近 $HEATMAP_WEEKS 周坚持", style = texts.cardTitle)
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         HeatmapWeeks(
             activeDays = activeDays,
             weeks = HEATMAP_WEEKS,
@@ -464,7 +466,7 @@ private fun DoneFoldHeader(
                     modifier = Modifier.size(22.dp),
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Text(text = "今日已打卡 · $count", style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
@@ -474,7 +476,7 @@ private fun DoneFoldHeader(
                 text = if (expanded) "收起" else "展开",
                 style = texts.caption.copy(color = colors.accentInk),
             )
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (expanded) "收起" else "展开",
@@ -500,15 +502,15 @@ private fun RecordActionsCard(
             text = "生成「我坚持了 X 天」分享文本，或导出全部打卡记录",
             style = texts.caption,
         )
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+                    .clip(RoundedCornerShape(AppTheme.radius.md))
                     .background(colors.accentSoft)
                     .clickable(onClick = onShare)
-                    .padding(vertical = DesignTokens.SpacingSm),
+                    .padding(vertical = AppTheme.space.sm),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -522,10 +524,10 @@ private fun RecordActionsCard(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+                    .clip(RoundedCornerShape(AppTheme.radius.md))
                     .background(colors.accentSoft)
                     .clickable(onClick = onExport)
-                    .padding(vertical = DesignTokens.SpacingSm),
+                    .padding(vertical = AppTheme.space.sm),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -542,7 +544,7 @@ private fun RecordActionsCard(
 
 /**
  * 习惯卡片：图标 + 名称（达成标记）+ 进度文案 + 倒计时 + 最近备注 + 进度环 + 打卡按钮。
- * 达成后整体转金色态；进度环用共享组件 [RingGauge]，换色策略仍留在本页（达成 = gold）。
+ * 达成后整体转金色态（`goldInk` 档）；进度环用共享组件 [RingGauge]，换色策略仍留在本页（达成 = goldInk）。
  */
 @Composable
 private fun HabitCard(
@@ -570,7 +572,7 @@ private fun HabitCard(
             ) {
                 Text(text = habitIconEmoji(item.habit.icon), fontSize = texts.aux.fontSize)
             }
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -580,17 +582,17 @@ private fun HabitCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (item.achieved) {
-                        Spacer(Modifier.width(DesignTokens.SpacingSm))
+                        Spacer(Modifier.width(AppTheme.space.sm))
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(colors.goldSoft)
-                                .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
+                                .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
                         ) {
                             Text(
                                 text = "已达成",
                                 style = texts.caption.copy(
-                                    color = colors.gold,
+                                    color = colors.goldInk,
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                             )
@@ -610,7 +612,7 @@ private fun HabitCard(
                 Text(
                     text = countdownText(item),
                     style = texts.caption.copy(
-                        color = if (item.achieved) colors.gold else colors.secondaryText,
+                        color = if (item.achieved) colors.goldInk else colors.secondaryText,
                         fontWeight = if (item.achieved) FontWeight.Medium else FontWeight.Normal,
                     ),
                 )
@@ -624,23 +626,23 @@ private fun HabitCard(
                     )
                 }
             }
-            Spacer(Modifier.width(DesignTokens.SpacingSm))
+            Spacer(Modifier.width(AppTheme.space.sm))
             Box(contentAlignment = Alignment.Center) {
                 RingGauge(
                     progress = item.progress,
                     modifier = Modifier.size(52.dp),
                     strokeWidth = 5.dp,
-                    color = if (item.achieved) colors.gold else colors.accent,
+                    color = if (item.achieved) colors.goldInk else colors.accent,
                 )
                 Text(
                     text = if (item.achieved) "✓" else "${(item.progress * 100).toInt()}%",
                     style = texts.caption.copy(
                         fontWeight = FontWeight.Medium,
-                        color = if (item.achieved) colors.gold else colors.primaryText,
+                        color = if (item.achieved) colors.goldInk else colors.primaryText,
                     ),
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             CheckInButton(checked = item.checkedInToday, onClick = onCheckIn)
         }
     }

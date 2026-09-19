@@ -30,7 +30,6 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /** 书摘编辑页：内容多行输入 + 页码输入，保存 / 删除 */
 @Composable
@@ -64,9 +63,9 @@ fun ExcerptEditScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -75,14 +74,14 @@ fun ExcerptEditScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(
                 text = if (excerptId == null) "添加书摘" else "编辑书摘",
                 style = texts.pageTitle,
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppMultilineTextField(
             value = content,
             onValueChange = { content = it },
@@ -91,7 +90,7 @@ fun ExcerptEditScreen(
             minLines = 5,
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(
             value = pageNo,
             onValueChange = { if (it.all(Char::isDigit) && it.length <= 5) pageNo = it },
@@ -99,7 +98,7 @@ fun ExcerptEditScreen(
             placeholder = "例如：63",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = "保存书摘",
             enabled = loaded && content.isNotBlank() && resolvedBookId > 0L,
@@ -114,13 +113,13 @@ fun ExcerptEditScreen(
         )
 
         if (excerptId != null) {
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             AppButton(
                 text = "删除书摘",
                 secondary = true,
                 onClick = { viewModel.deleteExcerpt(excerptId) { onBack() } },
             )
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = "删除后无法恢复",
                 style = texts.caption.copy(fontWeight = FontWeight.Normal),
@@ -128,6 +127,6 @@ fun ExcerptEditScreen(
                 textAlign = TextAlign.Center,
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }

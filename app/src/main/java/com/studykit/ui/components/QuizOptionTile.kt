@@ -34,7 +34,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -65,10 +64,9 @@ enum class QuizOptionState { Idle, Selected, Correct, Wrong }
  * 取色按主题显式取自 [AppTheme.colors]（不依赖 M3 的局部覆写）：
  * - 描边/底色：`Correct=success`、`Wrong=warning`、`Selected=accent`、`Idle=divider`，
  *   容器用对应的 `*Soft` 淡底。
- * - 字母/图标色与描边**分离**：Selected 走 `accentInk`（`accent` 作文字在浅底只有 3.04:1，T1 裁定），
+ * - 字母/图标色与描边**分离**：Selected 走 `accentInk`、Correct/Wrong 走 `successInk/warningInk`
+ *   （T15 墨水批次：品牌色作文字/图标在浅色主题只有 2.22:1 / 3.07:1，不达 AA）、
  *   Idle 走 `secondaryText`（`divider` 太淡，沿用描边色等于把字母画隐形）。
- * - `success`/`warning` 作图标色（非文本元素）在浅色主题约 2.0:1 / 3.1:1，与判定文案同属
- *   T15 令牌批次（`successInk`/`warningInk`）的已知债，此处按 brief 规定保留品牌色。
  *
  * @param index 选项下标，用于渲染字母（`'A' + index`）。
  * @param onClick 点击回调；「是否还能点」由 [enabled] 承担——调用方在本题锁定后传 `enabled = false`，
@@ -119,8 +117,8 @@ fun QuizOptionTile(
         QuizOptionState.Idle -> colors.card
     }
     val inkColor = when (state) {
-        QuizOptionState.Correct -> colors.success
-        QuizOptionState.Wrong -> colors.warning
+        QuizOptionState.Correct -> colors.successInk
+        QuizOptionState.Wrong -> colors.warningInk
         QuizOptionState.Selected -> colors.accentInk
         QuizOptionState.Idle -> colors.secondaryText
     }
@@ -139,12 +137,12 @@ fun QuizOptionTile(
                 translationX = sin(shake.value * 6f * PI.toFloat()) *
                     ShakeAmplitudeDp * density * (1f - shake.value)
             },
-        shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+        shape = RoundedCornerShape(AppTheme.radius.lg),
         color = container,
         border = BorderStroke(1.5.dp, borderColor),
     ) {
         Row(
-            modifier = Modifier.padding(DesignTokens.SpacingMd),
+            modifier = Modifier.padding(AppTheme.space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -157,17 +155,18 @@ fun QuizOptionTile(
                 when (state) {
                     // 图标 contentDescription=null：语义已由「描边 + 底色 + 判定文案」承担，
                     // 读屏不该把一个小勾再念一遍；正确/错误的具体信息靠文案与选项文字本身。
+                    // 图标与字母占的是同一个槽位，故沿用 inkColor（墨水＝文字/图标同一档）
                     QuizOptionState.Correct -> Icon(
                         imageVector = Icons.Filled.Check,
                         contentDescription = null,
-                        tint = colors.success,
+                        tint = inkColor,
                         modifier = Modifier.size(16.dp),
                     )
 
                     QuizOptionState.Wrong -> Icon(
                         imageVector = Icons.Filled.Close,
                         contentDescription = null,
-                        tint = colors.warning,
+                        tint = inkColor,
                         modifier = Modifier.size(16.dp),
                     )
 
@@ -177,7 +176,7 @@ fun QuizOptionTile(
                     )
                 }
             }
-            Spacer(Modifier.size(DesignTokens.SpacingMd))
+            Spacer(Modifier.size(AppTheme.space.md))
             Text(text = optionText, style = texts.body, modifier = Modifier.weight(1f))
         }
     }

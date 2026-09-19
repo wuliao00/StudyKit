@@ -27,7 +27,6 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 单词录入页：单词 + 释义 + 例句表单，保存入 words 表。
@@ -54,9 +53,9 @@ fun WordCreateScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         StaggeredIn(index = 0, modifier = Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
@@ -67,12 +66,12 @@ fun WordCreateScreen(
                         tint = colors.accentInk,
                     )
                 }
-                Spacer(Modifier.width(DesignTokens.SpacingXs))
+                Spacer(Modifier.width(AppTheme.space.xs))
                 Text(text = "录入单词", style = texts.pageTitle)
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         StaggeredIn(index = 1, modifier = Modifier.fillMaxWidth()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AppTextField(
@@ -81,14 +80,14 @@ fun WordCreateScreen(
                     label = "单词",
                     placeholder = "例如：serendipity",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppTextField(
                     value = meaning,
                     onValueChange = { meaning = it },
                     label = "释义",
                     placeholder = "例如：n. 意外发现珍宝的运气",
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppTextField(
                     value = example,
                     onValueChange = { example = it },
@@ -98,7 +97,7 @@ fun WordCreateScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         StaggeredIn(index = 2, modifier = Modifier.fillMaxWidth()) {
             AppButton(
                 text = "保存单词",
@@ -108,6 +107,6 @@ fun WordCreateScreen(
                 },
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }

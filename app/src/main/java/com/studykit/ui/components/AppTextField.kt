@@ -15,7 +15,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /** 单行输入：细标签 + 文本 + accent 光标 + 底部 1dp 分割线（错误态转 warning）。 */
 @Composable
@@ -35,7 +34,7 @@ fun AppTextField(
             Text(
                 text = label,
                 style = texts.caption,
-                modifier = Modifier.padding(bottom = DesignTokens.SpacingXs),
+                modifier = Modifier.padding(bottom = AppTheme.space.xs),
             )
         }
         BasicTextField(
@@ -55,7 +54,7 @@ fun AppTextField(
                         )
                     }
                     innerTextField()
-                    Spacer(modifier = Modifier.height(DesignTokens.SpacingSm))
+                    Spacer(modifier = Modifier.height(AppTheme.space.sm))
                     Canvas(modifier = Modifier.fillMaxWidth()) {
                         drawLine(
                             color = if (isError) colors.warning else colors.divider,

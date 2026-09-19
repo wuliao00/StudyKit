@@ -8,6 +8,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.util.MistakeImageStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -94,6 +95,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
 
     // ── 详情 ──────────────────────────────────────────────────────────────
     private val _detailId = MutableStateFlow<Long?>(null)
+    // flatMapLatest 仍是实验 API：opt-in 只挂在调用点，不给整个类加
+    @OptIn(ExperimentalCoroutinesApi::class)
     val detail: StateFlow<Mistake?> = _detailId
         .flatMapLatest { id ->
             if (id == null) flowOf(null) else repository.observeById(id)

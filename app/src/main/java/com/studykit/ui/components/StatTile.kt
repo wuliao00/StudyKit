@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 统计磁贴：34sp 大数字（[AppTheme.texts.statValue]，`maxLines = 1` 防 4 位数换行）+ 小号说明标签，
@@ -28,15 +27,15 @@ fun StatTile(
     val texts = AppTheme.texts
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+        shape = RoundedCornerShape(AppTheme.radius.lg),
         color = colors.card,
         contentColor = colors.primaryText,
         border = BorderStroke(1.dp, colors.divider.copy(alpha = 0.6f)),
         shadowElevation = 0.dp,
     ) {
-        Column(modifier = Modifier.padding(DesignTokens.CardPadding)) {
+        Column(modifier = Modifier.padding(AppTheme.space.card)) {
             Text(text = value, style = texts.statValue, maxLines = 1)
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(text = label, style = texts.caption)
         }
     }

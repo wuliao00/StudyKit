@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 多行输入框：与 [AppTextField] 同一视觉语言（底部分割线），
@@ -35,7 +34,7 @@ fun AppMultilineTextField(
             Text(
                 text = label,
                 style = texts.caption,
-                modifier = Modifier.padding(bottom = DesignTokens.SpacingXs),
+                modifier = Modifier.padding(bottom = AppTheme.space.xs),
             )
         }
         BasicTextField(
@@ -54,7 +53,7 @@ fun AppMultilineTextField(
                         )
                     }
                     innerTextField()
-                    Spacer(modifier = Modifier.height(DesignTokens.SpacingSm))
+                    Spacer(modifier = Modifier.height(AppTheme.space.sm))
                     Canvas(modifier = Modifier.fillMaxWidth()) {
                         drawLine(
                             color = colors.divider,

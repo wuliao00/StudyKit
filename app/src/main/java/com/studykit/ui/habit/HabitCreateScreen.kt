@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯", "🧘", "🌙", "💧", "🎹", "🖌️", "🥗")
 private val TargetOptions = listOf(7, 21, 30, 60, 100)
@@ -46,7 +45,7 @@ private val TargetOptions = listOf(7, 21, 30, 60, 100)
 /**
  * 创建习惯页：名称 + 图标 + 类型（天数/数量）+ 目标 + 默认打卡文案。
  *
- * 颜色与文字样式取 `AppTheme`；间距/圆角仍走 [DesignTokens] 的 dp 常量（T15 再迁度量）。
+ * 颜色与文字样式取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  * 选中的目标天数磁贴是**实底强调色容器** → `accentInk` 底 + `onAccent` 字（与 AppButton 同一套，
  * 夜间主题下白字压在亮色上只有 1.74:1，故实底必须用 ink 变体）；图标格与类型磁贴是柔底
  * → `accentSoft` 底 + `accentInk` 字，描边用 `accent`。
@@ -73,9 +72,9 @@ fun HabitCreateScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -84,11 +83,11 @@ fun HabitCreateScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "新建习惯", style = texts.pageTitle)
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
 
         AppTextField(
             value = name,
@@ -97,12 +96,12 @@ fun HabitCreateScreen(
             placeholder = "例如：背单词",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         Text(text = "图标", style = texts.caption)
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
-            verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
         ) {
             IconOptions.forEach { option ->
                 val selected = option == icon
@@ -126,10 +125,10 @@ fun HabitCreateScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         Text(text = "打卡类型", style = texts.caption)
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
             TypeChip(
                 title = "天数型",
                 subtitle = "坚持 N 天",
@@ -147,8 +146,8 @@ fun HabitCreateScreen(
         }
 
         if (isCountType) {
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
-            Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd)) {
+            Spacer(Modifier.height(AppTheme.space.lg))
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.md)) {
                 AppTextField(
                     value = targetCountText,
                     onValueChange = { targetCountText = it },
@@ -165,33 +164,33 @@ fun HabitCreateScreen(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = "打卡时输入本次数量，逐次累加直到达成目标",
                 style = texts.caption,
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         Text(text = if (isCountType) "目标期限（天）" else "目标天数", style = texts.caption)
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
             TargetOptions.forEach { option ->
                 val selected = option == targetDays
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+                        .clip(RoundedCornerShape(AppTheme.radius.md))
                         .background(
                             if (selected) colors.accentInk else colors.card,
                         )
                         .border(
                             width = 1.dp,
                             color = if (selected) colors.accentInk else colors.divider,
-                            shape = RoundedCornerShape(DesignTokens.CornerRadius),
+                            shape = RoundedCornerShape(AppTheme.radius.md),
                         )
                         .clickable { targetDays = option }
-                        .padding(vertical = DesignTokens.SpacingSm),
+                        .padding(vertical = AppTheme.space.sm),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -205,7 +204,7 @@ fun HabitCreateScreen(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(
             value = defaultText,
             onValueChange = { defaultText = it },
@@ -213,7 +212,7 @@ fun HabitCreateScreen(
             placeholder = "一键打卡时自动带入备注",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = "保存习惯",
             enabled = canSave,
@@ -228,7 +227,7 @@ fun HabitCreateScreen(
                 ) { onBack() }
             },
         )
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }
 
@@ -245,17 +244,17 @@ private fun TypeChip(
     val texts = AppTheme.texts
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+            .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(
                 if (selected) colors.accentSoft else colors.card,
             )
             .border(
                 width = if (selected) 1.5.dp else 1.dp,
                 color = if (selected) colors.accent else colors.divider,
-                shape = RoundedCornerShape(DesignTokens.CornerRadius),
+                shape = RoundedCornerShape(AppTheme.radius.md),
             )
             .clickable(onClick = onClick)
-            .padding(DesignTokens.CardPadding),
+            .padding(AppTheme.space.card),
     ) {
         Text(
             text = title,

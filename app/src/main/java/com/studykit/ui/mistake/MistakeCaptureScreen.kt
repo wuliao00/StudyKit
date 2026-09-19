@@ -47,13 +47,12 @@ import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 拍照录入页：拍照返回后选择学科（已有学科 + 可输入新学科）+ 填写标题/备注 → 保存。
  *
- * 颜色与文字样式统一取 [AppTheme]，间距/圆角仍走 [DesignTokens] 的度量常量（T15 才迁度量）。
- * 两处动效/观感：照片预览按「图片卡」口径给 `CornerRadiusLg` 圆角 + 1dp `divider` 发丝描边
+ * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的度量常量。
+ * 两处动效/观感：照片预览按「图片卡」口径给 `radius.lg` 圆角 + 1dp `divider` 发丝描边
  * （夜间卡面 `#26241F` 与照片暗部同亮度时，没有描边会看不出图片边界）；
  * 学科选项的选中态底色/描边/墨色用 `animateColorAsState` + `tween(MotionSpec.FadeMs)` 交叉补间
  * （`MotionSpec` 的 spring 都是 `Float` 向，颜色补间按映射表走 tween 分支）。
@@ -80,9 +79,9 @@ fun MistakeCaptureScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = {
                 viewModel.discardPendingCapture()
@@ -98,7 +97,7 @@ fun MistakeCaptureScreen(
             Text(text = "拍照录入", style = texts.pageTitle)
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         val captured = pending
         // 磁盘 IO 移出组合：LaunchedEffect 在 IO 线程异步校验临时文件是否存在，
         // 初值乐观置 true 避免新照片进入时闪烁回退文案
@@ -106,7 +105,7 @@ fun MistakeCaptureScreen(
         LaunchedEffect(captured) {
             capturedExists = withContext(Dispatchers.IO) { captured?.exists() == true }
         }
-        val previewShape = RoundedCornerShape(DesignTokens.CornerRadiusLg)
+        val previewShape = RoundedCornerShape(AppTheme.radius.lg)
         if (captured != null && capturedExists) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AsyncImage(
@@ -123,13 +122,13 @@ fun MistakeCaptureScreen(
             Text(text = "未获取到照片，请返回重新拍照", style = texts.caption)
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         SectionHeader(title = "选择学科")
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         if (subjects.isNotEmpty()) {
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
-                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
             ) {
                 subjects.forEach { subject ->
                     SubjectOption(
@@ -141,7 +140,7 @@ fun MistakeCaptureScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
         }
         AppTextField(
             value = newSubject,
@@ -150,7 +149,7 @@ fun MistakeCaptureScreen(
             placeholder = "如：物理、化学…",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(
             value = title,
             onValueChange = { title = it },
@@ -158,7 +157,7 @@ fun MistakeCaptureScreen(
             placeholder = "给这道错题起个名字",
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppMultilineTextField(
             value = note,
             onValueChange = { note = it },
@@ -167,7 +166,7 @@ fun MistakeCaptureScreen(
             minLines = 4,
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = "保存错题",
             enabled = finalSubject.isNotBlank(),
@@ -180,7 +179,7 @@ fun MistakeCaptureScreen(
                 )
             },
         )
-        Spacer(Modifier.height(DesignTokens.SpacingXl))
+        Spacer(Modifier.height(AppTheme.space.xl))
     }
 }
 
@@ -196,7 +195,7 @@ fun MistakeCaptureScreen(
 private fun SubjectOption(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val shape = RoundedCornerShape(DesignTokens.CornerRadius)
+    val shape = RoundedCornerShape(AppTheme.radius.md)
     val container by animateColorAsState(
         targetValue = if (selected) colors.accentSoft else colors.card,
         animationSpec = tween(durationMillis = MotionSpec.FadeMs),
@@ -218,7 +217,7 @@ private fun SubjectOption(label: String, selected: Boolean, onClick: () -> Unit)
             .background(container)
             .border(width = 1.dp, color = stroke, shape = shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
+            .padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
     ) {
         Text(
             text = label,

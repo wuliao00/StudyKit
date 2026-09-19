@@ -60,7 +60,6 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -100,7 +99,7 @@ private fun eventTimeText(event: SystemEvent): String {
  * 全局日历页：明日日期卡片 + 月历（叠加打卡点与系统事件徽标）+ 选中日详情。
  * 系统日历需 READ_CALENDARS 权限，被拒时降级为提示卡片，仍可看打卡。
  *
- * 颜色与文字样式统一取 `AppTheme`（间距/圆角/阴影仍走 [DesignTokens] 的 dp 常量，T15 再迁）。
+ * 颜色与文字样式统一取 `AppTheme`（间距/圆角/阴影取 `AppTheme.space` / `.radius` / `.elevation`）。
  * 实底强调色容器（明日卡、选中日格）一律 `accentInk` 底 + `onAccent` 字，与 [AppButton] 的
  * 实底按钮同一套；描边与圆点这类不带文字的元素仍用 `accent`。
  * 动效：选中日格的底色与数字墨色**错峰**淡入（底色 `tween(MotionSpec.FadeMs / 3)` 提前落定、
@@ -138,9 +137,9 @@ fun GlobalCalendarScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -149,11 +148,11 @@ fun GlobalCalendarScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "日历", style = texts.pageTitle)
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
 
         TomorrowCard(
             tomorrow = tomorrow,
@@ -162,14 +161,14 @@ fun GlobalCalendarScreen(
         )
 
         if (!system.permissionGranted) {
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             PermissionNoticeCard(onRetry = { permissionLauncher.launch(viewModel.calendarPermissionToRequest()) })
         } else if (system.loadError) {
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             Text(text = "系统日历加载失败，可返回重试", style = texts.caption)
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
 
         MonthCard(
             month = month,
@@ -180,7 +179,7 @@ fun GlobalCalendarScreen(
             onSelectDate = { selectedDate = it },
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
 
         DayDetailCard(
             date = selectedDate,
@@ -189,7 +188,7 @@ fun GlobalCalendarScreen(
             showEvents = system.permissionGranted && !system.loadError,
         )
 
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
     }
 }
 
@@ -207,22 +206,22 @@ private fun TomorrowCard(
     val texts = AppTheme.texts
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+        shape = RoundedCornerShape(AppTheme.radius.lg),
         color = colors.accentInk,
         contentColor = colors.onAccent,
-        shadowElevation = DesignTokens.ShadowElevation,
+        shadowElevation = AppTheme.elevation.low,
     ) {
-        Column(modifier = Modifier.padding(DesignTokens.CardPadding)) {
+        Column(modifier = Modifier.padding(AppTheme.space.card)) {
             Text(
                 text = "明天",
                 style = texts.caption.copy(color = colors.onAccent.copy(alpha = 0.85f)),
             )
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = chineseDate(tomorrow),
                 style = texts.largeTitle.copy(color = colors.onAccent),
             )
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Spacer(Modifier.height(AppTheme.space.sm))
             if (!showEvents) {
                 Text(
                     text = "授权系统日历后可查看明日日程",
@@ -238,7 +237,7 @@ private fun TomorrowCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = DesignTokens.SpacingXs),
+                            .padding(top = AppTheme.space.xs),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
@@ -247,7 +246,7 @@ private fun TomorrowCard(
                                 .clip(CircleShape)
                                 .background(colors.onAccent),
                         )
-                        Spacer(Modifier.width(DesignTokens.SpacingSm))
+                        Spacer(Modifier.width(AppTheme.space.sm))
                         Text(
                             text = "${eventTimeText(event)}  ${event.title}",
                             style = texts.aux.copy(color = colors.onAccent),
@@ -256,7 +255,7 @@ private fun TomorrowCard(
                     }
                 }
                 if (events.size > 3) {
-                    Spacer(Modifier.height(DesignTokens.SpacingXs))
+                    Spacer(Modifier.height(AppTheme.space.xs))
                     Text(
                         text = "还有 ${events.size - 3} 项日程…",
                         style = texts.caption.copy(color = colors.onAccent.copy(alpha = 0.85f)),
@@ -288,7 +287,7 @@ private fun PermissionNoticeCard(onRetry: () -> Unit) {
                     modifier = Modifier.size(20.dp),
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Text(text = "需要日历权限", style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
@@ -298,7 +297,7 @@ private fun PermissionNoticeCard(onRetry: () -> Unit) {
                 )
             }
         }
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         AppButton(text = "去授权", onClick = onRetry)
     }
 }
@@ -375,7 +374,7 @@ private fun MonthCard(
             label = "globalMonthGrid",
         ) { shownMonth ->
             Column(modifier = Modifier.fillMaxWidth()) {
-                Spacer(Modifier.height(DesignTokens.SpacingXs))
+                Spacer(Modifier.height(AppTheme.space.xs))
 
                 Row(modifier = Modifier.fillMaxWidth()) {
                     WeekHeader.forEach { day ->
@@ -388,21 +387,21 @@ private fun MonthCard(
                     }
                 }
 
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
 
                 val today = LocalDate.now()
                 val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
                 val days = List(leadingBlanks) { null } +
                     (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
                 // 固定 6 行：不足 42 格的月用空位补齐。行高仍由 weight + aspectRatio 自己算、
-                // 行距仍是行尾的 SpacingSm，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
+                // 行距仍是行尾的 `AppTheme.space.sm`，故「6×(cell+gap)」是布局推出来的，不新增任何 dp
                 val cells = days + List(MonthGridCells - days.size) { null }
 
                 cells.chunked(7).forEach { row ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = DesignTokens.SpacingSm),
+                            .padding(bottom = AppTheme.space.sm),
                     ) {
                         row.forEach { date ->
                             if (date == null) {
@@ -436,7 +435,7 @@ private fun MonthCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LegendDot(color = colors.success, label = "打卡")
-            Spacer(Modifier.width(DesignTokens.SpacingMd))
+            Spacer(Modifier.width(AppTheme.space.md))
             LegendDot(color = colors.accent, label = "系统日程")
         }
     }
@@ -451,7 +450,7 @@ private fun LegendDot(color: Color, label: String) {
             .clip(CircleShape)
             .background(color),
     )
-    Spacer(Modifier.width(DesignTokens.SpacingXs))
+    Spacer(Modifier.width(AppTheme.space.xs))
     Text(text = label, style = texts.caption)
 }
 
@@ -585,12 +584,12 @@ private fun DayDetailCard(
                 style = texts.cardTitle,
             )
             if (date == today) {
-                Spacer(Modifier.width(DesignTokens.SpacingSm))
+                Spacer(Modifier.width(AppTheme.space.sm))
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(colors.accentSoft)
-                        .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
+                        .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
                 ) {
                     Text(
                         text = "今天",
@@ -600,9 +599,9 @@ private fun DayDetailCard(
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         Text(text = "打卡记录", style = texts.caption)
-        Spacer(Modifier.height(DesignTokens.SpacingXs))
+        Spacer(Modifier.height(AppTheme.space.xs))
         if (checkedHabits.isEmpty()) {
             Text(text = "该日暂无打卡", style = texts.aux.copy(color = colors.secondaryText))
         } else {
@@ -617,16 +616,16 @@ private fun DayDetailCard(
                         tint = colors.success,
                         modifier = Modifier.size(16.dp),
                     )
-                    Spacer(Modifier.width(DesignTokens.SpacingSm))
+                    Spacer(Modifier.width(AppTheme.space.sm))
                     Text(text = name, style = texts.aux)
                 }
             }
         }
 
         if (showEvents) {
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             Text(text = "系统日程", style = texts.caption)
-            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Spacer(Modifier.height(AppTheme.space.xs))
             if (events.isEmpty()) {
                 Text(
                     text = "该日暂无日程",
@@ -649,20 +648,21 @@ private fun DayDetailCard(
 private fun EventRow(event: SystemEvent) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    // 这里保持位置参只是沿用 T3 起 `RoundedCornerShape(DesignTokens.CornerRadius)` 的既有写法。
+    // 这里保持位置参只是沿用 T3 起 `RoundedCornerShape(AppTheme.radius.md)` 的既有写法。
     // 澄清一处以讹传讹：T11 记的「@JvmInline value class 命名实参会撞 internal 构造器」那条陷阱
     // 只属于 androidx.compose.ui.geometry.CornerRadius(radiusX = …)（见 HeatmapWeeks.kt 就地注释），
     // 与 RoundedCornerShape 无关；后者的真实约束是四角重载的默认值（只写 topStart = 会把另三角
-    // 落成 0）。T15 迁度量时按这条判，别把它当成「圆角构造一律位置参」的规矩。
-    val shape = RoundedCornerShape(DesignTokens.CornerRadius)
+    // 落成 0）。度量令牌现已收在 AppTheme.space / AppTheme.radius，这条注释只留给
+    // RoundedCornerShape 的重载坑，别把它当成「圆角构造一律位置参」的规矩。
+    val shape = RoundedCornerShape(AppTheme.radius.md)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = DesignTokens.SpacingSm)
+            .padding(top = AppTheme.space.sm)
             .clip(shape)
             .background(colors.background)
             .border(width = 1.dp, color = colors.divider.copy(alpha = 0.6f), shape = shape)
-            .padding(horizontal = DesignTokens.SpacingSm, vertical = DesignTokens.SpacingSm),
+            .padding(horizontal = AppTheme.space.sm, vertical = AppTheme.space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -671,7 +671,7 @@ private fun EventRow(event: SystemEvent) {
                 .clip(CircleShape)
                 .background(Color(event.calendarColor)),
         )
-        Spacer(Modifier.width(DesignTokens.SpacingSm))
+        Spacer(Modifier.width(AppTheme.space.sm))
         Column(Modifier.weight(1f)) {
             Text(text = event.title, style = texts.aux, maxLines = 1)
             Spacer(Modifier.height(1.dp))

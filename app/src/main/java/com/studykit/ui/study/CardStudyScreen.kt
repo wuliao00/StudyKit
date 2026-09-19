@@ -74,7 +74,6 @@ import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -82,7 +81,7 @@ import kotlinx.coroutines.launch
  * 卡片学习页：队列逐张 3D 翻面学习，右滑「认识」/左滑「忘记」推进间隔重复状态机；
  * 一轮结束展示庆祝小结卡。
  *
- * 颜色与文字样式统一取 `AppTheme`，间距/圆角仍走 [DesignTokens] 的 dp 常量。
+ * 颜色与文字样式统一取 `AppTheme`，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  */
 @Composable
 fun CardStudyScreen(
@@ -98,9 +97,9 @@ fun CardStudyScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -109,7 +108,7 @@ fun CardStudyScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "卡片学习", style = texts.pageTitle)
             Spacer(Modifier.weight(1f))
             if (state != null && state.total > 0 && !state.finished) {
@@ -131,15 +130,15 @@ fun CardStudyScreen(
             }
 
             state.total == 0 -> {
-                Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+                Spacer(Modifier.height(AppTheme.space.xl * 2))
                 EmptyState(
                     title = "没有待复习的单词",
                     caption = "当前没有到期的学习任务，先录入一些单词吧",
                     icon = Icons.Outlined.Star,
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 AppButton(text = "录入单词", onClick = onAddWord)
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 AppButton(text = "返回", secondary = true, onClick = onBack)
             }
 
@@ -151,7 +150,7 @@ fun CardStudyScreen(
             )
 
             else -> {
-                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                Spacer(Modifier.height(AppTheme.space.md))
                 // 进度条留在 AnimatedContent 之外：切卡时它只推进长度，不参与整卡滑入滑出
                 val progress = state.index.toFloat() / state.total
                 LinearProgressIndicator(
@@ -163,7 +162,7 @@ fun CardStudyScreen(
                     trackColor = colors.divider,
                     strokeCap = StrokeCap.Round,
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 AnimatedContent(
                     targetState = state.index,
                     transitionSpec = {
@@ -390,7 +389,7 @@ private fun SwipeRatingCard(
                             rotationY = flip
                             cameraDistance = 16f * density
                         }
-                        .clip(RoundedCornerShape(DesignTokens.CornerRadiusLg))
+                        .clip(RoundedCornerShape(AppTheme.radius.lg))
                         .clickable { flipped = !flipped },
                 ) {
                     CardFace(
@@ -398,7 +397,7 @@ private fun SwipeRatingCard(
                         content = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(word.word, style = texts.largeTitle, textAlign = TextAlign.Center)
-                                Spacer(Modifier.height(DesignTokens.SpacingMd))
+                                Spacer(Modifier.height(AppTheme.space.md))
                                 Text("点击翻面 · 右滑认识 左滑忘记", style = texts.caption)
                             }
                         },
@@ -410,7 +409,7 @@ private fun SwipeRatingCard(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(word.meaning, style = texts.pageTitle, textAlign = TextAlign.Center)
                                 if (word.example.isNotBlank()) {
-                                    Spacer(Modifier.height(DesignTokens.SpacingMd))
+                                    Spacer(Modifier.height(AppTheme.space.md))
                                     Text(
                                         word.example,
                                         style = texts.aux.copy(color = colors.secondaryText),
@@ -426,7 +425,8 @@ private fun SwipeRatingCard(
             GradeBadge(
                 glyph = Icons.Filled.Check,
                 contentDescription = "认识",
-                color = colors.success,
+                container = colors.successSoft,
+                ink = colors.successInk,
                 alpha = knownA,
                 align = Alignment.TopEnd,
                 rotation = 12f,
@@ -434,14 +434,15 @@ private fun SwipeRatingCard(
             GradeBadge(
                 glyph = Icons.Filled.Close,
                 contentDescription = "不认识",
-                color = colors.warning,
+                container = colors.warningSoft,
+                ink = colors.warningInk,
                 alpha = unknownA,
                 align = Alignment.TopStart,
                 rotation = -12f,
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
-        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd)) {
+        Spacer(Modifier.height(AppTheme.space.lg))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.md)) {
             OutlinedButton(
                 onClick = { grade(false) },
                 // 判定进行中（飞出途中 graded 已置真）两颗按钮一起失效，避免与手势抢同一张卡
@@ -449,9 +450,10 @@ private fun SwipeRatingCard(
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp),
-                shape = RoundedCornerShape(DesignTokens.CornerRadiusXl),
+                shape = RoundedCornerShape(AppTheme.radius.xl),
                 border = BorderStroke(1.5.dp, colors.warning),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.warning),
+                // 按钮里是文字：描边留品牌色，字走 ink（浅色 warning 作字仅 3.07:1）
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.warningInk),
             ) {
                 Text("不认识", style = texts.body)
             }
@@ -461,14 +463,14 @@ private fun SwipeRatingCard(
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp),
-                shape = RoundedCornerShape(DesignTokens.CornerRadiusXl),
+                shape = RoundedCornerShape(AppTheme.radius.xl),
                 border = BorderStroke(1.5.dp, colors.success),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.success),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.successInk),
             ) {
                 Text("认识", style = texts.body)
             }
         }
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
     }
 }
 
@@ -503,7 +505,7 @@ private fun CardFace(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = DesignTokens.SpacingXl * 1.5f),
+                .padding(vertical = AppTheme.space.xl * 1.5f),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
             content = content,
@@ -515,15 +517,20 @@ private fun CardFace(
  * 拖拽角标：**只放 ✓ / ✗ 图形**（不放「认识/忘记」文字），贴在布局根角落、只做自身的静态倾斜，
  * 透明度跟手上位移线性渐显；`alpha <= 0` 时直接不进组合（未拖拽与已发起结算两种情况都归零）。
  *
- * 刻意不放文案：17sp 文字压在 `success`/`warning` 实底上，浅色主题只有 ~2.2:1，属于可读性硬伤；
- * 而 ✓/✗ 是**非文本元素**，靠形状 + 颜色 + 位置表意，配 [contentDescription] 交给读屏，
- * 文字版语义仍由下方「不认识 / 认识」两颗按钮承担。
+ * 刻意不放文案：17sp 文字压在拖拽中的卡片上会被抢走注意力，文字版语义仍由下方
+ * 「不认识 / 认识」两颗按钮承担；而 ✓/✗ 是**非文本元素**，靠形状 + 颜色 + 位置表意，
+ * 配 [contentDescription] 交给读屏。
+ *
+ * 配色走「soft 底 + ink 图形」（与 T10 药丸、[com.studykit.ui.components.QuizOptionTile] 同一套）：
+ * 旧写法是 `success`/`warning` 实底压 `onAccent`，浅色主题那颗白勾只有 2.22:1；
+ * 白字压实底按 T15 裁定只留给 accent 一处（`accentInk` + `onAccent`）。
  */
 @Composable
 private fun BoxScope.GradeBadge(
     glyph: ImageVector,
     contentDescription: String,
-    color: Color,
+    container: Color,
+    ink: Color,
     alpha: Float,
     align: Alignment,
     rotation: Float,
@@ -532,27 +539,27 @@ private fun BoxScope.GradeBadge(
     Box(
         modifier = Modifier
             .align(align)
-            .padding(DesignTokens.SpacingMd)
+            .padding(AppTheme.space.md)
             .graphicsLayer {
                 this.alpha = alpha
                 rotationZ = rotation
             }
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-            .background(color)
-            .padding(DesignTokens.SpacingSm),
+            .clip(RoundedCornerShape(AppTheme.radius.md))
+            .background(container)
+            .padding(AppTheme.space.sm),
     ) {
         Icon(
             imageVector = glyph,
             contentDescription = contentDescription,
-            tint = AppTheme.colors.onAccent,
+            tint = ink,
             modifier = Modifier.size(22.dp),
         )
     }
 }
 
 /**
- * 一轮结束小结卡：中央达成环（认识占比，满达成转 gold）+ 两侧认识/忘记数字滚动进场，
- * 顶层叠全屏彩带庆祝。
+ * 一轮结束小结卡：中央达成环（认识占比，满达成转 `goldInk`）+ 两侧认识/忘记数字滚动进场，
+ * 顶层叠全屏彩带庆祝。两个计数是 34sp 文字，故走 `successInk/warningInk` 而非品牌色。
  *
  * `ConfettiBurst` 按 T4 约定挂在裁剪容器之外的 `matchParentSize` 层上：
  * 粒子会飞越画布框，放进 [AppCard] 里会被圆角裁成方框。trigger 用本轮结算总数
@@ -603,7 +610,7 @@ private fun SessionSummary(
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 // AppCard 的内容列默认起始对齐，这里再用一层居中 Box 把环放到卡片正中
                 Box(
                     modifier = Modifier.fillMaxWidth(),
@@ -617,7 +624,7 @@ private fun SessionSummary(
                             progress = progress,
                             modifier = Modifier.fillMaxSize(),
                             strokeWidth = 11.dp,
-                            color = if (progress >= 1f && total > 0) colors.gold else colors.success,
+                            color = if (progress >= 1f && total > 0) colors.goldInk else colors.success,
                         )
                         Text(
                             text = "${(progress * 100f).roundToInt()}%",
@@ -625,7 +632,7 @@ private fun SessionSummary(
                         )
                     }
                 }
-                Spacer(Modifier.height(DesignTokens.SpacingLg))
+                Spacer(Modifier.height(AppTheme.space.lg))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -633,24 +640,24 @@ private fun SessionSummary(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = "$shownKnown",
-                            style = texts.statValue.copy(color = colors.success),
+                            style = texts.statValue.copy(color = colors.successInk),
                         )
-                        Spacer(Modifier.height(DesignTokens.SpacingXs))
+                        Spacer(Modifier.height(AppTheme.space.xs))
                         Text(text = "认识", style = texts.caption)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = "$shownUnknown",
-                            style = texts.statValue.copy(color = colors.warning),
+                            style = texts.statValue.copy(color = colors.warningInk),
                         )
-                        Spacer(Modifier.height(DesignTokens.SpacingXs))
+                        Spacer(Modifier.height(AppTheme.space.xs))
                         Text(text = "不认识", style = texts.caption)
                     }
                 }
             }
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             AppButton(text = "返回", onClick = onBack)
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             AppButton(text = "再来一轮", secondary = true, onClick = onRestart)
         }
         ConfettiBurst(

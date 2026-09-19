@@ -51,7 +51,6 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 import com.studykit.util.MistakeImageStore
 import java.io.File
 import java.text.SimpleDateFormat
@@ -61,9 +60,9 @@ import java.util.Locale
  * 来源徽标：单词=accent 族、刷题=success 族、拍照=warning 族，统一走「柔底药丸」。
  *
  * 旧写法是实色 12% 底 + **同色文字**（accent 文字 3.04:1、success ≈2.2:1，都不达 AA），
- * 按 ledger 规则换 soft 容器 + 达标墨色：accent 族有专用 `accentInk`；
- * success/warning 族的 `successInk/warningInk` 归 T15 令牌批次，先用 `primaryText`
- * （深墨在 10%/16% soft 底上两主题都达 AA，与 T10 `WordStatusIndicator`、T13 `StatusTag` 同批做法）。
+ * 按 ledger 规则换 soft 容器 + 达标墨色：三族各取其 ink 变体
+ * （`accentInk` / `successInk` / `warningInk`，T15 墨水批次；浅色压深后压在本族 soft 柔底上有
+ * 5.21 / 4.96 / 5.02:1，夜间沿用提亮后的品牌色也有 6.58 / 5.65 / 4.66:1，两主题都过文本 AA）。
  * 未知来源退回透明底 + secondaryText。
  */
 @Composable
@@ -72,17 +71,17 @@ private fun SourceBadge(source: String) {
     val texts = AppTheme.texts
     val (label, container, ink) = when (source) {
         Mistake.SOURCE_WORD -> Triple("单词", colors.accentSoft, colors.accentInk)
-        Mistake.SOURCE_PRACTICE -> Triple("刷题", colors.successSoft, colors.primaryText)
-        Mistake.SOURCE_PHOTO -> Triple("拍照", colors.warningSoft, colors.primaryText)
+        Mistake.SOURCE_PRACTICE -> Triple("刷题", colors.successSoft, colors.successInk)
+        Mistake.SOURCE_PHOTO -> Triple("拍照", colors.warningSoft, colors.warningInk)
         else -> Triple(source, Color.Transparent, colors.secondaryText)
     }
     Box(
         modifier = Modifier
             .background(
                 color = container,
-                shape = RoundedCornerShape(DesignTokens.SpacingXs),
+                shape = RoundedCornerShape(AppTheme.space.xs),
             )
-            .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
+            .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
     ) {
         Text(
             text = label,
@@ -102,7 +101,7 @@ private fun SubjectFilterRow(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
     ) {
         FilterChip(label = "全部", selected = selected == null) { onSelect(null) }
         subjects.forEach { subject ->
@@ -127,7 +126,7 @@ private fun MasteryFilterRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
     ) {
         FilterChip(label = "待复习", selected = !showMastered) { onSelect(false) }
         FilterChip(label = "已掌握", selected = showMastered) { onSelect(true) }
@@ -157,10 +156,10 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+            .clip(RoundedCornerShape(AppTheme.radius.md))
             .background(container)
             .clickable(onClick = onClick)
-            .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
+            .padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
     ) {
         Text(
             text = label,
@@ -175,7 +174,7 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 /**
  * 错题列表页（错题 Tab）：掌握态筛选 + 学科筛选 + 按学科分组 + 来源徽标 + 图片缩略图 + 拍照录入入口。
  *
- * 颜色与文字样式统一取 [AppTheme]，间距/圆角仍走 [DesignTokens] 的 dp 常量（T15 才迁度量）。
+ * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  *
  * 列表动效：分组标题与错题条目都挂 `Modifier.animateItem()`（[androidx.compose.foundation.lazy.LazyItemScope]）——
  * 拍照录入回来的新错题淡入、删除/标记掌握/切筛选时移除的条目淡出，其余条目用 spring 让位，
@@ -235,9 +234,9 @@ fun MistakeListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -259,21 +258,21 @@ fun MistakeListScreen(
         )
 
         if (showCameraRationale) {
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Spacer(Modifier.height(AppTheme.space.sm))
             Text(
                 text = "拍照录入需要相机权限。请在系统设置 → 应用 → StudyKit → 权限中允许「相机」，" +
                     "或再次点击右上角「拍照录入」重新发起授权。",
-                style = texts.caption.copy(color = colors.warning),
+                style = texts.caption.copy(color = colors.warningInk),
             )
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         MasteryFilterRow(showMastered = showMastered, onSelect = viewModel::selectShowMastered)
 
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         SubjectFilterRow(subjects = subjects, selected = selected, onSelect = viewModel::selectSubject)
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         if (groups.isEmpty()) {
             // 四种子空态各说各话：整库空 / 学科筛选筛空 / 待复习被清空 / 已掌握侧还没题。
             // 「被学科筛空」必须先判：`groups` 空有两种成因，只有当前侧本身就空才是掌握态造成的。
@@ -289,7 +288,7 @@ fun MistakeListScreen(
                 !showMastered -> "上面的题都划掉了，切到上方「已掌握」可以回看"
                 else -> "在错题详情里点「标记掌握」，题目就会挪到这里"
             }
-            Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+            Spacer(Modifier.height(AppTheme.space.xl * 2))
             EmptyState(
                 title = emptyTitle,
                 caption = emptyCaption,
@@ -297,7 +296,7 @@ fun MistakeListScreen(
             )
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.space.md),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 groups.forEach { group ->
@@ -305,7 +304,7 @@ fun MistakeListScreen(
                         Row(
                             modifier = Modifier.animateItem(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                         ) {
                             Text(
                                 text = group.subject,
@@ -325,7 +324,7 @@ fun MistakeListScreen(
                         )
                     }
                 }
-                item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }
+                item { Spacer(Modifier.height(AppTheme.space.md)) }
             }
         }
     }
@@ -344,7 +343,7 @@ private fun launchCamera(context: Context, onReady: (File, Uri) -> Unit) {
  *
  * `modifier` 由调用方（`LazyItemScope`）传入 `Modifier.animateItem()`，挂到卡片根，
  * 于是条目的进出与让位都走动画；缩略图按 brief「图片卡」口径统一为
- * `CornerRadiusLg` 圆角 + 1dp `divider` 描边——夜间卡面 `#26241F` 与照片暗部同亮度时，
+ * `radius.lg` 圆角 + 1dp `divider` 描边——夜间卡面 `#26241F` 与照片暗部同亮度时，
  * 没有这条发丝线图片会直接糊进卡里。
  * 行内的「已掌握」小票**已删**：信息已由页顶掌握态 chip 承担（「待复习」一侧不可能有掌握项，
  * 「已掌握」一侧整列都是），留着只是同义反复；保留的是页头的计数文案。
@@ -360,7 +359,7 @@ private fun MistakeItem(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val thumbShape = RoundedCornerShape(DesignTokens.CornerRadiusLg)
+    val thumbShape = RoundedCornerShape(AppTheme.radius.lg)
     AppCard(
         modifier = modifier
             .fillMaxWidth()
@@ -370,12 +369,12 @@ private fun MistakeItem(
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 ) {
                     SourceBadge(source = mistake.source)
                     Text(text = dateText, style = texts.caption)
                 }
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
                 Text(
                     text = mistake.title,
                     style = texts.cardTitle,
@@ -383,7 +382,7 @@ private fun MistakeItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (mistake.content.isNotBlank()) {
-                    Spacer(Modifier.height(DesignTokens.SpacingXs))
+                    Spacer(Modifier.height(AppTheme.space.xs))
                     Text(
                         text = mistake.content.replace("\n", " "),
                         style = texts.caption,
@@ -394,7 +393,7 @@ private fun MistakeItem(
             }
             val imageFile = thumbFile ?: fullFile
             if (imageFile != null && imageFile.exists()) {
-                Spacer(Modifier.width(DesignTokens.SpacingMd))
+                Spacer(Modifier.width(AppTheme.space.md))
                 AsyncImage(
                     model = imageFile,
                     contentDescription = mistake.title,

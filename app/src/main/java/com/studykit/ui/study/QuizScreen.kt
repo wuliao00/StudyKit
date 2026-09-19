@@ -45,12 +45,11 @@ import com.studykit.ui.components.QuizOptionState
 import com.studykit.ui.components.QuizOptionTile
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.theme.AppTheme
-import com.studykit.ui.theme.DesignTokens
 
 /**
  * 题库练习页：学科选择 → 逐题作答（即时判定 + 解析）→ 正确率环形结果页。
  *
- * 颜色与文字样式统一取 `AppTheme`，间距/圆角仍走 [DesignTokens] 的 dp 常量。
+ * 颜色与文字样式统一取 `AppTheme`，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  *
  * 一题的状态机（详见 [QuestionView] 与 [quizOptionState]）：
  * `点击 → 本地锁定（Selected）→ DB 回写判定（Correct/Wrong + 解析）→ 下一题`，
@@ -69,9 +68,9 @@ fun QuizScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = DesignTokens.PageHorizontalPadding),
+            .padding(horizontal = AppTheme.space.pageH),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = {
@@ -85,7 +84,7 @@ fun QuizScreen(
                     tint = colors.accentInk,
                 )
             }
-            Spacer(Modifier.width(DesignTokens.SpacingXs))
+            Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "题库练习", style = texts.pageTitle)
             Spacer(Modifier.weight(1f))
             if (state.started && !state.finished) {
@@ -135,11 +134,11 @@ private fun SubjectPicker(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         Text(text = "选择学科，开始一轮练习", style = texts.caption)
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         if (subjects.isEmpty()) {
-            Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
+            Spacer(Modifier.height(AppTheme.space.xl * 2))
             EmptyState(
                 title = "题库还是空的",
                 caption = "回到学习首页，在「题库练习」卡片上点击 + 录入第一道题",
@@ -165,10 +164,10 @@ private fun SubjectPicker(
                         )
                     }
                 }
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
             }
         }
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
     }
 }
 
@@ -238,17 +237,17 @@ private fun QuestionView(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         Text(
             text = question.subject,
             style = texts.caption.copy(color = colors.accentInk, fontWeight = FontWeight.Medium),
         )
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Spacer(Modifier.height(AppTheme.space.sm))
         AppCard(modifier = Modifier.fillMaxWidth()) {
             Text(text = question.stem, style = texts.body)
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         // 整列以 question.id 为键：换题即整列重建，砖块内的 saveable/Animatable
         // 不可能带着上一题的判定态或抖动残留进入下一题。
         key(question.id) {
@@ -272,24 +271,25 @@ private fun QuestionView(
                         }
                     },
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
             }
         }
 
         if (answered) {
             val right = selected == question.answerIndex
             AppCard(modifier = Modifier.fillMaxWidth()) {
-                // success/warning 作文字色约 2.0:1 / 3.1:1，与旧墨色令牌债一并记在 T15 批次
+                // 判定文案是文字：走 ink（浅色 success 2.22:1 / warning 3.07:1 都不达 AA，
+                // successInk/warningInk 压白卡 5.39 / 5.60:1）
                 Text(
                     text = if (right) "回答正确" else "回答错误",
                     style = texts.cardTitle.copy(
-                        color = if (right) colors.success else colors.warning,
+                        color = if (right) colors.successInk else colors.warningInk,
                     ),
                 )
-                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Spacer(Modifier.height(AppTheme.space.sm))
                 Text(text = "解析：${question.explanation}", style = texts.aux)
             }
-            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Spacer(Modifier.height(AppTheme.space.md))
             AppButton(
                 text = if (isLast) "查看结果" else "下一题",
                 onClick = {
@@ -300,7 +300,7 @@ private fun QuestionView(
                 },
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
     }
 }
 
@@ -308,7 +308,8 @@ private fun QuestionView(
  * 结果页：环形正确率（132dp 居中）+ 百分比 + 答对题数。
  *
  * `progress` 直接取整数百分比 / 100，因此环与读数永远同一个口径、不会出现「99% 的环画满格」；
- * 达成态换 `colors.gold` 的门槛是 80%（brief 规定），且只在真有正确率时出现。
+ * 达成态换 `colors.goldInk` 的门槛是 80%（brief 规定），且只在真有正确率时出现；
+ * 用 ink 而非 `gold`：金色环在浅色卡面只有 1.79:1，细一圈几乎看不见。
  *
  * 环与百分比都以 `born` 门控从 0 起步：[RingGauge] 与 `animateIntAsState` 首次组合都直接落在
  * target（没有「0 → N」的过程），故按 [StudyHomeScreen] 火焰徽章与 T8 小结卡同法补一次进场补间，
@@ -348,7 +349,7 @@ private fun QuizResult(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             // AppCard 的内容列默认起始对齐，这里再用一层居中 Box 把环放到卡片正中
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -362,7 +363,7 @@ private fun QuizResult(
                         progress = if (born) progress else 0f,
                         modifier = Modifier.fillMaxSize(),
                         strokeWidth = 11.dp,
-                        color = if (percent >= 80 && total > 0) colors.gold else colors.accent,
+                        color = if (percent >= 80 && total > 0) colors.goldInk else colors.accent,
                     )
                     Text(
                         text = "$shownPercent%",
@@ -370,7 +371,7 @@ private fun QuizResult(
                     )
                 }
             }
-            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Spacer(Modifier.height(AppTheme.space.lg))
             Text(
                 text = "答对 $correctCount / $total 题",
                 style = texts.caption,
@@ -378,9 +379,9 @@ private fun QuizResult(
                 textAlign = TextAlign.Center,
             )
         }
-        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Spacer(Modifier.height(AppTheme.space.lg))
         AppButton(text = "返回", onClick = onBack)
-        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        Spacer(Modifier.height(AppTheme.space.md))
         AppButton(text = "换个学科再来一轮", secondary = true, onClick = onRestart)
     }
 }
