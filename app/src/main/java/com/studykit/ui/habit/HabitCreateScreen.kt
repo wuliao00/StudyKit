@@ -37,18 +37,28 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯", "🧘", "🌙", "💧", "🎹", "🖌️", "🥗")
 private val TargetOptions = listOf(7, 21, 30, 60, 100)
 
-/** 创建习惯页：名称 + 图标 + 类型（天数/数量）+ 目标 + 默认打卡文案 */
+/**
+ * 创建习惯页：名称 + 图标 + 类型（天数/数量）+ 目标 + 默认打卡文案。
+ *
+ * 颜色与文字样式取 `AppTheme`；间距/圆角仍走 [DesignTokens] 的 dp 常量（T15 再迁度量）。
+ * 选中的目标天数磁贴是**实底强调色容器** → `accentInk` 底 + `onAccent` 字（与 AppButton 同一套，
+ * 夜间主题下白字压在亮色上只有 1.74:1，故实底必须用 ink 变体）；图标格与类型磁贴是柔底
+ * → `accentSoft` 底 + `accentInk` 字，描边用 `accent`。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HabitCreateScreen(
     viewModel: HabitViewModel,
     onBack: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     var name by rememberSaveable { mutableStateOf("") }
     var icon by rememberSaveable { mutableStateOf("🎯") }
     var targetDays by rememberSaveable { mutableStateOf(21) }
@@ -71,11 +81,11 @@ fun HabitCreateScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingXs))
-            Text(text = "新建习惯", style = DesignTokens.PageTitle)
+            Text(text = "新建习惯", style = texts.pageTitle)
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
@@ -88,7 +98,7 @@ fun HabitCreateScreen(
         )
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
-        Text(text = "图标", style = DesignTokens.Caption)
+        Text(text = "图标", style = texts.caption)
         Spacer(Modifier.height(DesignTokens.SpacingSm))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
@@ -101,24 +111,23 @@ fun HabitCreateScreen(
                         .size(48.dp)
                         .clip(CircleShape)
                         .background(
-                            if (selected) DesignTokens.Accent.copy(alpha = 0.12f)
-                            else DesignTokens.Card,
+                            if (selected) colors.accentSoft else colors.card,
                         )
                         .border(
                             width = if (selected) 1.5.dp else 1.dp,
-                            color = if (selected) DesignTokens.Accent else DesignTokens.Divider,
+                            color = if (selected) colors.accent else colors.divider,
                             shape = CircleShape,
                         )
                         .clickable { icon = option },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = option, fontSize = DesignTokens.PageTitle.fontSize)
+                    Text(text = option, fontSize = texts.pageTitle.fontSize)
                 }
             }
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
-        Text(text = "打卡类型", style = DesignTokens.Caption)
+        Text(text = "打卡类型", style = texts.caption)
         Spacer(Modifier.height(DesignTokens.SpacingSm))
         Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
             TypeChip(
@@ -159,12 +168,12 @@ fun HabitCreateScreen(
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
                 text = "打卡时输入本次数量，逐次累加直到达成目标",
-                style = DesignTokens.Caption,
+                style = texts.caption,
             )
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
-        Text(text = if (isCountType) "目标期限（天）" else "目标天数", style = DesignTokens.Caption)
+        Text(text = if (isCountType) "目标期限（天）" else "目标天数", style = texts.caption)
         Spacer(Modifier.height(DesignTokens.SpacingSm))
         Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
             TargetOptions.forEach { option ->
@@ -174,11 +183,11 @@ fun HabitCreateScreen(
                         .weight(1f)
                         .clip(RoundedCornerShape(DesignTokens.CornerRadius))
                         .background(
-                            if (selected) DesignTokens.Accent else DesignTokens.Card,
+                            if (selected) colors.accentInk else colors.card,
                         )
                         .border(
                             width = 1.dp,
-                            color = if (selected) DesignTokens.Accent else DesignTokens.Divider,
+                            color = if (selected) colors.accentInk else colors.divider,
                             shape = RoundedCornerShape(DesignTokens.CornerRadius),
                         )
                         .clickable { targetDays = option }
@@ -187,8 +196,8 @@ fun HabitCreateScreen(
                 ) {
                     Text(
                         text = "$option",
-                        style = DesignTokens.Auxiliary.copy(
-                            color = if (selected) DesignTokens.Card else DesignTokens.PrimaryText,
+                        style = texts.aux.copy(
+                            color = if (selected) colors.onAccent else colors.primaryText,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         ),
                     )
@@ -232,15 +241,17 @@ private fun TypeChip(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(DesignTokens.CornerRadius))
             .background(
-                if (selected) DesignTokens.Accent.copy(alpha = 0.10f) else DesignTokens.Card,
+                if (selected) colors.accentSoft else colors.card,
             )
             .border(
                 width = if (selected) 1.5.dp else 1.dp,
-                color = if (selected) DesignTokens.Accent else DesignTokens.Divider,
+                color = if (selected) colors.accent else colors.divider,
                 shape = RoundedCornerShape(DesignTokens.CornerRadius),
             )
             .clickable(onClick = onClick)
@@ -248,11 +259,11 @@ private fun TypeChip(
     ) {
         Text(
             text = title,
-            style = DesignTokens.CardTitle.copy(
-                color = if (selected) DesignTokens.Accent else DesignTokens.PrimaryText,
+            style = texts.cardTitle.copy(
+                color = if (selected) colors.accentInk else colors.primaryText,
             ),
         )
         Spacer(Modifier.height(2.dp))
-        Text(text = subtitle, style = DesignTokens.Caption)
+        Text(text = subtitle, style = texts.caption)
     }
 }

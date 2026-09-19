@@ -2,6 +2,15 @@ package com.studykit.ui.habit
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,9 +32,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,12 +50,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.SystemEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 import java.time.LocalDate
 import java.time.YearMonth
@@ -77,12 +90,20 @@ private fun eventTimeText(event: SystemEvent): String {
 /**
  * 全局日历页：明日日期卡片 + 月历（叠加打卡点与系统事件徽标）+ 选中日详情。
  * 系统日历需 READ_CALENDARS 权限，被拒时降级为提示卡片，仍可看打卡。
+ *
+ * 颜色与文字样式统一取 `AppTheme`（间距/圆角/阴影仍走 [DesignTokens] 的 dp 常量，T15 再迁）。
+ * 实底强调色容器（明日卡、选中日格）一律 `accentInk` 底 + `onAccent` 字，与 [AppButton] 的
+ * 实底按钮同一套；描边与圆点这类不带文字的元素仍用 `accent`。
+ * 动效：选中日格底色 `tween(MotionSpec.FadeMs)` + 整格 `MotionSpec.press` 弹到 1.08 倍；
+ * 翻月时表头与网格整片走 `AnimatedContent`（淡入 + 1/6 宽短距滑入，方向跟手势）。
  */
 @Composable
 fun GlobalCalendarScreen(
     viewModel: GlobalCalendarViewModel,
     onBack: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val checkInsByDate by viewModel.checkInsByDate.collectAsStateWithLifecycle()
     val system by viewModel.system.collectAsStateWithLifecycle()
     var month by remember { mutableStateOf(YearMonth.now()) }
@@ -114,11 +135,11 @@ fun GlobalCalendarScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingXs))
-            Text(text = "日历", style = DesignTokens.PageTitle)
+            Text(text = "日历", style = texts.pageTitle)
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
@@ -134,7 +155,7 @@ fun GlobalCalendarScreen(
             PermissionNoticeCard(onRetry = { permissionLauncher.launch(viewModel.calendarPermissionToRequest()) })
         } else if (system.loadError) {
             Spacer(Modifier.height(DesignTokens.SpacingMd))
-            Text(text = "系统日历加载失败，可返回重试", style = DesignTokens.Caption)
+            Text(text = "系统日历加载失败，可返回重试", style = texts.caption)
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
@@ -161,39 +182,45 @@ fun GlobalCalendarScreen(
     }
 }
 
-/** 明日日期卡片：强调色底醒目展示「明天是 X月X日 周X」及明日日程 */
+/**
+ * 明日日期卡片：实底强调色（`accentInk` + `onAccent` 字，双主题各自达 AA）醒目展示
+ * 「明天是 X月X日 周X」及明日日程。
+ */
 @Composable
 private fun TomorrowCard(
     tomorrow: LocalDate,
     events: List<SystemEvent>,
     showEvents: Boolean,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
-        color = DesignTokens.Accent,
+        color = colors.accentInk,
+        contentColor = colors.onAccent,
         shadowElevation = DesignTokens.ShadowElevation,
     ) {
         Column(modifier = Modifier.padding(DesignTokens.CardPadding)) {
             Text(
                 text = "明天",
-                style = DesignTokens.Caption.copy(color = DesignTokens.Card.copy(alpha = 0.85f)),
+                style = texts.caption.copy(color = colors.onAccent.copy(alpha = 0.85f)),
             )
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
                 text = chineseDate(tomorrow),
-                style = DesignTokens.LargeTitle.copy(color = DesignTokens.Card),
+                style = texts.largeTitle.copy(color = colors.onAccent),
             )
             Spacer(Modifier.height(DesignTokens.SpacingSm))
             if (!showEvents) {
                 Text(
                     text = "授权系统日历后可查看明日日程",
-                    style = DesignTokens.Auxiliary.copy(color = DesignTokens.Card.copy(alpha = 0.85f)),
+                    style = texts.aux.copy(color = colors.onAccent.copy(alpha = 0.85f)),
                 )
             } else if (events.isEmpty()) {
                 Text(
                     text = "明天暂无日程，安心安排打卡吧",
-                    style = DesignTokens.Auxiliary.copy(color = DesignTokens.Card.copy(alpha = 0.85f)),
+                    style = texts.aux.copy(color = colors.onAccent.copy(alpha = 0.85f)),
                 )
             } else {
                 events.take(3).forEach { event ->
@@ -207,12 +234,12 @@ private fun TomorrowCard(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(DesignTokens.Card),
+                                .background(colors.onAccent),
                         )
                         Spacer(Modifier.width(DesignTokens.SpacingSm))
                         Text(
                             text = "${eventTimeText(event)}  ${event.title}",
-                            style = DesignTokens.Auxiliary.copy(color = DesignTokens.Card),
+                            style = texts.aux.copy(color = colors.onAccent),
                             maxLines = 1,
                         )
                     }
@@ -221,7 +248,7 @@ private fun TomorrowCard(
                     Spacer(Modifier.height(DesignTokens.SpacingXs))
                     Text(
                         text = "还有 ${events.size - 3} 项日程…",
-                        style = DesignTokens.Caption.copy(color = DesignTokens.Card.copy(alpha = 0.85f)),
+                        style = texts.caption.copy(color = colors.onAccent.copy(alpha = 0.85f)),
                     )
                 }
             }
@@ -232,29 +259,31 @@ private fun TomorrowCard(
 /** 权限未授权时的降级提示卡片 */
 @Composable
 private fun PermissionNoticeCard(onRetry: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(DesignTokens.Warning.copy(alpha = 0.10f)),
+                    .background(colors.warningSoft),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.DateRange,
                     contentDescription = null,
-                    tint = DesignTokens.Warning,
+                    tint = colors.warning,
                     modifier = Modifier.size(20.dp),
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingMd))
             Column(Modifier.weight(1f)) {
-                Text(text = "需要日历权限", style = DesignTokens.CardTitle)
+                Text(text = "需要日历权限", style = texts.cardTitle)
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = "授权后才能显示系统日历事件，打卡记录不受影响",
-                    style = DesignTokens.Caption,
+                    style = texts.caption,
                 )
             }
         }
@@ -263,7 +292,12 @@ private fun PermissionNoticeCard(onRetry: () -> Unit) {
     }
 }
 
-/** 月历卡片：月份切换 + 网格（叠加打卡点与事件徽标） */
+/**
+ * 月历卡片：月份切换 + 网格（叠加打卡点与事件徽标）。
+ *
+ * 翻月用 [AnimatedContent] 换整片表头+网格：淡入淡出叠 1/6 宽的横向短距滑入，
+ * 方向由本页 `slide` 记录（点左箭头 = 从左侧进），月份标题不参与转场。
+ */
 @Composable
 private fun MonthCard(
     month: YearMonth,
@@ -273,74 +307,105 @@ private fun MonthCard(
     selectedDate: LocalDate,
     onSelectDate: (LocalDate) -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    // 翻月方向：+1 = 往未来（新网格从右侧进），-1 = 回过去；与 month 同一帧写入
+    var slide by remember { mutableStateOf(0) }
+
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            IconButton(onClick = { onMonthChange(month.minusMonths(1)) }) {
+            IconButton(onClick = {
+                slide = -1
+                onMonthChange(month.minusMonths(1))
+            }) {
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowLeft,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                     contentDescription = "上个月",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Text(
                 text = "${month.year} 年 ${month.monthValue} 月",
-                style = DesignTokens.CardTitle,
+                style = texts.cardTitle,
             )
-            IconButton(onClick = { onMonthChange(month.plusMonths(1)) }) {
+            IconButton(onClick = {
+                slide = 1
+                onMonthChange(month.plusMonths(1))
+            }) {
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowRight,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = "下个月",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
         }
 
-        Spacer(Modifier.height(DesignTokens.SpacingXs))
+        AnimatedContent(
+            targetState = month,
+            transitionSpec = {
+                val dir = if (slide >= 0) 1 else -1
+                val enter = fadeIn(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) +
+                    slideInHorizontally(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) {
+                        it / 6 * dir
+                    }
+                val exit = fadeOut(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) +
+                    slideOutHorizontally(animationSpec = tween(durationMillis = MotionSpec.FadeMs)) {
+                        -it / 6 * dir
+                    }
+                enter.togetherWith(exit)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = "globalMonthGrid",
+        ) { shownMonth ->
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Spacer(Modifier.height(DesignTokens.SpacingXs))
 
-        Row(modifier = Modifier.fillMaxWidth()) {
-            WeekHeader.forEach { day ->
-                Text(
-                    text = day,
-                    style = DesignTokens.Caption,
-                    modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(DesignTokens.SpacingSm))
-
-        val today = LocalDate.now()
-        val leadingBlanks = month.atDay(1).dayOfWeek.value - 1
-        val cells = List(leadingBlanks) { null } +
-            (1..month.lengthOfMonth()).map { month.atDay(it) }
-
-        cells.chunked(7).forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = DesignTokens.SpacingSm),
-            ) {
-                row.forEach { date ->
-                    if (date == null) {
-                        Spacer(Modifier.weight(1f))
-                    } else {
-                        GlobalDayCell(
-                            date = date,
-                            isToday = date == today,
-                            isSelected = date == selectedDate,
-                            hasCheckIn = date in checkInsByDate,
-                            hasEvent = date in eventsByDate,
-                            onClick = { onSelectDate(date) },
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    WeekHeader.forEach { day ->
+                        Text(
+                            text = day,
+                            style = texts.caption,
                             modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
-                repeat(7 - row.size) { Spacer(Modifier.weight(1f)) }
+
+                Spacer(Modifier.height(DesignTokens.SpacingSm))
+
+                val today = LocalDate.now()
+                val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
+                val cells = List(leadingBlanks) { null } +
+                    (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
+
+                cells.chunked(7).forEach { row ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = DesignTokens.SpacingSm),
+                    ) {
+                        row.forEach { date ->
+                            if (date == null) {
+                                Spacer(Modifier.weight(1f))
+                            } else {
+                                GlobalDayCell(
+                                    date = date,
+                                    isToday = date == today,
+                                    isSelected = date == selectedDate,
+                                    hasCheckIn = date in checkInsByDate,
+                                    hasEvent = date in eventsByDate,
+                                    onClick = { onSelectDate(date) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        repeat(7 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
 
@@ -350,15 +415,16 @@ private fun MonthCard(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LegendDot(color = DesignTokens.Success, label = "打卡")
+            LegendDot(color = colors.success, label = "打卡")
             Spacer(Modifier.width(DesignTokens.SpacingMd))
-            LegendDot(color = DesignTokens.Accent, label = "系统日程")
+            LegendDot(color = colors.accent, label = "系统日程")
         }
     }
 }
 
 @Composable
 private fun LegendDot(color: Color, label: String) {
+    val texts = AppTheme.texts
     Box(
         modifier = Modifier
             .size(6.dp)
@@ -366,10 +432,16 @@ private fun LegendDot(color: Color, label: String) {
             .background(color),
     )
     Spacer(Modifier.width(DesignTokens.SpacingXs))
-    Text(text = label, style = DesignTokens.Caption)
+    Text(text = label, style = texts.caption)
 }
 
-/** 月历单日格：选中为实心强调色，今天描边；下方叠加打卡点 + 事件徽标 */
+/**
+ * 月历单日格：选中为实底强调色（`accentInk` 底 + `onAccent` 字），今天描边；
+ * 下方叠加打卡点（`success`）与事件徽标（`accent`）。
+ *
+ * 选中那一刻底色用 `tween(MotionSpec.FadeMs)` 补间、整格用 `MotionSpec.press` 弹到 1.08 倍，
+ * 两个日格之间切换时旧的格回落、新的格弹起，即本页的「水波」反馈。
+ */
 @Composable
 private fun GlobalDayCell(
     date: LocalDate,
@@ -380,6 +452,30 @@ private fun GlobalDayCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val cellColor by animateColorAsState(
+        targetValue = if (isSelected) colors.accentInk else Color.Transparent,
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        label = "globalDayColor",
+    )
+    // 字色与底色同一条补间：否则选中那一刻数字立刻变 onAccent（浅色主题＝白），底色却还在
+    // 「透明 → accentInk」的路上，那 200ms 里白字压在白卡上等于数字消失。
+    // 下面两枚圆点选中时也复用这个值，一起从常规墨色过渡到实底上的反白。
+    val inkColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> colors.onAccent
+            isToday    -> colors.accentInk
+            else       -> colors.primaryText
+        },
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        label = "globalDayInk",
+    )
+    val cellScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.08f else 1f,
+        animationSpec = MotionSpec.press,
+        label = "globalDayScale",
+    )
     Box(
         modifier = modifier
             .aspectRatio(1f)
@@ -389,11 +485,12 @@ private fun GlobalDayCell(
         Box(
             modifier = Modifier
                 .size(36.dp)
+                .graphicsLayer(scaleX = cellScale, scaleY = cellScale)
                 .clip(CircleShape)
-                .background(if (isSelected) DesignTokens.Accent else Color.Transparent)
+                .background(cellColor)
                 .border(
                     width = if (isToday && !isSelected) 1.5.dp else 0.dp,
-                    color = DesignTokens.Accent,
+                    color = colors.accent,
                     shape = CircleShape,
                 ),
         ) {
@@ -404,13 +501,9 @@ private fun GlobalDayCell(
             ) {
                 Text(
                     text = "${date.dayOfMonth}",
-                    style = DesignTokens.Auxiliary.copy(
+                    style = texts.aux.copy(
                         fontWeight = if (isSelected || isToday) FontWeight.SemiBold else FontWeight.Normal,
-                        color = when {
-                            isSelected -> DesignTokens.Card
-                            isToday    -> DesignTokens.Accent
-                            else       -> DesignTokens.PrimaryText
-                        },
+                        color = inkColor,
                     ),
                 )
                 if (hasCheckIn || hasEvent) {
@@ -422,7 +515,7 @@ private fun GlobalDayCell(
                                     .size(4.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (isSelected) DesignTokens.Card else DesignTokens.Success,
+                                        if (isSelected) inkColor else colors.success,
                                     ),
                             )
                         }
@@ -432,8 +525,8 @@ private fun GlobalDayCell(
                                     .size(4.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (isSelected) DesignTokens.Card.copy(alpha = 0.7f)
-                                        else DesignTokens.Accent,
+                                        if (isSelected) inkColor.copy(alpha = 0.7f)
+                                        else colors.accent,
                                     ),
                             )
                         }
@@ -452,34 +545,36 @@ private fun DayDetailCard(
     events: List<SystemEvent>,
     showEvents: Boolean,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val today = LocalDate.now()
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = chineseDate(date),
-                style = DesignTokens.CardTitle,
+                style = texts.cardTitle,
             )
             if (date == today) {
                 Spacer(Modifier.width(DesignTokens.SpacingSm))
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(DesignTokens.Accent.copy(alpha = 0.10f))
+                        .background(colors.accentSoft)
                         .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
                 ) {
                     Text(
                         text = "今天",
-                        style = DesignTokens.Caption.copy(color = DesignTokens.Accent),
+                        style = texts.caption.copy(color = colors.accentInk),
                     )
                 }
             }
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
-        Text(text = "打卡记录", style = DesignTokens.Caption)
+        Text(text = "打卡记录", style = texts.caption)
         Spacer(Modifier.height(DesignTokens.SpacingXs))
         if (checkedHabits.isEmpty()) {
-            Text(text = "该日暂无打卡", style = DesignTokens.Auxiliary.copy(color = DesignTokens.SecondaryText))
+            Text(text = "该日暂无打卡", style = texts.aux.copy(color = colors.secondaryText))
         } else {
             checkedHabits.forEach { name ->
                 Row(
@@ -489,23 +584,23 @@ private fun DayDetailCard(
                     Icon(
                         imageVector = Icons.Filled.Check,
                         contentDescription = null,
-                        tint = DesignTokens.Success,
+                        tint = colors.success,
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(Modifier.width(DesignTokens.SpacingSm))
-                    Text(text = name, style = DesignTokens.Auxiliary)
+                    Text(text = name, style = texts.aux)
                 }
             }
         }
 
         if (showEvents) {
             Spacer(Modifier.height(DesignTokens.SpacingMd))
-            Text(text = "系统日程", style = DesignTokens.Caption)
+            Text(text = "系统日程", style = texts.caption)
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             if (events.isEmpty()) {
                 Text(
                     text = "该日暂无日程",
-                    style = DesignTokens.Auxiliary.copy(color = DesignTokens.SecondaryText),
+                    style = texts.aux.copy(color = colors.secondaryText),
                 )
             } else {
                 events.forEach { event -> EventRow(event) }
@@ -514,13 +609,25 @@ private fun DayDetailCard(
     }
 }
 
-/** 事件行：日历颜色圆点 + 标题 + 时间与日历账户名 */
+/**
+ * 事件条目卡：日历颜色圆点 + 标题 + 时间与日历账户名。
+ *
+ * 容器并入 [AppCard] 的观感语言（大圆角 + 1dp 柔光描边代替阴影），但底色改用 `colors.background`
+ * 而非 `card` —— 它嵌在 DayDetailCard 的卡面里，同色会看不见轮廓，凹进去一层才读得出「一条一项」。
+ */
 @Composable
 private fun EventRow(event: SystemEvent) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val shape = RoundedCornerShape(DesignTokens.CornerRadius)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = DesignTokens.SpacingXs),
+            .padding(top = DesignTokens.SpacingSm)
+            .clip(shape)
+            .background(colors.background)
+            .border(width = 1.dp, color = colors.divider.copy(alpha = 0.6f), shape = shape)
+            .padding(horizontal = DesignTokens.SpacingSm, vertical = DesignTokens.SpacingSm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -531,7 +638,7 @@ private fun EventRow(event: SystemEvent) {
         )
         Spacer(Modifier.width(DesignTokens.SpacingSm))
         Column(Modifier.weight(1f)) {
-            Text(text = event.title, style = DesignTokens.Auxiliary, maxLines = 1)
+            Text(text = event.title, style = texts.aux, maxLines = 1)
             Spacer(Modifier.height(1.dp))
             val suffix = buildString {
                 append(event.calendarName)
@@ -539,7 +646,7 @@ private fun EventRow(event: SystemEvent) {
             }
             Text(
                 text = "${eventTimeText(event)} · $suffix",
-                style = DesignTokens.Caption,
+                style = texts.caption,
                 maxLines = 1,
             )
         }
