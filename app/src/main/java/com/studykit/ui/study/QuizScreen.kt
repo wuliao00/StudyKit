@@ -26,9 +26,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -209,12 +209,14 @@ internal fun quizOptionState(
  *
  * 锁定链路（同一题只允许一次作答、一次推进）：
  *  - `pending` 记下用户按下的下标：`selectOption` 要等 Room 写完才把 `selected` 推回来，
- *    这段窗口里被点的砖块先渲染成 [QuizOptionState.Selected]，并且 `pending >= 0` 即拒绝第二次点击
- *    （ViewModel 自己也有 `selected != null` 守卫，这里是把「点了没反应」的手感补齐）；
+ *    这段窗口里被点的砖块先渲染成 [QuizOptionState.Selected]；
+ *    整列的 `enabled = !answered && pending < 0` 把「作答后还能点」彻底关掉（无 ripple、无按压回弹），
+ *    `onClick` 内的同名判断留作第二道闸（ViewModel 还有 `selected != null` 守卫）；
  *  - `advanced` 让「下一题」在同一题上只生效一次：`nextQuestion()` 只校验 `selected != null`，
  *    少这道闸的话连点会跳着吃掉一题。
  *
- * 两个标记都以 `question.id` 为键，切题即复位，转屏也能还原，因此不会出现「锁死在下一题」的残锁。
+ * 两个标记都以 `question.id` 为键，切题即复位，转屏也能还原，因此不会出现「锁死在下一题」的残锁；
+ * 选项整列另套一层 `key(question.id)`，换题时砖块连带内部动效状态一起重建。
  */
 @Composable
 private fun QuestionView(
@@ -247,25 +249,31 @@ private fun QuestionView(
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
-        options.forEachIndexed { index, option ->
-            QuizOptionTile(
-                optionText = option,
-                index = index,
-                state = quizOptionState(
+        // 整列以 question.id 为键：换题即整列重建，砖块内的 saveable/Animatable
+        // 不可能带着上一题的判定态或抖动残留进入下一题。
+        key(question.id) {
+            options.forEachIndexed { index, option ->
+                QuizOptionTile(
+                    optionText = option,
                     index = index,
-                    answerIndex = question.answerIndex,
-                    graded = selected,
-                    pending = pending,
-                ),
-                onClick = {
-                    // 判定前只认第一次点击：pending 一置，本题其余砖块即刻失效
-                    if (!answered && pending < 0) {
-                        pending = index
-                        onSelect(index)
-                    }
-                },
-            )
-            Spacer(Modifier.height(DesignTokens.SpacingSm))
+                    state = quizOptionState(
+                        index = index,
+                        answerIndex = question.answerIndex,
+                        graded = selected,
+                        pending = pending,
+                    ),
+                    // 作答后（含 DB 回写在飞的 pending 窗口）整列锁死：不吃点击、无 ripple
+                    enabled = !answered && pending < 0,
+                    onClick = {
+                        // 判定前只认第一次点击：pending 一置，本题其余砖块即刻失效
+                        if (!answered && pending < 0) {
+                            pending = index
+                            onSelect(index)
+                        }
+                    },
+                )
+                Spacer(Modifier.height(DesignTokens.SpacingSm))
+            }
         }
 
         if (answered) {
@@ -304,7 +312,8 @@ private fun QuestionView(
  *
  * 环与百分比都以 `born` 门控从 0 起步：[RingGauge] 与 `animateIntAsState` 首次组合都直接落在
  * target（没有「0 → N」的过程），故按 [StudyHomeScreen] 火焰徽章与 T8 小结卡同法补一次进场补间，
- * 交卷瞬间能看到环扫到位、数字滚动。
+ * 交卷瞬间能看到环扫到位、数字滚动。`born` 取 `rememberSaveable`：交卷后转屏时它恢复为 `true`，
+ * 目标值不再从 0 起步，因此环与读数都直接落位、不会凭空重播一遍。
  */
 @Composable
 private fun QuizResult(
@@ -316,7 +325,9 @@ private fun QuizResult(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    var born by remember { mutableStateOf(false) }
+    // saveable：转屏后 born 直接恢复为 true ⇒ 目标值不再从 0 起步，
+    // 环与数字都不会凭空重播一次（与 `pending/advanced/wrongShaken` 同一条纪律）
+    var born by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { born = true }
     val shownPercent by animateIntAsState(
         targetValue = if (born) percent else 0,

@@ -33,6 +33,19 @@ class QuizOptionStateTest {
         }
     }
 
+    @Test fun `未揭晓前即使点对也保持 Selected 不提前泄正误色`() {
+        // graded=null 表示 DB 还没回写：此时 pending == answerIndex 也只能是 Selected。
+        // 若映射里让 pending 去看 answerIndex，写入窗口内就会先亮 Correct、下一帧再「确认」一次，
+        // 剧透 + 闪一下；未揭晓前不得出现任何正误色。
+        assertEquals(
+            QuizOptionState.Selected,
+            quizOptionState(index = 2, answerIndex = 2, graded = null, pending = 2),
+        )
+        for (i in listOf(0, 1, 3)) {
+            assertEquals(idle, quizOptionState(index = i, answerIndex = 2, graded = null, pending = 2))
+        }
+    }
+
     @Test fun `答对时所选项为 Correct 不被 pending 盖成 Selected`() {
         // 用户点的正是正确项：先命中 Correct，绝不出现 Selected
         assertEquals(

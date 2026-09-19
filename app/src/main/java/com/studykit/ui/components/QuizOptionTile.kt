@@ -58,6 +58,10 @@ enum class QuizOptionState { Idle, Selected, Correct, Wrong }
  * 转屏时 `remember { Animatable(...) }` 会重建，故另用一个 saveable 标记记住「本次 Wrong 已抖过」，
  * 配置变更后不再凭空重播。
  *
+ * 按压回弹只在**可点**时生效：`enabled = false`（本题已作答 / 已锁定）时 `clickable(enabled = false)`
+ * 既不吃事件也不画 ripple，砖块「看着还在、点不动」，避免答后再按一次留下空转波纹、
+ * 也堵掉同帧误触下一题的入口；判定配色与答错抖动**不受** `enabled` 影响（那是反馈，不是交互）。
+ *
  * 取色按主题显式取自 [AppTheme.colors]（不依赖 M3 的局部覆写）：
  * - 描边/底色：`Correct=success`、`Wrong=warning`、`Selected=accent`、`Idle=divider`，
  *   容器用对应的 `*Soft` 淡底。
@@ -67,8 +71,9 @@ enum class QuizOptionState { Idle, Selected, Correct, Wrong }
  *   T15 令牌批次（`successInk`/`warningInk`）的已知债，此处按 brief 规定保留品牌色。
  *
  * @param index 选项下标，用于渲染字母（`'A' + index`）。
- * @param onClick 点击回调；本组件不判定「是否还能点」，作答后的锁由调用方保证
- *   （[QuizOptionState] 已是判定态、且 ViewModel 的 `selectOption` 自身幂等）。
+ * @param onClick 点击回调；「是否还能点」由 [enabled] 承担——调用方在本题锁定后传 `enabled = false`，
+ *   本组件随即不再派发交互（无 ripple、无按压回弹），不会再依赖 ViewModel 的幂等兜底。
+ * @param enabled 是否可点击，默认 `true`；本题判定/锁定后由调用方传 `false`，此时不响应点击。
  */
 @Composable
 fun QuizOptionTile(
@@ -77,6 +82,7 @@ fun QuizOptionTile(
     state: QuizOptionState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -121,12 +127,15 @@ fun QuizOptionTile(
 
     Surface(
         onClick = onClick,
+        enabled = enabled,
         interactionSource = interaction,
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                // 锁定时按压位彻底让路：禁用后 interaction 不会再收到 Release，
+                // 万一「按下 → 同一帧被锁」还留着 Pressed，直接读 scale 会把砖块卡在 0.96。
+                scaleX = if (enabled) scale else 1f
+                scaleY = if (enabled) scale else 1f
                 translationX = sin(shake.value * 6f * PI.toFloat()) *
                     ShakeAmplitudeDp * density * (1f - shake.value)
             },
