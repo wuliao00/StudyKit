@@ -1,5 +1,7 @@
 package com.studykit.ui.mistake
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,10 +45,18 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.SectionHeader
+import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /**
  * 拍照录入页：拍照返回后选择学科（已有学科 + 可输入新学科）+ 填写标题/备注 → 保存。
+ *
+ * 颜色与文字样式统一取 [AppTheme]，间距/圆角仍走 [DesignTokens] 的度量常量（T15 才迁度量）。
+ * 两处动效/观感：照片预览按「图片卡」口径给 `CornerRadiusLg` 圆角 + 1dp `divider` 发丝描边
+ * （夜间卡面 `#26241F` 与照片暗部同亮度时，没有描边会看不出图片边界）；
+ * 学科选项的选中态底色/描边/墨色用 `animateColorAsState` + `tween(MotionSpec.FadeMs)` 交叉补间
+ * （`MotionSpec` 的 spring 都是 `Float` 向，颜色补间按映射表走 tween 分支）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -55,6 +65,8 @@ fun MistakeCaptureScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val pending by viewModel.pendingCapture.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     var selectedSubject by remember { mutableStateOf("") }
@@ -79,10 +91,11 @@ fun MistakeCaptureScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    // 图标落在页面底色上，按 T1 裁定走 accentInk（accent 仅 3.04:1）
+                    tint = colors.accentInk,
                 )
             }
-            Text(text = "拍照录入", style = DesignTokens.PageTitle)
+            Text(text = "拍照录入", style = texts.pageTitle)
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
@@ -93,6 +106,7 @@ fun MistakeCaptureScreen(
         LaunchedEffect(captured) {
             capturedExists = withContext(Dispatchers.IO) { captured?.exists() == true }
         }
+        val previewShape = RoundedCornerShape(DesignTokens.CornerRadiusLg)
         if (captured != null && capturedExists) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AsyncImage(
@@ -101,11 +115,12 @@ fun MistakeCaptureScreen(
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(DesignTokens.SpacingSm)),
+                        .clip(previewShape)
+                        .border(width = 1.dp, color = colors.divider, shape = previewShape),
                 )
             }
         } else {
-            Text(text = "未获取到照片，请返回重新拍照", style = DesignTokens.Caption)
+            Text(text = "未获取到照片，请返回重新拍照", style = texts.caption)
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
@@ -169,24 +184,46 @@ fun MistakeCaptureScreen(
     }
 }
 
+/**
+ * 学科选项：未选中 = 卡面底 + divider 描边 + primaryText；选中 = `accentSoft` 底 +
+ * `accentInk` 描边与墨色（brief 的「文字 accent」按 T1 裁定落回 ink 变体，
+ * 1dp 细描边同族走 ink —— T13 引用竖条同一条理由）。三档颜色各自 `animateColorAsState`
+ * 补间 FadeMs，切学科时不是硬切。容器仍按可点药丸的既有顺序
+ * `clip → background(color) → border → clickable`（与 `QuestionCreateScreen` 的选项格一致，
+ * `clip` 在前才把按压 ripple 裁成圆角）。
+ */
 @Composable
 private fun SubjectOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val shape = RoundedCornerShape(DesignTokens.CornerRadius)
+    val container by animateColorAsState(
+        targetValue = if (selected) colors.accentSoft else colors.card,
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        label = "subjectOptionContainer",
+    )
+    val stroke by animateColorAsState(
+        targetValue = if (selected) colors.accentInk else colors.divider,
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        label = "subjectOptionStroke",
+    )
+    val ink by animateColorAsState(
+        targetValue = if (selected) colors.accentInk else colors.primaryText,
+        animationSpec = tween(durationMillis = MotionSpec.FadeMs),
+        label = "subjectOptionInk",
+    )
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-            .background(if (selected) DesignTokens.Accent.copy(alpha = 0.12f) else DesignTokens.Card)
-            .border(
-                width = 1.dp,
-                color = if (selected) DesignTokens.Accent else DesignTokens.Divider,
-                shape = RoundedCornerShape(DesignTokens.CornerRadius),
-            )
+            .clip(shape)
+            .background(container)
+            .border(width = 1.dp, color = stroke, shape = shape)
             .clickable(onClick = onClick)
             .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
     ) {
         Text(
             text = label,
-            style = DesignTokens.Auxiliary.copy(
-                color = if (selected) DesignTokens.Accent else DesignTokens.PrimaryText,
+            style = texts.aux.copy(
+                color = ink,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             ),
         )

@@ -1,6 +1,8 @@
 package com.studykit.ui.mistake
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,14 +26,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,7 +48,10 @@ import com.studykit.data.entity.Mistake
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
+import kotlinx.coroutines.delay
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -59,6 +67,14 @@ private fun sourceLabel(source: String): String = when (source) {
 /**
  * 错题详情页：大图查看（点击放大）+ 内容/备注 + 学科/来源/时间信息，
  * 操作：编辑学科、设置复习时间（快捷项）、标记已掌握、删除。
+ *
+ * 颜色与文字样式统一取 [AppTheme]，间距/圆角仍走 [DesignTokens] 的度量常量（T15 才迁度量）。
+ *
+ * 「标记掌握」是本页唯一的手势动效：点击后按钮内文字用 `MotionSpec.press` **放大回弹**，
+ * 过了放大峰值（[MotionSpec.FadeMs] 后）才 `popBackStack` —— 立刻返回会把这一帧吃掉，
+ * 用户看到的只是「按钮自己消失了」。`markMastered` 让 `current.mastered` 当场翻 true，
+ * 所以按钮的可见条件是「未掌握 **或** 回弹进行中」，否则动画的第一帧就被状态变更抹掉。
+ * 该门控用 `rememberSaveable`：转屏后既不重播弹跳、也不会把已按下的按钮复活。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -66,10 +82,27 @@ fun MistakeDetailScreen(
     viewModel: MistakeViewModel,
     onBack: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     val mistake by viewModel.detail.collectAsStateWithLifecycle()
     var showFullImage by remember { mutableStateOf(false) }
     var showSubjectDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    // 回弹进行中：true 之后按钮要继续留在屏幕上，否则动画第一帧就被 mastered 状态变更抹掉
+    var masteredBounce by rememberSaveable { mutableStateOf(false) }
+    val masteredScale by animateFloatAsState(
+        targetValue = if (masteredBounce) 1.16f else 1f,
+        animationSpec = MotionSpec.press,
+        label = "masteredBounce",
+    )
+    LaunchedEffect(masteredBounce) {
+        if (masteredBounce) {
+            // `press`（ζ=0.55, k=420）的首个峰值在 π/ωd ≈ 183ms，220ms 已越过峰值开始回落，
+            // 这一帧交接给返回转场正好读得出「按下去 → 弹回来」
+            delay(MotionSpec.FadeMs.toLong())
+            onBack()
+        }
+    }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
     val reviewFormat = remember { SimpleDateFormat("MM月dd日", Locale.getDefault()) }
 
@@ -83,10 +116,11 @@ fun MistakeDetailScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    // 图标落在页面底色上，按 T1 裁定走 accentInk（accent 仅 3.04:1）
+                    tint = colors.accentInk,
                 )
             }
-            Text(text = "错题不存在或已删除", style = DesignTokens.Caption)
+            Text(text = "错题不存在或已删除", style = texts.caption)
         }
         return
     }
@@ -106,35 +140,51 @@ fun MistakeDetailScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
-                        tint = DesignTokens.Accent,
+                        // 图标落在页面底色上，按 T1 裁定走 accentInk（accent 仅 3.04:1）
+                        tint = colors.accentInk,
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                if (!current.mastered) {
-                    TextButton(onClick = { viewModel.markMastered(current.id) }) {
+                // 未掌握、或回弹正在进行时都保留按钮：后者是「点击 → 放大回弹 → 返回」的可见前提
+                if (!current.mastered || masteredBounce) {
+                    TextButton(
+                        onClick = {
+                            if (!masteredBounce) {
+                                viewModel.markMastered(current.id)
+                                masteredBounce = true
+                            }
+                        },
+                    ) {
                         Text(
                             text = "标记掌握",
-                            style = DesignTokens.Auxiliary.copy(
-                                color = DesignTokens.Success,
+                            style = texts.aux.copy(
+                                color = colors.success,
                                 fontWeight = FontWeight.Medium,
                             ),
+                            // 缩放只走绘制层，不反过来把 TopBar 撑高
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = masteredScale
+                                scaleY = masteredScale
+                            },
                         )
                     }
                 }
             }
 
-            Text(text = current.title, style = DesignTokens.PageTitle)
+            Text(text = current.title, style = texts.pageTitle)
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
                 text = "${current.subject} · ${sourceLabel(current.source)} · ${dateFormat.format(current.createdAt)}",
-                style = DesignTokens.Caption,
+                style = texts.caption,
             )
-            if (current.mastered) {
+            // 回弹那一瞬按钮还在，两个标签同帧会互相抢读，故等动画交接完再显示
+            if (current.mastered && !masteredBounce) {
                 Spacer(Modifier.height(DesignTokens.SpacingXs))
                 Text(
                     text = "已掌握",
-                    style = DesignTokens.Caption.copy(
-                        color = DesignTokens.Success,
+                    // success 作文字浅色 ≈2.2:1，successInk 归 T15 令牌批次（沿用既有做法）
+                    style = texts.caption.copy(
+                        color = colors.success,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -150,6 +200,12 @@ fun MistakeDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(DesignTokens.CornerRadiusLg))
+                        // 图片卡：1dp divider 发丝描边，夜间卡面与照片暗部分层
+                        .border(
+                            width = 1.dp,
+                            color = colors.divider,
+                            shape = RoundedCornerShape(DesignTokens.CornerRadiusLg),
+                        )
                         .clickable { showFullImage = true },
                 )
             }
@@ -160,10 +216,10 @@ fun MistakeDetailScreen(
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "题目内容",
-                        style = DesignTokens.Caption.copy(fontWeight = FontWeight.Medium),
+                        style = texts.caption.copy(fontWeight = FontWeight.Medium),
                     )
                     Spacer(Modifier.height(DesignTokens.SpacingXs))
-                    Text(text = current.content, style = DesignTokens.Body)
+                    Text(text = current.content, style = texts.body)
                 }
             }
             if (current.note.isNotBlank()) {
@@ -171,20 +227,20 @@ fun MistakeDetailScreen(
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "备注",
-                        style = DesignTokens.Caption.copy(fontWeight = FontWeight.Medium),
+                        style = texts.caption.copy(fontWeight = FontWeight.Medium),
                     )
                     Spacer(Modifier.height(DesignTokens.SpacingXs))
-                    Text(text = current.note, style = DesignTokens.Body)
+                    Text(text = current.note, style = texts.body)
                 }
             }
 
             // ── 复习时间 ──────────────────────────────────────────────────
             Spacer(Modifier.height(DesignTokens.SpacingLg))
-            Text(text = "复习提醒", style = DesignTokens.CardTitle)
+            Text(text = "复习提醒", style = texts.cardTitle)
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
                 text = current.reviewAt?.let { "已设置：${reviewFormat.format(it)}" } ?: "尚未设置复习时间",
-                style = DesignTokens.Caption,
+                style = texts.caption,
             )
             Spacer(Modifier.height(DesignTokens.SpacingMd))
             FlowRow(
@@ -231,41 +287,46 @@ fun MistakeDetailScreen(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text(text = "删除错题", style = DesignTokens.CardTitle) },
-            text = { Text(text = "删除后不可恢复，相关图片也会一并清理。", style = DesignTokens.Auxiliary) },
+            title = { Text(text = "删除错题", style = texts.cardTitle) },
+            text = { Text(text = "删除后不可恢复，相关图片也会一并清理。", style = texts.aux) },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteDialog = false
                     viewModel.delete(current.id) { onBack() }
                 }) {
-                    Text(text = "删除", color = DesignTokens.Warning)
+                    Text(text = "删除", color = colors.warning)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text(text = "取消", color = DesignTokens.Accent)
+                    Text(text = "取消", color = colors.accentInk)
                 }
             },
         )
     }
 }
 
-/** 复习时间快捷项 */
+/**
+ * 复习时间快捷项：`accentSoft` 底 + `accentInk` 字的柔底药丸。
+ *
+ * 旧写法是 `accent` 10% 底 + `accent` 文字（浅色下 3.04:1 不达 AA），按 ledger 的
+ * 「soft pill → accentSoft + accentInk」口径换墨色；容器仍是 `clip → background(color)`
+ * 那一档可点药丸写法（`clip` 在前才把按压 ripple 裁成圆角）。
+ */
 @Composable
 private fun ReviewOption(label: String, onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-            .background(DesignTokens.Accent.copy(alpha = 0.10f))
+            .background(colors.accentSoft)
             .clickable(onClick = onClick)
             .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
     ) {
         Text(
             text = label,
-            style = DesignTokens.Auxiliary.copy(
-                color = DesignTokens.Accent,
-                fontWeight = FontWeight.Medium,
-            ),
+            style = texts.aux.copy(color = colors.accentInk, fontWeight = FontWeight.Medium),
         )
     }
 }
@@ -282,7 +343,13 @@ private fun dayOffset(days: Int): Long {
     return calendar.timeInMillis
 }
 
-/** 全屏看图：黑底占满，点击关闭 */
+/**
+ * 全屏看图：黑底占满，点击关闭。
+ *
+ * 底色**刻意不用** `colors.background`：这是照片灯箱，纯黑是取景框（两张照片对比时不受页面底色
+ * 偏色影响），且夜间主题的暖纸底色会把白底题目照片糊成一片。它是**有意不入库**的硬色
+ * （不随主题变，属取景框而非界面底色），故不进 AppTheme 令牌层。
+ */
 @Composable
 private fun FullImageOverlay(file: File, onDismiss: () -> Unit) {
     Dialog(
@@ -313,10 +380,12 @@ private fun SubjectEditDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     var value by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "编辑学科归类", style = DesignTokens.CardTitle) },
+        title = { Text(text = "编辑学科归类", style = texts.cardTitle) },
         text = {
             AppTextField(
                 value = value,
@@ -329,12 +398,12 @@ private fun SubjectEditDialog(
                 enabled = value.isNotBlank(),
                 onClick = { onConfirm(value.trim()) },
             ) {
-                Text(text = "保存", color = DesignTokens.Accent)
+                Text(text = "保存", color = colors.accentInk)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(text = "取消", color = DesignTokens.SecondaryText)
+                Text(text = "取消", color = colors.secondaryText)
             }
         },
     )
