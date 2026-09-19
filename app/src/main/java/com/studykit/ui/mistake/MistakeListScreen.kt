@@ -32,9 +32,9 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -359,9 +359,9 @@ private fun launchCamera(context: Context, onReady: (File, Uri) -> Unit) {
 /**
  * 从两个路径候选里挑真正能显示的图片：缩略图优先，缺失时回退大图，都没有则 null。
  *
- * 整段走 `Dispatchers.IO`（终审 I8）。之所以抽成函数而不是把 `withContext { … }` 直接写在
- * [produceState] 的生产者里：Compose 的 lint 规则 `ProduceStateDoesNotAssignValue`
- * 会把「赋值的右侧带尾随 lambda」的写法当成生产者里没有 `value =`，误报成生产者从不赋值。
+ * 整段走 `Dispatchers.IO`（终审 I8），由 `MistakeItem` 的 LaunchedEffect 调用后回填状态：
+ * 组合期只构造 `File` 路径、绝不 stat。写成独立函数而不是塞进组合里，是为了让「缩略图 → 大图」
+ * 这层回退只有一份实现，也让条目组合体保持纯声明式。
  */
 private suspend fun resolveMistakeImage(thumbCandidate: File?, fullCandidate: File?): File? =
     withContext(Dispatchers.IO) {
@@ -382,10 +382,11 @@ private suspend fun resolveMistakeImage(thumbCandidate: File?, fullCandidate: Fi
  * 行内的「已掌握」小票**已删**：信息已由页顶掌握态 chip 承担（「待复习」一侧不可能有掌握项，
  * 「已掌握」一侧整列都是），留着只是同义反复；保留的是页头的计数文案。
  *
- * 缩略图的两个候选**只是路径**，谁真正能用由 [produceState] 在 `Dispatchers.IO` 上判
- * （终审 I8）：旧写法在组合期 `imageFile.exists()`，一屏十几条就是十几次主线程 stat，
- * 滚动时每次组合还要重来一遍。初值乐观取缩略图，于是图片槽位首帧就参与布局、不会把行高撑一下，
- * 而缩略图与大图由同一次写盘成对产出 ⇒ 回填的通常就是同一个引用，不触发二次组合也不重发请求。
+ * 缩略图的两个候选**只是路径**，谁真正能用由 IO 线程回填（终审 I8）：旧写法在组合期
+ * `imageFile.exists()`，一屏十几条就是十几次主线程 stat，滚动时每次组合还要重来一遍。
+ * 写法照抄 `MistakeCaptureScreen` 的照片预览（初值乐观 + LaunchedEffect 在 IO 上复核），
+ * 于是图片槽位首帧就参与布局、不会把行高撑一下；而缩略图与大图由同一次写盘成对产出，
+ * 回填的通常就是同一个引用 ⇒ 不触发二次组合、也不让 Coil 重发请求。
  */
 @Composable
 private fun MistakeItem(
@@ -399,12 +400,9 @@ private fun MistakeItem(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val thumbShape = RoundedCornerShape(AppTheme.radius.lg)
-    val imageFile by produceState(
-        initialValue = thumbCandidate,
-        key1 = thumbCandidate,
-        key2 = fullCandidate,
-    ) {
-        value = resolveMistakeImage(thumbCandidate = thumbCandidate, fullCandidate = fullCandidate)
+    var imageFile by remember(thumbCandidate, fullCandidate) { mutableStateOf(thumbCandidate) }
+    LaunchedEffect(thumbCandidate, fullCandidate) {
+        imageFile = resolveMistakeImage(thumbCandidate = thumbCandidate, fullCandidate = fullCandidate)
     }
     AppCard(
         modifier = modifier
