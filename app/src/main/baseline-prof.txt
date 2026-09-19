@@ -1,0 +1,19 @@
+# ART 文本规则（手动维护的 baseline profile）：安装期预编译首帧与高频热路径，避免运行时解释执行。
+# 只覆盖启动链路与每帧都会走到的动效/组件，不做全量抓取——规则越多安装期越慢。
+Lcom/studykit/StudyKitApp;
+Lcom/studykit/MainActivity;
+Lcom/studykit/AppContainerKt;
+Lcom/studykit/AppContainer;
+Lcom/studykit/ui/theme/** { * }
+Lcom/studykit/ui/motion/** { * }
+Lcom/studykit/ui/nav/** { * }
+Lcom/studykit/ui/components/RingGaugeKt;
+Lcom/studykit/ui/components/RingGaugeKt$** { * }
+Lcom/studykit/ui/components/AppCardKt;
+Lcom/studykit/ui/components/AppCardKt$** { * }
+Lcom/studykit/ui/study/StudyViewModel;
+Lcom/studykit/ui/study/StudyViewModel$** { * }
+Lcom/studykit/ui/study/StudyHomeScreenKt;
+Lcom/studykit/ui/study/StudyHomeScreenKt$** { * }
+Lcom/studykit/ui/study/CardStudyScreenKt;
+Lcom/studykit/ui/study/CardStudyScreenKt$** { * }

@@ -68,6 +68,9 @@ dependencies {
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
 
+    // 安装期写入 ART baseline profile（见 src/main/baseline-prof.txt）
+    implementation(libs.androidx.profileinstaller)
+
     implementation(libs.androidx.core.ktx)
 
     // 单元测试
