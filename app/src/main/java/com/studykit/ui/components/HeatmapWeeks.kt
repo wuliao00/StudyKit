@@ -75,7 +75,9 @@ fun HeatmapWeeks(
                         y = originY + row * (side + gapPx),
                     ),
                     size = Size(width = side, height = side),
-                    cornerRadius = CornerRadius(radiusX = side * 0.22f, radiusY = side * 0.22f),
+                    // CornerRadius 是 @JvmInline value class：命名实参会把解析推到 internal 构造器上
+                    // （CI: "Cannot access 'constructor(packedValue: Long)'"），单位半径重载本就表示两轴相等
+                    cornerRadius = CornerRadius(side * 0.22f),
                 )
             }
         }
