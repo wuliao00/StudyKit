@@ -595,9 +595,12 @@ private fun HabitCard(
             Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // `fill = false`：Row 先量无 weight 的药丸、再把这个 Column 剩下的宽度给标题，
+                    // 于是空间不够时**标题省略号让位**，而不是把「已达成」压成两行（真机实测过）。
                     Text(
                         text = item.habit.name,
                         style = texts.cardTitle,
+                        modifier = Modifier.weight(1f, fill = false),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

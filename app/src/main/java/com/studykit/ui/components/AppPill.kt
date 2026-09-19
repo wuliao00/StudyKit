@@ -75,6 +75,10 @@ fun AppPill(
         Text(
             text = label,
             style = texts.caption.copy(color = ink, fontWeight = FontWeight.Medium),
+            // 状态词恒为一行：真机上习惯卡的横向空间很挤，「已达成」曾被折成「已达/成」两行，
+            // 药丸立刻变成一块高出来的方块。宽度不够时应由**调用方**让位（如标题用
+            // `weight(1f, fill = false)` 先给药丸留位），而不是把药丸自己压折。
+            maxLines = 1,
         )
     }
 }

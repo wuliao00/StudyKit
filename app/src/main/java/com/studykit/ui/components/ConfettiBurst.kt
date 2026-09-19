@@ -37,16 +37,18 @@ import kotlin.random.Random
  * **注意**：`Unit`/`object`/未覆写 `hashCode` 的实例走的是 identity hashCode，
  * 因此这类 trigger 的粒子形状只在**同一次进程运行内**稳定，冷启动后会换一套（观感无碍，勿作断言依据）。
  *
- * @param particleCount 粒子数；默认 56 颗在 1.1s 内足够热闹又不至于掉帧。
- * @param durationMillis 单次爆发总时长；每颗粒子在自身尾段（`pt > 0.7`）淡出，
- *   而非整场统一淡出，因此晚播种的粒子不会刚出现就被整体 alpha 抹掉。
+ * @param particleCount 粒子数；默认 90 颗 —— 56 颗在 1080×2400 量级的画布上只够看出「撒了把碎屑」
+ *   （真机实测），加到 90 颗才有「炸开一片」的密度，仍远在单帧可绘制的预算内。
+ * @param durationMillis 单次爆发总时长；默认 1600ms（原 1100ms 在大屏上散得太快，庆祝感还没读出来
+ *   就没了）。每颗粒子在自身尾段（`pt > 0.7`）淡出，而非整场统一淡出，
+ *   因此晚播种的粒子不会刚出现就被整体 alpha 抹掉。
  */
 @Composable
 fun ConfettiBurst(
     trigger: Any?,
     modifier: Modifier = Modifier,
-    particleCount: Int = 56,
-    durationMillis: Int = 1100,
+    particleCount: Int = 90,
+    durationMillis: Int = 1600,
 ) {
     val palette = listOf(
         AppTheme.colors.accent,
@@ -63,12 +65,14 @@ fun ConfettiBurst(
                 v = 0.35f + rnd.nextFloat() * 0.75f,
                 cosA = cos(angle),
                 sinA = sin(angle),
-                wf = 0.012f + rnd.nextFloat() * 0.016f,
+                // 彩带宽度：屏宽的 1.8%–3.8%（原 1.2%–2.8%，在 1080px 上只有 13–30px，偏碎）
+                wf = 0.018f + rnd.nextFloat() * 0.020f,
                 aspect = 0.45f + rnd.nextFloat() * 0.4f,
                 g = 1.1f + rnd.nextFloat() * 0.9f,
                 spin = (rnd.nextFloat() - 0.5f) * 14f,
                 colorIndex = rnd.nextInt(colorCount),
-                delay = rnd.nextFloat() * 0.12f,
+                // 起跳错峰窗口拉到 25% 时长：配合更长的 duration，让彩带是「陆续落」而不是一坨同生共死
+                delay = rnd.nextFloat() * 0.25f,
             )
         }
     }
