@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.BookReview
@@ -39,49 +41,60 @@ import com.studykit.data.entity.Excerpt
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.SectionHeader
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/** 引用竖条宽度（书摘条目左侧那条） */
+private val QuoteBarWidth: Dp = 3.dp
+
 /** 页码步进按钮：-10 / +10（宽度由调用方在 Row 中通过 weight 分配） */
 @Composable
 private fun StepButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     Box(
         modifier = modifier
             .height(44.dp)
             .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-            .background(DesignTokens.Card)
-            .border(1.dp, DesignTokens.Divider, RoundedCornerShape(DesignTokens.CornerRadius))
+            .background(colors.card)
+            .border(
+                width = 1.dp,
+                color = colors.divider,
+                shape = RoundedCornerShape(DesignTokens.CornerRadius),
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
-            style = DesignTokens.Auxiliary.copy(
-                color = DesignTokens.Accent,
+            style = texts.aux.copy(
+                color = colors.accentInk,
                 fontWeight = FontWeight.SemiBold,
             ),
         )
     }
 }
 
-/** 评分星行（只读展示） */
+/** 评分星行（只读展示）：实心走 accent（图形非文字），空星走 divider */
 @Composable
-fun RatingStars(rating: Int, modifier: Modifier = Modifier, starSize: androidx.compose.ui.unit.Dp = 16.dp) {
+fun RatingStars(rating: Int, modifier: Modifier = Modifier, starSize: Dp = 16.dp) {
+    val colors = AppTheme.colors
     Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         repeat(5) { index ->
             Icon(
                 imageVector = Icons.Filled.Star,
                 contentDescription = null,
-                tint = if (index < rating) DesignTokens.Accent else DesignTokens.Divider,
+                tint = if (index < rating) colors.accent else colors.divider,
                 modifier = Modifier.size(starSize),
             )
         }
     }
 }
 
-/** 书籍详情页：标题区 + 进度卡 + 书摘区块 + 书评区块 */
+/** 书籍详情页：标题区 + 进度卡 + 书摘区块（引用样式）+ 书评区块 */
 @Composable
 fun BookDetailScreen(
     bookId: Long,
@@ -93,6 +106,8 @@ fun BookDetailScreen(
     onAddReview: (Long) -> Unit,
     onEditReview: (Long) -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     LaunchedEffect(bookId) { viewModel.loadDetail(bookId) }
     val detail by viewModel.detail.collectAsStateWithLifecycle()
 
@@ -108,7 +123,7 @@ fun BookDetailScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -116,7 +131,7 @@ fun BookDetailScreen(
                 Icon(
                     imageVector = Icons.Filled.Edit,
                     contentDescription = "编辑书籍",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
         }
@@ -126,7 +141,7 @@ fun BookDetailScreen(
             Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
             Text(
                 text = "加载中…",
-                style = DesignTokens.Caption,
+                style = texts.caption,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
@@ -134,11 +149,11 @@ fun BookDetailScreen(
         }
 
         // ── 标题区 ────────────────────────────────────────────────────────
-        Text(text = ui.book.title, style = DesignTokens.LargeTitle)
+        Text(text = ui.book.title, style = texts.largeTitle)
         Spacer(Modifier.height(DesignTokens.SpacingXs))
         Text(
             text = ui.book.author.ifBlank { "佚名" },
-            style = DesignTokens.Auxiliary.copy(color = DesignTokens.SecondaryText),
+            style = texts.aux.copy(color = colors.secondaryText),
         )
 
         // ── 进度卡 ────────────────────────────────────────────────────────
@@ -147,15 +162,15 @@ fun BookDetailScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "${ui.percent}%",
-                    style = DesignTokens.LargeTitle.copy(
-                        color = if (ui.isFinished) DesignTokens.Success else DesignTokens.Accent,
+                    style = texts.largeTitle.copy(
+                        color = if (ui.isFinished) colors.success else colors.accentInk,
                     ),
                 )
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = "${ui.book.currentPage} / ${ui.book.totalPages} 页",
-                        style = DesignTokens.Auxiliary,
+                        style = texts.aux,
                     )
                     Spacer(Modifier.height(DesignTokens.SpacingXs))
                     if (ui.isFinished) {
@@ -164,13 +179,13 @@ fun BookDetailScreen(
                         } ?: "已读完"
                         Text(
                             text = finishedText,
-                            style = DesignTokens.Caption.copy(
-                                color = DesignTokens.Success,
+                            style = texts.caption.copy(
+                                color = colors.success,
                                 fontWeight = FontWeight.Medium,
                             ),
                         )
                     } else {
-                        Text(text = "在读", style = DesignTokens.Caption.copy(color = DesignTokens.Accent))
+                        Text(text = "在读", style = texts.caption.copy(color = colors.accentInk))
                     }
                 }
             }
@@ -180,19 +195,22 @@ fun BookDetailScreen(
                 StepButton(text = "-10", onClick = { viewModel.stepProgress(-10) }, modifier = Modifier.weight(1f))
                 StepButton(text = "+10", onClick = { viewModel.stepProgress(+10) }, modifier = Modifier.weight(1f))
                 if (!ui.isFinished) {
+                    // 完成态动作走 successSoft 柔底 + primaryText 墨色（与书架 StatusTag 同一族颜色）：
+                    // 旧写法是 Success 实底压 DesignTokens.Card 硬白字，浅色主题下白字只有 ≈1.8:1，
+                    // 夜间还会把深墨字压在亮绿上；柔底那一套两主题都达标。
                     Box(
                         modifier = Modifier
                             .height(44.dp)
                             .weight(1.4f)
                             .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-                            .background(DesignTokens.Success)
+                            .background(colors.successSoft)
                             .clickable(onClick = { viewModel.markFinished() }),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = "标记读完",
-                            style = DesignTokens.Auxiliary.copy(
-                                color = DesignTokens.Card,
+                            style = texts.aux.copy(
+                                color = colors.primaryText,
                                 fontWeight = FontWeight.SemiBold,
                             ),
                         )
@@ -206,14 +224,14 @@ fun BookDetailScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionHeader(title = "书摘")
             Spacer(Modifier.width(DesignTokens.SpacingSm))
-            Text(text = "${ui.excerpts.size} 条", style = DesignTokens.Caption)
+            Text(text = "${ui.excerpts.size} 条", style = texts.caption)
         }
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         if (ui.excerpts.isEmpty()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "读到打动你的句子，就记在这里",
-                    style = DesignTokens.Caption,
+                    style = texts.caption,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
@@ -236,7 +254,7 @@ fun BookDetailScreen(
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "读完之后，写下你的感受",
-                    style = DesignTokens.Caption,
+                    style = texts.caption,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
@@ -255,24 +273,64 @@ fun BookDetailScreen(
     }
 }
 
+/**
+ * 书摘条目：引用样式。
+ *
+ * 左侧 3dp `accentInk` 竖条 + 正文 `texts.aux` + 页码与「—— 摘录」落款。竖条走 ink 而非 `accent`
+ * 是 T1/T12 那条「线条/文字这类细笔画用 ink」的延续：3dp 宽的条落在白卡上时，accent 只有 3.04:1，
+ * 细笔画在这个宽度下比色块更容易糊掉。
+ *
+ * 竖条高度用 `matchParentSize()`（见 [BookShelfScreen] 书脊色带同一写法）：它盖在引用区之上、
+ * 按整条书摘的实测高度拉到底，而不是被 [AppCard] 的版心截成一段。
+ */
 @Composable
 private fun ExcerptItem(excerpt: Excerpt, onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     AppCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
     ) {
-        Text(text = excerpt.content, style = DesignTokens.Body)
-        Spacer(Modifier.height(DesignTokens.SpacingXs))
-        Text(
-            text = excerpt.pageNo?.let { "第 $it 页" } ?: "未记页码",
-            style = DesignTokens.Caption,
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = DesignTokens.SpacingMd),
+            ) {
+                Text(text = excerpt.content, style = texts.aux)
+                Spacer(Modifier.height(DesignTokens.SpacingXs))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = excerpt.pageNo?.let { "第 $it 页" } ?: "未记页码",
+                        style = texts.caption,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "—— 摘录",
+                        style = texts.caption.copy(color = colors.accentInk),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier.matchParentSize(),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(QuoteBarWidth)
+                        .background(colors.accentInk),
+                )
+            }
+        }
     }
 }
 
+/** 书评条目：星级 + 正文 */
 @Composable
 private fun ReviewItem(review: BookReview, onClick: () -> Unit) {
+    val texts = AppTheme.texts
     AppCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -280,6 +338,6 @@ private fun ReviewItem(review: BookReview, onClick: () -> Unit) {
     ) {
         RatingStars(rating = review.rating)
         Spacer(Modifier.height(DesignTokens.SpacingSm))
-        Text(text = review.content, style = DesignTokens.Body)
+        Text(text = review.content, style = texts.body)
     }
 }

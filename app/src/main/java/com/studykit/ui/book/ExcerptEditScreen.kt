@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /** 书摘编辑页：内容多行输入 + 页码输入，保存 / 删除 */
@@ -39,6 +40,8 @@ fun ExcerptEditScreen(
     viewModel: BookViewModel,
     onBack: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     var content by rememberSaveable { mutableStateOf("") }
     var pageNo by rememberSaveable { mutableStateOf("") }
     var loaded by rememberSaveable { mutableStateOf(excerptId == null) }
@@ -69,13 +72,13 @@ fun ExcerptEditScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingXs))
             Text(
                 text = if (excerptId == null) "添加书摘" else "编辑书摘",
-                style = DesignTokens.PageTitle,
+                style = texts.pageTitle,
             )
         }
 
@@ -120,7 +123,7 @@ fun ExcerptEditScreen(
             Spacer(Modifier.height(DesignTokens.SpacingXs))
             Text(
                 text = "删除后无法恢复",
-                style = DesignTokens.Caption.copy(fontWeight = FontWeight.Normal),
+                style = texts.caption.copy(fontWeight = FontWeight.Normal),
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )

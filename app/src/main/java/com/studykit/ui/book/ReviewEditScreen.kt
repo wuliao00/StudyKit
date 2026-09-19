@@ -32,18 +32,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppMultilineTextField
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
-/** 可点击的 1-5 星评分行：已选强调色 / 未选浅灰 */
+/** 可点击的 1-5 星评分行：已选强调色 / 未选分隔线色（星是图形而非文字，留在 accent） */
 @Composable
 private fun RatingPicker(rating: Int, onRatingChange: (Int) -> Unit) {
+    val colors = AppTheme.colors
     Row(modifier = Modifier.fillMaxWidth()) {
         repeat(5) { index ->
             val starValue = index + 1
             Icon(
                 imageVector = Icons.Filled.Star,
                 contentDescription = "$starValue 星",
-                tint = if (starValue <= rating) DesignTokens.Accent else DesignTokens.Divider,
+                tint = if (starValue <= rating) colors.accent else colors.divider,
                 modifier = Modifier
                     .size(36.dp)
                     .padding(DesignTokens.SpacingXs)
@@ -61,6 +63,8 @@ fun ReviewEditScreen(
     viewModel: BookViewModel,
     onBack: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     var rating by rememberSaveable { mutableIntStateOf(5) }
     var content by rememberSaveable { mutableStateOf("") }
     var loaded by rememberSaveable { mutableStateOf(reviewId == null) }
@@ -90,18 +94,18 @@ fun ReviewEditScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingXs))
             Text(
                 text = if (reviewId == null) "写书评" else "编辑书评",
-                style = DesignTokens.PageTitle,
+                style = texts.pageTitle,
             )
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
-        Text(text = "评分", style = DesignTokens.Caption)
+        Text(text = "评分", style = texts.caption)
         Spacer(Modifier.height(DesignTokens.SpacingSm))
         RatingPicker(rating = rating, onRatingChange = { rating = it })
 

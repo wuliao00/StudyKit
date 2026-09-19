@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /** 添加 / 编辑书籍页：书名、作者、总页数 */
@@ -34,6 +35,8 @@ fun BookEditScreen(
     viewModel: BookViewModel,
     onBack: () -> Unit,
 ) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
     var title by rememberSaveable { mutableStateOf("") }
     var author by rememberSaveable { mutableStateOf("") }
     var totalPages by rememberSaveable { mutableStateOf("") }
@@ -66,13 +69,13 @@ fun BookEditScreen(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = DesignTokens.Accent,
+                    tint = colors.accentInk,
                 )
             }
             Spacer(Modifier.width(DesignTokens.SpacingXs))
             Text(
                 text = if (bookId == null) "添加书籍" else "编辑书籍",
-                style = DesignTokens.PageTitle,
+                style = texts.pageTitle,
             )
         }
 
