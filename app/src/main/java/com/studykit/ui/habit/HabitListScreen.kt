@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -168,13 +169,15 @@ private fun countdownText(item: HabitItemUi): String = when {
 }
 
 /** 热力图窗口宽度：卡片文案「近 N 周坚持」与网格列数同源，改这里即同时改两处 */
-private const val HEATMAP_WEEKS = 8
+// 20 周 ≈ 4.5 个月：卡内可用宽约 288dp，20 列 × (10dp 方格 + 4dp 间距) 正好铺满；
+// 8 列时方格被 108dp 画布高度限到 12dp，整块只占卡宽四成、两侧大片留白（真机实测）。
+private const val HEATMAP_WEEKS = 20
 
-/** 热力图画布高度：7 行 × 12dp 方格 + 6 × 4dp 间距（[HeatmapWeeks] 取宽高中较小者定边长并居中） */
+/** 热力图画布高度：20 列时边长由列宽定（约 11dp），7 行 + 6 × 4dp 间距实占约 98dp，画布留足 108dp（[HeatmapWeeks] 取宽高中较小者定边长并居中） */
 private val heatmapCanvasHeight: Dp = 108.dp
 
 /**
- * 习惯列表页：页标题 + 日历入口 + 近 8 周热力图 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口。
+ * 习惯列表页：页标题 + 日历入口 + 近 20 周热力图 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口。
  *
  * 颜色与文字样式统一取 `AppTheme`（达成态走 `goldInk`：金色作字/作细环在浅色主题不达 AA），
  * 间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
@@ -274,7 +277,10 @@ fun HabitListScreen(
                 HeatmapCard(activeDays = state.items.flatMap { it.checkedDates }.toSet())
             }
             Spacer(Modifier.height(AppTheme.space.md))
-            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+            Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            modifier = Modifier.height(IntrinsicSize.Max),
+        ) {
                 StatTile(
                     value = "${state.checkedTodayCount}",
                     label = "今日已打卡",
@@ -413,7 +419,7 @@ private fun CalendarEntryCard(onClick: () -> Unit) {
 }
 
 /**
- * 近 8 周打卡热力图卡：全部习惯的打卡日期并集，格子只区分「打过 / 没打过」。
+ * 近 20 周打卡热力图卡：全部习惯的打卡日期并集，格子只区分「打过 / 没打过」。
  *
  * 语义提醒：热力图按天聚合，多个习惯同日打卡也只是一个格子（不是更深的色阶），
  * 「窗口起点早于习惯创建日」的那几天同样落在灰格子里 —— 与 GitHub 一样的读法。

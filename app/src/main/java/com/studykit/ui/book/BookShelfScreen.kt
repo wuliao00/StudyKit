@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -107,7 +108,10 @@ fun BookShelfScreen(
         }
 
         Spacer(Modifier.height(AppTheme.space.md))
-        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            modifier = Modifier.height(IntrinsicSize.Max),
+        ) {
             StatTile(
                 value = "${state.readingCount}",
                 label = "在读",

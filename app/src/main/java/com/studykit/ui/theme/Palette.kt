@@ -21,7 +21,9 @@ object Palette {
     val LightWarning = Color(0xFFFF5A52)
     val LightWarningInk = Color(0xFFC0332C)  // 5.60:1 / 5.27:1 / 5.02:1（warningSoft＝warning 10% 压白）；warning 本身仅 3.07:1
     val LightDivider = Color(0xFFE7E2D8)
-    val LightHeatIdle = LightDivider          // 热力图空格直接取 divider 满不透明（1.29:1 vs 卡面）；此前 divider@50% 只有 1.13:1
+    // 热力图空格：真机浅色下 divider 满不透明只有 1.29:1，格子几乎看不见；
+    // 单独提一档到 1.53:1，与夜间侧 DarkHeatIdle 的 1.52:1 同量级（装饰元素，不套文本 AA）。
+    val LightHeatIdle = Color(0xFFD8D0BF)     // 1.53:1 vs 卡面 #FFFFFF / 1.44:1 vs 页面底 #FAF8F2
     val LightLightbox = Color(0xFF000000)    // 全屏看图的取景框黑（不随主题变，两主题同值）
     // 深色（暖黑，非纯黑）
     val DarkBackground = Color(0xFF1C1B18)

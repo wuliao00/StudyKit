@@ -21,14 +21,16 @@ import java.time.LocalDate
  * 颜色显式取自 [AppTheme]（`AppTheme.colors.accent` / `.heatIdle`），双主题各自达标，
  * 不依赖 MaterialTheme 的局部覆写。空格用 `heatIdle` 而不是 `divider.copy(alpha = 0.5f)`：
  * 后者压在卡面只有 1.13:1（浅色）/ 1.14:1（夜间），格子之间基本分不出来；`heatIdle` 是专门为
- * 「卡面上要看得见的空格」提的一档（浅色＝divider 满不透明 1.29:1，夜间 `#454136` 1.52:1），
- * 仍是装饰性元素、不套文本 AA。
+ * 「卡面上要看得见的空格」提的一档（浅色 1.53:1 / 夜间 1.52:1，两侧同量级），
+ * 仍是装饰性元素、不套文本 AA。真机浅色曾实测：取 divider 满不透明（1.29:1）时整片格子
+ * 在卡面上近乎消失，故浅色侧单独提档。
  *
- * 实现取向：**单 Canvas 画整张**（56 个格子一次遍历，不是 56 个 `Box`），
+ * 实现取向：**单 Canvas 画整张**（20 周 = 140 个格子一次遍历，不是 140 个 `Box`），
  * 尺寸完全由调用方给，推荐 `Modifier.fillMaxWidth().height(108.dp)`。
  * 格子边长取 `min(列宽, 行高)` 即**保持正方形**，整块网格再在画布内双向居中 ——
- * 8 周这种「宽 >> 高」的盒子里不会被拉伸成 7 行横条药丸（拉伸会立刻丢掉
- * GitHub 热力图「一格一天」的读法），20+ 周的宽窗口也不会上下错位。
+ * 不会被拉伸成 7 行横条药丸（拉伸会立刻丢掉 GitHub 热力图「一格一天」的读法）。
+ * 列数要与画布高度配套：108dp 高、卡内宽约 288dp 时，20 列刚好让「列宽≈行高」而铺满整行；
+ * 只给 8 列时列宽远大于行高，网格会缩成卡中央一小块、两侧留白（真机实测过）。
  * 边长非正（未测量到尺寸 / 列数超过可用宽）时直接不出画，不画退化方框。
  *
  * 「今天」由 [LocalDate.now] 取系统默认时区，只在 `remember` 键里读一次；
@@ -41,7 +43,7 @@ import java.time.LocalDate
 @Composable
 fun HeatmapWeeks(
     activeDays: Set<LocalDate>,
-    weeks: Int = 8,
+    weeks: Int = 20,
     modifier: Modifier = Modifier,
 ) {
     val colors = AppTheme.colors

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -106,7 +107,10 @@ fun StudyHomeScreen(
         )
 
         Spacer(Modifier.height(AppTheme.space.md))
-        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            modifier = Modifier.height(IntrinsicSize.Max),
+        ) {
             StatTile(
                 value = "${state.dueCount}",
                 label = "今日待复习",

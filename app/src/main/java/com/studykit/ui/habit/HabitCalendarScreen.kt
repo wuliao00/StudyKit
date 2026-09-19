@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -244,7 +245,10 @@ fun HabitCalendarScreen(
         Spacer(Modifier.height(AppTheme.space.lg))
 
         val isCountType = detail?.isCountType == true
-        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.md)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.md),
+            modifier = Modifier.height(IntrinsicSize.Max),
+        ) {
             StatTile(
                 value = if (isCountType) {
                     "${formatAmount(detail?.totalAmount ?: 0.0)} ${detail?.habit?.unit.orEmpty()}"
