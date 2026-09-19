@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -240,117 +241,126 @@ fun HabitListScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(
+        // 整页只有这一个可滚动列表：此前表头（日历入口 + 热力图 + 统计磁贴）钉在不滚动的
+        // Column 里，把列表视口压到只剩约 193dp（真机实测：习惯卡片只能露出一张多半张），
+        // 主内容反而要在一条窄缝里滚。改成表头也作为 item 随内容一起滚。
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = AppTheme.space.pageH),
+            contentPadding = PaddingValues(
+                top = AppTheme.space.sm,
+                bottom = AppTheme.space.xl,
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.space.md),
         ) {
-            Spacer(Modifier.height(AppTheme.space.sm))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(text = "习惯", style = texts.largeTitle)
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onAddClick) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = null,
-                        tint = colors.accentInk,
+            item(key = "header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(text = "习惯", style = texts.largeTitle)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onAddClick) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = null,
+                            tint = colors.accentInk,
+                        )
+                        Spacer(Modifier.width(AppTheme.space.xs))
+                        Text(
+                            text = "添加",
+                            style = texts.aux.copy(
+                                color = colors.accentInk,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        )
+                    }
+                }
+            }
+            item(key = "calendar_entry") { CalendarEntryCard(onClick = onOpenCalendar) }
+            // 空账号不出全灰热力图（没有任何事实可画时它只是噪声），有习惯才亮出这一卡
+            if (state.items.isNotEmpty()) {
+                item(key = "heatmap") {
+                    HeatmapCard(activeDays = state.items.flatMap { it.checkedDates }.toSet())
+                }
+            }
+            item(key = "stat_tiles") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                ) {
+                    StatTile(
+                        value = "${state.checkedTodayCount}",
+                        label = "今日已打卡",
+                        modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(AppTheme.space.xs))
-                    Text(
-                        text = "添加",
-                        style = texts.aux.copy(
-                            color = colors.accentInk,
-                            fontWeight = FontWeight.Medium,
-                        ),
+                    StatTile(
+                        value = "${state.items.size}",
+                        label = "习惯总数",
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatTile(
+                        value = "${state.maxStreak}",
+                        label = "最长连续",
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
-
-            Spacer(Modifier.height(AppTheme.space.md))
-            CalendarEntryCard(onClick = onOpenCalendar)
-            // 空账号不出全灰热力图（没有任何事实可画时它只是噪声），有习惯才亮出这一卡
-            if (state.items.isNotEmpty()) {
-                Spacer(Modifier.height(AppTheme.space.md))
-                HeatmapCard(activeDays = state.items.flatMap { it.checkedDates }.toSet())
-            }
-            Spacer(Modifier.height(AppTheme.space.md))
-            Row(
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
-            modifier = Modifier.height(IntrinsicSize.Max),
-        ) {
-                StatTile(
-                    value = "${state.checkedTodayCount}",
-                    label = "今日已打卡",
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    value = "${state.items.size}",
-                    label = "习惯总数",
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    value = "${state.maxStreak}",
-                    label = "最长连续",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Spacer(Modifier.height(AppTheme.space.lg))
-
             if (state.items.isEmpty()) {
-                Spacer(Modifier.height(AppTheme.space.xl * 2))
-                EmptyState(
-                    title = "还没有习惯",
-                    caption = "每天坚持一小步，21 天养成一个习惯",
-                )
-                Spacer(Modifier.height(AppTheme.space.lg))
-                AppButton(text = "创建第一个习惯", onClick = onAddClick)
+                item(key = "empty") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(Modifier.height(AppTheme.space.xl * 2))
+                        EmptyState(
+                            title = "还没有习惯",
+                            caption = "每天坚持一小步，21 天养成一个习惯",
+                        )
+                        Spacer(Modifier.height(AppTheme.space.lg))
+                        AppButton(text = "创建第一个习惯", onClick = onAddClick)
+                    }
+                }
             } else {
                 val pending = state.items.filter { !it.checkedInToday }
                 val done = state.items.filter { it.checkedInToday }
 
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(AppTheme.space.md),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(pending, key = { it.habit.id }) { item ->
-                        HabitCard(
-                            item = item,
+                items(pending, key = { it.habit.id }) { item ->
+                    HabitCard(
+                        item = item,
+                        modifier = Modifier.animateItem(),
+                        onClick = { onOpenHabit(item.habit.id) },
+                        onCheckIn = { onCheckInClick(item) },
+                    )
+                }
+                if (done.isNotEmpty()) {
+                    item(key = "done_fold_header") {
+                        DoneFoldHeader(
+                            count = done.size,
+                            expanded = expandedDone,
+                            onToggle = { expandedDone = !expandedDone },
                             modifier = Modifier.animateItem(),
-                            onClick = { onOpenHabit(item.habit.id) },
-                            onCheckIn = { onCheckInClick(item) },
                         )
                     }
-                    if (done.isNotEmpty()) {
-                        item(key = "done_fold_header") {
-                            DoneFoldHeader(
-                                count = done.size,
-                                expanded = expandedDone,
-                                onToggle = { expandedDone = !expandedDone },
+                    if (expandedDone) {
+                        items(done, key = { "done_${it.habit.id}" }) { item ->
+                            HabitCard(
+                                item = item,
                                 modifier = Modifier.animateItem(),
+                                onClick = { onOpenHabit(item.habit.id) },
+                                onCheckIn = { onCheckInClick(item) },
                             )
                         }
-                        if (expandedDone) {
-                            items(done, key = { "done_${it.habit.id}" }) { item ->
-                                HabitCard(
-                                    item = item,
-                                    modifier = Modifier.animateItem(),
-                                    onClick = { onOpenHabit(item.habit.id) },
-                                    onCheckIn = { onCheckInClick(item) },
-                                )
-                            }
-                        }
                     }
-                    item(key = "record_actions") {
-                        RecordActionsCard(
-                            onShare = { viewModel.shareAchievement() },
-                            onExport = { viewModel.exportCsv() },
-                        )
-                    }
-                    item { Spacer(Modifier.height(AppTheme.space.md)) }
+                }
+                item(key = "record_actions") {
+                    RecordActionsCard(
+                        onShare = { viewModel.shareAchievement() },
+                        onExport = { viewModel.exportCsv() },
+                    )
                 }
             }
         }
@@ -595,12 +605,11 @@ private fun HabitCard(
             Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // `fill = false`：Row 先量无 weight 的药丸、再把这个 Column 剩下的宽度给标题，
-                    // 于是空间不够时**标题省略号让位**，而不是把「已达成」压成两行（真机实测过）。
+                    // 不再给标题加 weight：真机上 `weight(1f, fill = false)` 会把习惯名压成「…」。
+                    // 药丸不折行已由 AppPill 的 `maxLines = 1` 保证，标题保持自然宽度。
                     Text(
                         text = item.habit.name,
                         style = texts.cardTitle,
-                        modifier = Modifier.weight(1f, fill = false),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
