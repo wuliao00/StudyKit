@@ -45,6 +45,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -254,11 +256,15 @@ internal fun decideSwipe(offsetX: Float, velocityX: Float, widthPx: Int): SwipeD
  * ```
  * 布局根 Box —— weight(1f) 撑满剩余高度 + onSizeChanged 测宽（阈值/飞出距离都按它算）
  *   ├─ 滑动层 Box —— translationX / rotationZ / scale + draggable：卡片本体跟手倾斜、飞出
- *   │    └─ 翻面平面 Box —— rotationY = flip + clip + clickable：3D 翻面
+ *   │    └─ 翻面平面 Box —— rotationY = flipState + clip + clickable：3D 翻面
  *   │         ├─ CardFace 正面（flip < 90°）
  *   │         └─ CardFace 背面（flip >= 90°，自身再转 180° 抵消镜像）
- *   └─ GradeBadge ×2 —— 只吃 alpha，位置由布局根 align 决定
+ *   └─ GradeBadge ×2 —— 只吃 alpha（收 State<Float>），位置由布局根 align 决定
  * ```
+ *
+ * 逐帧值（`offsetX` / `flipState` 与由它们派生的 `drag` 与两枚角标 alpha）**一律不在组合期读**：
+ * 它们只出现在 `graphicsLayer {}` 与 `derivedStateOf {}` 里，组合次数因此只随
+ * index / graded / 量到的宽度变化（终审 C2：120Hz 拖动期整卡重组）。
  *
  * 角标**不能**挂在滑动层之下：否则它会被 `translationX` 连卡片一起带出屏幕、被 `rotationZ`
  * 带着倾斜、翻到背面时还会跟着 `rotationY` 镜像成反字。挂在布局根上时它就是一个稳定的角落提示，
@@ -286,11 +292,14 @@ private fun SwipeRatingCard(
     val density = LocalDensity.current.density
     var widthPx by remember { mutableIntStateOf(0) }
     var flipped by rememberSaveable(word.id) { mutableStateOf(false) }
-    val flip by animateFloatAsState(
+    // 翻面角度是逐帧值：只进 graphicsLayer。参与「哪一面朝前」这个分支的量另折成布尔派生值
+    // （只在跨过 90° 的那一帧变），于是翻面期间整卡最多重组一次，而不是每帧一次（C2 同类）。
+    val flipState = animateFloatAsState(
         targetValue = if (flipped) 180f else 0f,
         animationSpec = MotionSpec.flip,
         label = "flip",
     )
+    val frontShown by remember { derivedStateOf { flipState.value < 90f } }
     val offsetX = remember { Animatable(initialValue = 0f) }
     val scope = rememberCoroutineScope()
     val onGradeNow by rememberUpdatedState(onGrade)
@@ -321,9 +330,18 @@ private fun SwipeRatingCard(
         }
     }
 
-    val drag = offsetX.value / swipeThresholdPx(widthPx = widthPx)
-    val knownA = if (graded.value) 0f else drag.coerceIn(0f, 1f)
-    val unknownA = if (graded.value) 0f else (-drag).coerceIn(0f, 1f)
+    // ── 拖拽派生值：三个都只在 lambda 里读 ────────────────────────────────
+    // 终审 C2 的正主：旧写法在组合期读 `offsetX.value`，于是 120Hz 屏上每拖一帧整卡
+    // （2×AppCard + 4×Text）就重组一次。`derivedStateOf` 把逐帧值留在绘制侧，
+    // 组合次数此后只随 index / graded / widthPx 变化。
+    // 依赖（offsetX / widthPx / graded）全是 remember 出来的稳定 State，故无键 remember 即可。
+    val drag = remember { derivedStateOf { offsetX.value / swipeThresholdPx(widthPx = widthPx) } }
+    val knownAlpha = remember {
+        derivedStateOf { if (graded.value) 0f else drag.value.coerceIn(0f, 1f) }
+    }
+    val unknownAlpha = remember {
+        derivedStateOf { if (graded.value) 0f else (-drag.value).coerceIn(0f, 1f) }
+    }
     val dragState = rememberDraggableState { dx ->
         scope.launch { offsetX.snapTo(targetValue = offsetX.value + dx) }
     }
@@ -342,8 +360,8 @@ private fun SwipeRatingCard(
                     .matchParentSize()
                     .graphicsLayer {
                         translationX = offsetX.value
-                        rotationZ = drag * 6f
-                        scaleX = 1f - 0.04f * drag.coerceIn(-1f, 1f).let { it * it }
+                        rotationZ = drag.value * 6f
+                        scaleX = 1f - 0.04f * drag.value.coerceIn(-1f, 1f).let { it * it }
                         scaleY = scaleX
                     }
                     .draggable(
@@ -385,14 +403,14 @@ private fun SwipeRatingCard(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            rotationY = flip
+                            rotationY = flipState.value
                             cameraDistance = 16f * density
                         }
                         .clip(RoundedCornerShape(AppTheme.radius.lg))
                         .clickable { flipped = !flipped },
                 ) {
                     CardFace(
-                        visible = flip < 90f,
+                        visible = frontShown,
                         content = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(word.word, style = texts.largeTitle, textAlign = TextAlign.Center)
@@ -402,7 +420,7 @@ private fun SwipeRatingCard(
                         },
                     )
                     CardFace(
-                        visible = flip >= 90f,
+                        visible = !frontShown,
                         mirrored = true,
                         content = {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -426,7 +444,7 @@ private fun SwipeRatingCard(
                 contentDescription = "认识",
                 container = colors.successSoft,
                 ink = colors.successInk,
-                alpha = knownA,
+                alpha = knownAlpha,
                 align = Alignment.TopEnd,
                 rotation = 12f,
             )
@@ -435,7 +453,7 @@ private fun SwipeRatingCard(
                 contentDescription = "不认识",
                 container = colors.warningSoft,
                 ink = colors.warningInk,
-                alpha = unknownA,
+                alpha = unknownAlpha,
                 align = Alignment.TopStart,
                 rotation = -12f,
             )
@@ -516,6 +534,10 @@ private fun CardFace(
  * 拖拽角标：**只放 ✓ / ✗ 图形**（不放「认识/忘记」文字），贴在布局根角落、只做自身的静态倾斜，
  * 透明度跟手上位移线性渐显；`alpha <= 0` 时直接不进组合（未拖拽与已发起结算两种情况都归零）。
  *
+ * `alpha` 是**逐帧**变化的派生值，故收 `State<Float>` 而不是 Float：值只在自身 `graphicsLayer`
+ * 里读（C2）。要不要进组合则折成一枚布尔 `derivedStateOf`，它只在跨过 0 的那一帧翻转 ——
+ * 于是拖拽期间角标只有重绘，没有重组。
+ *
  * 刻意不放文案：17sp 文字压在拖拽中的卡片上会被抢走注意力，文字版语义仍由下方
  * 「不认识 / 认识」两颗按钮承担；而 ✓/✗ 是**非文本元素**，靠形状 + 颜色 + 位置表意，
  * 配 [contentDescription] 交给读屏。
@@ -530,17 +552,18 @@ private fun BoxScope.GradeBadge(
     contentDescription: String,
     container: Color,
     ink: Color,
-    alpha: Float,
+    alpha: State<Float>,
     align: Alignment,
     rotation: Float,
 ) {
-    if (alpha <= 0f) return
+    val visible = remember(alpha) { derivedStateOf { alpha.value > 0f } }
+    if (!visible.value) return
     Box(
         modifier = Modifier
             .align(align)
             .padding(AppTheme.space.md)
             .graphicsLayer {
-                this.alpha = alpha
+                this.alpha = alpha.value
                 rotationZ = rotation
             }
             .clip(RoundedCornerShape(AppTheme.radius.md))
