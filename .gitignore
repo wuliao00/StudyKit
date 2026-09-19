@@ -27,3 +27,7 @@ _*.txt
 _*.log
 _*.db
 _*.bin
+
+# 过程工件（任务 brief / report / diff 走查记录）：本地留档用，不入版本库。
+# 此前只靠 .superpowers/sdd/.gitignore 自忽略，根级再兜一层，避免该目录下新增内容漏出去。
+.superpowers/

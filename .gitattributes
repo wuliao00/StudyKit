@@ -1,0 +1,9 @@
+# 行尾统一：入库一律 LF，签出也一律 LF。
+#
+# 现状：本仓库索引里的 blob 已经是纯 LF（gradlew / gradlew.bat / README / 源码均已核对），
+# 所以这条规则**不改写任何历史，也不产生 diff**，只是把口径写死：
+# - 屏蔽 Windows 上 core.autocrlf=true 把签出文件改成 CRLF 后再提交造成的整文件假 diff；
+# - 让 CI（Linux）与本地（Windows）看到同样的字节，`.github/workflows`、`baseline-prof.txt`
+#   这类按行解析的文件不会因为 CRLF 出现解析差异。
+# 需要 CRLF 的只有历史遗留的 Windows 批处理，本仓库的 gradlew.bat 实际以 LF 存且可用，故不特判。
+* text=auto eol=lf
