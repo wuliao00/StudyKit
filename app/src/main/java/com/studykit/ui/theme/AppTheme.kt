@@ -140,9 +140,15 @@ object AppTheme {
         val card: Dp = 16.dp
     }
 
-    /** 圆角：`md`/`lg` 即 `MaterialTheme.shapes` 的 medium/large（见 Theme.kt），`xl` 只用于胶囊按钮 */
+    /**
+     * 圆角：`md`/`lg` 即 `MaterialTheme.shapes` 的 medium/large（见 Theme.kt，这条口径不变），
+     * `xl` 只用于胶囊按钮。
+     */
     object radius {
-        /** 常规卡片/药丸 */
+        /** 状态药丸（[com.studykit.ui.components.AppPill]）：介于 4dp 误用与 md 之间的一档 */
+        val sm: Dp = 8.dp
+
+        /** 常规卡片与**可点** chip（不可点的状态药丸见 [sm]） */
         val md: Dp = 16.dp
 
         /** 大图、图片卡 */

@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.SystemEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
@@ -585,17 +586,12 @@ private fun DayDetailCard(
             )
             if (date == today) {
                 Spacer(Modifier.width(AppTheme.space.sm))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(colors.accentSoft)
-                        .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = "今天",
-                        style = texts.caption.copy(color = colors.accentInk),
-                    )
-                }
+                // 「今天」标记：与习惯卡「已达成」同一枚药丸（波 3 收口，不再各写 6dp 圆角）
+                AppPill(
+                    container = colors.accentSoft,
+                    ink = colors.accentInk,
+                    label = "今天",
+                )
             }
         }
 

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
@@ -46,30 +47,23 @@ import com.studykit.ui.theme.AppTheme
 private val SpineBandWidth: Dp = 6.dp
 
 /**
- * 状态标签（柔底药丸）：`在读 = accentSoft + accentInk`、`读完 = successSoft + successInk`。
+ * 状态标签：一枚 [com.studykit.ui.components.AppPill]，`在读 = accentSoft + accentInk`、
+ * `读完 = successSoft + successInk`。
  *
  * 旧写法是「Success/Accent 实色 12% 底 + 同色文字」，而品牌色作文字色在浅色卡上只有
  * 3.04:1（accent）/ ≈2.2:1（success），都不达文本 AA（T1 裁定：文本态一律走 `*Ink`）。
  * T15 补齐 `successInk` 后，两态墨色统一取本族 ink 而非 `primaryText`：容器负责「有状态」，
- * 墨色负责「哪个状态」，色觉之外也能靠深浅读出区别。
+ * 墨色负责「哪个状态」，色觉之外也能靠深浅读出区别。圆角/内边距/字号这些几何参数在波 3
+ * 收进了 [com.studykit.ui.components.AppPill]，与单词库、错题本、习惯卡上的药丸同一份实现。
  */
 @Composable
 private fun StatusTag(finished: Boolean) {
     val colors = AppTheme.colors
-    val texts = AppTheme.texts
-    val container = if (finished) colors.successSoft else colors.accentSoft
-    val ink = if (finished) colors.successInk else colors.accentInk
-    Box(
-        modifier = Modifier
-            .background(color = container, shape = RoundedCornerShape(AppTheme.radius.md))
-            .padding(horizontal = AppTheme.space.sm, vertical = AppTheme.space.xs),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = if (finished) "读完" else "在读",
-            style = texts.caption.copy(color = ink, fontWeight = FontWeight.Medium),
-        )
-    }
+    AppPill(
+        container = if (finished) colors.successSoft else colors.accentSoft,
+        ink = if (finished) colors.successInk else colors.accentInk,
+        label = if (finished) "读完" else "在读",
+    )
 }
 
 /** 书架页：页标题 + 添加入口、统计磁贴、带书脊色带的书籍卡片 */

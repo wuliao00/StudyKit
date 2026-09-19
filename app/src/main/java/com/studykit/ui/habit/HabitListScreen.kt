@@ -52,6 +52,7 @@ import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.HeatmapWeeks
@@ -583,20 +584,13 @@ private fun HabitCard(
                     )
                     if (item.achieved) {
                         Spacer(Modifier.width(AppTheme.space.sm))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(colors.goldSoft)
-                                .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = "已达成",
-                                style = texts.caption.copy(
-                                    color = colors.goldInk,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                            )
-                        }
+                        // 「已达成」标记：与单词库/书架/错题本的药丸同一份实现（波 3 收口），
+                        // 金色档按 T15 走 goldSoft 底 + goldInk 字
+                        AppPill(
+                            container = colors.goldSoft,
+                            ink = colors.goldInk,
+                            label = "已达成",
+                        )
                     }
                 }
                 Spacer(Modifier.height(2.dp))

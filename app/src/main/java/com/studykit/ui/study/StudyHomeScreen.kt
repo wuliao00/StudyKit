@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -44,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
@@ -223,11 +223,17 @@ private fun TodayHeroCard(
     }
 }
 
-/** 连续学习火焰徽章：进场时 0.4 → 1 的 snap spring 弹入，goldSoft 底 + goldInk 文案（T15 墨水批次：gold 作字仅 1.79:1，goldInk 压这层柔底 5.42:1） */
+/**
+ * 连续学习火焰徽章：进场时 0.4 → 1 的 snap spring 弹入，容器是一枚
+ * [AppPill]（goldSoft 底 + goldInk 文案，T15 墨水批次：gold 作字仅 1.79:1，goldInk 压这层柔底 5.42:1）。
+ *
+ * 进场缩放挂在 [AppPill] 的 `modifier` 上 ⇒ 落在整枚药丸（含柔底）之外一层，与迁移前
+ * `graphicsLayer → clip → background` 的层次一致。波 3 把全 app 的状态药丸收进同一份实现，
+ * 圆角因此与书架/单词库/错题本同批从 `radius.md` 变 `radius.sm`。
+ */
 @Composable
 private fun FlameBadge(days: Int) {
     val colors = AppTheme.colors
-    val texts = AppTheme.texts
     // saveable：转屏后 born 直接恢复为 true ⇒ 目标值不再从 0.4f 起步，徽章不会凭空再弹一次
     var born by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { born = true }
@@ -236,18 +242,12 @@ private fun FlameBadge(days: Int) {
         animationSpec = MotionSpec.snap,
         label = "flame",
     )
-    Box(
-        modifier = Modifier
-            .graphicsLayer { scaleX = s; scaleY = s }
-            .clip(RoundedCornerShape(AppTheme.radius.md))
-            .background(colors.goldSoft)
-            .padding(horizontal = AppTheme.space.sm, vertical = 4.dp),
-    ) {
-        Text(
-            text = "🔥 连续 $days 天",
-            style = texts.caption.copy(color = colors.goldInk, fontWeight = FontWeight.SemiBold),
-        )
-    }
+    AppPill(
+        container = colors.goldSoft,
+        ink = colors.goldInk,
+        label = "🔥 连续 $days 天",
+        modifier = Modifier.graphicsLayer { scaleX = s; scaleY = s },
+    )
 }
 
 /** 入口卡片：圆形图标（soft 底色）+ 标题 + 说明，可选尾部操作按钮；点击默认 ripple */

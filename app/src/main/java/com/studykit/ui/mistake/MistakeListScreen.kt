@@ -54,6 +54,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.studykit.data.entity.Mistake
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
@@ -63,37 +64,29 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /**
- * 来源徽标：单词=accent 族、刷题=success 族、拍照=warning 族，统一走「柔底药丸」。
+ * 来源徽标：单词=accent 族、刷题=success 族、拍照=warning 族，统一走
+ * [com.studykit.ui.components.AppPill]（柔底药丸）。
  *
  * 旧写法是实色 12% 底 + **同色文字**（accent 文字 3.04:1、success ≈2.2:1，都不达 AA），
  * 按 ledger 规则换 soft 容器 + 达标墨色：三族各取其 ink 变体
  * （`accentInk` / `successInk` / `warningInk`，T15 墨水批次；浅色压深后压在本族 soft 柔底上有
  * 5.21 / 4.96 / 5.02:1，夜间沿用提亮后的品牌色也有 6.58 / 5.65 / 4.66:1，两主题都过文本 AA）。
  * 未知来源退回透明底 + secondaryText。
+ *
+ * 圆角这里原先误写 `RoundedCornerShape(AppTheme.space.xs)`（把间距令牌当圆角用，4dp，
+ * 全 app 唯一一枚偏方药丸 —— 是缺陷不是风格），随波 3 换 [com.studykit.ui.components.AppPill]
+ * 一并落到 `radius.sm`。
  */
 @Composable
 private fun SourceBadge(source: String) {
     val colors = AppTheme.colors
-    val texts = AppTheme.texts
     val (label, container, ink) = when (source) {
         Mistake.SOURCE_WORD -> Triple("单词", colors.accentSoft, colors.accentInk)
         Mistake.SOURCE_PRACTICE -> Triple("刷题", colors.successSoft, colors.successInk)
         Mistake.SOURCE_PHOTO -> Triple("拍照", colors.warningSoft, colors.warningInk)
         else -> Triple(source, Color.Transparent, colors.secondaryText)
     }
-    Box(
-        modifier = Modifier
-            .background(
-                color = container,
-                shape = RoundedCornerShape(AppTheme.space.xs),
-            )
-            .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
-    ) {
-        Text(
-            text = label,
-            style = texts.caption.copy(color = ink, fontWeight = FontWeight.Medium),
-        )
-    }
+    AppPill(container = container, ink = ink, label = label)
 }
 
 /** 学科筛选 Chip 行 */

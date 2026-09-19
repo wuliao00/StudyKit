@@ -1,8 +1,6 @@
 package com.studykit.ui.study
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,12 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Star
@@ -26,19 +21,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.theme.AppTheme
 
 /**
- * 单词熟练度指示：12dp 状态色点 + 「柔底药丸」状态标签。
+ * 单词熟练度指示：一枚 [AppPill]（12dp 状态色点 + 柔底状态标签）。
  *
  * 取色：`新词=divider`、`学习中=accent`、`已掌握=success`，三个文案原样保留。
  * 药丸容器与色点同族但走 soft 档（`successSoft`/`accentSoft`，其余 `Transparent`），
@@ -50,12 +43,11 @@ import com.studykit.ui.theme.AppTheme
  * （T1 裁定：文本态 accent 仅 3.04:1）、`新词 → Transparent + secondaryText`。
  *
  * 色点仍是纯装饰（同一行已有等价文案），故不加 `semantics`/`contentDescription`，
- * 避免读屏把状态念两遍。
+ * 避免读屏把状态念两遍。圆角/内边距/字号这些几何参数收在 [AppPill] 里，本页只留取色。
  */
 @Composable
 private fun WordStatusIndicator(status: String) {
     val colors = AppTheme.colors
-    val texts = AppTheme.texts
     val (label, dotColor) = when (status) {
         Word.STATUS_MASTERED -> "已掌握" to colors.success
         Word.STATUS_LEARNING -> "学习中" to colors.accent
@@ -66,26 +58,12 @@ private fun WordStatusIndicator(status: String) {
         Word.STATUS_LEARNING -> colors.accentSoft to colors.accentInk
         else -> Color.Transparent to colors.secondaryText
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .clip(CircleShape)
-                .background(dotColor),
-        )
-        Spacer(Modifier.width(AppTheme.space.sm))
-        Box(
-            modifier = Modifier
-                .background(color = pillColor, shape = RoundedCornerShape(AppTheme.radius.md))
-                .padding(horizontal = AppTheme.space.sm, vertical = 2.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                style = texts.caption.copy(color = pillInk, fontWeight = FontWeight.Medium),
-            )
-        }
-    }
+    AppPill(
+        container = pillColor,
+        ink = pillInk,
+        label = label,
+        leadingDot = dotColor,
+    )
 }
 
 /**
