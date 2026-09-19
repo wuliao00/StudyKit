@@ -357,6 +357,22 @@ private fun launchCamera(context: Context, onReady: (File, Uri) -> Unit) {
 }
 
 /**
+ * 从两个路径候选里挑真正能显示的图片：缩略图优先，缺失时回退大图，都没有则 null。
+ *
+ * 整段走 `Dispatchers.IO`（终审 I8）。之所以抽成函数而不是把 `withContext { … }` 直接写在
+ * [produceState] 的生产者里：Compose 的 lint 规则 `ProduceStateDoesNotAssignValue`
+ * 会把「赋值的右侧带尾随 lambda」的写法当成生产者里没有 `value =`，误报成生产者从不赋值。
+ */
+private suspend fun resolveMistakeImage(thumbCandidate: File?, fullCandidate: File?): File? =
+    withContext(Dispatchers.IO) {
+        when {
+            thumbCandidate?.exists() == true -> thumbCandidate
+            fullCandidate?.exists() == true -> fullCandidate
+            else -> null
+        }
+    }
+
+/**
  * 错题条目：来源徽标 + 标题 + 摘要 + 缩略图（若有）。
  *
  * `modifier` 由调用方（`LazyItemScope`）传入 `Modifier.animateItem()`，挂到卡片根，
@@ -388,13 +404,7 @@ private fun MistakeItem(
         key1 = thumbCandidate,
         key2 = fullCandidate,
     ) {
-        value = withContext(Dispatchers.IO) {
-            when {
-                thumbCandidate?.exists() == true -> thumbCandidate
-                fullCandidate?.exists() == true -> fullCandidate
-                else -> null
-            }
-        }
+        value = resolveMistakeImage(thumbCandidate = thumbCandidate, fullCandidate = fullCandidate)
     }
     AppCard(
         modifier = modifier
