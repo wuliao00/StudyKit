@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        夜间档：与 values/themes.xml 同名 style，随系统深色模式自动选中。
+        缺这一档时夜间冷启动会先套浅色主题的浅灰状态栏，等 Compose 首帧才变深，
+        顶部闪一下「白条」——这里把窗口底色直接给成夜间暖黑 Palette.DarkBackground(#1C1B18)。
+        同浅色档：statusBarColor 仅 API < 35 生效，API 35+ 由 edge-to-edge 下的 Compose 承担。
+    -->
+    <style name="Theme.StudyKit" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#1C1B18</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

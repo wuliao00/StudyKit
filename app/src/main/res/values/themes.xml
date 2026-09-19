@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+        窗口级主题：只负责 Compose 接管之前那一段（冷启动窗口 / 状态栏底色）。
+        statusBarColor 仅在 API < 35 生效：MainActivity 已 enableEdgeToEdge()，
+        API 35+ 系统强制透明系统栏，实际观感由 Compose（StudyKitTheme + Palette）承担。
+        色值取自 v2 暖纸色板的浅色底 Palette.LightBackground(#FAF8F2)，
+        夜间对应值见 values-night/themes.xml，两档都是「底色接底色」，冷启动不闪白/不闪灰条。
+    -->
     <style name="Theme.StudyKit" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#F8F8FA</item>
+        <item name="android:statusBarColor">#FAF8F2</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
