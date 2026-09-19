@@ -132,6 +132,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 组一轮学习队列：今日到期（next_review_at <= now）且未掌握的单词，取前 10 个 */
     fun startCardSession() {
+        // 入口先同步清空：`_session` 是 VM 里的常驻状态，上一轮跑完后它是 `finished` 的小结态。
+        // 不等这一步的话，重进页面会先渲染「上一轮已完成 + 彩带」（页面只在下一帧才拿到新队列），
+        // 用户看到的是闪一下旧小结（终审 I5）。
+        _session.value = null
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val queue = wordRepository.getAll()
