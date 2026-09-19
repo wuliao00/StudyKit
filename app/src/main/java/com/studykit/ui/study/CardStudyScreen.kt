@@ -279,6 +279,13 @@ internal fun decideSwipe(offsetX: Float, velocityX: Float, widthPx: Int): SwipeD
  * 结算一旦发起（`graded` 置真）就同时关掉拖拽手势与两颗按钮：飞出动画期间再起手会把
  * `animateTo` cancel 掉，`onGradeNow` 便永远执行不到，而 `graded` 已置真 ⇒ 该卡再也无法评价（软锁）。
  *
+ * `graded` 自终审 I6 起是 `rememberSaveable(word.id)`：转屏后「同一张卡只结算一次」依然成立。
+ * 残留一种极端情形没有自愈——飞出动画**在飞途中**转屏/进程被销毁时，claim 已置真而
+ * `onGradeNow` 还没跑，重建后这张卡既不能滑也不能按（`offsetX` 是 `remember` 的 Animatable，
+ * 归零了）。要救它就得把评价方向也存下来并在重建时补投一次，但「补投」与「上一次其实已落库」
+ * 之间没有可靠的判据（`_session.index` 只在 DB 写完后才推进），反而会引入双写复习记录的风险，
+ * 故本波按**已知残留**处理，列入真机核验（见 final-wave-2 报告）。
+ *
  * @param onGrade 结算当前卡（`true` = 认识）。同一张卡只会回调一次，见上方 `claim()` 守卫。
  */
 @Composable
@@ -307,7 +314,11 @@ private fun SwipeRatingCard(
     // ViewModel 的 index 要等 DB 写完才推进，所以「滑动 flyOut 协程」与「按钮点击」若在同帧
     // 各结算一次，会把同一张卡复习两遍（recordReview 双写、间隔被后一次覆盖）。
     // 所有路径都先 claim 抢权限，抢不到即视为重复触发。
-    val graded = remember { mutableStateOf(false) }
+    //
+    // saveable 且以 `word.id` 键控（终审 I6）：`remember` 的话转屏后这枚守卫归零，
+    // 同一张卡能被结算第二遍；换卡时按 id 自动复位，不会带着上一张的残锁。
+    // 与 `flipped`、`QuizScreen` 的 `pending/advanced` 是同一条纪律。
+    val graded = rememberSaveable(word.id) { mutableStateOf(false) }
 
     /** 抢占本卡的结算权；首次返回 `true`，之后一律 `false` */
     fun claim(): Boolean {
