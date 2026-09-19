@@ -163,9 +163,14 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 页码步进（+/-），越界自动夹取到 0..totalPages；到达总页数时标记读完 */
-    fun stepProgress(delta: Int) {
-        val book = detail.value?.book ?: return
+    /**
+     * 页码步进（+/-），越界自动夹取到 0..totalPages；到达总页数时标记读完。
+     *
+     * 以路由上的 [bookId] 为准绳（终审 C1）：只有「已加载的书就是本书」时才写库，否则直接返回。
+     * 早退不会误报失败——页面此时正显示加载态，按钮也还没出现。
+     */
+    fun stepProgress(bookId: Long, delta: Int) {
+        val book = detail.value?.book?.takeIf { it.id == bookId } ?: return
         val target = (book.currentPage + delta).coerceIn(0, book.totalPages)
         viewModelScope.launch {
             if (target >= book.totalPages && book.status == Book.STATUS_READING) {
@@ -177,9 +182,9 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 直接标记读完 */
-    fun markFinished() {
-        val book = detail.value?.book ?: return
+    /** 直接标记读完；同样只认 [bookId] 对应的那一行 */
+    fun markFinished(bookId: Long) {
+        val book = detail.value?.book?.takeIf { it.id == bookId } ?: return
         if (book.status == Book.STATUS_FINISHED) return
         viewModelScope.launch {
             repository.markFinished(book.id)
