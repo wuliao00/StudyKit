@@ -112,7 +112,30 @@ private fun SubjectFilterRow(
 }
 
 /**
- * 学科筛选 Chip：选中态 `accentSoft` 底 + `accentInk` 字。
+ * 掌握态筛选 Chip 行：`待复习` / `已掌握`。
+ *
+ * 它是 spec「标记已掌握后划线消失」的另一半：默认列表只出未掌握，`markMastered` 后那行
+ * 当场退场（[androidx.compose.foundation.lazy.LazyItemScope.animateItem] 播退场），
+ * 但没有这枚 chip 用户就再也回不到已划掉的题上 —— 复习入口会断。
+ * 与学科行是**两个正交维度**（掌握态 × 学科），故各占一行、共用同一枚 [FilterChip] 样式；
+ * 学科 chips 的候选集取自两态并集（见 `MistakeViewModel.subjects`），切这一行不会让学科行重排。
+ */
+@Composable
+private fun MasteryFilterRow(
+    showMastered: Boolean,
+    onSelect: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+    ) {
+        FilterChip(label = "待复习", selected = !showMastered) { onSelect(false) }
+        FilterChip(label = "已掌握", selected = showMastered) { onSelect(true) }
+    }
+}
+
+/**
+ * 筛选 Chip（学科行与掌握态行共用）：选中态 `accentSoft` 底 + `accentInk` 字。
  *
  * brief 写「文字 accent」，按 T1 裁定（accent 作文字浅色只有 3.04:1）落回 ink 变体；
  * 未选中仍是卡面底 + primaryText，两态底色/墨色用 `animateColorAsState` + `tween(FadeMs)`
@@ -150,17 +173,18 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * 错题列表页（错题 Tab）：学科筛选 + 按学科分组 + 来源徽标 + 图片缩略图 + 拍照录入入口。
+ * 错题列表页（错题 Tab）：掌握态筛选 + 学科筛选 + 按学科分组 + 来源徽标 + 图片缩略图 + 拍照录入入口。
  *
  * 颜色与文字样式统一取 [AppTheme]，间距/圆角仍走 [DesignTokens] 的 dp 常量（T15 才迁度量）。
  *
  * 列表动效：分组标题与错题条目都挂 `Modifier.animateItem()`（[androidx.compose.foundation.lazy.LazyItemScope]）——
- * 拍照录入回来的新错题淡入、删除/切学科时移除的条目淡出，其余条目用 spring 让位，
+ * 拍照录入回来的新错题淡入、删除/标记掌握/切筛选时移除的条目淡出，其余条目用 spring 让位，
  * 不再出现「整列瞬间跳一格」。进出动画要求条目带 `key`，本页已有的两组键就是前提
  * （`"header_$subject"` 与 `mistake.id`）。
- * 注意：`viewModel.mistakes` 走的是 `observeAll()`，**掌握后的条目不会从列表消失**
- * （只打「已掌握」标签，仍可在详情里回看），所以「掌握」这条路径看不到退场；
- * 退场现在发生在删除与切学科筛选时。
+ * 数据源按 spec「标记已掌握后划线消失」取**未掌握**（`viewModel.mistakes`），
+ * 于是「掌握」这条路径也有退场；已掌握清单走页顶「已掌握」chip（[MasteryFilterRow]），
+ * 复习入口不断。切 chip 时整列换源：旧的一批按 key 退场、新的一批进场，
+ * 学科 chips 的候选集不随 chip 变（取两态并集），避免学科行跟着抖动。
  */
 @Composable
 fun MistakeListScreen(
@@ -174,6 +198,8 @@ fun MistakeListScreen(
     val mistakes by viewModel.mistakes.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     val selected by viewModel.subjectFilter.collectAsStateWithLifecycle()
+    val showMastered by viewModel.showMastered.collectAsStateWithLifecycle()
+    val hasAnyMistake by viewModel.hasAnyMistake.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
     val dateFormat = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
 
@@ -227,7 +253,8 @@ fun MistakeListScreen(
             }
         }
         Text(
-            text = "共 ${mistakes.size} 道错题",
+            // 列表按掌握态分侧，计数文案跟着说明「这一列是哪一侧」
+            text = if (showMastered) "已掌握 ${mistakes.size} 道" else "共 ${mistakes.size} 道错题",
             style = texts.caption,
         )
 
@@ -241,14 +268,31 @@ fun MistakeListScreen(
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
+        MasteryFilterRow(showMastered = showMastered, onSelect = viewModel::selectShowMastered)
+
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
         SubjectFilterRow(subjects = subjects, selected = selected, onSelect = viewModel::selectSubject)
 
         Spacer(Modifier.height(DesignTokens.SpacingMd))
         if (groups.isEmpty()) {
+            // 四种子空态各说各话：整库空 / 学科筛选筛空 / 待复习被清空 / 已掌握侧还没题。
+            // 「被学科筛空」必须先判：`groups` 空有两种成因，只有当前侧本身就空才是掌握态造成的。
+            val emptyTitle = when {
+                !hasAnyMistake -> "错题本还是空的"
+                mistakes.isNotEmpty() -> "该学科下暂无错题"
+                !showMastered -> "全部已掌握"
+                else -> "还没有已掌握的错题"
+            }
+            val emptyCaption = when {
+                !hasAnyMistake || mistakes.isNotEmpty() ->
+                    "去「题库练习」答题自动收录，或点右上角「拍照录入」"
+                !showMastered -> "上面的题都划掉了，切到上方「已掌握」可以回看"
+                else -> "在错题详情里点「标记掌握」，题目就会挪到这里"
+            }
             Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
             EmptyState(
-                title = if (mistakes.isEmpty()) "错题本还是空的" else "该学科下暂无错题",
-                caption = "去「题库练习」答题自动收录，或点右上角「拍照录入」",
+                title = emptyTitle,
+                caption = emptyCaption,
                 icon = Icons.Outlined.Close,
             )
         } else {
@@ -302,6 +346,8 @@ private fun launchCamera(context: Context, onReady: (File, Uri) -> Unit) {
  * 于是条目的进出与让位都走动画；缩略图按 brief「图片卡」口径统一为
  * `CornerRadiusLg` 圆角 + 1dp `divider` 描边——夜间卡面 `#26241F` 与照片暗部同亮度时，
  * 没有这条发丝线图片会直接糊进卡里。
+ * 行内的「已掌握」小票**已删**：信息已由页顶掌握态 chip 承担（「待复习」一侧不可能有掌握项，
+ * 「已掌握」一侧整列都是），留着只是同义反复；保留的是页头的计数文案。
  */
 @Composable
 private fun MistakeItem(
@@ -328,16 +374,6 @@ private fun MistakeItem(
                 ) {
                     SourceBadge(source = mistake.source)
                     Text(text = dateText, style = texts.caption)
-                    if (mistake.mastered) {
-                        Text(
-                            text = "已掌握",
-                            // success 作文字浅色 ≈2.2:1，successInk 归 T15 令牌批次（沿用既有做法）
-                            style = texts.caption.copy(
-                                color = colors.success,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                        )
-                    }
                 }
                 Spacer(Modifier.height(DesignTokens.SpacingSm))
                 Text(

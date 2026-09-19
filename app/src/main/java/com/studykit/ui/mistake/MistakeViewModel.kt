@@ -8,6 +8,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.util.MistakeImageStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,17 +34,48 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     private val repository = container.mistakeRepository
 
     // ── 列表与筛选 ────────────────────────────────────────────────────────
-    val mistakes: StateFlow<List<Mistake>> = repository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /**
+     * 两条掌握态各一条源（DAO 已保证按 `created_at DESC`）。
+     *
+     * spec「标记已掌握后划线消失」：默认列表只看**未掌握**，`markMastered` 后该行从「待复习」
+     * 当场退场（列表侧 `animateItem()` 播退场）；已掌握清单由 [showMastered] 这枚 chip 保住入口，
+     * 否则用户再也回不到那些错题，复习入口就断了。
+     */
+    private val unmastered: Flow<List<Mistake>> = repository.observeUnmastered()
+    private val mastered: Flow<List<Mistake>> = repository.observeMastered()
+
+    /** 当前掌握态筛选：false = 待复习（默认），true = 已掌握 */
+    private val _showMastered = MutableStateFlow(false)
+    val showMastered: StateFlow<Boolean> = _showMastered
 
     /** 当前学科筛选；null 表示全部 */
     private val _subjectFilter = MutableStateFlow<String?>(null)
     val subjectFilter: StateFlow<String?> = _subjectFilter
 
+    /** 当前 chip 组合下的列表（**学科筛选前**）：计数文案与 [groups] 都吃这一份 */
+    val mistakes: StateFlow<List<Mistake>> =
+        combine(unmastered, mastered, _showMastered) { todo, done, masteredOnly ->
+            if (masteredOnly) done else todo
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * 两态并集，只用于派生「学科 chips」与「库里到底有没有错题」。
+     * 二者都**不随 [showMastered] 变**：否则切到「已掌握」时学科行会整排重排、
+     * 选中的学科 chip 可能凭空消失（筛选态与可见 chip 不一致）。
+     */
+    private val allMistakes: StateFlow<List<Mistake>> =
+        combine(unmastered, mastered) { todo, done -> todo + done }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** 数据中 distinct 出的学科列表 */
-    val subjects: StateFlow<List<String>> = mistakes
+    val subjects: StateFlow<List<String>> = allMistakes
         .map { list -> list.map { it.subject }.distinct() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 一道错题都没有时为 false —— 用来区分空态文案「错题本还是空的」与「全部已掌握」 */
+    val hasAnyMistake: StateFlow<Boolean> = allMistakes
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** 按学科分组（应用筛选后），组内按创建时间倒序（DAO 已保证） */
     val groups: StateFlow<List<SubjectGroup>> = combine(mistakes, _subjectFilter) { list, filter ->
@@ -54,6 +86,10 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectSubject(subject: String?) {
         _subjectFilter.value = subject
+    }
+
+    fun selectShowMastered(masteredOnly: Boolean) {
+        _showMastered.value = masteredOnly
     }
 
     // ── 详情 ──────────────────────────────────────────────────────────────

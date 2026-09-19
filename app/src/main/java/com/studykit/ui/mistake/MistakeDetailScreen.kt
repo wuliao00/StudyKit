@@ -75,6 +75,10 @@ private fun sourceLabel(source: String): String = when (source) {
  * 用户看到的只是「按钮自己消失了」。`markMastered` 让 `current.mastered` 当场翻 true，
  * 所以按钮的可见条件是「未掌握 **或** 回弹进行中」，否则动画的第一帧就被状态变更抹掉。
  * 该门控用 `rememberSaveable`：转屏后既不重播弹跳、也不会把已按下的按钮复活。
+ * 返回是**一次性**的（`leaveOnce`）：本页三条返回路径（两处返回箭头、删除、弹跳到期）共用同一道门，
+ * 免得「手动返回 + 弹跳到期」在 280ms popExit 窗口里叠成两次 pop。
+ * 另：`markMastered` 之后该题从列表默认的「待复习」列里消失（spec 划线消失，由列表侧
+ * `animateItem()` 播退场），已掌握清单改由列表页顶的「已掌握」chip 进入。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -90,6 +94,17 @@ fun MistakeDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     // 回弹进行中：true 之后按钮要继续留在屏幕上，否则动画第一帧就被 mastered 状态变更抹掉
     var masteredBounce by rememberSaveable { mutableStateOf(false) }
+    // 本页只允许返回一次：弹跳的 220ms 里用户可能已经手动返回，而该 entry 在 280ms popExit
+    // 期间仍在组合，`LaunchedEffect` 会再 pop 一次 —— 于是多弹一层，直接落到「学习」页。
+    // 门控用 rememberSaveable：转屏重建组合后也不给第二次 pop 开门（`AppNav` 那头还有一道
+    // 「entry 不是栈顶就不 pop」的兜底，系统返回键绕过这里时同样不会多弹）。
+    var returned by rememberSaveable { mutableStateOf(false) }
+    val leaveOnce = {
+        if (!returned) {
+            returned = true
+            onBack()
+        }
+    }
     val masteredScale by animateFloatAsState(
         targetValue = if (masteredBounce) 1.16f else 1f,
         animationSpec = MotionSpec.press,
@@ -100,7 +115,7 @@ fun MistakeDetailScreen(
             // `press`（ζ=0.55, k=420）的首个峰值在 π/ωd ≈ 183ms，220ms 已越过峰值开始回落，
             // 这一帧交接给返回转场正好读得出「按下去 → 弹回来」
             delay(MotionSpec.FadeMs.toLong())
-            onBack()
+            leaveOnce()
         }
     }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
@@ -112,7 +127,7 @@ fun MistakeDetailScreen(
             modifier = Modifier.fillMaxSize().padding(horizontal = DesignTokens.PageHorizontalPadding),
         ) {
             Spacer(Modifier.height(DesignTokens.SpacingSm))
-            IconButton(onClick = onBack) {
+            IconButton(onClick = { leaveOnce() }) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
@@ -136,7 +151,7 @@ fun MistakeDetailScreen(
         ) {
             Spacer(Modifier.height(DesignTokens.SpacingSm))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = { leaveOnce() }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
@@ -292,7 +307,7 @@ fun MistakeDetailScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteDialog = false
-                    viewModel.delete(current.id) { onBack() }
+                    viewModel.delete(current.id) { leaveOnce() }
                 }) {
                     Text(text = "删除", color = colors.warning)
                 }

@@ -15,6 +15,9 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
 
     fun observeUnmastered(): Flow<List<Mistake>> = mistakeDao.observeUnmastered()
 
+    /** 已掌握一侧（列表页「已掌握」chip） */
+    fun observeMastered(): Flow<List<Mistake>> = mistakeDao.observeMastered()
+
     fun observeById(id: Long): Flow<Mistake?> = mistakeDao.observeById(id)
 
     /** 按 id 单次查询（删除等操作前取最新记录用，不依赖 UI 缓存） */

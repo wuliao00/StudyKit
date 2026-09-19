@@ -22,6 +22,10 @@ interface MistakeDao {
     @Query("SELECT * FROM mistakes WHERE mastered = 0 ORDER BY created_at DESC")
     fun observeUnmastered(): Flow<List<Mistake>>
 
+    /** 已掌握一侧（列表页「已掌握」chip 用），与 [observeUnmastered] 合成全量 */
+    @Query("SELECT * FROM mistakes WHERE mastered = 1 ORDER BY created_at DESC")
+    fun observeMastered(): Flow<List<Mistake>>
+
     @Query("SELECT * FROM mistakes WHERE id = :id")
     fun observeById(id: Long): Flow<Mistake?>
 
