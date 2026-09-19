@@ -11,7 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -36,12 +35,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
 import com.studykit.ui.components.AppButton
+import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EmptyState
@@ -472,32 +470,27 @@ private fun SwipeRatingCard(
         }
         Spacer(Modifier.height(AppTheme.space.lg))
         Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.md)) {
-            OutlinedButton(
+            // 两颗都走 AppButton 的描边档（终审波 3）：52dp 胶囊高、按压 spring、
+            // fontScale 防裁切版心由组件统一给，本页只留「哪一族色」与 enabled 判定。
+            // 语义与墨色由 tone 成对给出（描边 = 品牌色、文字 = 本族 ink）。
+            AppButton(
+                text = "不认识",
                 onClick = { grade(false) },
                 // 判定进行中（飞出途中 graded 已置真）两颗按钮一起失效，避免与手势抢同一张卡
                 enabled = !graded.value,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp),
-                shape = RoundedCornerShape(AppTheme.radius.xl),
-                border = BorderStroke(1.5.dp, colors.warning),
-                // 按钮里是文字：描边留品牌色，字走 ink（浅色 warning 作字仅 3.07:1）
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.warningInk),
-            ) {
-                Text("不认识", style = texts.body)
-            }
-            OutlinedButton(
+                modifier = Modifier.weight(1f),
+                secondary = true,
+                tone = AppButtonTone.Warning,
+            )
+            AppButton(
+                text = "认识",
                 onClick = { grade(true) },
+                // 「认识」仍要求已翻面：滑动路径不要求翻面，这颗按钮的门槛照旧（终审语义）
                 enabled = flipped && !graded.value,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp),
-                shape = RoundedCornerShape(AppTheme.radius.xl),
-                border = BorderStroke(1.5.dp, colors.success),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.successInk),
-            ) {
-                Text("认识", style = texts.body)
-            }
+                modifier = Modifier.weight(1f),
+                secondary = true,
+                tone = AppButtonTone.Success,
+            )
         }
         Spacer(Modifier.height(AppTheme.space.lg))
     }
