@@ -54,7 +54,7 @@ object MotionSpec {
     /**
      * **切卡**入场的淡入时长，Int 毫秒（`CardStudyScreen` 的 AnimatedContent）。
      * 短于 [FadeMs]：切卡是逐张推进的高频动作，220ms 会让「下一张」读起来黏手；
-     * 与并行的 slide spring（ζ=0.8 / k=260）合起来是「卡片滑进来 + 顺手淡一下」。
+     * 与并行的 slide spring [cardSwitch] 合起来是「卡片滑进来 + 顺手淡一下」。
      */
     const val CardSwitchInMs = 180
 
@@ -107,6 +107,19 @@ object MotionSpec {
 
     /** 错峰入场（[StaggeredIn]）的位移/淡入 spring：轻微过冲后落位 */
     val stagger = spring<Float>(dampingRatio = 0.78f, stiffness = 260f)
+
+    /**
+     * **切卡**（`CardStudyScreen` 的 `AnimatedContent` 横向滑入）的 spring。
+     *
+     * 来源：波 3 只把同一段转场里的两个淡入淡出时长上收为 [CardSwitchInMs] /
+     * [CardSwitchOutMs]，这条 slide 的 spring 当时以「页内内联字面量」的形式留报，
+     * 本波（波 4 项 4）按裁定原样搬进来 —— **dampingRatio / stiffness 一分未改**。
+     *
+     * 它与 [stagger] 近乎同值（0.78 / 260 vs 0.8 / 260）但**刻意不合并**：
+     * 两者管的是两个动作（列表逐级进场 vs 单张卡片换页），等值取舍会直接改到翻卡手感，
+     * 而那属于动效调参、要等设备走查。留两枚具名常量，正是为了让那次调参只改一处。
+     */
+    val cardSwitch = spring<Float>(dampingRatio = 0.8f, stiffness = 260f)
 
     fun flyOut() = spring<Float>(dampingRatio = 0.62f, stiffness = 550f)
 

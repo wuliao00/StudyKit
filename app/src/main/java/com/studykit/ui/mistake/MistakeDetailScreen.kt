@@ -99,6 +99,12 @@ fun MistakeDetailScreen(
     val texts = AppTheme.texts
     // 请求由**页面**发起（与 `BookDetailScreen` / `HabitCalendarScreen` 同一套纪律）：
     // 放在 `AppNav` 的 entry 里时，本页首帧读到的仍是上一道错题的 detail —— 见 [renderMistakeDetail]。
+    //
+    // 路由键守卫（终审 C1 的同类站点）：三页同一条规则，但只有这里是**三相**判定而不是
+    // `?.takeIf { it.id == routeId }` —— `MistakeDetailState` 额外带了 `answered`（库是否已就
+    // 该 id 答过一次），所以本页分得出「还没答到」与「库里真没有（被别处删了）」；
+    // 另两页的 VM 没有这一位，两相会塌成一相，只能一律按加载态挡回去。
+    // 判定本身是纯函数，逐条钉在 `MistakeDetailRenderTest` 里。
     LaunchedEffect(mistakeId) { viewModel.openDetail(mistakeId) }
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     val render = renderMistakeDetail(state = detailState, mistakeId = mistakeId)

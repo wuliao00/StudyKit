@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -164,10 +163,11 @@ fun CardStudyScreen(
                 AnimatedContent(
                     targetState = state.index,
                     transitionSpec = {
-                        // 淡入淡出成对走 MotionSpec 工厂：时长是规格常量（切卡比导航短促），
-                        // 曲线由工厂兜住，这里不再裸写 tween(180)/tween(120)
+                        // 淡入淡出走 MotionSpec 工厂（时长是规格常量：切卡比导航短促）；
+                        // slide 的 spring 同样走规格（波 4 项 4：原本这里是内联字面量，
+                        // 数值原样上收成 `MotionSpec.cardSwitch`，一分未改）
                         val enter = slideInHorizontally(
-                            animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
+                            animationSpec = MotionSpec.cardSwitch,
                         ) { it / 3 } + MotionSpec.fadeEnter(
                             durationMillis = MotionSpec.CardSwitchInMs,
                         )

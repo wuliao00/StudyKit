@@ -81,10 +81,13 @@ fun HabitCalendarScreen(
     val texts = AppTheme.texts
     LaunchedEffect(habitId) { viewModel.loadDetail(habitId) }
     val requestedDetail by viewModel.detail.collectAsStateWithLifecycle()
-    // 只认「答的就是本习惯」的应答（终审 C1 的同类站点）：`loadDetail` 是异步的，换习惯进来的
-    // 那一帧 VM 里留着的还是上一个习惯的 detail —— 页面下方所有 `detail?.` 都会跟着渲染错的题，
-    // 补打卡弹层更会把卡打到另一个习惯上（`submitCheckIn(habit, …)` 的 habit 就取自这里）。
-    // 挡成 null 后本页的 safe-call 兜底自动退回「加载中」的空网格形态，不需要新造视觉。
+    // 路由键守卫（终审 C1 的同类站点）：只认「答的就是本习惯」的那份应答。`loadDetail(habitId)`
+    // 是异步的，换习惯进来的那一帧 VM 里留着的还是上一个习惯的 detail —— 页面下方所有 `detail?.`
+    // 都会跟着渲染错的习惯，补打卡弹层更会把卡打到另一个习惯上（`submitCheckIn(habit, …)`
+    // 的 habit 就取自这里）。
+    // 本页与另两页的差别只在**没有**整页加载态：这里挡成 null 后，页头标题与各 safe-call
+    // 自动落回既有的空网格形态（那是本页本来的样子，不新造视觉），所以只有
+    // `MistakeDetailScreen` / `BookDetailScreen` 需要早返回分支。三页统一的是这条守卫本身。
     val detail = requestedDetail?.takeIf { it.habit.id == habitId }
     var month by remember { mutableStateOf(YearMonth.now()) }
     // 翻月方向：+1 = 往未来（新网格从右侧进），-1 = 回过去。与 month 同一帧写入，

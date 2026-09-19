@@ -118,10 +118,6 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     val words: StateFlow<List<Word>> = wordRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** 错题列表（错题 Tab 使用） */
-    val mistakes: StateFlow<List<Mistake>> = mistakeRepository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
     /** 题库学科列表（distinct subject） */
     val subjects: StateFlow<List<String>> = questionRepository.observeSubjects()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -292,13 +288,6 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 savingQuestion.leave()
             }
-        }
-    }
-
-    /** 错题标记为已掌握 */
-    fun markMistakeMastered(id: Long) {
-        viewModelScope.launch {
-            mistakeRepository.markMastered(id)
         }
     }
 

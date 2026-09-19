@@ -109,6 +109,13 @@ fun BookDetailScreen(
     val texts = AppTheme.texts
     LaunchedEffect(bookId) { viewModel.loadDetail(bookId) }
     val detail by viewModel.detail.collectAsStateWithLifecycle()
+    // 路由键守卫（终审 C1 的同类站点）：只认「答的就是本书」的那份应答。`loadDetail(bookId)`
+    // 是异步的，换书进来的那一帧 VM 里留着的还是上一本书的 detail —— 不挡的话这里渲染的是上一本书，
+    // 而 -10 / +10 / 标记读完 走的是 `viewModel.stepProgress()`（它读 VM 当前 detail），
+    // 进度与「读完」会写到另一本书上。
+    // 声明与读取放在一处（与 `MistakeDetailScreen` / `HabitCalendarScreen` 同一结构，波 4 项 4）；
+    // 早返回留在下面的 Column 里，让加载期间页头两颗按钮照常可点 —— 三页统一的是**结构**，观感一分不动。
+    val ui = detail?.takeIf { it.book.id == bookId }
 
     Column(
         modifier = Modifier
@@ -135,11 +142,6 @@ fun BookDetailScreen(
             }
         }
 
-        // 只认「答的就是本书」的应答（终审 C1 的同类站点）：`loadDetail(bookId)` 是异步的，
-        // 换书进来的那一帧 VM 里留着的还是上一本书的 detail。不挡的话这里渲染的是上一本书，
-        // 而 -10 / +10 / 标记读完 走的是 `viewModel.stepProgress()`（它读 VM 当前 detail），
-        // 进度与「读完」会写到另一本书上。
-        val ui = detail?.takeIf { it.book.id == bookId }
         if (ui == null) {
             Spacer(Modifier.height(AppTheme.space.xl * 2))
             Text(
