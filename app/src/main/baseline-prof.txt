@@ -1,19 +1,93 @@
-# ART 文本规则（手动维护的 baseline profile）：安装期预编译首帧与高频热路径，避免运行时解释执行。
-# 只覆盖启动链路与每帧都会走到的动效/组件，不做全量抓取——规则越多安装期越慢。
-Lcom/studykit/StudyKitApp;
-Lcom/studykit/MainActivity;
-Lcom/studykit/AppContainerKt;
-Lcom/studykit/AppContainer;
-Lcom/studykit/ui/theme/** { * }
-Lcom/studykit/ui/motion/** { * }
-Lcom/studykit/ui/nav/** { * }
-Lcom/studykit/ui/components/RingGaugeKt;
-Lcom/studykit/ui/components/RingGaugeKt$** { * }
-Lcom/studykit/ui/components/AppCardKt;
-Lcom/studykit/ui/components/AppCardKt$** { * }
-Lcom/studykit/ui/study/StudyViewModel;
-Lcom/studykit/ui/study/StudyViewModel$** { * }
-Lcom/studykit/ui/study/StudyHomeScreenKt;
-Lcom/studykit/ui/study/StudyHomeScreenKt$** { * }
-Lcom/studykit/ui/study/CardStudyScreenKt;
-Lcom/studykit/ui/study/CardStudyScreenKt$** { * }
+# StudyKit 手写 baseline profile —— ART 文本 profile 语法（不是 R8 keep 语法！）
+#
+# 语法（见 docs/superpowers/specs/2026-09-18-studykit-v2-design.md §4）：
+#   [HSP 标记]L<包/类描述符>;-><方法名>(<参数描述符>)<返回描述符>
+#   [HSP 标记]L<包/类描述符>;->**(**)**          ← 该类全部方法
+#   L<包/类描述符>;                              ← 只写类描述符＝该类整体进 profile
+# H=hot、S=startup、P=post-startup；`**` 通配由 AGP 的 expand<Variant>ArtProfileWildcards
+# 任务在编译期按真实类表展开，所以每条规则都必须能对上源码里存在的类。
+# 反例（旧版本文件里的写法）：`Lcom/studykit/ui/theme/** { * }` 是 R8 keep 语法，
+# profile 解析器读不懂，会**静默丢弃**——这正是本文件之前 13/17 行不生效的原因。
+#
+# 打包与验证：AGP 把本文件编成 ART 二进制 profile 打进 release APK 的
+# assets/dexopt/baseline.prof*（profileinstaller 安装期写入系统），
+# CI 的 release-build job 用 `unzip -l` 断言该文件确实存在，缺失即 fail。
+#
+# 覆盖面：启动链（Application / Activity / DI 容器 / Room）+ 主题与动效令牌层 +
+# 底栏导航 + 四个 Tab 首帧与其高频组件 + 背单词热路径（翻面与滑动评价），共 55 条规则。
+# 刻意**不含**录入页、详情页、日历与错题拍照等二级页面：规则越多安装期越慢，
+# 而那些路径的收益要真机帧率数据才能确认（M1 由用户装 debug APK 反馈）。
+# 类名核对口径：@Composable 顶层函数所在文件的类为「文件名 + Kt」，其组合 lambda 在
+# `XxxKt$…` 里；object / class 则直接用类名（如 AppTheme、MotionSpec、Palette 均为 object）。
+
+# ── 启动链：Application → Activity → 手动 DI 容器 → Room ──────────────────────────
+HSPLcom/studykit/StudyKitApp;->**(**)**
+HSPLcom/studykit/MainActivity;->**(**)**
+HSPLcom/studykit/MainActivity$**;->**(**)**
+HSPLcom/studykit/AppContainer;->**(**)**
+HSPLcom/studykit/data/AppDatabase;->**(**)**
+HSPLcom/studykit/data/AppDatabase$Companion;->**(**)**
+HSPLcom/studykit/data/AppDatabase$Companion$**;->**(**)**
+HSPLcom/studykit/data/AppDatabase_Impl;->**(**)**
+
+# ── 主题令牌层（首帧取色/排版全部走这里）────────────────────────────────────────
+HSPLcom/studykit/ui/theme/AppTheme;->**(**)**
+HSPLcom/studykit/ui/theme/AppTheme$**;->**(**)**
+HSPLcom/studykit/ui/theme/AppThemeKt;->**(**)**
+HSPLcom/studykit/ui/theme/AppColors;->**(**)**
+HSPLcom/studykit/ui/theme/AppTexts;->**(**)**
+HSPLcom/studykit/ui/theme/AppThemeVals;->**(**)**
+HSPLcom/studykit/ui/theme/Palette;->**(**)**
+HSPLcom/studykit/ui/theme/ThemeKt;->**(**)**
+HSPLcom/studykit/ui/theme/ThemeKt$**;->**(**)**
+
+# ── 动效规格：spring 常量 + 按压回弹 + 错峰入场 ──────────────────────────────────
+# MotionSpec 是 object，方法在其自身类里；对象体内只有非组合 lambda（转场偏移量），
+# Kotlin 2.0 以 invokedynamic 编译、不落成 `MotionSpec$…` 具名类，故不为其写通配规则。
+HSPLcom/studykit/ui/motion/MotionSpec;->**(**)**
+HSPLcom/studykit/ui/motion/MotionSpecKt;->**(**)**
+HSPLcom/studykit/ui/motion/MotionSpecKt$**;->**(**)**
+
+# ── 底部导航：Tab 定义、路由常量、首帧 AppNav 与其 lambda ─────────────────────────
+HSPLcom/studykit/ui/nav/AppNavKt;->**(**)**
+HSPLcom/studykit/ui/nav/AppNavKt$**;->**(**)**
+HSPLcom/studykit/ui/nav/Tab;->**(**)**
+HSPLcom/studykit/ui/nav/Tab$**;->**(**)**
+HSPLcom/studykit/ui/nav/HabitRoutes;->**(**)**
+HSPLcom/studykit/ui/nav/StudyRoutes;->**(**)**
+HSPLcom/studykit/ui/nav/BookRoutes;->**(**)**
+HSPLcom/studykit/ui/nav/MistakeRoutes;->**(**)**
+
+# ── 四 Tab 首帧页面（文件级 @Composable → XxxKt，组合 lambda → XxxKt$…）───────────
+HSPLcom/studykit/ui/study/StudyHomeScreenKt;->**(**)**
+HSPLcom/studykit/ui/study/StudyHomeScreenKt$**;->**(**)**
+HSPLcom/studykit/ui/habit/HabitListScreenKt;->**(**)**
+HSPLcom/studykit/ui/habit/HabitListScreenKt$**;->**(**)**
+HSPLcom/studykit/ui/book/BookShelfScreenKt;->**(**)**
+HSPLcom/studykit/ui/book/BookShelfScreenKt$**;->**(**)**
+HSPLcom/studykit/ui/mistake/MistakeListScreenKt;->**(**)**
+HSPLcom/studykit/ui/mistake/MistakeListScreenKt$**;->**(**)**
+
+# ── 首帧共用组件（环形进度、卡片、按钮、统计磁贴、空态、彩带、热力图、刷题选项）────
+HSPLcom/studykit/ui/components/RingGaugeKt;->**(**)**
+HSPLcom/studykit/ui/components/RingGaugeKt$**;->**(**)**
+HSPLcom/studykit/ui/components/AppCardKt;->**(**)**
+HSPLcom/studykit/ui/components/AppCardKt$**;->**(**)**
+HSPLcom/studykit/ui/components/AppButtonKt;->**(**)**
+HSPLcom/studykit/ui/components/AppButtonKt$**;->**(**)**
+HSPLcom/studykit/ui/components/StatTileKt;->**(**)**
+HSPLcom/studykit/ui/components/StatTileKt$**;->**(**)**
+HSPLcom/studykit/ui/components/EmptyStateKt;->**(**)**
+HSPLcom/studykit/ui/components/EmptyStateKt$**;->**(**)**
+HSPLcom/studykit/ui/components/ConfettiBurstKt;->**(**)**
+HSPLcom/studykit/ui/components/ConfettiBurstKt$**;->**(**)**
+HSPLcom/studykit/ui/components/HeatmapWeeksKt;->**(**)**
+HSPLcom/studykit/ui/components/HeatmapWeeksKt$**;->**(**)**
+HSPLcom/studykit/ui/components/QuizOptionTileKt;->**(**)**
+HSPLcom/studykit/ui/components/QuizOptionTileKt$**;->**(**)**
+
+# ── 学习状态机与背单词热路径（3D 翻面 + 滑动评价）────────────────────────────────
+# StudyViewModel 无嵌套类（协程 lambda 走 invokedynamic），故只写自身一条。
+HSPLcom/studykit/ui/study/StudyViewModel;->**(**)**
+HSPLcom/studykit/ui/study/CardStudyScreenKt;->**(**)**
+HSPLcom/studykit/ui/study/CardStudyScreenKt$**;->**(**)**
