@@ -50,7 +50,9 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -183,6 +185,13 @@ fun MistakeDetailScreen(
     // 到这里 `current.id == mistakeId` 是由 [renderMistakeDetail] 保证的：
     // 下面所有写动作一律喂 route 上的 [mistakeId]，不喂渲染出来的行。
     val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }
+    // 组合期不 stat 磁盘（终审 I8）：与 `MistakeCaptureScreen` 的照片预览同一写法 ——
+    // 路径在组合期拼好，存在性由 IO 线程回填。初值乐观取「有路径就当有图」，
+    // 否则大图会在「塌陷 → 弹回」之间跳一次，正文跟着抖一屏。
+    var imageExists by remember(imageFile) { mutableStateOf(imageFile != null) }
+    LaunchedEffect(imageFile) {
+        imageExists = withContext(Dispatchers.IO) { imageFile?.exists() == true }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -248,7 +257,7 @@ fun MistakeDetailScreen(
             }
 
             // ── 大图 ──────────────────────────────────────────────────────
-            if (imageFile != null && imageFile.exists()) {
+            if (imageFile != null && imageExists) {
                 Spacer(Modifier.height(AppTheme.space.md))
                 AsyncImage(
                     model = imageFile,

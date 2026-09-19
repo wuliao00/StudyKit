@@ -53,12 +53,20 @@ object MistakeImageStore {
     /** 相对路径 → 应用内文件 */
     fun resolve(context: Context, relativePath: String): File = File(context.filesDir, relativePath)
 
-    /** 缩略图文件（不存在则返回 null，由调用方回退到大图） */
-    fun resolveThumb(context: Context, relativePath: String): File? {
+    /**
+     * 缩略图的**路径**（纯拼接，不碰磁盘）。
+     *
+     * 给组合期用：`File` 只是一个路径，构造它不产生 stat；到底存不存在由调用方
+     * 在 IO 线程判（终审 I8，见 `MistakeListScreen` 的缩略图解析）。
+     */
+    fun thumbFile(context: Context, relativePath: String): File {
         val name = relativePath.substringAfterLast('/')
-        val thumb = File(context.filesDir, "$THUMB_DIR/$name")
-        return if (thumb.exists()) thumb else null
+        return File(context.filesDir, "$THUMB_DIR/$name")
     }
+
+    /** 缩略图文件（不存在则返回 null，由调用方回退到大图）；会做一次磁盘 stat */
+    fun resolveThumb(context: Context, relativePath: String): File? =
+        thumbFile(context, relativePath).takeIf { it.exists() }
 
     /** 删除大图与缩略图 */
     fun delete(context: Context, relativePath: String) {

@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.studykit.data.entity.Mistake
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
@@ -331,8 +334,10 @@ fun MistakeListScreen(
                             modifier = Modifier.animateItem(),
                             mistake = mistake,
                             dateText = dateFormat.format(mistake.createdAt),
-                            thumbFile = mistake.imagePath?.let { viewModel.resolveThumb(it) },
-                            fullFile = mistake.imagePath?.let { viewModel.resolveImage(it) },
+                            // 组合期只拼路径（`File` 不触碰磁盘）；存在性由条目内在 IO 线程判定
+                            // （终审 I8）。缩略图与大图由同一次写盘成对产出，故初值直接给缩略图。
+                            thumbCandidate = mistake.imagePath?.let { viewModel.thumbFile(it) },
+                            fullCandidate = mistake.imagePath?.let { viewModel.resolveImage(it) },
                             onClick = { onOpenDetail(mistake.id) },
                         )
                     }
@@ -360,19 +365,37 @@ private fun launchCamera(context: Context, onReady: (File, Uri) -> Unit) {
  * 没有这条发丝线图片会直接糊进卡里。
  * 行内的「已掌握」小票**已删**：信息已由页顶掌握态 chip 承担（「待复习」一侧不可能有掌握项，
  * 「已掌握」一侧整列都是），留着只是同义反复；保留的是页头的计数文案。
+ *
+ * 缩略图的两个候选**只是路径**，谁真正能用由 [produceState] 在 `Dispatchers.IO` 上判
+ * （终审 I8）：旧写法在组合期 `imageFile.exists()`，一屏十几条就是十几次主线程 stat，
+ * 滚动时每次组合还要重来一遍。初值乐观取缩略图，于是图片槽位首帧就参与布局、不会把行高撑一下，
+ * 而缩略图与大图由同一次写盘成对产出 ⇒ 回填的通常就是同一个引用，不触发二次组合也不重发请求。
  */
 @Composable
 private fun MistakeItem(
     mistake: Mistake,
     dateText: String,
-    thumbFile: File?,
-    fullFile: File?,
+    thumbCandidate: File?,
+    fullCandidate: File?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val thumbShape = RoundedCornerShape(AppTheme.radius.lg)
+    val imageFile by produceState(
+        initialValue = thumbCandidate,
+        key1 = thumbCandidate,
+        key2 = fullCandidate,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            when {
+                thumbCandidate?.exists() == true -> thumbCandidate
+                fullCandidate?.exists() == true -> fullCandidate
+                else -> null
+            }
+        }
+    }
     AppCard(
         modifier = modifier
             .fillMaxWidth()
@@ -404,8 +427,7 @@ private fun MistakeItem(
                     )
                 }
             }
-            val imageFile = thumbFile ?: fullFile
-            if (imageFile != null && imageFile.exists()) {
+            if (imageFile != null) {
                 Spacer(Modifier.width(AppTheme.space.md))
                 AsyncImage(
                     model = imageFile,

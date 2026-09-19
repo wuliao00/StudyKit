@@ -276,12 +276,17 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 图片相对路径 → 本地文件（Coil 加载用） */
+    /**
+     * 图片相对路径 → 本地文件（Coil 加载用）。
+     *
+     * 纯路径拼接，**不碰磁盘**，可以在组合期调用；「在不在」由调用方在 IO 线程判（终审 I8）。
+     */
     fun resolveImage(relativePath: String): File =
         MistakeImageStore.resolve(getApplication(), relativePath)
 
-    fun resolveThumb(relativePath: String): File? =
-        MistakeImageStore.resolveThumb(getApplication(), relativePath)
+    /** 缩略图相对路径 → 候选文件（同样是纯拼接，不 stat；缺失时调用方回退大图） */
+    fun thumbFile(relativePath: String): File =
+        MistakeImageStore.thumbFile(getApplication(), relativePath)
 
     private fun toast(message: String) {
         Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
