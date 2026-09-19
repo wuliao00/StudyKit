@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
+import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -219,6 +220,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 创建习惯（支持数量型与默认打卡文案），成功后回调（通常用于返回上一页） */
+    // 一次性门（终审 C4）：连点「保存习惯」会双插库 + 双 pop
+    private val savingHabit = OneShotGate()
+
     fun createHabit(
         name: String,
         icon: String,
@@ -228,9 +232,21 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         defaultText: String,
         onSaved: () -> Unit,
     ) {
+        if (!savingHabit.tryEnter()) return
         viewModelScope.launch {
-            repository.add(name.trim(), icon, targetDays, targetCount, unit.trim(), defaultText.trim())
-            onSaved()
+            try {
+                repository.add(
+                    name.trim(),
+                    icon,
+                    targetDays,
+                    targetCount,
+                    unit.trim(),
+                    defaultText.trim(),
+                )
+                onSaved()
+            } finally {
+                savingHabit.leave()
+            }
         }
     }
 

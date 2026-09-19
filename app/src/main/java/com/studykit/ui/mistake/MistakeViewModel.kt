@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.util.MistakeImageStore
+import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -183,32 +184,43 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** 保存拍照错题：压缩图片入 mistake_images/，Room 只存相对路径 */
+    // 一次性门（终审 C4 的第六个入口）：图片压缩要跑几百毫秒，这段窗口里连点会插两条错题、
+    // 也会 pop 两次。
+    private val savingMistake = OneShotGate()
+
     fun savePhotoMistake(subject: String, title: String, note: String, onSaved: () -> Unit) {
+        if (!savingMistake.tryEnter()) return
         val captured = _pendingCapture.value
         if (captured == null || captured.exists().not()) {
             toast("未获取到照片")
+            // 同步早退也要当场放行，否则用户重拍一张后再点会永久没反应
+            savingMistake.leave()
             return
         }
         val finalSubject = subject.ifBlank { "未分类" }
         val finalTitle = title.ifBlank { "拍照错题" }
         viewModelScope.launch {
-            val relativePath = withContext(Dispatchers.IO) {
-                MistakeImageStore.processCaptured(getApplication(), captured)
+            try {
+                val relativePath = withContext(Dispatchers.IO) {
+                    MistakeImageStore.processCaptured(getApplication(), captured)
+                }
+                _pendingCapture.value = null
+                if (relativePath == null) {
+                    toast("图片处理失败，请重新拍照")
+                    return@launch
+                }
+                repository.add(
+                    source = Mistake.SOURCE_PHOTO,
+                    subject = finalSubject.trim(),
+                    title = finalTitle.trim(),
+                    content = note.trim(),
+                    imagePath = relativePath,
+                )
+                toast("错题已保存")
+                onSaved()
+            } finally {
+                savingMistake.leave()
             }
-            _pendingCapture.value = null
-            if (relativePath == null) {
-                toast("图片处理失败，请重新拍照")
-                return@launch
-            }
-            repository.add(
-                source = Mistake.SOURCE_PHOTO,
-                subject = finalSubject.trim(),
-                title = finalTitle.trim(),
-                content = note.trim(),
-                imagePath = relativePath,
-            )
-            toast("错题已保存")
-            onSaved()
         }
     }
 

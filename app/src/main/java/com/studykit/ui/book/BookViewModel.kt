@@ -8,6 +8,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.Excerpt
+import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -103,25 +104,37 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ── 书籍操作 ────────────────────────────────────────────────────────
+    // 三个「写完即 pop」的入口各一枚门（终审 C4）：连点会双插库 / 双改行 + 双 pop。
+    // 门开在 VM 侧，六个保存入口因此共用同一套机制，页面不再各写一份 enabled 态。
+    private val savingBook = OneShotGate()
+    private val savingExcerpt = OneShotGate()
+    private val savingReview = OneShotGate()
+    private val deletingExcerpt = OneShotGate()
+
     /** 新建或更新书籍 */
     fun saveBook(bookId: Long?, title: String, author: String, totalPages: Int, onSaved: () -> Unit) {
+        if (!savingBook.tryEnter()) return
         viewModelScope.launch {
-            if (bookId == null) {
-                repository.add(title.trim(), author.trim(), totalPages)
-            } else {
-                val book = repository.getById(bookId)
-                if (book != null) {
-                    repository.update(
-                        book.copy(
-                            title       = title.trim(),
-                            author      = author.trim(),
-                            totalPages  = totalPages,
-                            currentPage = book.currentPage.coerceAtMost(totalPages),
-                        ),
-                    )
+            try {
+                if (bookId == null) {
+                    repository.add(title.trim(), author.trim(), totalPages)
+                } else {
+                    val book = repository.getById(bookId)
+                    if (book != null) {
+                        repository.update(
+                            book.copy(
+                                title       = title.trim(),
+                                author      = author.trim(),
+                                totalPages  = totalPages,
+                                currentPage = book.currentPage.coerceAtMost(totalPages),
+                            ),
+                        )
+                    }
                 }
+                onSaved()
+            } finally {
+                savingBook.leave()
             }
-            onSaved()
         }
     }
 
@@ -151,36 +164,57 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── 书摘操作 ────────────────────────────────────────────────────────
     fun saveExcerpt(excerptId: Long?, bookId: Long, content: String, pageNo: Int?, onSaved: () -> Unit) {
+        if (!savingExcerpt.tryEnter()) return
         viewModelScope.launch {
-            if (excerptId == null) {
-                repository.addExcerpt(bookId, content.trim(), pageNo)
-            } else {
-                repository.getExcerpt(excerptId)?.let {
-                    repository.updateExcerpt(it.copy(content = content.trim(), pageNo = pageNo))
+            try {
+                if (excerptId == null) {
+                    repository.addExcerpt(bookId, content.trim(), pageNo)
+                } else {
+                    repository.getExcerpt(excerptId)?.let {
+                        repository.updateExcerpt(it.copy(content = content.trim(), pageNo = pageNo))
+                    }
                 }
+                onSaved()
+            } finally {
+                savingExcerpt.leave()
             }
-            onSaved()
         }
     }
 
+    /**
+     * 删除书摘。
+     *
+     * 与三个保存入口同一把尺子的**同类站点**（终审 C4）：`ExcerptEditScreen` 的「删除书摘」
+     * 既没有确认对话框也没有页面侧的一次性返回门，连点两次会走两遍 `onDeleted()` → 多 pop 一层。
+     */
     fun deleteExcerpt(excerptId: Long, onDeleted: () -> Unit) {
+        if (!deletingExcerpt.tryEnter()) return
         viewModelScope.launch {
-            repository.getExcerpt(excerptId)?.let { repository.deleteExcerpt(it) }
-            onDeleted()
+            try {
+                repository.getExcerpt(excerptId)?.let { repository.deleteExcerpt(it) }
+                onDeleted()
+            } finally {
+                deletingExcerpt.leave()
+            }
         }
     }
 
     // ── 书评操作 ────────────────────────────────────────────────────────
     fun saveReview(reviewId: Long?, bookId: Long, rating: Int, content: String, onSaved: () -> Unit) {
+        if (!savingReview.tryEnter()) return
         viewModelScope.launch {
-            if (reviewId == null) {
-                repository.addReview(bookId, rating, content.trim())
-            } else {
-                repository.getReview(reviewId)?.let {
-                    repository.updateReview(it.copy(rating = rating, content = content.trim()))
+            try {
+                if (reviewId == null) {
+                    repository.addReview(bookId, rating, content.trim())
+                } else {
+                    repository.getReview(reviewId)?.let {
+                        repository.updateReview(it.copy(rating = rating, content = content.trim()))
+                    }
                 }
+                onSaved()
+            } finally {
+                savingReview.leave()
             }
-            onSaved()
         }
     }
 

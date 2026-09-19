@@ -8,6 +8,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
+import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -244,12 +245,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ── 录入 ──────────────────────────────────────────────────────────────
+    // 两个录入入口各一枚门（终审 C4）：本页「保存」是写完即 pop 的一次性动作，
+    // 连点两次会双插库 + 双 pop。门开在 VM 上而不是页面的 `enabled`，六个入口才只用一套机制。
+    private val savingWord = OneShotGate()
+    private val savingQuestion = OneShotGate()
+
     /** 保存新单词入 words 表 */
     fun saveWord(word: String, meaning: String, example: String, onSaved: () -> Unit) {
+        if (!savingWord.tryEnter()) return
         viewModelScope.launch {
-            wordRepository.add(word.trim(), meaning.trim(), example.trim())
-            toast("已保存单词")
-            onSaved()
+            try {
+                wordRepository.add(word.trim(), meaning.trim(), example.trim())
+                toast("已保存单词")
+                onSaved()
+            } finally {
+                savingWord.leave()
+            }
         }
     }
 
@@ -262,16 +273,21 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         explanation: String,
         onSaved: () -> Unit,
     ) {
+        if (!savingQuestion.tryEnter()) return
         viewModelScope.launch {
-            questionRepository.add(
-                subject = subject.trim(),
-                stem = stem.trim(),
-                options = options.map { it.trim() },
-                answerIndex = answerIndex,
-                explanation = explanation.trim(),
-            )
-            toast("已保存题目")
-            onSaved()
+            try {
+                questionRepository.add(
+                    subject = subject.trim(),
+                    stem = stem.trim(),
+                    options = options.map { it.trim() },
+                    answerIndex = answerIndex,
+                    explanation = explanation.trim(),
+                )
+                toast("已保存题目")
+                onSaved()
+            } finally {
+                savingQuestion.leave()
+            }
         }
     }
 
