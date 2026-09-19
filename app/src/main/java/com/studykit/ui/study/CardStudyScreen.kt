@@ -306,7 +306,7 @@ private fun SwipeRatingCard(
         animationSpec = MotionSpec.flip,
         label = "flip",
     )
-    val frontShown by remember { derivedStateOf { flipState.value < 90f } }
+    val frontShown by remember(flipState) { derivedStateOf { flipState.value < 90f } }
     val offsetX = remember { Animatable(initialValue = 0f) }
     val scope = rememberCoroutineScope()
     val onGradeNow by rememberUpdatedState(onGrade)
@@ -345,12 +345,13 @@ private fun SwipeRatingCard(
     // 终审 C2 的正主：旧写法在组合期读 `offsetX.value`，于是 120Hz 屏上每拖一帧整卡
     // （2×AppCard + 4×Text）就重组一次。`derivedStateOf` 把逐帧值留在绘制侧，
     // 组合次数此后只随 index / graded / widthPx 变化。
-    // 依赖（offsetX / widthPx / graded）全是 remember 出来的稳定 State，故无键 remember 即可。
-    val drag = remember { derivedStateOf { offsetX.value / swipeThresholdPx(widthPx = widthPx) } }
-    val knownAlpha = remember {
+    // 键是**被捕获的 State 对象本身**（不是它的值）：`graded` 是 `rememberSaveable(word.id)`，
+    // 换卡会换成另一个 State 实例，无键 remember 会让派生值一直读着上一张卡的旧守卫。
+    val drag = remember(offsetX) { derivedStateOf { offsetX.value / swipeThresholdPx(widthPx = widthPx) } }
+    val knownAlpha = remember(graded, drag) {
         derivedStateOf { if (graded.value) 0f else drag.value.coerceIn(0f, 1f) }
     }
-    val unknownAlpha = remember {
+    val unknownAlpha = remember(graded, drag) {
         derivedStateOf { if (graded.value) 0f else (-drag.value).coerceIn(0f, 1f) }
     }
     val dragState = rememberDraggableState { dx ->

@@ -2,6 +2,7 @@ package com.studykit.ui.mistake
 
 import com.studykit.data.entity.Mistake
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,7 +29,7 @@ class MistakeDetailRenderTest {
     @Test fun `上一道错题的行在新 route 上仍是加载态`() {
         val stale = MistakeDetailState(id = 1L, mistake = mistake(1L), answered = true)
         assertEquals(
-            MistakeDetailRender.Loading,
+            MistakeDetailLoading,
             renderMistakeDetail(state = stale, mistakeId = 2L),
         )
     }
@@ -37,14 +38,14 @@ class MistakeDetailRenderTest {
         // 只把行往下传、忘了带请求 id 的写法会从这里漏出去：判定看的是 state.id，不是 mistake.id
         val rowOnly = MistakeDetailState(id = null, mistake = mistake(7L), answered = true)
         assertEquals(
-            MistakeDetailRender.Loading,
+            MistakeDetailLoading,
             renderMistakeDetail(state = rowOnly, mistakeId = 7L),
         )
     }
 
     @Test fun `VM 初始 seed 态是加载态而非不存在`() {
         assertEquals(
-            MistakeDetailRender.Loading,
+            MistakeDetailLoading,
             renderMistakeDetail(state = MistakeDetailState(), mistakeId = 3L),
         )
     }
@@ -54,7 +55,7 @@ class MistakeDetailRenderTest {
     @Test fun `id 对上但数据库尚未回话时是加载态`() {
         val inFlight = MistakeDetailState(id = 3L, mistake = null, answered = false)
         assertEquals(
-            MistakeDetailRender.Loading,
+            MistakeDetailLoading,
             renderMistakeDetail(state = inFlight, mistakeId = 3L),
         )
     }
@@ -62,7 +63,7 @@ class MistakeDetailRenderTest {
     @Test fun `id 对上且确认库里没有这一行才是不存在`() {
         val gone = MistakeDetailState(id = 3L, mistake = null, answered = true)
         assertEquals(
-            MistakeDetailRender.Missing,
+            MistakeDetailMissing,
             renderMistakeDetail(state = gone, mistakeId = 3L),
         )
     }
@@ -70,7 +71,7 @@ class MistakeDetailRenderTest {
     @Test fun `未答完时绝不判成不存在`() {
         // 反过来说：把 answered 当成可省掉的标志，首帧就会闪「错题不存在或已删除」
         val notYet = MistakeDetailState(id = 3L, mistake = null, answered = false)
-        assertTrue(renderMistakeDetail(state = notYet, mistakeId = 3L) != MistakeDetailRender.Missing)
+        assertNotEquals(MistakeDetailMissing, renderMistakeDetail(state = notYet, mistakeId = 3L))
     }
 
     // ── Ready：渲染与动作同一把尺子 ──────────────────────────────────────
@@ -78,9 +79,9 @@ class MistakeDetailRenderTest {
     @Test fun `应答的行就是 route 那道题`() {
         val hit = MistakeDetailState(id = 5L, mistake = mistake(5L), answered = true)
         val render = renderMistakeDetail(state = hit, mistakeId = 5L)
-        assertTrue(render is MistakeDetailRender.Ready)
+        assertTrue(render is MistakeDetailReady)
         // 页面把 mistakeId 直接喂给写动作，靠的就是这条等式成立
-        assertEquals(5L, (render as MistakeDetailRender.Ready).mistake.id)
+        assertEquals(5L, (render as MistakeDetailReady).mistake.id)
     }
 
     @Test fun `行被别处更新后依旧按 id 命中`() {
@@ -90,6 +91,6 @@ class MistakeDetailRenderTest {
             answered = true,
         )
         val render = renderMistakeDetail(state = updated, mistakeId = 5L)
-        assertEquals("改过名的题", (render as MistakeDetailRender.Ready).mistake.title)
+        assertEquals("改过名的题", (render as MistakeDetailReady).mistake.title)
     }
 }

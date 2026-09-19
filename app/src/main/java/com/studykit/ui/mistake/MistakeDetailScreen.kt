@@ -137,7 +137,7 @@ fun MistakeDetailScreen(
 
     // ── 页相一：VM 还没答到这一道 → 加载态。整棵内容树（含标记掌握 / 设复习时间 / 删除 /
     //    编辑学科四类写动作）都不组合，也就没有任何一条路径能写到别的行上去。
-    if (render is MistakeDetailRender.Loading) {
+    if (render is MistakeDetailLoading) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = AppTheme.space.pageH),
         ) {
@@ -163,7 +163,7 @@ fun MistakeDetailScreen(
     }
 
     // ── 页相二：答完了但库里没有这一行（被别处删了）
-    if (render is MistakeDetailRender.Missing) {
+    if (render is MistakeDetailMissing) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = AppTheme.space.pageH),
         ) {
@@ -181,7 +181,7 @@ fun MistakeDetailScreen(
         return
     }
 
-    val current = (render as MistakeDetailRender.Ready).mistake
+    val current = (render as MistakeDetailReady).mistake
     // 到这里 `current.id == mistakeId` 是由 [renderMistakeDetail] 保证的：
     // 下面所有写动作一律喂 route 上的 [mistakeId]，不喂渲染出来的行。
     val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }

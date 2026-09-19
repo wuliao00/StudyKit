@@ -42,23 +42,26 @@ data class MistakeDetailState(
     val answered: Boolean = false,
 )
 
-/** 错题详情页面相：由「route id」与「VM 应答」两者的比对唯一决定 */
-internal sealed interface MistakeDetailRender {
+/**
+ * 错题详情页面相：由「route id」与「VM 应答」两者的比对唯一决定。
+ * 三种页相各自是文件级 `internal` 声明（Kotlin 接口成员不接 internal 修饰符，
+ * 而公开嵌套子类又不允许宽于 internal 的密封基类，故不嵌套）。
+ */
+internal sealed interface MistakeDetailRender
 
-    /** 还没答到这一道（首次读取在飞，或 VM 仍在答上一道）→ 只出加载态，页面上没有任何写动作 */
-    internal data object Loading : MistakeDetailRender
+/** 还没答到这一道（首次读取在飞，或 VM 仍在答上一道）→ 只出加载态，页面上没有任何写动作 */
+internal data object MistakeDetailLoading : MistakeDetailRender
 
-    /** 已答完且库里确实没有这一行（被别处删掉了）→ 出「不存在」文案 */
-    internal data object Missing : MistakeDetailRender
+/** 已答完且库里确实没有这一行（被别处删掉了）→ 出「不存在」文案 */
+internal data object MistakeDetailMissing : MistakeDetailRender
 
-    /** 应答的行就是 `mistakeId` 那道题：渲染与动作都以它为准 */
-    internal data class Ready(val mistake: Mistake) : MistakeDetailRender
-}
+/** 应答的行就是 `mistakeId` 那道题：渲染与动作都以它为准 */
+internal data class MistakeDetailReady(val mistake: Mistake) : MistakeDetailRender
 
 /**
  * 页相判定（纯函数，零 Android 依赖，可在 JVM 单测里直取）：
- * `id` 不同或还没答完 → [MistakeDetailRender.Loading]；答完且没有行 →
- * [MistakeDetailRender.Missing]；否则 [MistakeDetailRender.Ready]。
+ * `id` 不同或还没答完 → [MistakeDetailLoading]；答完且没有行 → [MistakeDetailMissing]；
+ * 否则 [MistakeDetailReady]。
  *
  * 顺序不能反：不匹配时 [MistakeDetailState.mistake] 里躺着的可能是**另一道**题的行，
  * 直接判「非空即渲染」就是终审 C1 的写错目标行。
@@ -67,9 +70,9 @@ internal fun renderMistakeDetail(
     state: MistakeDetailState,
     mistakeId: Long,
 ): MistakeDetailRender = when {
-    state.id != mistakeId || !state.answered -> MistakeDetailRender.Loading
-    state.mistake == null -> MistakeDetailRender.Missing
-    else -> MistakeDetailRender.Ready(state.mistake)
+    state.id != mistakeId || !state.answered -> MistakeDetailLoading
+    state.mistake == null -> MistakeDetailMissing
+    else -> MistakeDetailReady(state.mistake)
 }
 
 /**
