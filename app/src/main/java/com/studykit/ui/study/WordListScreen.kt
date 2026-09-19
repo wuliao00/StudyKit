@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Star
@@ -26,6 +27,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
@@ -36,24 +39,34 @@ import com.studykit.ui.theme.AppTheme
 import com.studykit.ui.theme.DesignTokens
 
 /**
- * 单词熟练度指示：12dp 状态色点 + 状态文案（取代旧版「淡色底 + 彩色文字」的胶囊标签）。
+ * 单词熟练度指示：12dp 状态色点 + 「柔底药丸」状态标签。
  *
- * 色点即状态本身：`新词=divider`、`学习中=accent`、`已掌握=success`，三个文案原样保留。
- * 文字不再跟着状态染色：`accent/success` 作正文色在浅底上够不到 AA（T1 裁定文本走
- * `accentInk`，`successInk/warningInk` 归 T15 令牌批次），把颜色交给色点、
- * 文字保持 `caption` 墨色，两主题都稳定达标。
+ * 取色：`新词=divider`、`学习中=accent`、`已掌握=success`，三个文案原样保留。
+ * 药丸容器与色点同族但走 soft 档（`successSoft`/`accentSoft`，其余 `Transparent`），
+ * 于是三态在「一眼扫过」时就能分辨 —— 只有色点时浅色卡上 `divider` 点几乎不可见、
+ * `accent` 与 `success` 又只差一点色差，状态差异被抹平了。
  *
- * 色点是纯装饰（同一行已有等价文案），故不加 `semantics`/`contentDescription`，
+ * 药丸文字墨色只取既有令牌：`已掌握 → successSoft 底 + primaryText`（`onSuccess` 尚未落地，
+ * 深墨在 10%/16% soft 底上两主题都达 AA）、`学习中 → accentSoft 底 + accentInk`（T1 裁定：
+ * 文本态 accent 仅 3.04:1）、`新词 → Transparent + secondaryText`。
+ * 不自造 ink 令牌 —— `successInk/warningInk` 归 T15 批次。
+ *
+ * 色点仍是纯装饰（同一行已有等价文案），故不加 `semantics`/`contentDescription`，
  * 避免读屏把状态念两遍。
  */
 @Composable
-private fun WordStatusDot(status: String) {
+private fun WordStatusIndicator(status: String) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val (label, dotColor) = when (status) {
         Word.STATUS_MASTERED -> "已掌握" to colors.success
         Word.STATUS_LEARNING -> "学习中" to colors.accent
         else -> "新词" to colors.divider
+    }
+    val (pillColor, pillInk) = when (status) {
+        Word.STATUS_MASTERED -> colors.successSoft to colors.primaryText
+        Word.STATUS_LEARNING -> colors.accentSoft to colors.accentInk
+        else -> Color.Transparent to colors.secondaryText
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
@@ -63,12 +76,22 @@ private fun WordStatusDot(status: String) {
                 .background(dotColor),
         )
         Spacer(Modifier.width(DesignTokens.SpacingSm))
-        Text(text = label, style = texts.caption)
+        Box(
+            modifier = Modifier
+                .background(color = pillColor, shape = RoundedCornerShape(DesignTokens.CornerRadius))
+                .padding(horizontal = DesignTokens.SpacingSm, vertical = 2.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = texts.caption.copy(color = pillInk, fontWeight = FontWeight.Medium),
+            )
+        }
     }
 }
 
 /**
- * 单词列表页：开始学习主按钮 + 全部单词（单词 + 释义一行 + 熟练度色点）。
+ * 单词列表页：开始学习主按钮 + 全部单词（单词 + 释义一行 + 熟练度色点与柔底药丸标签）。
  *
  * 颜色与文字样式统一取 `AppTheme`，间距/圆角仍走 [DesignTokens] 的 dp 常量。
  * 列表条目挂 `Modifier.animateItem()`（[androidx.compose.foundation.lazy.LazyItemScope]）：
@@ -148,7 +171,7 @@ fun WordListScreen(
                                 maxLines = 1,
                                 modifier = Modifier.weight(1f),
                             )
-                            WordStatusDot(word.status)
+                            WordStatusIndicator(word.status)
                         }
                     }
                 }

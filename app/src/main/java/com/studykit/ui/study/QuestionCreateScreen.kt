@@ -46,11 +46,15 @@ import com.studykit.ui.theme.DesignTokens
  * 解析；保存走 `AppButton`。页面自上而下错峰入场（标题行 → 三张卡 → 按钮，`StaggeredIn`
  * 每级 40ms，下标都是固定小值、无需 minOf 限幅）。
  *
- * 答案选择器的语义与迁移前一致：选中项 = `success` 实底 + `card` 字色 + `SemiBold`，
- * 未选中 = `card` 底 + `divider` 描边 + `primaryText`；圆角仍取 `DesignTokens.CornerRadius`。
- * 浅色主题下 `card`（白）落在 `success` 上约 2.2:1、不足文本 AA —— 属 T15
+ * 答案选择器的语义与迁移前一致，只换更贴切的令牌：选中项 = `success` 实底 + `onAccent` 字色 +
+ * `SemiBold`，未选中 = `background` 底 + `divider` 描边 + `primaryText`；圆角仍取 `DesignTokens.CornerRadius`。
+ * 未选中底色不再取 `card`——四格本来就落在 `AppCard` 的 `card` 面上，同色只剩 1dp 描边区分；
+ * 换 `background` 后是「卡面上的浅凹槽」，两主题都能一眼看出可点。字色也不能用 `card`：
+ * 它随主题变化（light `#FFFFFF` / dark `#26241F`），AppTheme KDoc 明确禁止把它当「白」着色，
+ * 实底容器上的文字统一走 `onAccent`。
+ * 浅色主题下 `onAccent`（即纯白）落在 `success` 上约 2.2:1、不足文本 AA —— 属 T15
  * `successInk/warningInk`（或 onSuccess/onWarning）令牌批次的已知债，本页按「令牌迁移不改语义」
- * 保留品牌色，不自造 ink 令牌。
+ * 保留品牌色，不自造 ink 令牌；夜间同一处 `onAccent`（暖墨）约 8.7:1 已达标。
  * 输入框沿用 T3 已迁移的 [AppTextField] / [AppMultilineTextField]（accent 光标、
  * divider 底线），本页不再重复给色。
  */
@@ -159,7 +163,7 @@ fun QuestionCreateScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(DesignTokens.CornerRadius))
-                                .background(if (selected) colors.success else colors.card)
+                                .background(if (selected) colors.success else colors.background)
                                 .border(
                                     width = 1.dp,
                                     color = if (selected) colors.success else colors.divider,
@@ -172,7 +176,7 @@ fun QuestionCreateScreen(
                             Text(
                                 text = letter,
                                 style = texts.aux.copy(
-                                    color = if (selected) colors.card else colors.primaryText,
+                                    color = if (selected) colors.onAccent else colors.primaryText,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 ),
                             )
