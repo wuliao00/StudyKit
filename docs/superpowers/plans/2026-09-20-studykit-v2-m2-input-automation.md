@@ -3161,6 +3161,32 @@ gh run watch    # 期望：两个 job 全绿；release job 尤其重要（ML Kit
 
 ---
 
+> **实施记录（Task 12 已按此落地，上面代码块里的写法在本版 ML Kit 下不成立）**
+> 1. `InputImage.fromFilePath(String)` **不存在**。这一版只有 `fromFilePath(Context, Uri)`。
+>    踩了两轮 CI 才定位到：第一次报 `No value passed for parameter 'p1'`（补了 context），
+>    第二次报 `actual type is 'kotlin.String!', but 'android.net.Uri' was expected`（再包 `Uri.fromFile(file)`）。
+>    ⇒ `suspend fun recognize(context: Context, file: File)`，调用方 `MistakeViewModel` 传 `getApplication()`
+>    （与既有的 `MistakeImageStore.processCaptured(getApplication(), captured)` 同形）。
+> 2. `recognizer.cancel()` **不存在**（`TextRecognizer` 只实现 `Closeable`）。回调桥改成
+>    `resumeIfStillWaiting()`：`if (continuation.isActive) resume(...)`，取消后迟到的回调静默丢弃
+>    （对已取消的续体 `resume` 会抛 `IllegalStateException`）。
+> 3. `extracting` 用 `remember` 而不是本页四个表单字段的 `rememberSaveable`：
+>    它是"此刻有没有协程在跑"的瞬时标记，存进 Bundle 后若进程在识别途中被杀，
+>    恢复回来按钮会永久卡在「识别中…」且再没人去改它。
+> 4. 按钮插入点：本页没有 `hasImage` 这个变量，实际判据是 `if (captured != null && capturedExists)`
+>    （`capturedExists` 由 `LaunchedEffect` 在 IO 线程校验文件是否还在）。
+> 5. Step 5 的 baseline profile 规则 `HSPLcom/studykit/util/ShareIntake;->**(**)**` **本轮跳过**：
+>    `ShareIntake` 是 Task 11 的类，现在还不存在（规则写错只会被静默丢弃，写了等于没写）。
+>    留到 Task 11 与它真正的类一起加。
+> 6. 依赖坐标已对 Google Maven 核实：`com.google.mlkit:text-recognition-chinese:16.0.1` 存在，
+>    其 POM 确实拉 `text-recognition-bundled-common:17.0.0`（模型打进 APK，运行期不需要 GMS）。
+>    CI 日志可见 `libmlkit_google_ocr_pipeline.so` 被打包；release job（R8）也过，AAR 自带 keep 规则够用。
+>
+> CI 记录：`e5f6f70`/run `35519575444` X（fromFilePath 少参数）→ `6a93e62`/run `35519882003` X（要 Uri）
+> → `fbfe726`/run `35520225914` ✓ 两 job 全绿。
+
+---
+
 ### Task 13: 分享自动预识别 + 详情页长按识别 + 截图取词入单词
 
 spec §5.4 的三个入口 + 「复用同一能力做单词截图取词」。
