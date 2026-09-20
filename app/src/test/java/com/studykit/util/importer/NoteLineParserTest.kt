@@ -26,7 +26,7 @@ class NoteLineParserTest {
     fun `竖线出现在摘录里时只按第一个与最后一个切分`() {
         val item = ok("书名|摘录|内含|竖线|感想")
         assertEquals("书名", item.book)
-        assertEquals("内含|竖线", item.excerpt)
+        assertEquals("摘录|内含|竖线", item.excerpt)
         assertEquals("感想", item.thought)
     }
 

@@ -1037,7 +1037,7 @@ class NoteLineParserTest {
     fun `竖线出现在摘录里时只按第一个与最后一个切分`() {
         val item = ok("书名|摘录|内含|竖线|感想")
         assertEquals("书名", item.book)
-        assertEquals("内含|竖线", item.excerpt)
+        assertEquals("摘录|内含|竖线", item.excerpt)
         assertEquals("感想", item.thought)
     }
 
@@ -1138,6 +1138,15 @@ gh run watch    # 期望：两个 job 全绿，NoteLineParserTest 6 例通过
 ```
 
 ---
+
+> **实施时对本任务的三处纠错（均已同步进上面的代码块，后续照此实现即可）**
+> 1. 失败原因分两档：`|摘录|感想`、`书名||感想` 结构齐全但字段为空 → `EMPTY_FIELDS`；
+>    整行没有一个竖线 → `TOO_FEW_COLUMNS`。原计划统一报 `TOO_FEW_COLUMNS` 会让「待修正」区说出误导性的话。
+> 2. 判定写成 `if (first < 0)`，**不是** `first <= 0`：`first == 0` 意味着竖线在行首、书名留空，
+>    那是第 1 条里的 `EMPTY_FIELDS` 情形；用 `<= 0` 会把它错报成列数不足。
+> 3. `竖线出现在摘录里` 一例：输入 `书名|摘录|内含|竖线|感想` 在「只按第一个与最后一个切分」规则下
+>    摘录只能是 `摘录|内含|竖线`，原计划期望的 `内含|竖线` 需要额外丢掉紧跟定界符的那一段，与规则自相矛盾。
+>    CI run `35512867651` 就是靠这一条把错误期望暴露出来的（`135 tests completed, 1 failed`）。
 
 ### Task 6: 去重与批量入库（TDD）
 
