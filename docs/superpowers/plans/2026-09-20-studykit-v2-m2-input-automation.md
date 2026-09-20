@@ -422,7 +422,8 @@ class TextCleanerTest {
     @Test
     fun `法语字母归一为 ASCII`() {
         assertEquals("epole", TextCleaner.normalizeAccents("épole"))
-        assertEquals("canada", TextCleaner.normalizeAccents("çànaüa"))
+        // 只折表内字母：ç→c、à→a、ü→u；n/a 不在表内保持原样，故结果是 canaua 而非 canada
+        assertEquals("canaua", TextCleaner.normalizeAccents("çànaüa"))
     }
 
     @Test
