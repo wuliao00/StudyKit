@@ -2989,6 +2989,24 @@ git push origin feat/v2-visual-motion && gh run watch
 
 ---
 
+> **实施记录（Task 11 已按此落地）**
+> 1. **`onCreate` 里的 `ShareIntake.extract(this, intent)` 必须加 `savedInstanceState == null` 守卫**。
+>    计划原样在每次 `onCreate` 都读 intent，而转屏/切主题同样走 `onCreate` 且 `intent` 还挂着 SEND ⇒
+>    用户已经离开录入页，会被再弹回去一次。这是计划代码里的真 bug，不是风格问题。
+> 2. `intent.getParcelableExtra(Intent.EXTRA_STREAM)` 自 API 33 起弃用，而本仓 minSdk 26 不能直接换成
+>    三参重载 ⇒ 走 `androidx.core.content.IntentCompat.getParcelableExtra(..., Uri::class.java)`
+>    与 `getParcelableArrayListExtra(...)`（core 1.15 已有）。
+> 3. `ShareIntake.kt` 里 `import com.studykit.util.MistakeImageStore` 是同包冗余，删掉。
+> 4. `MainActivity` 不再单独暴露 `val sharedImage: StateFlow<File?>`：直接把 `MutableStateFlow`
+>    传给 `AppNav`（它本身就是 `StateFlow`），少一个只读别名。
+> 5. baseline profile 的 `HSPLcom/studykit/util/ShareIntake;->**(**)**` **从 Task 12 挪到这里**：
+>    Task 12 时这个类还不存在（profile 规则写错只会被静默丢弃）。已在 release job 的
+>    `Assert baseline profile is packaged in the release APK` 步骤上验证通过、零 profile warning。
+> 6. 真机命令里的 extra 名是 `android.intent.extra.STREAM`（全小写），不是 `extra_STREAM`：
+>    `am start -a android.intent.action.SEND -t "image/*" --eu android.intent.extra.STREAM "file:///sdcard/Download/share-sample.png" -n com.studykit/.MainActivity`
+
+---
+
 ### Task 12: OCR 引擎与「从图片提取文字」
 
 spec §5.4：ML Kit bundled 中文模型。事实核对：`com.google.mlkit:text-recognition-chinese:16.0.1` 依赖 `text-recognition-bundled-common:17.0.0` —— **模型打进 APK**，运行期不依赖 GMS 应用（vivo 无 GMS 可用），代价是 APK 体积 +约 4MB。

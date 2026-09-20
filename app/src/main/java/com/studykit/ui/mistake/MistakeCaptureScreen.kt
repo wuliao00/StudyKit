@@ -68,6 +68,7 @@ import com.studykit.ui.theme.AppTheme
 @Composable
 fun MistakeCaptureScreen(
     viewModel: MistakeViewModel,
+    autoExtract: Boolean,
     onBack: () -> Unit,
     onSaved: () -> Unit,
 ) {
@@ -82,6 +83,8 @@ fun MistakeCaptureScreen(
     // 刻意用 remember 而不是上面四个字段的 rememberSaveable：这是"此刻有没有协程在跑"的瞬时标记，
     // 存进 bundle 的话，进程在识别途中被杀、恢复后会把按钮永久卡在「识别中…」且没人会再改它
     var extracting by remember { mutableStateOf(false) }
+    // 这一次性标记刻意用 rememberSaveable：转屏重建组合时不能重跑自动识别（同一张图识别两遍）
+    var autoExtractTried by rememberSaveable { mutableStateOf(false) }
 
     val finalSubject = newSubject.ifBlank { selectedSubject }
 
@@ -114,6 +117,20 @@ fun MistakeCaptureScreen(
         var capturedExists by remember(captured) { mutableStateOf(captured != null) }
         LaunchedEffect(captured) {
             capturedExists = withContext(Dispatchers.IO) { captured?.exists() == true }
+        }
+        // 分享进来的图自动识别一次（拍照那条路 `autoExtract=false`：用户往往正要自己敲标题，
+        // 抢跑一次 OCR 只会让他等）。失败静默，手动按钮仍在原地。
+        LaunchedEffect(captured, autoExtract) {
+            if (autoExtract && captured != null && !autoExtractTried && title.isBlank() && note.isBlank()) {
+                autoExtractTried = true
+                viewModel.autoExtractFromShare { text ->
+                    val lines = text?.lines()?.filter { it.isNotBlank() }.orEmpty()
+                    if (lines.isNotEmpty()) {
+                        title = lines.first().take(40)
+                        note = lines.drop(1).joinToString("\n")
+                    }
+                }
+            }
         }
         val previewShape = RoundedCornerShape(AppTheme.radius.lg)
         if (captured != null && capturedExists) {

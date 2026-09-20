@@ -1,5 +1,9 @@
 package com.studykit.ui.study
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,17 +25,30 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
+import com.studykit.ui.bulkimport.ImportViewModel
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.theme.AppTheme
+import com.studykit.util.OcrResult
+import com.studykit.util.OcrTextExtractor
+import com.studykit.util.ShareIntake
+import com.studykit.util.importer.WordLineParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 单词熟练度指示：一枚 [AppPill]（12dp 状态色点 + 柔底状态标签）。
@@ -81,14 +98,52 @@ private fun WordStatusIndicator(status: String) {
 @Composable
 fun WordListScreen(
     viewModel: StudyViewModel,
+    importViewModel: ImportViewModel,
     onBack: () -> Unit,
     onStartStudy: () -> Unit,
     onBulkImport: () -> Unit,
+    onPreviewImport: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val words by viewModel.words.collectAsStateWithLifecycle()
     val home by viewModel.homeState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var ocrRunning by remember { mutableStateOf(false) }
+
+    // 截图取词：选一张「一行一词」的截图 → OCR → WordLineParser → 复用批量导入的预览/结果两屏。
+    // PickVisualMedia 在 Android 13+ 免权限，低版本系统自己回落到旧选择器，不必分支。
+    val pickImage = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        ocrRunning = true
+        scope.launch {
+            val file = withContext(Dispatchers.IO) { ShareIntake.copyToTemp(context, uri) }
+            if (file == null) {
+                ocrRunning = false
+                Toast.makeText(context, "这张图读不出来", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            when (val result = OcrTextExtractor.recognize(context, file)) {
+                is OcrResult.Text -> {
+                    val plan = WordLineParser.parseAll(result.value)
+                    ocrRunning = false
+                    if (plan.items.isEmpty()) {
+                        Toast.makeText(context, "没认出词表，检查截图是否为一行一词", Toast.LENGTH_SHORT).show()
+                    } else {
+                        importViewModel.loadPlan(plan)
+                        onPreviewImport()
+                    }
+                }
+                is OcrResult.Failed -> {
+                    ocrRunning = false
+                    Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -132,6 +187,17 @@ fun WordListScreen(
         AppButton(
             text = "开始学习（今日待复习 ${home.dueCount} 个）",
             onClick = onStartStudy,
+        )
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppButton(
+            text = if (ocrRunning) "识别中…" else "截图取词",
+            secondary = true,
+            enabled = !ocrRunning,
+            onClick = {
+                pickImage.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
         )
         Spacer(Modifier.height(AppTheme.space.md))
 

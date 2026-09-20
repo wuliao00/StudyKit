@@ -119,7 +119,9 @@ object BookRoutes {
 object MistakeRoutes {
     const val LIST = "mistake"
     const val DETAIL = "mistake/detail/{mistakeId}"
-    const val CAPTURE = "mistake/capture"
+    // `auto` 只有分享收件会置真：拍照那条路不该被自动识别抢跑（用户往往正要自己敲标题）。
+    const val CAPTURE = "mistake/capture?auto={auto}"
+    fun capture(fromShare: Boolean = false) = "mistake/capture?auto=$fromShare"
     fun detail(mistakeId: Long) = "mistake/detail/$mistakeId"
 }
 
@@ -160,7 +162,7 @@ fun AppNav(
         if (shared != null) {
             mistakeViewModel.setPendingCapture(shared)
             onSharedConsumed()
-            navController.navigate(MistakeRoutes.CAPTURE) { launchSingleTop = true }
+            navController.navigate(MistakeRoutes.capture(fromShare = true)) { launchSingleTop = true }
         }
     }
 
@@ -317,7 +319,7 @@ fun AppNav(
                         navController.navigate(MistakeRoutes.detail(id)) { launchSingleTop = true }
                     },
                     onOpenCapture = {
-                        navController.navigate(MistakeRoutes.CAPTURE) { launchSingleTop = true }
+                        navController.navigate(MistakeRoutes.capture()) { launchSingleTop = true }
                     },
                 )
             }
@@ -349,6 +351,7 @@ fun AppNav(
             composable(StudyRoutes.WORDS) {
                 WordListScreen(
                     viewModel = studyViewModel,
+                    importViewModel = importViewModel,
                     onBack = { navController.popBackStack() },
                     onStartStudy = {
                         studyViewModel.startCardSession()
@@ -356,6 +359,10 @@ fun AppNav(
                     },
                     onBulkImport = {
                         navController.navigate(ImportRoutes.paste(ImportKind.WORD)) { launchSingleTop = true }
+                    },
+                    // 截图取词跳过粘贴页：OCR 出来的文本已经在 plan 里，直接进预览
+                    onPreviewImport = {
+                        navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
                 )
             }
@@ -450,9 +457,13 @@ fun AppNav(
                     },
                 )
             }
-            composable(MistakeRoutes.CAPTURE) {
+            composable(
+                route = MistakeRoutes.CAPTURE,
+                arguments = listOf(navArgument("auto") { type = NavType.BoolType; defaultValue = false }),
+            ) { entry ->
                 MistakeCaptureScreen(
                     viewModel = mistakeViewModel,
+                    autoExtract = entry.arguments?.getBoolean("auto") ?: false,
                     onBack = { navController.popBackStack() },
                     onSaved = { navController.popBackStack() },
                 )

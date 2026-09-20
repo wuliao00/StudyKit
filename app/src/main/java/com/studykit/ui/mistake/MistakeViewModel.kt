@@ -222,6 +222,23 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * 分享进来的图自动识别一次。与 [extractTextFromImage] 走同一条 OCR 路，
+     * 差别只在**失败静默**：从相册点「分享→StudyKit」的人意图就是收图，
+     * 识别不出来时不该拿 toast 打扰他，手动按钮仍在原地。
+     */
+    fun autoExtractFromShare(onResult: (String?) -> Unit) {
+        val captured = _pendingCapture.value
+        if (captured == null) {
+            onResult(null)
+            return
+        }
+        viewModelScope.launch {
+            val text = (OcrTextExtractor.recognize(getApplication(), captured) as? OcrResult.Text)?.value
+            onResult(text)
+        }
+    }
+
     /** 保存拍照错题：压缩图片入 mistake_images/，Room 只存相对路径 */
     // 一次性门（终审 C4 的第六个入口）：图片压缩要跑几百毫秒，这段窗口里连点会插两条错题、
     // 也会 pop 两次。
