@@ -5,11 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [dedupeWords] / [dedupeStrings] 纯逻辑单元测试。
+ * [dedupeWords] / [dedupeBy] 纯逻辑单元测试。
  *
- * 钉两条契约：一是「比较用归一化键、返回一律原文」——入库的必须是用户写的内容，
+ * 钉三条契约：一是「比较用归一化键、返回一律原文」——入库的必须是用户写的内容，
  * 不能是归一化后的残次品；二是批内互重也要挡（一次贴进两份相同清单很常见），
- * 因为 `words.word` 没有唯一索引，SQLite 不会替我们兜。
+ * 因为 `words.word` 没有唯一索引，SQLite 不会替我们兜；
+ * 三是去重必须**按下标回指原条目**，用「保留键做成 Set 再过滤」的写法会把重复的第二条放回去。
  */
 class DedupeTest {
 
@@ -48,17 +49,43 @@ class DedupeTest {
     }
 
     @Test
-    fun `dedupeStrings 对任意键列表同样工作`() {
-        val result = dedupeStrings(listOf("x", "y", "x", " z "))
-        // kept 必须是原文：归一化只用于比较，拿它入库会把内容改脏
-        assertEquals(listOf("x", "y", " z "), result.kept)
-        assertEquals(listOf("x"), result.skipped)
+    fun `dedupeBy 按下标回指，批内重复的第二条不会混进 kept`() {
+        // 「把保留的键做成 Set 再用 in 过滤」是这里最容易写错的地方：
+        // 重复的第二条其键也在 Set 里，于是照样入选 —— 一次贴两份相同清单就会写双份。
+        val items = listOf("x|a|b", "x|a|b", "y|a|b")
+        val result = dedupeBy(items, keyOf = { it.substringBefore('|') }, displayOf = { it })
+        assertEquals(listOf("x|a|b", "y|a|b"), result.kept)
+        assertEquals(listOf("x|a|b"), result.skipped)
     }
 
     @Test
-    fun `dedupeStrings 比较归一化键但返回原文`() {
-        val result = dedupeStrings(listOf("题干 A", "题干A", "题干 b"))
-        assertEquals(listOf("题干 A", "题干 b"), result.kept)
-        assertEquals(listOf("题干A"), result.skipped)
+    fun `dedupeBy 的 skipped 用 displayOf 而不是 key`() {
+        val result = dedupeBy(
+            listOf(3 to "apple", 9 to "Apple"),
+            keyOf = { normalizeKey(it.second) },
+            displayOf = { "第 ${it.first} 行" },
+        )
+        assertEquals(listOf(3 to "apple"), result.kept)
+        assertEquals(listOf("第 9 行"), result.skipped)
+    }
+
+    @Test
+    fun `dedupeBy 用已归一化的 existingKeys 判库内重复`() {
+        val result = dedupeBy(
+            listOf("A", "b"),
+            keyOf = { normalizeKey(it) },
+            displayOf = { it },
+            existingKeys = setOf("a"),
+        )
+        assertEquals(listOf("b"), result.kept)
+        assertEquals(listOf("A"), result.skipped)
+    }
+
+    @Test
+    fun `dedupeBy 不传 existingKeys 时只做批内去重`() {
+        val result = dedupeBy(listOf("x", "X", "y"), keyOf = { normalizeKey(it) }, displayOf = { it })
+        // kept 装原文，归一化只用于比较，否则入库内容会被改脏
+        assertEquals(listOf("x", "y"), result.kept)
+        assertEquals(listOf("X"), result.skipped)
     }
 }
