@@ -408,7 +408,7 @@ class TextCleanerTest {
 
     @Test
     fun `剥离 BOM 与 CRLF`() {
-        val lines = TextCleaner.splitLines("﻿word\r\nmeaning")
+        val lines = TextCleaner.splitLines("\uFEFFword\r\nmeaning")
         assertEquals("word", lines[0].text)
         assertEquals("meaning", lines[1].text)
     }
@@ -504,8 +504,10 @@ sealed interface LineResult {
     data object Blank : LineResult
 }
 
-"""一次导入的最终账目：成功条数 / 因重复被跳过的原始键 / 待修正行。
-放在模型层是因为预览页与结果页都要读它，而它不属于任何一个来源。"""
+/**
+ * 一次导入的最终账目：成功条数 / 因重复被跳过的原始键 / 待修正行。
+ * 放在模型层是因为预览页与结果页都要读它，而它不属于任何一个来源。
+ */
 data class ImportOutcome(
     val inserted: Int,
     val skippedDuplicates: List<String>,
@@ -548,7 +550,7 @@ package com.studykit.util.importer
  */
 object TextCleaner {
 
-    private const val BOM = '﻿'
+    private const val BOM = '\uFEFF'
 
     /** 部分字典混入带重音的拉丁字母（kajweb/dict README 明确提示），归一后便于检索与去重 */
     private val ACCENT_FOLDINGS = listOf(
@@ -565,7 +567,7 @@ object TextCleaner {
     fun splitLines(text: String): List<NumberedLine> {
         val normalized = text.removePrefix(BOM.toString()).replace("\r\n", "\n").replace('\r', '\n')
         return normalized.split('\n').mapIndexed { index, raw ->
-            NumberedLine(line = index + 1, text = raw.trim().trimEnd())
+            NumberedLine(line = index + 1, text = raw.trim())
         }
     }
 
