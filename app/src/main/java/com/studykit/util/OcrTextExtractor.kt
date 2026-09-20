@@ -1,6 +1,7 @@
 package com.studykit.util
 
 import android.content.Context
+import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
@@ -36,8 +37,9 @@ object OcrTextExtractor {
         if (!file.exists() || file.length() == 0L) {
             return@withContext OcrResult.Failed("图片不存在或已损坏")
         }
-        // 这个版本只有 `fromFilePath(Context, String)` 一形（CI 报 "No value passed for parameter 'p1'"）
-        val image = runCatching { InputImage.fromFilePath(context, file.absolutePath) }.getOrNull()
+        // ML Kit 这一版只有 `fromFilePath(Context, Uri)`：单串路径的重载已被摘掉
+        // （CI 两次报错各证一半：先 "No value passed for parameter 'p1'"，补了 context 又要求 Uri）
+        val image = runCatching { InputImage.fromFilePath(context, Uri.fromFile(file)) }.getOrNull()
             ?: return@withContext OcrResult.Failed("无法读取这张图片")
         suspendCancellableCoroutine<OcrResult> { continuation ->
             recognizer.process(image)
@@ -60,7 +62,7 @@ object OcrTextExtractor {
 }
 
 /**
- * ML Kit 这边拿不到可取消的任务句柄（`TextRecognizer` 只实现 `Closeable`，`Task` 也不公开 `cancel()`），
+ * 识别器的回调没有可取消的句柄（`TextRecognizer` 只实现 `Closeable`），
  * 所以协程取消之后回调照样会来一次。对已取消的续体再 `resume` 会抛 `IllegalStateException`，
  * 这里直接丢弃。
  */
