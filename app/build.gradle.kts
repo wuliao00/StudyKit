@@ -16,6 +16,13 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "2.0.0"
+        // ML Kit 的 bundled OCR 给四个 ABI 各带一份 libmlkit_google_ocr_pipeline.so
+        // （x86_64 11.6MB + x86 11.6MB + arm64 11.1MB + armeabi 6.8MB = 41MB），
+        // 而本仓是**直接发 APK**（GitHub Release / 网盘），不是走应用商店的 per-device split，
+        // 四个 ABI 会原样进包。x86 系只有模拟器用得到，砍掉后 APK 从 56.9MB 回到 33.7MB。
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
