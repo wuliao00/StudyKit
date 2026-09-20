@@ -91,7 +91,7 @@ Room 当前 `version = 2`、`exportSchema = false`、只有一条手写 `MIGRATI
 - Produces:
   - `data class WordList(val id: Long = 0L, val sourceId: String, val title: String, val wordNum: Int = 0, val importedCount: Int = 0, val importedAt: Long = System.currentTimeMillis())`，表名 `word_lists`，`sourceId` 唯一索引。
   - `WordDao.insertAll(words: List<Word>): List<Long>`、`WordDao.getWordTexts(): List<String>`（suspend）、`WordDao.deleteByList(sourceListId: Long): Int`（suspend）、`WordDao.countByList(sourceListId: Long): Int`（suspend）。
-  - `WordListRepository.add(wordList: WordList): Long`、`observeAll(): Flow<List<WordList>>`、`getBySourceId(sourceId: String): WordList?`、`markImportedCount(id: Long, count: Int)`、`deleteAlongWithWords(wordList: WordList): Int`。
+  - `WordListRepository(db: AppDatabase)`（构造只接数据库，DAO 在仓储内部自取），方法：`add(wordList: WordList): Long`、`observeAll(): Flow<List<WordList>>`、`getBySourceId(sourceId: String): WordList?`、`markImportedCount(id: Long, count: Int)`、`deleteAlongWithWords(wordList: WordList): Int`。
   - `Word.sourceListId: Long?`（默认 `null`）。
 
 - [ ] **Step 1: 新建 `WordList` 实体**
@@ -138,7 +138,7 @@ data class WordList(
 - [ ] **Step 3: `WordDao` 增批量与按库操作**
 
 ```kotlin
-    /** 批量入库；返回自增 id 列表，顺序与入参一致（Room 保证） */
+    /** 批量入库；返回自增 id 列表，实践上与入参同序，但 Room 未承诺 —— 勿依赖顺序，只当入库计数用 */
     @Insert
     suspend fun insertAll(words: List<Word>): List<Long>
 
@@ -170,6 +170,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface WordListDao {
 
+    /**
+     * `source_id` 上有 UNIQUE 索引，默认 ABORT 策略：重复导入同一本词库会抛
+     * `SQLiteConstraintException`。这是刻意保留的报错信号 —— 调用方必须先 [getBySourceId] 判重，
+     * 而不是把冲突改成 IGNORE/REPLACE 把问题吞掉。
+     */
     @Insert
     suspend fun insert(wordList: WordList): Long
 
@@ -192,33 +197,51 @@ interface WordListDao {
 ```kotlin
 package com.studykit.data.repository
 
+import androidx.room.withTransaction
+import com.studykit.data.AppDatabase
 import com.studykit.data.dao.WordDao
 import com.studykit.data.dao.WordListDao
 import com.studykit.data.entity.WordList
 import kotlinx.coroutines.flow.Flow
 
-/** 在线词库来源表；单词侧的按库删除经 [wordDao] 转发，避免调用方同时摸两个 DAO */
+/**
+ * 在线词库来源表。单词侧的按库删除经 [wordDao] 转发，避免调用方同时摸两个 DAO。
+ *
+ * 需要 [AppDatabase] 而非单个 DAO，只为「删词库 + 删单词」这一步的事务：两张表必须同生同死。
+ */
 class WordListRepository(
-    private val wordListDao: WordListDao,
-    private val wordDao: WordDao,
+    private val db: AppDatabase,
 ) {
+
+    private val wordListDao: WordListDao = db.wordListDao()
+
+    private val wordDao: WordDao = db.wordDao()
 
     fun observeAll(): Flow<List<WordList>> = wordListDao.observeAll()
 
+    /** [WordListDao.insert] 在 source_id 重复时抛异常（见 DAO 注释），调用方须先 [getBySourceId] 判重 */
     suspend fun add(wordList: WordList): Long = wordListDao.insert(wordList)
 
     suspend fun getBySourceId(sourceId: String): WordList? = wordListDao.getBySourceId(sourceId)
 
     suspend fun markImportedCount(id: Long, count: Int) = wordListDao.updateImportedCount(id, count)
 
-    /** 返回被一并删除的单词条数，供结果卡展示「已撤销 N 个单词」 */
-    suspend fun deleteAlongWithWords(wordList: WordList): Int {
+    /**
+     * 返回被一并删除的单词条数，供结果卡展示「已撤销 N 个单词」。
+     * 删除跑在一个事务里：中途失败必须整体回滚，否则留下"词库行还在、单词已空"的幽灵条目，
+     * 而它的 source_id 会挡住重新导入。
+     */
+    suspend fun deleteAlongWithWords(wordList: WordList): Int = db.withTransaction {
         val removed = wordDao.deleteByList(wordList.id)
         wordListDao.delete(wordList)
-        return removed
+        removed
     }
 }
 ```
+
+`room-ktx` 已在 `gradle/libs.versions.toml:29` 与 `app/build.gradle.kts:62`，`withTransaction` 不引入新依赖。
+签名已从 2.6.1 的 sources jar 核对：`suspend fun <R> RoomDatabase.withTransaction(block: suspend () -> R): R`
+—— block **没有接收者**，事务体内直接引用本类的 DAO 属性即可；事务只保证串行与回滚，仍要求里面的 DAO 调用都是 suspend。
 
 - [ ] **Step 6: `AppDatabase` 注册实体 + 写 `MIGRATION_2_3`**
 
@@ -232,7 +255,7 @@ class WordListRepository(
      * 否则真机升级时抛 `IllegalStateException: Room cannot verify that the schema matches`，
      * 且 CI 全绿也测不出来 —— 因此本迁移的真机存活验证是计划里的硬步骤。
      */
-    private val MIGRATION_2_3 = object : Migration(2, 3) {
+    val MIGRATION_2_3 = object : Migration(2, 3) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS `word_lists` (" +
@@ -259,7 +282,7 @@ class WordListRepository(
 - [ ] **Step 7: `AppContainer` 挂仓库**
 
 ```kotlin
-    val wordListRepository = WordListRepository(database.wordListDao(), database.wordDao())
+    val wordListRepository: WordListRepository = WordListRepository(database)
 ```
 
 同时在 `AppDatabase` 里加抽象方法：
@@ -277,41 +300,65 @@ git push origin feat/v2-visual-motion
 gh run watch   # 必须看到 Lint / Unit Test / Debug Build 与 Release Build 两个 job 都成功
 ```
 
-- [ ] **Step 9: 真机验证 schema（本任务的硬门槛，CI 无法替代）**
+- [x] **Step 9: 真机验证 schema（本任务的硬门槛，CI 无法替代）**
 
-风险点只有一个：**`MIGRATION_2_3` 的 SQL 与 Room 依据实体生成的期望 schema 不一致**（列名/类型/可空性/索引名写错）。它只在真机开库时抛 `IllegalStateException: Room cannot verify that the schema matches`，CI 全绿也发现不了。
+风险点只有一个：**`MIGRATION_2_3` 的 SQL 与 Room 依据实体生成的期望 schema 不一致**（列名/类型/可空性/索引写法写错）。它只在真机开库时抛 `IllegalStateException: Room cannot verify that the schema matches`，CI 全绿也发现不了。
 
-先说清为什么"装旧包再覆盖装新包"这条路走不通：CI 每个 runner 现生成 debug keystore，两个 run 的产物签名互不相同，`adb install -r` 必报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，迁移代码根本执行不到；本机没有 JDK/`apksigner`，也无法把新包签成旧包的签名。因此**验证目标改为"Room 打开时是否接受这份 schema"**——这恰好就是 SQL 写错时的报错点，用一次性建库即可覆盖：
+先说清为什么"装旧包再覆盖装新包"这条路走不通：CI 每个 runner 现生成 debug keystore，两个 run 的产物签名互不相同，`adb install -r` 必报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，迁移代码根本执行不到；本机没有 JDK/`apksigner`，也无法把新包签成旧包的签名。**但这不代表迁移执行路径不可测** —— 下面两步法把 `migrate()` 真跑了一遍（Task 1 已执行通过，过程与判据见 `.superpowers/sdd/…/task-1-report.md`）。
+
+> 早期草案里"用 node 手建一个只含 `word_lists` 且 `user_version=3` 的库再注入"是错的，两处硬伤：(a) 它没有 `words` 表，与"`words cols` 里含 `source_list_id`"的判据自相矛盾；(b) 版本号已经等于 3 时 Room 只做校验、不做迁移，压根测不到 `migrate()`。故弃用。
+
+**9.1 取 Room 的"标准答案"并逐字比对**：装新包（全新安装）后直接首启，此时未注入任何文件，Room 会依实体自建 v3 库。
 
 ```bash
 export PATH="/e/tools/adb:$PATH"
-# 1) 在 PC 上用 node 内置 sqlite 造一个"已经迁到 v3"的空库（SQL 逐字抄自 MIGRATION_2_3）
-node --experimental-sqlite -e "
-const {DatabaseSync} = require('node:sqlite');
-const db = new DatabaseSync('/tmp/studykit-v3.db');
-db.exec(\`PRAGMA user_version=3;
-CREATE TABLE IF NOT EXISTS \`word_lists\` (\`id\` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, \`source_id\` TEXT NOT NULL, \`title\` TEXT NOT NULL, \`word_num\` INTEGER NOT NULL, \`imported_count\` INTEGER NOT NULL, \`imported_at\` INTEGER NOT NULL);
-CREATE UNIQUE INDEX IF NOT EXISTS \`index_word_lists_source_id\` ON \`word_lists\` (\`source_id\`);\`);
-db.close();"
-# 2) 装新包（全新安装，Room 建库后会按实体校验；再覆盖我们这份"手建 v3 库"逼它校验）
-bash auto-install.sh /tmp/sk-new/app-debug.apk 2.0.0
-adb shell run-as com.studykit sh -c "cat > /data/data/com.studykit/databases/studykit.db" < /tmp/studykit-v3.db
-adb shell am force-stop com.studykit
+bash auto-install.sh /tmp/sk-new/app-debug.apk 2.0.0        # 期望末行 installed versionName 匹配
 adb shell monkey -p com.studykit -c android.intent.category.LAUNCHER 1
-sleep 6
-# 3) 判据：无 schema 报错，且能读到新表
-adb logcat -d | grep -iE "IllegalStateException|Room cannot verify|SQLiteLog" | head    # 期望：无输出
-adb exec-out run-as com.studykit cat /data/data/com.studykit/databases/studykit.db > /tmp/back.db
-node --experimental-sqlite -e "
-const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/tmp/back.db');
-console.log('user_version=', db.prepare('PRAGMA user_version').get());
-console.log('words cols=', db.prepare(\"PRAGMA table_info(words)\").all().map(c=>c.name).join(','));
-console.log('word_lists exists=', !!db.prepare(\"SELECT name FROM sqlite_master WHERE name='word_lists'\").get());"
+sleep 6 && adb shell pidof com.studykit                      # 期望：有 pid
+adb logcat -d | grep -iE "Room cannot verify|IllegalStateException|FATAL EXCEPTION"   # 期望：无输出
+adb exec-out run-as com.studykit cat /data/data/com.studykit/databases/studykit.db > /tmp/room-v3.db
+node --experimental-sqlite -e "                              # 打印 Room 自建库的真 DDL，与迁移三条语句逐字比对
+const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/tmp/room-v3.db');
+for(const r of db.prepare(\"SELECT sql,name FROM sqlite_master WHERE name IN ('word_lists','index_word_lists_source_id')\").all())console.log(r.name,'::',r.sql);
+console.log('words cols=',db.prepare('PRAGMA table_info(words)').all().map(c=>c.name).join(','));
+console.log('hash=',db.prepare('SELECT identity_hash FROM room_master_table').get().identity_hash);"
 ```
 
-期望：`user_version=3`、`words cols` 里含 `source_list_id`、`word_lists exists= true`、logcat 无 `Room cannot verify`。任一不符即说明 `MIGRATION_2_3` 的 SQL 与实体不一致，按报错里的"expected … found …"逐字段改正后重跑本步。
+比对要点：列名/类型/可空性逐字相同（`IF NOT EXISTS` 不计，`sqlite_master` 不记录它）；`word_lists` 的 UNIQUE 索引必须 `origin = "c"`（独立 `CREATE UNIQUE INDEX` 语句）——若写成表内 `UNIQUE` 约束会是 `origin="u"`，Room 直接判为不一致，这是最容易踩的一条。存下这个 `hash`，它是 9.2 的对照组。
 
-**明确记为设备待办（本计划不假装已证）**：迁移的**执行**路径（老用户从 v2 升上来时 `migrate()` 真跑一遍）需要在同一台机器上先用同一 keystore 签两个包，本机与 CI 都做不到。缓解措施：`MIGRATION_2_3` 的三条语句与 Step 9 手建库的语句**逐字相同**，且 Step 9 已证明 Room 接受这套 schema；`DemoSeeder` 只在 `onCreate` 建库回调里播种，不影响升级路径。把这条写进 CHANGELOG 的「已知限制」。
+**9.2 造一个"老用户手里那种 v2 库"注入，逼真机跑 `onUpgrade(2→3)`**：用 node 重放 Room 原生的 v2 DDL（12 表 + 8 索引，schema-only，`PRAGMA user_version=2`，并写回 v2 的 `identity_hash`），推上设备后再首启。
+
+```bash
+# 本地：node --experimental-sqlite 重放 v2 DDL → /tmp/v2/studykit-v2-gen.db
+#   自校验：user_version=2、word_lists present=false、tables=12 indexes=8、integrity_check=ok
+adb shell am force-stop com.studykit
+adb shell run-as com.studykit rm -f /data/data/com.studykit/databases/studykit.db{,-wal,-shm}
+# 引号必须活到设备侧 shell，否则重定向以 shell uid 执行 → Permission denied
+adb shell "run-as com.studykit sh -c 'cat > /data/data/com.studykit/databases/studykit.db'" < /tmp/v2/studykit-v2-gen.db
+adb shell run-as com.studykit ls -l /data/data/com.studykit/databases/    # 期望：uid 是 u0_aXXXX 且字节数与本地一致
+adb shell monkey -p com.studykit -c android.intent.category.LAUNCHER 1
+sleep 8 && adb shell pidof com.studykit                                   # 期望：有 pid（迁移失败会直接崩）
+adb logcat -d | grep -iE "Room cannot verify|IllegalStateException|AndroidRuntime"   # 期望：无输出
+```
+
+拉回本地断言（任一不符即按报错里的 "expected … found …" 逐字段改 `MIGRATION_2_3` 后重跑）：
+
+```bash
+adb exec-out run-as com.studykit cat /data/data/com.studykit/databases/studykit.db > /tmp/after-migration.db
+node --experimental-sqlite -e "
+const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/tmp/after-migration.db');
+const p=s=>db.prepare(s);
+console.log('user_version=',p('PRAGMA user_version').get().user_version);          // 期望 3
+console.log('hash=',p('SELECT identity_hash FROM room_master_table').get().identity_hash);  // 期望与 9.1 完全相同
+console.log('words cols=',p('PRAGMA table_info(words)').all().map(c=>c.name).join(','));      // 期望含 source_list_id，且类型为 INTEGER、notnull=0、无默认值
+console.log('word_lists=',!!p(\"SELECT name FROM sqlite_master WHERE name='word_lists'\").get());
+console.log('idx origin=',p(\"SELECT origin FROM sqlite_master WHERE name='index_word_lists_source_id'\").get().origin); // 期望 c
+console.log('rows words=',p('SELECT COUNT(*) c FROM words').get().c,'lists=',p('SELECT COUNT(*) c FROM word_lists').get().c); // 期望 0 / 0：DemoSeeder 只在 onCreate 播种，升级路径不播种
+console.log('integrity=',p('PRAGMA integrity_check').get().integrity_check);"
+```
+
+**已证**：迁移的**执行**路径（`migrate()` 真跑 → `validateMigration` 比对实体期望 schema → 重写 hash）在 vivo `35152127910030J` 上通过，`identity_hash` 迁移后与 Room 自建库逐字相同。
+**唯一未覆盖项**：*"同签名 A→B 覆盖安装"*这一条分发路径（本机与 CI 都没有稳定 keystore）。把这一条（且仅这一条）写进 CHANGELOG 的「已知限制」。
 
 ---
 
@@ -3160,7 +3207,7 @@ git push origin feat/v2-visual-motion && gh run watch
 
 - [ ] **Step 2: CHANGELOG 新增 2.1.0 段**
 
-必须包含：五件套各一条；**「数据来源与许可」一条**（kajweb/dict 抓取数据、仅个人学习、导入后离线）；「已知限制」补：迁移执行路径未在同签名下验证（Task 1 Step 9 说明）、OCR 对低质量截图识别率有限、离线目录快照需随版本更新。
+必须包含：五件套各一条；**「数据来源与许可」一条**（kajweb/dict 抓取数据、仅个人学习、导入后离线）；「已知限制」补三条：① `MIGRATION_2_3` 的执行与 schema 校验已在真机验证（Task 1 Step 9），未覆盖的仅为**同签名 A→B 覆盖安装**这一条分发路径（本机与 CI 都无稳定 keystore）；② 同因，**升级后原有数据行完好保留**也未实测（Step 9 注入的是 schema-only 重放库，行数恒为 0），发布前若拿到稳定 keystore 应补测；③ OCR 对低质量截图识别率有限、离线目录快照需随版本更新。
 
 - [ ] **Step 3: README 三语**
 
