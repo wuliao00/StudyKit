@@ -91,3 +91,7 @@ HSPLcom/studykit/ui/components/QuizOptionTileKt$**;->**(**)**
 HSPLcom/studykit/ui/study/StudyViewModel;->**(**)**
 HSPLcom/studykit/ui/study/CardStudyScreenKt;->**(**)**
 HSPLcom/studykit/ui/study/CardStudyScreenKt$**;->**(**)**
+
+# ── 分享收件（冷启动即可能走到的路径：相册/截图「分享到 StudyKit」）────────────
+# Kotlin object 编译成单类 ShareIntake;（没有 $Companion，那是 Java 静态内部类的形态）。
+HSPLcom/studykit/util/ShareIntake;->**(**)**

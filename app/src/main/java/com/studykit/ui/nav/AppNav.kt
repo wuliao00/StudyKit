@@ -17,6 +17,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -64,6 +65,8 @@ import com.studykit.ui.study.WordCreateScreen
 import com.studykit.ui.study.WordListScreen
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.importer.ImportOutcome
+import java.io.File
+import kotlinx.coroutines.flow.StateFlow
 
 /** 底部 Tab 定义 */
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
@@ -134,7 +137,10 @@ object ImportRoutes {
 
 /** 应用主导航：底部 4 Tab + 习惯/读书模块子路由 */
 @Composable
-fun AppNav() {
+fun AppNav(
+    sharedImage: StateFlow<File?>,
+    onSharedConsumed: () -> Unit,
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -146,6 +152,17 @@ fun AppNav() {
     val studyViewModel: StudyViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
+
+    // 分享进来的图走错题录入页既有的 pendingCapture 通道（与拍照同一条路，页面零分支）。
+    // 先 onSharedConsumed 再 navigate：顺序反了的话，转屏重建组合时会再跳一次录入页。
+    val shared by sharedImage.collectAsStateWithLifecycle()
+    LaunchedEffect(shared) {
+        if (shared != null) {
+            mistakeViewModel.setPendingCapture(shared)
+            onSharedConsumed()
+            navController.navigate(MistakeRoutes.CAPTURE) { launchSingleTop = true }
+        }
+    }
 
     // ── 边到边与键盘（终审 I11 / 波 4 项 2）────────────────────────────────
     // `MainActivity.enableEdgeToEdge()` + targetSdk 35 ⇒ 内容绘制在系统栏之下，insets 全部
