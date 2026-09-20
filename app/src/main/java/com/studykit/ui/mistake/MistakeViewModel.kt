@@ -212,7 +212,7 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         viewModelScope.launch {
-            when (val result = OcrTextExtractor.recognize(captured)) {
+            when (val result = OcrTextExtractor.recognize(getApplication(), captured)) {
                 is OcrResult.Text -> onResult(result.value)
                 is OcrResult.Failed -> {
                     toast(result.reason)

@@ -1,5 +1,6 @@
 package com.studykit.util
 
+import android.content.Context
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
@@ -31,11 +32,12 @@ object OcrTextExtractor {
         TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     }
 
-    suspend fun recognize(file: File): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun recognize(context: Context, file: File): OcrResult = withContext(Dispatchers.IO) {
         if (!file.exists() || file.length() == 0L) {
             return@withContext OcrResult.Failed("图片不存在或已损坏")
         }
-        val image = runCatching { InputImage.fromFilePath(file.absolutePath) }.getOrNull()
+        // 这个版本只有 `fromFilePath(Context, String)` 一形（CI 报 "No value passed for parameter 'p1'"）
+        val image = runCatching { InputImage.fromFilePath(context, file.absolutePath) }.getOrNull()
             ?: return@withContext OcrResult.Failed("无法读取这张图片")
         suspendCancellableCoroutine<OcrResult> { continuation ->
             recognizer.process(image)
