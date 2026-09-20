@@ -2052,6 +2052,47 @@ adb shell input tap 540 1913   # 允许通知（首装会弹）
 ```
 必须看到：预览页统计为「可导入 2 / 待修正 1」、被剔除行有删除线、结果页出现彩带、单词库条数 +2、再导同一批显示「重复跳过 2」。这几条是 Task 7 的验收，缺一条即未完成。
 
+> **实施记录：本任务的计划代码有 10 处与可编译/正确性冲突，实现按下面这样落地（后续任务照此）**
+> 1. **Files 少列了 `ui/bulkimport/ImportKind.kt`** —— 步骤 3 用到它，清单里没有。
+> 2. VM 的 import 里 `com.studykit.data.entity.Question` 写了两遍。
+> 3. `Question(...)` 构造缺 `uuid`（该列无默认值），照抄编译不过。
+> 4. `RejectReason.label()` 在计划里是 `ImportPreviewScreen.kt` 的 **private** 扩展，但结果页也要用它 →
+>    改 `internal`，并与 `ImportKind` 同文件（同包免 import，两张屏都能调）。
+> 5. 预览页 import 清单缺 `androidx.compose.foundation.layout.IntrinsicSize`（步骤外的旁注提醒了，代码块没带上）。
+> 6. 粘贴页 import 清单缺 `androidx.compose.runtime.saveable.rememberSaveable`。
+> 7. **入库分发**：计划让 `onSubmit` 直接 `submitWords {...}`，而预览路由不带 kind ⇒ 题目那一批会被当单词写进
+>    `words` 表。改成 `submit(onDone)` 按条目实际类型分发（`submitWords`/`submitQuestions` 仍是公开出口）。
+> 8. **题目判重写法本身是错的**：计划先 `dedupeStrings` 拿保留键，再 `items.filter { keyOf(it) in keep }` 回指条目 ——
+>    批内重复的第二条其键同样在 `keep` 里，于是被判为应保留、**写双份**，而这正是 Task 6 立起来要挡的场景。
+>    修法在纯函数层：新增 `dedupeBy(items, keyOf, displayOf, existingKeys)` 按下标走一遍直接返回保留的条目；
+>    `dedupeWords` 改成它的薄封装（签名与 5 条测试不动），`dedupeStrings` 因唯一调用点就是这个错误用法而删除，
+>    它的 2 条测试重写成 `dedupeBy` 的 4 条。RED run `35516302047`（`Unresolved reference 'dedupeBy'`）。
+> 9. 计划里的 `ImportKind.valueOf` 与 `fun paste(kind: String)` 改成 `fromRoute(raw): ImportKind?` +
+>    `fun paste(kind: ImportKind)`：调用点拿到的是枚举而不是字符串，认不出来时退回 WORD 而不是抛在导航层。
+> 10. **两处会卡死界面的写法已改**：(a) `commit` 只有 `try/finally`，异常时 phase 永远停在 `COMMITTING`、
+>     按钮永久灰态 ⇒ 加 `ImportUiState.error` 并回退 `PREVIEW`，预览页显示一行 `warningInk`；
+>     (b) SAF 回调里顺手 `plan = null; parsing = true`，若文件内容与框内文本一模一样则 `raw` 不变、
+>     `LaunchedEffect(raw)` 不再触发 ⇒ 永久停在「解析中…」。现在读文件只写 `raw`，`plan`/`parsing` 全交给那一个 effect。
+
+另外两条与计划不同、但属于补全而非改错：结果页把「重复跳过」的词面**列出来**（计划只有数字，
+而判重是全局的，用户看不到少的是哪几条就会以为数据被吞）；题目批量入口放在学习首页「题库练习」卡的
+trailing（与单条 `+` 并排，`contentDescription` 区分），否则 `ImportKind.QUESTION` 与 `submitQuestions` 都是死代码。
+
+---
+
+### Task 7b: 摘录批量入库（需要先定「导进哪本书」）— 未开始，两个决策点要用户拍板
+
+Task 5 的 `NoteLineParser` 与 Task 7 的预览/结果层都已就位（`ImportItem.Excerpt`、`summary()` 分支都在），
+差的只是入库那一步，而它卡在一个真问题上：`excerpts` 要求一个已存在的 `book_id`（外键 `CASCADE`），
+且 `Excerpt` 没有承载「感想」的列。摆一个点了只会说"暂不支持"的按钮比不摆更糟，所以本期 `ImportKind` 只有 WORD/QUESTION。
+
+- **决策点 A：目标书怎么定。**
+  (a) 从书详情页发起，路由带 `bookId`（`import/paste/note/{bookId}`）——不新增字段、不造空壳记录，与「摘录本就属于某一本书」一致（倾向此项）；
+  (b) 预览页加一个书架选择器；
+  (c) 按解析出的 `书名` 自动建书——但 `Book` 的 `author` 与 `total_pages` 都无默认值，自动建只能写空壳。
+- **决策点 B：感想存哪儿。** `excerpts` 无对应列。加列要走 v3→v4 迁移（Task 1 的两步流程可复用）；
+  或者把感想并进 `content`（不改表，但读出来是混在一起的一段）。**这一项要用户选。**
+
 ---
 
 ### Task 8: 词库 NDJSON 解析（TDD）
