@@ -77,7 +77,7 @@ abstract class AppDatabase : RoomDatabase() {
          * 否则真机升级时抛 `IllegalStateException: Room cannot verify that the schema matches`，
          * 且 CI 全绿也测不出来 —— 因此本迁移的真机存活验证是计划里的硬步骤。
          */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `word_lists` (" +

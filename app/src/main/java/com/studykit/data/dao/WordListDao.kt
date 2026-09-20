@@ -10,6 +10,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface WordListDao {
 
+    /**
+     * `source_id` 上有 UNIQUE 索引，默认 ABORT 策略：重复导入同一本词库会抛
+     * `SQLiteConstraintException`。这是刻意保留的报错信号 —— 调用方必须先 [getBySourceId] 判重，
+     * 而不是把冲突改成 IGNORE/REPLACE 把问题吞掉。
+     */
     @Insert
     suspend fun insert(wordList: WordList): Long
 

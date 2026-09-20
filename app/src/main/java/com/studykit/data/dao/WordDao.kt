@@ -34,7 +34,7 @@ interface WordDao {
     @Insert
     suspend fun insert(word: Word): Long
 
-    /** 批量入库；返回自增 id 列表，顺序与入参一致（Room 保证） */
+    /** 批量入库；返回自增 id 列表，实践上与入参同序，但 Room 未承诺 —— 勿依赖顺序，只当入库计数用 */
     @Insert
     suspend fun insertAll(words: List<Word>): List<Long>
 

@@ -19,8 +19,7 @@ class AppContainer(context: Context) {
 
     val wordRepository: WordRepository = WordRepository(database.wordDao())
 
-    val wordListRepository: WordListRepository =
-        WordListRepository(database.wordListDao(), database.wordDao())
+    val wordListRepository: WordListRepository = WordListRepository(database)
 
     val questionRepository: QuestionRepository =
         QuestionRepository(database.questionDao(), database.practiceDao())
