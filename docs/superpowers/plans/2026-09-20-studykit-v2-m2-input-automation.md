@@ -1050,8 +1050,16 @@ class NoteLineParserTest {
     }
 
     @Test
-    fun `书名为空也判列数不足`() {
-        assertTrue(NoteLineParser.parseLine(1, "|摘录|感想") is LineResult.Bad)
+    fun `结构在但书名为空时报空字段而非列数不足`() {
+        val result = NoteLineParser.parseLine(1, "|摘录|感想")
+        assertTrue(result is LineResult.Bad)
+        assertEquals(RejectReason.EMPTY_FIELDS, (result as LineResult.Bad).rejected.reason)
+    }
+
+    @Test
+    fun `结构在但摘录为空时同样报空字段`() {
+        val result = NoteLineParser.parseLine(1, "书名||感想")
+        assertEquals(RejectReason.EMPTY_FIELDS, (result as LineResult.Bad).rejected.reason)
     }
 
     @Test
@@ -1096,13 +1104,14 @@ object NoteLineParser {
         if (raw.isBlank()) return LineResult.Blank
         val first = raw.indexOf(SEPARATOR)
         val last = raw.lastIndexOf(SEPARATOR)
-        if (first <= 0) return bad(lineNo, raw)
+        // 只认「有没有分隔符」；`|摘录|感想` 结构齐全、只是书名为空，那是 EMPTY_FIELDS 而不是列数不足
+        if (first < 0) return bad(lineNo, raw, RejectReason.TOO_FEW_COLUMNS)
         val book = raw.substring(0, first).trim()
-        if (book.isEmpty()) return bad(lineNo, raw)
+        if (book.isEmpty()) return bad(lineNo, raw, RejectReason.EMPTY_FIELDS)
         // 只两段时（first == last）最后一段就是摘录、感想为空；三段时中间整段是摘录
         val excerpt = if (first == last) raw.substring(first + 1) else raw.substring(first + 1, last)
         val thought = if (first == last) "" else raw.substring(last + 1)
-        if (excerpt.isBlank()) return bad(lineNo, raw)
+        if (excerpt.isBlank()) return bad(lineNo, raw, RejectReason.EMPTY_FIELDS)
         return LineResult.Ok(
             ImportItem.Excerpt(
                 sourceLine = lineNo,
@@ -1114,8 +1123,8 @@ object NoteLineParser {
         )
     }
 
-    private fun bad(lineNo: Int, raw: String): LineResult.Bad =
-        LineResult.Bad(RejectedLine(sourceLine = lineNo, raw = raw, reason = RejectReason.TOO_FEW_COLUMNS))
+    private fun bad(lineNo: Int, raw: String, reason: RejectReason): LineResult.Bad =
+        LineResult.Bad(RejectedLine(sourceLine = lineNo, raw = raw, reason = reason))
 }
 ```
 
