@@ -3311,6 +3311,38 @@ git push origin feat/v2-visual-motion && gh run watch
 
 ---
 
+> **实施记录（Task 13 只落了 Step 1 与 Step 3，Step 2 另开任务）**
+> 1. Step 2（详情页长按识别）**做不了，原因不是工作量而是缺前置**：详情页只有「编辑学科归类」与删除，
+>    `MistakeViewModel` 只有 `updateSubject`，**没有任何编辑错题正文的入口**。计划里那句
+>    `detailNote = text; showNoteDialog = true` 假设了一个不存在的对话框与不存在的写路径。
+>    硬做等于在本任务里顺手加「错题内容可编辑」这个独立功能，所以拆成下面的 **Task 13b**。
+> 2. Step 1 的自动识别**必须只给分享那条路**：拍照进来时用户往往正要自己敲标题，抢跑一次 OCR 是让他白等。
+>    实现走导航参数而不是进程内标志：`CAPTURE = "mistake/capture?auto={auto}"` + `capture(fromShare)`，
+>    页面收 `autoExtract: Boolean`。转屏后仍能从 entry 读到正确值。
+>    连带改了 `onOpenCapture` 的 `navigate(MistakeRoutes.CAPTURE)` → `capture()`：路由串变了，不改会匹配不到。
+> 3. `autoExtractTried` 用 `rememberSaveable`（与 Task 12 的 `extracting` 刻意相反）：它标的是"这张图识别过了"，
+>    转屏不能重跑；`extracting` 标的是"此刻有协程在跑"，存下来才会卡死按钮。
+> 4. Step 3 的 `recognize(file)` 要写成 `recognize(context, file)`（Task 12 改了签名）。
+> 5. Step 3 计划没处理 `copyToTemp` 返回 null（选择器给了 URI 却拷不出文件），已补 toast，
+>    否则 `ocrRunning` 停在 true 且毫无反馈。
+> 6. 截图取词**不新增路由**：OCR 文本经 `WordLineParser` 出 `ImportPlan` → `loadPlan` → 直接跳 `ImportRoutes.PREVIEW`
+>    （跳过粘贴页，因为文本已不在用户手里）。
+
+---
+
+### Task 13b: 错题内容可编辑（详情页长按识别的前置）— 未开始
+
+Step 2 需要一条真实的编辑路径，而它现在不存在。三件小事凑成一个独立任务而不是一行补丁：
+
+- `MistakeDao` 加正文更新（`@Query("UPDATE mistakes SET content = :content WHERE id = :id")`，或复用既有 `update(entity)`）；
+- `MistakeViewModel.updateContent(id, content)`；
+- 详情页一个正文编辑对话框（形态参照既有 `SubjectEditDialog`）：长按图片 = 识别 →
+  成功则打开该框并预填识别文本，失败 toast（用户主动长按，该给反馈）。
+
+补上 Task 13 的判据②：错题详情页长按图片 → 弹出编辑框且内容已填。
+
+---
+
 ### Task 14: 版本、文档与最终走查
 
 **Files:**

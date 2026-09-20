@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -36,7 +37,7 @@ class MainActivity : ComponentActivity() {
         // 只在冷启动读一次：转屏/主题切换也会走 onCreate，而 intent 还挂着 SEND，
         // 不判 savedInstanceState 就会在用户已经离开录入页后，再把他弹回去一次。
         if (savedInstanceState == null) {
-            sharedImageFlow.value = ShareIntake.extract(this, intent)
+            intake(intent)
         }
         setContent {
             StudyKitTheme {
@@ -52,7 +53,22 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        ShareIntake.extract(this, intent)?.let { sharedImageFlow.value = it }
+        intake(intent)
+    }
+
+    /**
+     * 收件 + 反馈。冷启动与 `onNewIntent` 两条路共用，差别只在 intent 来源。
+     *
+     * 刻意不静默失败：用户点了「分享到 StudyKit」却什么都没发生，只会以为应用没装上或图丢了。
+     * 这句提示同时也是排查入口 —— `ShareIntake` 内部是 `runCatching`，读不到图时不会留任何痕迹。
+     */
+    private fun intake(intent: Intent) {
+        val file = ShareIntake.extract(this, intent)
+        if (file != null) {
+            sharedImageFlow.value = file
+        } else if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            Toast.makeText(this, "收到了分享，但读不到里面的图片", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
