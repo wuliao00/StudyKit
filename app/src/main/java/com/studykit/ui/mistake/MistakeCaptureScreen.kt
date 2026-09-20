@@ -79,6 +79,9 @@ fun MistakeCaptureScreen(
     var newSubject by rememberSaveable { mutableStateOf("") }
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
+    // 刻意用 remember 而不是上面四个字段的 rememberSaveable：这是"此刻有没有协程在跑"的瞬时标记，
+    // 存进 bundle 的话，进程在识别途中被杀、恢复后会把按钮永久卡在「识别中…」且没人会再改它
+    var extracting by remember { mutableStateOf(false) }
 
     val finalSubject = newSubject.ifBlank { selectedSubject }
 
@@ -125,6 +128,24 @@ fun MistakeCaptureScreen(
                         .border(width = 1.dp, color = colors.divider, shape = previewShape),
                 )
             }
+            Spacer(Modifier.height(AppTheme.space.md))
+            AppButton(
+                text = if (extracting) "识别中…" else "从图片提取文字",
+                secondary = true,
+                enabled = !extracting,
+                onClick = {
+                    extracting = true
+                    viewModel.extractTextFromImage { text ->
+                        extracting = false
+                        // 首行当标题、其余进备注：截图题的惯例排版。回填后仍可编辑，不自动保存（spec §5.4）
+                        val lines = text?.lines()?.filter { it.isNotBlank() }.orEmpty()
+                        if (lines.isNotEmpty()) {
+                            title = lines.first().take(40)
+                            note = lines.drop(1).joinToString("\n")
+                        }
+                    }
+                },
+            )
         } else {
             Text(text = "未获取到照片，请返回重新拍照", style = texts.caption)
         }

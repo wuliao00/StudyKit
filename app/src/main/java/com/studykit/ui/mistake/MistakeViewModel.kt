@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.util.MistakeImageStore
+import com.studykit.util.OcrResult
+import com.studykit.util.OcrTextExtractor
 import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -196,6 +198,28 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     fun discardPendingCapture() {
         _pendingCapture.value?.delete()
         _pendingCapture.value = null
+    }
+
+    /**
+     * 识别当前待处理图片上的文字。结果只交回调用方回填表单，**不自动保存** ——
+     * spec §5.4 的口径是 OCR 必然有错字，得让人过一眼再入库。
+     * 失败只 toast 并回 null，不抛：识别不出来的图不该打断录入。
+     */
+    fun extractTextFromImage(onResult: (String?) -> Unit) {
+        val captured = _pendingCapture.value
+        if (captured == null) {
+            onResult(null)
+            return
+        }
+        viewModelScope.launch {
+            when (val result = OcrTextExtractor.recognize(captured)) {
+                is OcrResult.Text -> onResult(result.value)
+                is OcrResult.Failed -> {
+                    toast(result.reason)
+                    onResult(null)
+                }
+            }
+        }
     }
 
     /** 保存拍照错题：压缩图片入 mistake_images/，Room 只存相对路径 */

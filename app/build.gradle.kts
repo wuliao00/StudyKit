@@ -71,6 +71,9 @@ dependencies {
     // 安装期写入 ART baseline profile（见 src/main/baseline-prof.txt）
     implementation(libs.androidx.profileinstaller)
 
+    // 截图取词：bundled 中文模型进 APK，全离线、不需要 GMS（spec §5.4）
+    implementation(libs.mlkit.text.recognition.chinese)
+
     implementation(libs.androidx.core.ktx)
 
     // 单元测试
