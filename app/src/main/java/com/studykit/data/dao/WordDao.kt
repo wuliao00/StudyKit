@@ -34,6 +34,20 @@ interface WordDao {
     @Insert
     suspend fun insert(word: Word): Long
 
+    /** 批量入库；返回自增 id 列表，顺序与入参一致（Room 保证） */
+    @Insert
+    suspend fun insertAll(words: List<Word>): List<Long>
+
+    /** 全量词面，仅用于导入前去重（词表万级以内可接受；M2 不做索引优化） */
+    @Query("SELECT word FROM words")
+    suspend fun getWordTexts(): List<String>
+
+    @Query("DELETE FROM words WHERE source_list_id = :sourceListId")
+    suspend fun deleteByList(sourceListId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM words WHERE source_list_id = :sourceListId")
+    suspend fun countByList(sourceListId: Long): Int
+
     @Update
     suspend fun update(word: Word)
 

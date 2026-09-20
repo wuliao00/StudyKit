@@ -6,6 +6,7 @@ import com.studykit.data.repository.BookRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
 import com.studykit.data.repository.QuestionRepository
+import com.studykit.data.repository.WordListRepository
 import com.studykit.data.repository.WordRepository
 
 /**
@@ -17,6 +18,9 @@ class AppContainer(context: Context) {
     val database: AppDatabase = AppDatabase.getInstance(context)
 
     val wordRepository: WordRepository = WordRepository(database.wordDao())
+
+    val wordListRepository: WordListRepository =
+        WordListRepository(database.wordListDao(), database.wordDao())
 
     val questionRepository: QuestionRepository =
         QuestionRepository(database.questionDao(), database.practiceDao())

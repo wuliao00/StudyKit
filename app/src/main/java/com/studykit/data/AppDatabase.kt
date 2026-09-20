@@ -13,6 +13,7 @@ import com.studykit.data.dao.MistakeDao
 import com.studykit.data.dao.PracticeDao
 import com.studykit.data.dao.QuestionDao
 import com.studykit.data.dao.WordDao
+import com.studykit.data.dao.WordListDao
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.CheckIn
@@ -22,6 +23,7 @@ import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.PracticeRecord
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
+import com.studykit.data.entity.WordList
 import com.studykit.data.entity.WordReview
 
 @Database(
@@ -36,13 +38,15 @@ import com.studykit.data.entity.WordReview
         Book::class,
         Excerpt::class,
         BookReview::class,
+        WordList::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun wordDao(): WordDao
+    abstract fun wordListDao(): WordListDao
     abstract fun questionDao(): QuestionDao
     abstract fun practiceDao(): PracticeDao
     abstract fun mistakeDao(): MistakeDao
@@ -66,6 +70,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v2 → v3：新增在线词库来源表，并给 `words` 挂上可空的来源列。
+         *
+         * SQL 必须与 Room 依据实体生成的建表语句逐字一致（`exportSchema = false` 时无人替你核对），
+         * 否则真机升级时抛 `IllegalStateException: Room cannot verify that the schema matches`，
+         * 且 CI 全绿也测不出来 —— 因此本迁移的真机存活验证是计划里的硬步骤。
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `word_lists` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`source_id` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`word_num` INTEGER NOT NULL, " +
+                        "`imported_count` INTEGER NOT NULL, " +
+                        "`imported_at` INTEGER NOT NULL" +
+                        ")",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_word_lists_source_id` " +
+                        "ON `word_lists` (`source_id`)",
+                )
+                // 可空列没有 DEFAULT；Room 校验列类型时只看类型与可空性
+                db.execSQL("ALTER TABLE `words` ADD COLUMN `source_list_id` INTEGER")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -76,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .addCallback(SeedCallback)
                     .build()
                     .also { instance = it }

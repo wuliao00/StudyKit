@@ -14,6 +14,8 @@ data class Word(
     val example: String,
     val status: String = STATUS_NEW,
     @ColumnInfo(name = "next_review_at") val nextReviewAt: Long = 0L,
+    /** 来自哪本在线词库（`word_lists.id`）；手工/粘贴/文件导入为 null，不参与整表删除 */
+    @ColumnInfo(name = "source_list_id") val sourceListId: Long? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
 ) {
     companion object {
