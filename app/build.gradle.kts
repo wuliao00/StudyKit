@@ -85,4 +85,7 @@ dependencies {
 
     // 单元测试
     testImplementation(libs.junit)
+    // 仅测试期：android.jar 里的 org.json 是 `Stub!` 占位，JVM 单测一调就抛
+    // （既有 `Question.parseOptions` 因此一直没被测过）。运行时仍用系统实现，APK 零影响。
+    testImplementation(libs.json)
 }
