@@ -40,6 +40,9 @@ class QuestionRepository(
         )
     }
 
+    /** 批量入库，返回实际写入条数；判重与 `uuid` 填充由调用方负责 */
+    suspend fun addAll(questions: List<Question>): Int = questionDao.insertAll(questions).size
+
     /** 提交一次练习作答并写入练习记录，返回本次作答是否正确 */
     suspend fun submitAnswer(questionId: Long, selected: Int): Boolean {
         val correct = questionDao.getById(questionId)?.answerIndex == selected

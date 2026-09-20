@@ -26,4 +26,8 @@ interface QuestionDao {
 
     @Insert
     suspend fun insert(question: Question): Long
+
+    /** 批量入库；返回自增 id 列表，实践上与入参同序，但 Room 未承诺 —— 勿依赖顺序，只当入库计数用 */
+    @Insert
+    suspend fun insertAll(questions: List<Question>): List<Long>
 }
