@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -37,6 +38,11 @@ import com.studykit.ui.book.BookShelfScreen
 import com.studykit.ui.book.BookViewModel
 import com.studykit.ui.book.ExcerptEditScreen
 import com.studykit.ui.book.ReviewEditScreen
+import com.studykit.ui.bulkimport.BulkPasteScreen
+import com.studykit.ui.bulkimport.ImportKind
+import com.studykit.ui.bulkimport.ImportPreviewScreen
+import com.studykit.ui.bulkimport.ImportResultScreen
+import com.studykit.ui.bulkimport.ImportViewModel
 import com.studykit.ui.habit.GlobalCalendarScreen
 import com.studykit.ui.habit.GlobalCalendarViewModel
 import com.studykit.ui.habit.HabitCalendarScreen
@@ -57,6 +63,7 @@ import com.studykit.ui.study.StudyViewModel
 import com.studykit.ui.study.WordCreateScreen
 import com.studykit.ui.study.WordListScreen
 import com.studykit.ui.theme.AppTheme
+import com.studykit.util.importer.ImportOutcome
 
 /** 底部 Tab 定义 */
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
@@ -113,6 +120,18 @@ object MistakeRoutes {
     fun detail(mistakeId: Long) = "mistake/detail/$mistakeId"
 }
 
+/**
+ * 批量导入三站：粘贴/选文件 → 预览 → 结果。
+ * 预览与结果不带参数，是因为它们读的是同一个 [ImportViewModel] 里的 StateFlow ——
+ * 把 3000 条塞进导航参数既会超 Binder 事务上限，也没意义。
+ */
+object ImportRoutes {
+    const val PASTE = "import/paste/{kind}"
+    const val PREVIEW = "import/preview"
+    const val RESULT = "import/result"
+    fun paste(kind: ImportKind) = "import/paste/${kind.name}"
+}
+
 /** 应用主导航：底部 4 Tab + 习惯/读书模块子路由 */
 @Composable
 fun AppNav() {
@@ -126,6 +145,7 @@ fun AppNav() {
     val bookViewModel: BookViewModel = viewModel()
     val studyViewModel: StudyViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
+    val importViewModel: ImportViewModel = viewModel()
 
     // ── 边到边与键盘（终审 I11 / 波 4 项 2）────────────────────────────────
     // `MainActivity.enableEdgeToEdge()` + targetSdk 35 ⇒ 内容绘制在系统栏之下，insets 全部
@@ -243,6 +263,9 @@ fun AppNav() {
                     onAddQuestion = {
                         navController.navigate(StudyRoutes.QUESTION_CREATE) { launchSingleTop = true }
                     },
+                    onBulkImportQuestions = {
+                        navController.navigate(ImportRoutes.paste(ImportKind.QUESTION)) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Habit.route) {
@@ -314,6 +337,9 @@ fun AppNav() {
                         studyViewModel.startCardSession()
                         navController.navigate(StudyRoutes.CARDS) { launchSingleTop = true }
                     },
+                    onBulkImport = {
+                        navController.navigate(ImportRoutes.paste(ImportKind.WORD)) { launchSingleTop = true }
+                    },
                 )
             }
             composable(StudyRoutes.CARDS) {
@@ -341,6 +367,48 @@ fun AppNav() {
                 QuestionCreateScreen(
                     viewModel = studyViewModel,
                     onBack = { navController.popBackStack() },
+                )
+            }
+
+            // ── 批量导入（粘贴 / 选文件 → 预览 → 结果）──────────────────
+            composable(
+                route = ImportRoutes.PASTE,
+                arguments = listOf(navArgument("kind") { type = NavType.StringType }),
+            ) { entry ->
+                // 认不出的 kind 退回 WORD 而不是抛：路由串可能来自深链，崩在这里不值当
+                val kind = entry.arguments?.getString("kind")
+                    ?.let { ImportKind.fromRoute(it) }
+                    ?: ImportKind.WORD
+                BulkPasteScreen(
+                    viewModel = importViewModel,
+                    kind = kind,
+                    onBack = { navController.popBackStack() },
+                    onPreview = { navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true } },
+                )
+            }
+            composable(ImportRoutes.PREVIEW) {
+                ImportPreviewScreen(
+                    viewModel = importViewModel,
+                    kindLabel = "结果",
+                    onBack = { navController.popBackStack() },
+                    // onSubmit 是「写成功之后」的回调，不是点击即跳：写失败时停在预览页并留下原因
+                    onSubmit = { navController.navigate(ImportRoutes.RESULT) { launchSingleTop = true } },
+                )
+            }
+            composable(ImportRoutes.RESULT) {
+                val importState by importViewModel.state.collectAsStateWithLifecycle()
+                ImportResultScreen(
+                    outcome = importState.outcome ?: ImportOutcome(0, emptyList(), emptyList()),
+                    onDone = {
+                        importViewModel.reset()
+                        // 传的是路由模板而不是填好的路径：hasRoute 比的就是 destination.route 本身
+                        navController.popBackStack(ImportRoutes.PASTE, inclusive = true)
+                    },
+                    onReviewRejected = {
+                        importViewModel.reset()
+                        // inclusive = false ⇒ 停在粘贴页，`raw` 由 rememberSaveable 留着，用户就地改那几行
+                        navController.popBackStack(ImportRoutes.PASTE, inclusive = false)
+                    },
                 )
             }
 

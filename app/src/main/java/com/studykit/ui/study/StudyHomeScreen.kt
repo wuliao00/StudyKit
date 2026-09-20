@@ -64,6 +64,7 @@ fun StudyHomeScreen(
     onOpenMistakes: () -> Unit,
     onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
+    onBulkImportQuestions: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -154,6 +155,15 @@ fun StudyHomeScreen(
                         Icon(
                             imageVector = Icons.Filled.Add,
                             contentDescription = "录入题目",
+                            tint = colors.accentInk,
+                        )
+                    }
+                    // 批量入口与单条录入并排：图标刻意用本题卡自己的 CheckCircle（core 图标集里
+                    // 没有「多行/导入」形状，硬凑一个反而看不出区别），区别由 contentDescription 承担。
+                    IconButton(onClick = onBulkImportQuestions) {
+                        Icon(
+                            imageVector = Icons.Outlined.CheckCircle,
+                            contentDescription = "批量录入题目",
                             tint = colors.accentInk,
                         )
                     }

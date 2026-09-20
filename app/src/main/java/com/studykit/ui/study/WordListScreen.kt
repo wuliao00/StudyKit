@@ -13,15 +13,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
 import com.studykit.ui.components.AppButton
@@ -80,6 +83,7 @@ fun WordListScreen(
     viewModel: StudyViewModel,
     onBack: () -> Unit,
     onStartStudy: () -> Unit,
+    onBulkImport: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -108,6 +112,20 @@ fun WordListScreen(
                 text = "共 ${words.size} 个",
                 style = texts.caption,
             )
+            Spacer(Modifier.width(AppTheme.space.xs))
+            // 与习惯页「+ 添加」同一形态：TextButton + Add 图标 + accentInk 文案（图标纯装饰，文案即语义）
+            TextButton(onClick = onBulkImport) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = null,
+                    tint = colors.accentInk,
+                )
+                Spacer(Modifier.width(AppTheme.space.xs))
+                Text(
+                    text = "批量导入",
+                    style = texts.aux.copy(color = colors.accentInk, fontWeight = FontWeight.Medium),
+                )
+            }
         }
 
         Spacer(Modifier.height(AppTheme.space.md))
@@ -121,7 +139,7 @@ fun WordListScreen(
             Spacer(Modifier.height(AppTheme.space.xl * 2))
             EmptyState(
                 title = "还没有单词",
-                caption = "回到学习首页，点击右上角「录入」添加第一个单词",
+                caption = "右上角「批量导入」可以一次贴几十行；逐条录就回学习首页点「录入」",
                 icon = Icons.Outlined.Star,
             )
         } else {
