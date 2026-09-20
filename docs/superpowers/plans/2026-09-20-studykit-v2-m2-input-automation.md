@@ -2058,7 +2058,11 @@ adb shell input tap 540 1913   # 允许通知（首装会弹）
 > 3. `Question(...)` 构造缺 `uuid`（该列无默认值），照抄编译不过。
 > 4. `RejectReason.label()` 在计划里是 `ImportPreviewScreen.kt` 的 **private** 扩展，但结果页也要用它 →
 >    改 `internal`，并与 `ImportKind` 同文件（同包免 import，两张屏都能调）。
-> 5. 预览页 import 清单缺 `androidx.compose.foundation.layout.IntrinsicSize`（步骤外的旁注提醒了，代码块没带上）。
+> 5. 预览页 import 清单缺 `androidx.compose.foundation.layout.IntrinsicSize`（步骤外的旁注提醒了，代码块没带上），
+>    实施后 CI 又抓出**同样缺 `androidx.compose.runtime.getValue`** —— 少它时 `val state by viewModel.state…`
+>    整个解不开，一个 import 引发 20 多条连带错误（`Unresolved reference 'items'`、
+>    `@Composable invocations can only happen from…`），run `35517016034` 就是这么红的。
+>    教训：抄计划里的 `by` 委托时，先核对 `getValue`/`setValue` 两个 import 在不在，别看代码块长就以为齐。
 > 6. 粘贴页 import 清单缺 `androidx.compose.runtime.saveable.rememberSaveable`。
 > 7. **入库分发**：计划让 `onSubmit` 直接 `submitWords {...}`，而预览路由不带 kind ⇒ 题目那一批会被当单词写进
 >    `words` 表。改成 `submit(onDone)` 按条目实际类型分发（`submitWords`/`submitQuestions` 仍是公开出口）。
