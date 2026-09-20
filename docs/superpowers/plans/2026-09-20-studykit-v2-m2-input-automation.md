@@ -1216,8 +1216,16 @@ class DedupeTest {
     @Test
     fun `dedupeStrings 对任意键列表同样工作`() {
         val result = dedupeStrings(listOf("x", "y", "x", " z "))
-        assertEquals(listOf("x", "y", "z"), result.kept)
+        // kept 必须是原文：归一化只用于比较，拿它入库会把内容改脏
+        assertEquals(listOf("x", "y", " z "), result.kept)
         assertEquals(listOf("x"), result.skipped)
+    }
+
+    @Test
+    fun `dedupeStrings 比较归一化键但返回原文`() {
+        val result = dedupeStrings(listOf("题干 A", "题干A", "题干 b"))
+        assertEquals(listOf("题干 A", "题干 b"), result.kept)
+        assertEquals(listOf("题干A"), result.skipped)
     }
 }
 ```
