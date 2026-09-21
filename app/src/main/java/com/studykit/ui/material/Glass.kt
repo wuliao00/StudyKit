@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Dp
 import com.studykit.data.GlassLevel
@@ -150,7 +151,6 @@ fun rememberGlassStyle(): GlassStyle {
             edgeWidth = AppTheme.glass.edgeWidth,
             bandWidthFraction = AppTheme.glass.bandWidthFraction,
             bandAlpha = AppTheme.glass.bandAlpha,
-            bandTravel = 1f,
             bandStatic = settings.reduceMotion,
         )
     }

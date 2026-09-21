@@ -68,9 +68,12 @@ fun CheckInSheet(
 
     val glass = rememberGlassStyle()
     val sheetShape = RoundedCornerShape(AppTheme.radius.lg)
+    // `AppTheme.settings` 是 @Composable getter，只能在组合层读，
+    // 所以先把这一档取成普通局部量再带进 LaunchedEffect（在协程里读它编译不过）
+    val reduceMotion = AppTheme.settings.reduceMotion
     val sweep = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        if (glass.enabled && !AppTheme.settings.reduceMotion) {
+        if (glass.enabled && !reduceMotion) {
             sweep.snapTo(0f)
             sweep.animateTo(
                 targetValue = 1f,

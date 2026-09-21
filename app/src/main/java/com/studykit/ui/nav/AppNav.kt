@@ -622,9 +622,11 @@ private fun AppBottomBar(
     }
     // 亮带只在**切 Tab** 时扫过一次就停（理由见 MotionSpec.SweepMs 的 KDoc）。
     // 减弱动效或玻璃关掉时根本不跑这次动画 —— 不是"跑了但看不见"，是一次重绘都不产生。
+    // `AppTheme.settings` 是 @Composable getter，只能在组合层读一次再带进协程里用。
+    val reduceMotion = AppTheme.settings.reduceMotion
     val sweep = remember { Animatable(0f) }
     LaunchedEffect(currentRoute, glass.enabled) {
-        if (!glass.enabled || AppTheme.settings.reduceMotion) return@LaunchedEffect
+        if (!glass.enabled || reduceMotion) return@LaunchedEffect
         sweep.snapTo(0f)
         sweep.animateTo(
             targetValue = 1f,
