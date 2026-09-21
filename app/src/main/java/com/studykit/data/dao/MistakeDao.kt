@@ -51,4 +51,14 @@ interface MistakeDao {
 
     @Query("UPDATE mistakes SET mastered = 1 WHERE id = :id")
     suspend fun markMastered(id: Long)
+
+    /**
+     * 清除学习数据用（设置页「数据管理」）。
+     *
+     * 只删行、**不删图片文件**：磁盘上的 `mistake_images/*.jpg` 必须由调用方先读出
+     * `image_path` 再逐张删（见 `SettingsViewModel.clearBusinessData`），
+     * 顺序反了就再也找不到那些文件了。
+     */
+    @Query("DELETE FROM mistakes")
+    suspend fun deleteAll()
 }

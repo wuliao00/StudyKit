@@ -50,6 +50,10 @@ fun ConfettiBurst(
     particleCount: Int = 90,
     durationMillis: Int = 1600,
 ) {
+    // 「减弱动效」在设置页里是一整档，收在组件这一层而不是每个调用点：
+    // 早退之后 `Animatable` 与 `LaunchedEffect` 都不进组合，于是它是**不跑**，
+    // 而不是"跑了但看不见"—— 90 颗粒子的每帧绘制一次都不会产生。
+    if (AppTheme.settings.reduceMotion) return
     val palette = listOf(
         AppTheme.colors.accent,
         AppTheme.colors.success,

@@ -24,4 +24,8 @@ interface PracticeDao {
     /** 学习活跃日统计用：全部作答时间戳 */
     @Query("SELECT at FROM practice_records")
     fun observeActivityTimestamps(): Flow<List<Long>>
+
+    /** 清除学习数据用（设置页「数据管理」）。先于 `questions` 清，见 QuestionDao.deleteAll */
+    @Query("DELETE FROM practice_records")
+    suspend fun deleteAll()
 }

@@ -29,4 +29,8 @@ interface WordListDao {
 
     @Delete
     suspend fun delete(wordList: WordList)
+
+    /** 清除学习数据用（设置页「数据管理」）。与 `words` 一起清，见 WordDao.deleteAll */
+    @Query("DELETE FROM word_lists")
+    suspend fun deleteAll()
 }

@@ -57,6 +57,11 @@ data class AppColors(
     val warning: Color, val warningSoft: Color, val warningInk: Color,
     val divider: Color,
     val heatIdle: Color, val lightbox: Color,
+    /**
+     * 玻璃材质的两枚底色（`ui/material/Glass.kt` 用）。它们**不是**文本色：
+     * 玻璃只上浮层，浮层上的文字仍走 `primaryText` / `secondaryText` / `*Ink` 那一套。
+     */
+    val glassTint: Color, val glassSpec: Color,
 )
 
 val LightColors = AppColors(
@@ -72,6 +77,7 @@ val LightColors = AppColors(
     warningInk = Palette.LightWarningInk,
     divider = Palette.LightDivider,
     heatIdle = Palette.LightHeatIdle, lightbox = Palette.LightLightbox,
+    glassTint = Palette.LightGlassTint, glassSpec = Palette.LightGlassSpec,
 )
 
 val DarkColors = AppColors(
@@ -87,6 +93,7 @@ val DarkColors = AppColors(
     warningInk = Palette.DarkWarningInk,
     divider = Palette.DarkDivider,
     heatIdle = Palette.DarkHeatIdle, lightbox = Palette.DarkLightbox,
+    glassTint = Palette.DarkGlassTint, glassSpec = Palette.DarkGlassSpec,
 )
 
 @Immutable
@@ -188,5 +195,30 @@ object AppTheme {
 
         /** 卡片与浮层的默认抬升 */
         val low: Dp = 2.dp
+    }
+
+    /**
+     * 玻璃材质度量（`ui/material/Glass.kt`）。与主题无关，故与 `space`/`radius` 一样是普通 `val`；
+     * 颜色部分不在这里，在 `AppTheme.colors.glassTint` / `.glassSpec`。
+     *
+     * `tintAlphaSoft` 的 0.72 是**下限**而不是审美选择：低于它，浮层后面的内容会直接参与
+     * 浮层上那行 13sp 标签的对比度计算，而本仓的 AA 数字全是按实底卡面算的。
+     * STRONG 只把底压得更实（0.86），不改高光与描边 —— 浓度的差别应当是"透不透"，不是"亮不亮"。
+     */
+    object glass {
+        val tintAlphaSoft: Float = 0.72f
+        val tintAlphaStrong: Float = 0.86f
+
+        /** 顶部入射光的强度（往下 50% 处已淡到不可见） */
+        val glossTopAlpha: Float = 0.34f
+
+        /** 内描边：上缘亮、下缘暗 */
+        val edgeAlphaLight: Float = 0.85f
+        val edgeAlphaDark: Float = 0.30f
+        val edgeWidth: Dp = 1.dp
+
+        /** 流动亮带：宽度按容器宽的比例给，基线 alpha 很低，靠按压与滚动把它推上来 */
+        val bandWidthFraction: Float = 0.38f
+        val bandAlpha: Float = 0.20f
     }
 }

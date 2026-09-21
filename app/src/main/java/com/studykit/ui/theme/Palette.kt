@@ -25,6 +25,11 @@ object Palette {
     // 单独提一档到 1.53:1，与夜间侧 DarkHeatIdle 的 1.52:1 同量级（装饰元素，不套文本 AA）。
     val LightHeatIdle = Color(0xFFD8D0BF)     // 1.53:1 vs 卡面 #FFFFFF / 1.44:1 vs 页面底 #FAF8F2
     val LightLightbox = Color(0xFF000000)    // 全屏看图的取景框黑（不随主题变，两主题同值）
+    // ── 玻璃材质（v2.2）：只用于浮层，永不承载正文，故不套文本 AA；但底栏/弹层上那行 13sp 标签
+    //    是**文字**，所以 tint 不透明度下限收在 0.72（浅色下与页面底 #FAF8F2 几乎同亮度，
+    //    文字对比不因玻璃而变；夜间同一档会把底压到 ~#2A2822，仍撑得住 secondaryText）
+    val LightGlassTint = Color(0xFFFBF9F3)
+    val LightGlassSpec = Color(0xFFFFFFFF)   // 高光/亮带：浅色用纯白，压在暖白上只显出一道切割
     // 深色（暖黑，非纯黑）
     val DarkBackground = Color(0xFF1C1B18)
     val DarkCard = Color(0xFF26241F)
@@ -44,4 +49,8 @@ object Palette {
     val DarkDivider = Color(0xFF3A372F)
     val DarkHeatIdle = Color(0xFF454136)     // 热力图空格：比 divider 再提一档（1.52:1 vs 卡面，与 accent 实底格 4.80:1）；divider 满不透明只 1.30:1、@50% 仅 1.14:1
     val DarkLightbox = Color(0xFF000000)     // 同浅色：灯箱取景框不随主题变
+    // 玻璃材质夜间侧：tint 比卡面 #26241F 再抬一档（玻璃该比纸"亮一点"才像透光），
+    // 高光取淡薄荷而不是纯白 —— 纯白压在暖黑上是一道硬边，薄荷才像从主色 #33C7AB 上穿过去的光
+    val DarkGlassTint = Color(0xFF2E2C25)
+    val DarkGlassSpec = Color(0xFFB9E4DA)
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -40,6 +41,8 @@ import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.SectionHeader
+import com.studykit.ui.material.glassSurface
+import com.studykit.ui.material.rememberGlassStyle
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.importer.DictBookInfo
 
@@ -60,6 +63,8 @@ fun DictStoreScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val context = LocalContext.current
+    val glass = rememberGlassStyle()
+    val statusShape = RoundedCornerShape(AppTheme.radius.md)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -129,7 +134,22 @@ fun DictStoreScreen(
                 }
                 state.error?.let { message ->
                     item(key = "error_line") {
-                        Text(text = message, style = texts.caption.copy(color = colors.warningInk))
+                        // 失败行做成一条玻璃状态条：它是"浮在列表之上、随时会消失"的提示，
+                        // 与卡片那种承载内容的纸面不是一类东西。文案仍走 warningInk ——
+                        // 玻璃 tint 在浅色主题下压出来与卡面同亮度档（#FBF9F3 @72% 盖白 ≈ 白），
+                        // 夜间 #2E2C25 @72% 盖暖黑 ≈ #2A2822，#FF7A73 在两者上都远高于 4.5:1。
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .glassSurface(style = glass, shape = statusShape)
+                                .padding(
+                                    horizontal = AppTheme.space.md,
+                                    vertical = AppTheme.space.sm,
+                                ),
+                        ) {
+                            Text(text = message, style = texts.caption.copy(color = colors.warningInk))
+                        }
+                        Spacer(Modifier.height(AppTheme.space.sm))
                     }
                 }
                 items(state.availableBooks, key = { it.id }) { book ->

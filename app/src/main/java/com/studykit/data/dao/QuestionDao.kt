@@ -30,4 +30,8 @@ interface QuestionDao {
     /** 批量入库；返回自增 id 列表，实践上与入参同序，但 Room 未承诺 —— 勿依赖顺序，只当入库计数用 */
     @Insert
     suspend fun insertAll(questions: List<Question>): List<Long>
+
+    /** 清除学习数据用（设置页「数据管理」）。与 `practice_records` 一起清，见 PracticeDao */
+    @Query("DELETE FROM questions")
+    suspend fun deleteAll()
 }

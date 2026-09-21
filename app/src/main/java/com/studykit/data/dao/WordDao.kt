@@ -48,6 +48,17 @@ interface WordDao {
     @Query("SELECT COUNT(*) FROM words WHERE source_list_id = :sourceListId")
     suspend fun countByList(sourceListId: Long): Int
 
+    /**
+     * 清除学习数据用（设置页「数据管理」）。两张表必须一起清：
+     * `word_reviews` 只有 `word_id` 这一个线索，留着它就是"复习记录挂在已经不存在的词上"，
+     * 热力图与"已学天数"会跟着虚高。
+     */
+    @Query("DELETE FROM word_reviews")
+    suspend fun deleteAllReviews()
+
+    @Query("DELETE FROM words")
+    suspend fun deleteAll()
+
     @Update
     suspend fun update(word: Word)
 

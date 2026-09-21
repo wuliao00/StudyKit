@@ -53,4 +53,12 @@ interface HabitDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCheckIn(checkIn: CheckIn): Long
+
+    // ── 清除学习数据用（设置页「数据管理」）。两条必须一起调：
+    //    只删习惯会留下指向已消失习惯的 check_ins 悬空行，而它会让日历页读到幽灵日期。
+    @Query("DELETE FROM check_ins")
+    suspend fun deleteAllCheckIns()
+
+    @Query("DELETE FROM habits")
+    suspend fun deleteAllHabits()
 }

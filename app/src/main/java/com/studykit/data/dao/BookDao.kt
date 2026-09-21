@@ -69,4 +69,15 @@ interface BookDao {
 
     @Update
     suspend fun updateReview(review: BookReview)
+
+    // ── 清除学习数据用（设置页「数据管理」）。三张表一起清：
+    //    单删 books 会留下 excerpts / book_reviews 指向不存在书籍的悬空行。
+    @Query("DELETE FROM book_reviews")
+    suspend fun deleteAllReviews()
+
+    @Query("DELETE FROM excerpts")
+    suspend fun deleteAllExcerpts()
+
+    @Query("DELETE FROM books")
+    suspend fun deleteAllBooks()
 }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +52,8 @@ import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /**
  * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
@@ -65,6 +68,7 @@ fun StudyHomeScreen(
     onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
     onBulkImportQuestions: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -96,6 +100,16 @@ fun StudyHomeScreen(
                         color = colors.accentInk,
                         fontWeight = FontWeight.Medium,
                     ),
+                )
+            }
+            // 设置入口。这枚图标旁边**没有**等价文字（与底栏"图标 + label 同一语义节点"那种相反），
+            // 所以必须给 contentDescription，否则读屏只会念出一个 unnamed 按钮。
+            // 触摸目标由 IconButton 自身保证 48dp，不再叠 minimumInteractiveComponentSize。
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "设置",
+                    tint = colors.secondaryText,
                 )
             }
         }
@@ -208,6 +222,10 @@ private fun TodayHeroCard(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    // 每日词数目标来自设置（AppSettings.dailyWordGoal，默认 20）。这里只做陈述：
+    // 达成不改配色 —— 环的 gold 达成态由"待办清零"这件事实驱动（见下面 progress 的注释），
+    // 目标只是给用户一个"今天到哪算够"的参照，不该反过来劫持那套语义。
+    val goal = AppTheme.settings.dailyWordGoal
     val total = todayDone + dueCount
     // 空日（total == 0）显示空环而非满环：gold/达成态须由真实完成数驱动，
     // progress >= 1f 在 0/0 下不再可能
@@ -235,6 +253,30 @@ private fun TodayHeroCard(
                 Text(text = "今日待办", style = texts.caption)
                 Spacer(Modifier.height(AppTheme.space.xs))
                 Text(text = "$todayDone / $total", style = texts.pageTitle)
+                Spacer(Modifier.height(AppTheme.space.sm))
+                // 目标那一行：没设置考试日时它是这卡上唯一一行说明文字，设了则两行都在。
+                Text(
+                    text = if (todayDone >= goal) {
+                        "今日目标 $goal 词，已完成"
+                    } else {
+                        "今日目标 $goal 词，还差 ${goal - todayDone}"
+                    },
+                    style = texts.caption,
+                )
+                // 考试倒计时来自设置（未设置时整行不存在，不显示"还剩 0 天"那种废话）
+                AppTheme.settings.examDate?.let { exam ->
+                    val days = ChronoUnit.DAYS.between(LocalDate.now(), exam)
+                    Spacer(Modifier.height(AppTheme.space.xs))
+                    Text(
+                        text = when {
+                            days > 0 -> "距考试还有 $days 天"
+                            days == 0L -> "今天考试"
+                            else -> "考试已过 ${-days} 天"
+                        },
+                        style = texts.caption,
+                        color = if (days in 0..7) colors.warningInk else colors.secondaryText,
+                    )
+                }
                 Spacer(Modifier.height(AppTheme.space.sm))
                 if (streakDays > 0) FlameBadge(days = streakDays)
             }

@@ -1,9 +1,12 @@
 package com.studykit.ui.nav
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.Icons.Outlined
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -50,12 +53,17 @@ import com.studykit.ui.habit.HabitCalendarScreen
 import com.studykit.ui.habit.HabitCreateScreen
 import com.studykit.ui.habit.HabitListScreen
 import com.studykit.ui.habit.HabitViewModel
+import com.studykit.ui.material.glassContainerColor
+import com.studykit.ui.material.glassSurface
+import com.studykit.ui.material.rememberGlassStyle
 import com.studykit.ui.mistake.MistakeCaptureScreen
 import com.studykit.ui.mistake.MistakeDetailScreen
 import com.studykit.ui.mistake.MistakeListScreen
 import com.studykit.ui.mistake.MistakeViewModel
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
+import com.studykit.ui.settings.SettingsScreen
+import com.studykit.ui.settings.SettingsViewModel
 import com.studykit.ui.study.CardStudyScreen
 import com.studykit.ui.study.DictStoreScreen
 import com.studykit.ui.study.DictStoreViewModel
@@ -105,6 +113,11 @@ object StudyRoutes {
 /** 在线词库商店（唯一需要联网的界面） */
 object DictRoutes {
     const val STORE = "study/dict/store"
+}
+
+/** 设置页。入口只有学习页顶栏那一枚齿轮，所以不做子路由：三段内容同页滚动 */
+object SettingsRoutes {
+    const val SETTINGS = "settings"
 }
 
 object BookRoutes {
@@ -162,6 +175,7 @@ fun AppNav(
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
     val dictStoreViewModel: DictStoreViewModel = viewModel()
+    val settingsViewModel: SettingsViewModel = viewModel()
 
     // 分享进来的图走错题录入页既有的 pendingCapture 通道（与拍照同一条路，页面零分支）。
     // 先 onSharedConsumed 再 navigate：顺序反了的话，转屏重建组合时会再跳一次录入页。
@@ -293,6 +307,9 @@ fun AppNav(
                     onBulkImportQuestions = {
                         navController.navigate(ImportRoutes.paste(ImportKind.QUESTION)) { launchSingleTop = true }
                     },
+                    onOpenSettings = {
+                        navController.navigate(SettingsRoutes.SETTINGS) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Habit.route) {
@@ -411,6 +428,13 @@ fun AppNav(
                     onBack = { navController.popBackStack() },
                     // 下载完直接进预览：商店不碰 words 表，判重与坏行处理只有一套实现
                     onPreview = { navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true } },
+                )
+            }
+
+            composable(SettingsRoutes.SETTINGS) {
+                SettingsScreen(
+                    viewModel = settingsViewModel,
+                    onBack = { navController.popBackStack() },
                 )
             }
 
@@ -587,9 +611,31 @@ private fun AppBottomBar(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    // tonalElevation = 0：Material3 会按容器色做色调叠加，置 0 才能让 card 原色呈现
+    val glass = rememberGlassStyle()
+    val shape = remember {
+        RoundedCornerShape(
+            topStart = AppTheme.radius.lg,
+            topEnd = AppTheme.radius.lg,
+            bottomStart = 0.dp,
+            bottomEnd = 0.dp,
+        )
+    }
+    // 亮带只在**切 Tab** 时扫过一次就停（理由见 MotionSpec.SweepMs 的 KDoc）。
+    // 减弱动效或玻璃关掉时根本不跑这次动画 —— 不是"跑了但看不见"，是一次重绘都不产生。
+    val sweep = remember { Animatable(0f) }
+    LaunchedEffect(currentRoute, glass.enabled) {
+        if (!glass.enabled || AppTheme.settings.reduceMotion) return@LaunchedEffect
+        sweep.snapTo(0f)
+        sweep.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = MotionSpec.SweepMs, easing = MotionSpec.Easing),
+        )
+    }
+    // tonalElevation = 0：Material3 会按容器色做色调叠加，置 0 才能让 card 原色呈现。
+    // 玻璃开着时 containerColor 退成透明，那层底由 glassSurface 自己画（见 glassContainerColor）。
     NavigationBar(
-        containerColor = colors.card,
+        modifier = Modifier.glassSurface(style = glass, shape = shape, scrollPhase = { sweep.value }),
+        containerColor = glassContainerColor(),
         tonalElevation = 0.dp,
     ) {
         Tabs.forEach { tab ->

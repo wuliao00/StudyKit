@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.studykit.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 
 /** 全局 spring 动效规格：spring 逐帧跟随 vsync，高刷屏按 90/120Hz 渲染 */
@@ -71,6 +73,15 @@ object MotionSpec {
      * 一个 tween 把 0→1 走完即停，配合线性衰减包络，总时长固定、不随帧数变化。
      */
     const val ShakeMs = 420
+
+    /**
+     * 玻璃亮带扫过一次底栏/弹层的时长，Int 毫秒。
+     *
+     * 只在**切 Tab** 与**弹层入场**这两个一次性事件里跑，跑完就静止：让亮带跟着列表滚动连续走，
+     * 要么得把每个页面的 scrollState 递到底栏这一层（多一条跨屏管道），要么让底栏每帧重绘
+     * （白烧 GPU，与本版「稳定满帧」的目标相反）。620ms 是"看得见一次流过、又不像加载动画"的量级。
+     */
+    const val SweepMs = 620
 
     /**
      * 错峰入场（[StaggeredIn]）的下标限幅：`minOf(index, StaggerIndexCap)`。
@@ -190,6 +201,9 @@ object MotionSpec {
  */
 @Composable
 fun rememberPressScale(source: MutableInteractionSource): State<Float> {
+    // 减弱动效：直接给一个恒为 1 的 State。早退的意义在于**不建补间**——
+    // 否则每次按压都会起一轮 spring，逐帧重绘照付，只是画出来看着没动。
+    if (AppTheme.settings.reduceMotion) return remember { mutableFloatStateOf(1f) }
     val pressed by source.collectIsPressedAsState()
     return animateFloatAsState(
         targetValue = if (pressed) 0.96f else 1f,
@@ -213,6 +227,11 @@ fun rememberPressScale(source: MutableInteractionSource): State<Float> {
  */
 @Composable
 fun StaggeredIn(index: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    // 减弱动效：原样把内容摆出来，不建 `shown` / 补间，也不排 `delay`
+    if (AppTheme.settings.reduceMotion) {
+        Box(modifier = modifier, content = { content() })
+        return
+    }
     val shift = with(LocalDensity.current) { 24.dp.toPx() }
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
