@@ -91,18 +91,31 @@ Modifier.glassSurface(shape: Shape, pressed: Float = 0f, scrollPhase: Float = 0f
 参数进 `AppTheme.glass`（新增 `object glass`：`tintAlpha`、`highlightAlpha`、`edgeWidth`、`bandWidth`），
 `Palette` 补两枚玻璃专用原始色（`LightGlassTint` / `DarkGlassTint`），浓度是**单一可调常量**，设置页有开关与档位。
 
-### 2.2 落地站点（只有四处，明确不扩散）
+### 2.2 落地站点（实施后定为三处，明确不扩散）
 
 | 站点 | 现在 | 改成 |
 |---|---|---|
-| 底栏 `NavigationBar`（`AppNav.kt:591`） | 实底 `card` 色 | 玻璃 + 订阅当前 Tab 列表的滚动量驱动 `scrollPhase` |
-| 打卡弹层 `ui/habit/CheckInSheet.kt` | 实底 | 玻璃，随弹入动画给 `pressed` 一条沉降曲线 |
-| 词库商店导入条 `ui/study/DictStoreScreen.kt` | 实底 | 玻璃（它是唯一还带红色错误行的浮层） |
-| 看图对话框 `ui/mistake/MistakeDetailScreen.kt` | 黑底灯箱 | 玻璃浮层 + 保留 `colors.lightbox` 取景底 |
+| 底栏 `NavigationBar`（`AppNav.kt:591`） | 实底 `card` 色 | 玻璃，切 Tab 时亮带扫过一次 |
+| 打卡弹层 `ui/habit/CheckInSheet.kt` | 实底 | 玻璃，弹入时扫过一次 |
+| 词库失败状态条 `ui/study/DictStoreScreen.kt` | 一行裸文字 | 玻璃状态条（它是"浮在列表上、随时消失"的提示） |
+
+设计上原本还列了第四处「`MistakeDetailScreen` 的看图对话框」，**实施时放弃**，理由记在这里免得被当成漏做：
+该页只有一个全屏灯箱（`.background(colors.lightbox)` + 点击关闭，没有任何浮层控件），
+给它加玻璃等于**新造一条 UI**；而学科编辑用 M3 `AlertDialog`，其容器形状是 Material 内部的 `extraLarge`，
+要对齐就得写死 28dp 圆角（违反令牌纪律）。
 
 `AppCard` **不做透明**，只把描边与阴影升级为「暖纸 + 微光」：保留实底填充，
 因此 M1 那一整套 WCAG AA 实测数字（`accentInk` 5.81:1、`successInk` 5.39:1 等）**一个都不必重算**。
-这条是刻意的：满屏玻璃会让文字压在对侧内容上，对比度全部失效，还要付 real-time 模糊的帧代价。
+这条是刻意的：满屏玻璃会让文字压在对侧内容上，对比度全部失效，还要付实时模糊的帧代价。
+
+### 2.3 实现上的一处改道（CI 教出来的）
+
+亮带第一版写成「沿轮廓描一条高光」，用 `DrawOutline`/`drawOutline` —— 本仓 Compose（BOM 2024.12.01 / UI 1.7.6）
+里它不是可用的公开 API，CI 报 `Unresolved reference 'drawOutline'`。
+最终实现改成全稳定 API 链：`background(tint, shape)` → `background(gloss, shape)` → `clip(shape)`
+→ `drawWithCache { translate(x) { drawRect(bandBrush) } }` → `border(edgeBrush, shape)`，
+亮带是一条被 `clip` 裁在圆角里、靠**平移画布**扫过的 `TileMode.Decal` 渐变带。
+行为等价（高光仍然贴着玻璃走），且每帧只做「平移 + 改 alpha」两件事。
 
 ## 3. 稳定满帧
 
