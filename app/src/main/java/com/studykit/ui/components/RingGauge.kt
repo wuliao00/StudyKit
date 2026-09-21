@@ -4,12 +4,14 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.motion.MotionSpec
@@ -43,6 +45,14 @@ fun RingGauge(
         animationSpec = MotionSpec.ring,
         label = "ringGauge",
     )
+    // 两枚 Stroke 提到组合层 remember：`Stroke` 是普通堆对象，画在 `Canvas` 里就会
+    // **每帧各分配一次**。习惯页一张卡一枚环、冷启动那一下所有环同时从 0 补到当前进度
+    // （约 500ms），10 个环就是每帧 20 次分配；提出来之后分配次数与帧数无关。
+    // 注意只认 `strokeWidth` 这一个输入 —— `animated` 必须继续留在 draw 块里读，
+    // 读在组合层会让进度补间从"重绘"退化成"每帧重组"。
+    val strokePx = with(LocalDensity.current) { strokeWidth.toPx() }
+    val trackStroke = remember(strokePx) { Stroke(width = strokePx) }
+    val arcStroke = remember(strokePx) { Stroke(width = strokePx, cap = StrokeCap.Round) }
     Canvas(modifier = modifier) {
         val sw = strokeWidth.toPx()
         val arc = size.minDimension - sw
@@ -57,7 +67,7 @@ fun RingGauge(
             useCenter = false,
             topLeft = topLeft,
             size = sz,
-            style = Stroke(width = sw),
+            style = trackStroke,
         )
         if (animated > 0f) {
             drawArc(
@@ -67,7 +77,7 @@ fun RingGauge(
                 useCenter = false,
                 topLeft = topLeft,
                 size = sz,
-                style = Stroke(width = sw, cap = StrokeCap.Round),
+                style = arcStroke,
             )
         }
     }

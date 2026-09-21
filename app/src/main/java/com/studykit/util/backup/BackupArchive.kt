@@ -248,7 +248,7 @@ internal object BackupCodec {
 }
 
 /**
- * 学习数据的一键导出 / 恢复：zip = `manifest.json` + `studykit.db` + `mistake_images/**`。
+ * 学习数据的一键导出 / 恢复：zip = `manifest.json` + `studykit.db` + 整个 `mistake_images` 目录。
  *
  * ## 为什么非做不可
  *
@@ -285,7 +285,7 @@ object BackupArchive {
     /**
      * 导出 zip 到 SAF [target]，返回写出的字节数（界面拿去显示"已导出 18.4 MB"）。
      *
-     * 条目顺序是 `manifest.json` → `studykit.db` → `mistake_images/**`：manifest 排第一，
+     * 条目顺序是 `manifest.json` → `studykit.db` → `mistake_images` 目录内各文件：manifest 排第一，
      * 用户把这个包丢给别的工具时，第一个条目就说清了后面是什么。
      *
      * 目标流以 `"w"` 模式打开而不是用无 mode 的重载：语义要**截断**。
