@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Checkbox
@@ -39,6 +39,9 @@ import com.studykit.util.importer.ImportItem
 /**
  * 导入预览：逐行可勾选剔除、待修正区只读展示。
  * 「先看清楚再入库」是这套流程存在的理由 —— 一次贴 300 行时，用户必须扫一眼就知道有没有解析错。
+ *
+ * 列表走 LazyColumn、导入按钮钉在底部：整本词库动辄上百行，按钮若排在列表末尾会被推到两万像素之外，
+ * 等于没有（真机导 128 词那一本时就是这么撞上的）。
  */
 @Composable
 fun ImportPreviewScreen(
@@ -53,7 +56,6 @@ fun ImportPreviewScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = AppTheme.space.pageH),
     ) {
         Spacer(Modifier.height(AppTheme.space.sm))
@@ -84,64 +86,48 @@ fun ImportPreviewScreen(
                 )
             }
             Spacer(Modifier.height(AppTheme.space.lg))
-            SectionHeader(title = "逐行确认")
-            Spacer(Modifier.height(AppTheme.space.sm))
-            plan.items.forEach { item ->
-                val excluded = item.sourceLine in state.excluded
-                AppCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.toggleExcluded(item.sourceLine) },
-                    ) {
-                        Checkbox(
-                            checked = !excluded,
-                            onCheckedChange = { viewModel.toggleExcluded(item.sourceLine) },
-                            colors = CheckboxDefaults.colors(checkedColor = colors.accentInk),
-                        )
-                        Column(Modifier.weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            ) {
+                item(key = "confirm_header") { SectionHeader(title = "逐行确认") }
+                items(plan.items, key = { "row_${it.sourceLine}" }) { item ->
+                    PreviewRow(
+                        item = item,
+                        excluded = item.sourceLine in state.excluded,
+                        onToggle = { viewModel.toggleExcluded(item.sourceLine) },
+                    )
+                }
+                if (plan.rejected.isNotEmpty()) {
+                    item(key = "rejected_header") {
+                        Spacer(Modifier.height(AppTheme.space.md))
+                        SectionHeader(title = "待修正 ${plan.rejected.size} 行")
+                    }
+                    items(plan.rejected, key = { "rejected_${it.sourceLine}" }) { rejected ->
+                        AppCard(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = item.summary(),
-                                // 被剔除的行用删除线表达，而不是变灰：灰字在深色主题下与禁用态撞车
-                                style = texts.body.copy(
-                                    textDecoration = if (excluded) TextDecoration.LineThrough else TextDecoration.None,
-                                ),
-                                maxLines = 2,
+                                text = "第 ${rejected.sourceLine} 行 · ${rejected.reason.label()} · ${rejected.raw}",
+                                style = texts.caption,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(text = "第 ${item.sourceLine} 行", style = texts.caption)
                         }
                     }
                 }
-                Spacer(Modifier.height(AppTheme.space.sm))
-            }
-            if (plan.rejected.isNotEmpty()) {
-                Spacer(Modifier.height(AppTheme.space.md))
-                SectionHeader(title = "待修正 ${plan.rejected.size} 行")
-                Spacer(Modifier.height(AppTheme.space.sm))
-                AppCard(modifier = Modifier.fillMaxWidth()) {
-                    plan.rejected.forEach { rejected ->
-                        Text(
-                            text = "第 ${rejected.sourceLine} 行 · ${rejected.reason.label()} · ${rejected.raw}",
-                            style = texts.caption,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                state.error?.let { message ->
+                    item(key = "error_line") {
+                        // 直接落在页面底色上，所以走 warningInk 而不是 warning（本仓约定：*Ink 才是文字色）
+                        Text(text = message, style = texts.caption.copy(color = colors.warningInk))
                     }
                 }
-            }
-            Spacer(Modifier.height(AppTheme.space.lg))
-            state.error?.let {
-                // 直接落在页面底色上，所以走 warningInk 而不是 warning（本仓约定：*Ink 才是文字色）
-                Text(text = it, style = texts.caption.copy(color = colors.warningInk))
-                Spacer(Modifier.height(AppTheme.space.sm))
-            }
-            if (state.phase == ImportPhase.COMMITTING) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(AppTheme.space.sm))
-                    Text(text = "正在写入…", style = texts.caption)
+                if (state.phase == ImportPhase.COMMITTING) {
+                    item(key = "committing") {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(AppTheme.space.sm))
+                            Text(text = "正在写入…", style = texts.caption)
+                        }
+                    }
                 }
             }
             AppButton(
@@ -150,6 +136,38 @@ fun ImportPreviewScreen(
                 onClick = { viewModel.submit(onSubmit) },
             )
             Spacer(Modifier.height(AppTheme.space.lg))
+        }
+    }
+}
+
+@Composable
+private fun PreviewRow(item: ImportItem, excluded: Boolean, onToggle: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle),
+        ) {
+            Checkbox(
+                checked = !excluded,
+                onCheckedChange = { onToggle() },
+                colors = CheckboxDefaults.colors(checkedColor = colors.accentInk),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = item.summary(),
+                    // 被剔除的行用删除线表达，而不是变灰：灰字在深色主题下与禁用态撞车
+                    style = texts.body.copy(
+                        textDecoration = if (excluded) TextDecoration.LineThrough else TextDecoration.None,
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(text = "第 ${item.sourceLine} 行", style = texts.caption)
+            }
         }
     }
 }
