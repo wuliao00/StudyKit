@@ -95,7 +95,8 @@ class DictRemote(private val context: Context) {
             connectTimeout = timeoutMillis
             readTimeout = timeoutMillis
             instanceFollowRedirects = true
-            requestProperties = mapOf("User-Agent" to "StudyKit")
+            // `requestProperties` 在 Kotlin 看来是 val（Java 侧只有 getter），要设头得走 setter 方法
+            setRequestProperty("User-Agent", "StudyKit")
             if (responseCode !in 200..299) {
                 val code = responseCode
                 disconnect()
