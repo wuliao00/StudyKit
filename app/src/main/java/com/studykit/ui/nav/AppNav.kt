@@ -57,6 +57,8 @@ import com.studykit.ui.mistake.MistakeViewModel
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.study.CardStudyScreen
+import com.studykit.ui.study.DictStoreScreen
+import com.studykit.ui.study.DictStoreViewModel
 import com.studykit.ui.study.QuestionCreateScreen
 import com.studykit.ui.study.QuizScreen
 import com.studykit.ui.study.StudyHomeScreen
@@ -98,6 +100,11 @@ object StudyRoutes {
     const val QUIZ = "study/quiz"
     const val WORD_CREATE = "study/word/create"
     const val QUESTION_CREATE = "study/question/create"
+}
+
+/** 在线词库商店（唯一需要联网的界面） */
+object DictRoutes {
+    const val STORE = "study/dict/store"
 }
 
 object BookRoutes {
@@ -154,6 +161,7 @@ fun AppNav(
     val studyViewModel: StudyViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
+    val dictStoreViewModel: DictStoreViewModel = viewModel()
 
     // 分享进来的图走错题录入页既有的 pendingCapture 通道（与拍照同一条路，页面零分支）。
     // 先 onSharedConsumed 再 navigate：顺序反了的话，转屏重建组合时会再跳一次录入页。
@@ -364,6 +372,9 @@ fun AppNav(
                     onPreviewImport = {
                         navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
+                    onOpenDict = {
+                        navController.navigate(DictRoutes.STORE) { launchSingleTop = true }
+                    },
                 )
             }
             composable(StudyRoutes.CARDS) {
@@ -391,6 +402,15 @@ fun AppNav(
                 QuestionCreateScreen(
                     viewModel = studyViewModel,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable(DictRoutes.STORE) {
+                DictStoreScreen(
+                    viewModel = dictStoreViewModel,
+                    importViewModel = importViewModel,
+                    onBack = { navController.popBackStack() },
+                    // 下载完直接进预览：商店不碰 words 表，判重与坏行处理只有一套实现
+                    onPreview = { navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true } },
                 )
             }
 

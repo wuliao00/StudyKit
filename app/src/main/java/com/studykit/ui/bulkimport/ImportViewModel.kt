@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
+import com.studykit.data.entity.WordList
 import com.studykit.util.OneShotGate
 import com.studykit.util.importer.ImportItem
 import com.studykit.util.importer.ImportOutcome
@@ -24,6 +25,13 @@ import java.util.UUID
 enum class ImportPhase { PREVIEW, COMMITTING, DONE }
 
 /**
+ * 这批词来自哪本在线词库。带上它，`submitWords` 才会写 `word_lists` 行并把单词挂到 `source_list_id`，
+ * 「整本撤销」才有依据（`deleteAlongWithWords` 靠它找词）。
+ * 手工/粘贴/OCR 那几条路传 null，行为与以前一致。
+ */
+data class DictSourceMeta(val sourceId: String, val title: String, val wordNum: Int)
+
+/**
  * 预览态：解析计划 + 被用户手动剔除的行号 + 阶段 + 结果。
  * `plan` 可空是必要的：刚进页面与 reset() 之后都没有计划，
  * 此时整页空着、按钮不可点，比拿空计划显示「可导入 0」更诚实。
@@ -34,6 +42,7 @@ data class ImportUiState(
     val phase: ImportPhase = ImportPhase.PREVIEW,
     val outcome: ImportOutcome? = null,
     val error: String? = null,
+    val dictSource: DictSourceMeta? = null,
 ) {
     val visibleItems: List<ImportItem>
         get() = plan?.items?.filterNot { it.sourceLine in excluded } ?: emptyList()
@@ -51,14 +60,15 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
     private val container = (application as StudyKitApp).container
     private val wordRepository = container.wordRepository
     private val questionRepository = container.questionRepository
+    private val wordListRepository = container.wordListRepository
 
     private val _state = MutableStateFlow(ImportUiState())
     val state: StateFlow<ImportUiState> = _state.asStateFlow()
 
     private val committing = OneShotGate()
 
-    fun loadPlan(plan: ImportPlan) {
-        _state.value = ImportUiState(plan = plan)
+    fun loadPlan(plan: ImportPlan, dictSource: DictSourceMeta? = null) {
+        _state.value = ImportUiState(plan = plan, dictSource = dictSource)
     }
 
     fun toggleExcluded(sourceLine: Int) {
@@ -85,23 +95,39 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** 批量入词：先与库内全量词面去重，再一次性写入；[sourceListId] 只在整本词库导入时给 */
-    fun submitWords(sourceListId: Long? = null, onDone: () -> Unit) = commit(onDone) {
+    /** 批量入词：先与库内全量词面去重，再一次性写入；来自在线词库时顺带登记整本 */
+    fun submitWords(onDone: () -> Unit) = commit(onDone) {
         val items = _state.value.visibleItems.filterIsInstance<ImportItem.Word>()
         val deduped = dedupeWords(items, wordRepository.wordTexts().toSet())
+        val listId = ensureWordListRow()
         val entities = deduped.kept.map { item ->
             Word(
                 uuid = UUID.randomUUID().toString(),
                 word = item.word,
                 meaning = item.meaning,
                 example = item.example,
-                sourceListId = sourceListId,
+                sourceListId = listId,
             )
         }
+        val inserted = wordRepository.addAll(entities)
+        if (listId != null) wordListRepository.markImportedCount(listId, inserted)
         ImportOutcome(
-            inserted = wordRepository.addAll(entities),
+            inserted = inserted,
             skippedDuplicates = deduped.skipped,
             rejected = _state.value.plan?.rejected.orEmpty(),
+        )
+    }
+
+    /**
+     * 整本登记。同一 `source_id` 重复导入要走已存在的行 —— `word_lists.source_id` 是 UNIQUE 索引，
+     * 直接 insert 会抛 `SQLiteConstraintException`（Task 1 在 DAO 注释里写明了「先 getBySourceId 判重」）。
+     * 非词库来源返回 null，那些单词就不挂整本。
+     */
+    private suspend fun ensureWordListRow(): Long? {
+        val meta = _state.value.dictSource ?: return null
+        wordListRepository.getBySourceId(meta.sourceId)?.let { return it.id }
+        return wordListRepository.add(
+            WordList(sourceId = meta.sourceId, title = meta.title, wordNum = meta.wordNum),
         )
     }
 

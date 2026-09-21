@@ -102,6 +102,7 @@ fun WordListScreen(
     onBack: () -> Unit,
     onStartStudy: () -> Unit,
     onBulkImport: () -> Unit,
+    onOpenDict: () -> Unit,
     onPreviewImport: () -> Unit,
 ) {
     val colors = AppTheme.colors
@@ -178,6 +179,12 @@ fun WordListScreen(
                 Spacer(Modifier.width(AppTheme.space.xs))
                 Text(
                     text = "批量导入",
+                    style = texts.aux.copy(color = colors.accentInk, fontWeight = FontWeight.Medium),
+                )
+            }
+            TextButton(onClick = onOpenDict) {
+                Text(
+                    text = "词库",
                     style = texts.aux.copy(color = colors.accentInk, fontWeight = FontWeight.Medium),
                 )
             }
