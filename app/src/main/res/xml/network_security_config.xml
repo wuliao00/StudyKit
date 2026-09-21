@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  在线词库的词表 zip 只有一个源：`ydschool-online.nos.netease.com`，而它**不提供 HTTPS**
-  （实测 `https://` 该主机无响应，`http://` 返回 200；目录 81 本书的 offlinedata 全部指向这一个 host）。
+  在线词库词表 zip 的原址是 `http://ydschool-online.nos.netease.com/...`，而它**不提供 HTTPS**
+  （实测该主机 TLS 握手直接失败；目录 81 本书的 offlinedata 全部指向这一个 host）。
   targetSdk 35 默认禁止明文 HTTP，所以这里只给这一个域名开口，而不是全局
   `usesCleartextTraffic="true"` —— 后者会把登录、日历等所有其它请求一起降级。
-  目录本身走的是 `https://raw.githubusercontent.com/...`，不在此列。
+
+  2026-09-21 真机定性之后，这条例外的定位从"主路径"降为"**只服务回落**"：
+  明文在不少网络路径上根本走不通（借道电脑共享时 80 端口回 0 字节；WiFi 直连时被校园网门户 302 到登录页），
+  因此下载改为先走同一份对象的 HTTPS 镜像 `https://nos.netease.com/<bucket>/<object>`
+  （规则与证据见 `util/importer/DictMirror.kt`），镜像失败时才回落到这里放行的明文地址。
+  例外不能删：普通网络下明文仍是可用的第二条路，而镜像只是"另一种寻址"，不是官方承诺的长期入口。
+
+  目录本身走 `https://raw.githubusercontent.com/...`，不在此列。
 -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
