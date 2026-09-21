@@ -28,6 +28,7 @@ import kotlin.math.sqrt
  * 三件事各自怎么读：
  * - **亮段（`accent`）= 那天打过卡**，暗段（`heatIdle`）= 那天漏了。蛇身长度 = 窗口内已过的天数（固定），
  *   会发亮的节数才是"坚持"，所以这不是"越长越好"，而是"越亮越好"。
+ *   一格"打过"所占据的视觉长度 = 它自己那格 + 它爬向下一天的那条接缝（接缝色跟出发的格子，见下）。
  * - **蛇头永远停在今天**那一格，带两只眼睛，朝向爬行方向。头一律用 `accent` 实色，
  *   它标的是"现在爬到这儿"，与"今天打没打"是两件事 —— 否则今天没打卡时头上还要再分一档色，读起来更累。
  * - **尾细头粗**（节宽从 0.46 到 0.86 倍格边长线性变），这条锥度是"像蛇"的主要来源，
@@ -87,7 +88,10 @@ fun HabitSnake(
         fun segmentColor(index: Int): Color =
             if (path[index].date in activeDays) eaten else skipped
 
-        // 1) 接缝先画：方形节随后盖住两端，接缝宽度取两节里较细的那条，才不会露出"胖接头"
+        // 1) 接缝先画：方形节随后盖住两端，接缝宽度取两节里较细的那条，才不会露出"胖接头"。
+        //    颜色跟**出发的那一节**（i-1）而不是抵达的那一节：蛇身读起来是"某天占自己这格 +
+        //    爬向下一天的那段身子"。若跟 i，今天还没打卡时"爬进蛇头"的接缝就染成漏卡的 heatIdle，
+        //    蛇头会被凭空截成一颗孤立的圆点 —— 而"今天还没打"恰是每天最常见的那个状态。
         for (i in 1 until n) {
             val a = centerOf(path[i - 1])
             val b = centerOf(path[i])
@@ -96,7 +100,7 @@ fun HabitSnake(
             val dy = abs(b.y - a.y)
             val horizontal = dx > dy
             drawRoundRect(
-                color = segmentColor(i),
+                color = segmentColor(i - 1),
                 topLeft = if (horizontal) Offset(min(a.x, b.x), a.y - thickness / 2f)
                 else Offset(a.x - thickness / 2f, min(a.y, b.y)),
                 size = if (horizontal) Size(dx, thickness) else Size(thickness, dy),
