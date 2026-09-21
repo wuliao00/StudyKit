@@ -126,9 +126,12 @@ class DictStoreViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (error: Exception) {
                 // 失败必须带原因：只说"可重试"的话，用户不知道该等网络、还是这本根本没有词表、
                 // 还是我们的解析器挂了 —— 而这三种只有第一种值得重试
-                _books.value = _books.value.copy(
-                    error = "《${book.title}》导入失败：${error.rootMessage()}",
-                )
+                val reason = "《${book.title}》导入失败：${error.rootMessage()}"
+                _books.value = _books.value.copy(error = reason)
+                // 同一个原因再存进设置表一份：商店这屏一走就没了，而设置页「诊断」段
+                // 要能在用户换到别的页面、甚至下次冷启动之后仍然查得到上次失败是什么。
+                // 记录本身失败不该把这次导入的报错盖掉，所以 runCatching 吞掉它。
+                runCatching { container.settingsRepository.recordDictFailure(reason) }
             } finally {
                 _progress.value = _progress.value - book.id
             }
