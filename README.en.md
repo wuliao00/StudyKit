@@ -43,6 +43,26 @@ StudyKit is an all-in-one learning assistant for students and self-learners, bui
 - A global calendar view aggregating study tasks, habit check-ins, and reading records
 - View a detailed breakdown of all study events for any given day
 
+## ⚡ Batch input (new in v2.1)
+
+Adding entries one by one was the most off-putting part of this app, so v2.1 turns "add one" into "dump a batch":
+
+| Entry point | How | Notes |
+| --- | --- | --- |
+| Paste | Word list / question bank → "Bulk import" | One item per line; tabs, commas, double spaces and a single space are all recognised as column separators, third column optional as example |
+| File | Same screen → "Choose file" | txt / csv and friends; BOM and CRLF handled, same parsers as paste |
+| Online dictionaries | Word list → "Library" | 81 public word lists, searchable, with per-book progress; each import becomes a list you can **undo as a whole** |
+| Screenshot to words | Word list → "Screenshot to words" | Pick a "one word per line" screenshot, OCR feeds the preview screen |
+| Photo OCR | Mistakes → capture → "Extract text from image" | First line becomes the title, the rest the note; **still editable**, nothing is saved automatically |
+
+All four sources share one "preview → import → result" flow: the preview lets you tick rows out,
+broken lines go to a "needs fixing" area with a reason, and **nothing is dropped silently**.
+OCR uses ML Kit's bundled Chinese model — **fully offline, no Google Play Services required**
+(works on devices such as vivo without GMS).
+
+Word list data comes from the open-source repository [kajweb/dict](https://github.com/kajweb/dict)
+and is for personal study only; after import everything is offline and this app uploads nothing.
+
 ## 🛠 Tech Stack
 
 | Technology | Purpose |
@@ -53,6 +73,7 @@ StudyKit is an all-in-one learning assistant for students and self-learners, bui
 | Navigation Compose | Bottom navigation and page routing |
 | WorkManager | Scheduled check-in reminder tasks |
 | Coil | Cover image loading |
+| ML Kit text-recognition (Chinese, bundled) | Offline OCR for screenshots and photos; native libs kept for ARM ABIs only, APK ≈ 33.7 MB |
 | androidx.profileinstaller + hand-written baseline profile | Install-time AOT pre-compilation of the startup chain and first-frame hot paths (rules in `app/src/main/baseline-prof.txt`; the CI release job asserts they are packaged as `assets/dexopt/baseline.prof*` in the APK) |
 | Kotlin Coroutines + StateFlow | Coroutine-based async and reactive state management (the app has no preference storage; all UI state is driven by StateFlow) |
 
