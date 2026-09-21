@@ -20,6 +20,20 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * 取最深一层带 message 的异常。外层包装只会说"词表下载失败"，
+ * 真正能判断的是 `UnknownHostException` / `SSLException` / `FileNotFoundException` 这类根因。
+ */
+private fun Throwable.rootMessage(): String {
+    var cursor: Throwable? = this
+    var best: String? = message
+    while (cursor != null) {
+        cursor.message?.takeIf { it.isNotBlank() }?.let { best = it }
+        cursor = cursor.cause
+    }
+    return best ?: javaClass.simpleName
+}
+
 enum class DictStorePhase { LOADING, READY, FAILED }
 
 data class DictStoreUiState(
@@ -103,7 +117,11 @@ class DictStoreViewModel(application: Application) : AndroidViewModel(applicatio
                 )
                 onReady()
             } catch (error: Exception) {
-                _books.value = _books.value.copy(error = "《${book.title}》下载失败，可重试")
+                // 失败必须带原因：只说"可重试"的话，用户不知道该等网络、还是这本根本没有词表、
+                // 还是我们的解析器挂了 —— 而这三种只有第一种值得重试
+                _books.value = _books.value.copy(
+                    error = "《${book.title}》导入失败：${error.rootMessage()}",
+                )
             } finally {
                 _progress.value = _progress.value - book.id
             }
