@@ -641,7 +641,7 @@ private fun EventRow(event: SystemEvent) {
     val texts = AppTheme.texts
     // 这里保持位置参只是沿用 T3 起 `RoundedCornerShape(AppTheme.radius.md)` 的既有写法。
     // 澄清一处以讹传讹：T11 记的「@JvmInline value class 命名实参会撞 internal 构造器」那条陷阱
-    // 只属于 androidx.compose.ui.geometry.CornerRadius(radiusX = …)（见 HeatmapWeeks.kt 就地注释），
+    // 只属于 androidx.compose.ui.geometry.CornerRadius(radiusX = …)（见 HabitSnake.kt 就地注释），
     // 与 RoundedCornerShape 无关；后者的真实约束是四角重载的默认值（只写 topStart = 会把另三角
     // 落成 0）。度量令牌现已收在 AppTheme.space / AppTheme.radius，这条注释只留给
     // RoundedCornerShape 的重载坑，别把它当成「圆角构造一律位置参」的规矩。

@@ -7,7 +7,7 @@ import java.time.LocalDate
  * 月网格骨架：表头文案、网格格数、补齐规则。
  *
  * 放在独立的这份文件里而不是塞进 `HeatmapLogic.kt`：那份是**热力图**的网格
- * （列 = 周、行 = 周一至周日、消费者是 `ui/components/HeatmapWeeks.kt`），与「一个月摊成
+ * （列 = 周、行 = 周一至周日、消费者是 `ui/components/HabitSnake.kt`），与「一个月摊成
  * 6 行 7 列」是两套形状、两套语义；两者同住 `ui/habit` 已经足够让纯逻辑集中在一处，
  * 再把月网格并进去只会让文件名与内容互相说不清。
  *

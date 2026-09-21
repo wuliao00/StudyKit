@@ -59,7 +59,7 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EmptyState
-import com.studykit.ui.components.HeatmapWeeks
+import com.studykit.ui.components.HabitSnake
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
@@ -174,7 +174,7 @@ private fun countdownText(item: HabitItemUi): String = when {
 // 8 列时方格被 108dp 画布高度限到 12dp，整块只占卡宽四成、两侧大片留白（真机实测）。
 private const val HEATMAP_WEEKS = 20
 
-/** 热力图画布高度：20 列时边长由列宽定（约 11dp），7 行 + 6 × 4dp 间距实占约 98dp，画布留足 108dp（[HeatmapWeeks] 取宽高中较小者定边长并居中） */
+/** 贪吃蛇画布高度：20 列时边长由列宽定（约 11dp），7 行 + 6 × 4dp 间距实占约 98dp，画布留足 108dp（[HabitSnake] 取宽高中较小者定边长并居中） */
 private val heatmapCanvasHeight: Dp = 108.dp
 
 /**
@@ -429,10 +429,12 @@ private fun CalendarEntryCard(onClick: () -> Unit) {
 }
 
 /**
- * 近 20 周打卡热力图卡：全部习惯的打卡日期并集，格子只区分「打过 / 没打过」。
+ * 近 20 周坚持卡（贪吃蛇版历史图）：全部习惯的打卡日期并集，蛇身一节一天，
+ * 打过的那节发亮、漏掉的那节是暗色，蛇头停在今天。
  *
- * 语义提醒：热力图按天聚合，多个习惯同日打卡也只是一个格子（不是更深的色阶），
- * 「窗口起点早于习惯创建日」的那几天同样落在灰格子里 —— 与 GitHub 一样的读法。
+ * 语义提醒：按天聚合，多个习惯同日打卡也只是一节亮（不是更深的色阶），
+ * 「窗口起点早于习惯创建日」的那几天仍是暗色节 —— 与原来那张方格热力图同一套读法，
+ * 只是折返之后**行不再等于星期**，纵向的"周几总漏"要改去日历页看。
  */
 @Composable
 private fun HeatmapCard(activeDays: Set<LocalDate>) {
@@ -440,7 +442,7 @@ private fun HeatmapCard(activeDays: Set<LocalDate>) {
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "近 $HEATMAP_WEEKS 周坚持", style = texts.cardTitle)
         Spacer(Modifier.height(AppTheme.space.sm))
-        HeatmapWeeks(
+        HabitSnake(
             activeDays = activeDays,
             weeks = HEATMAP_WEEKS,
             modifier = Modifier
