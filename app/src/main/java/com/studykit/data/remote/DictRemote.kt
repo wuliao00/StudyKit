@@ -17,6 +17,12 @@ import kotlinx.coroutines.withContext
 class DictRemoteException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /**
+ * 目录来源必须说出来。回落快照与在线目录内容一模一样，界面若不区分，
+ * 用户（和排查中的我）就会把"能列出 81 本"当成"联网成功"的证据。
+ */
+data class CatalogueResult(val books: List<DictBookInfo>, val fromNetwork: Boolean)
+
+/**
  * 在线词库网络层。刻意零新依赖（spec §5.2）：`HttpURLConnection` + `ZipInputStream`。
  *
  * 三条实测事实决定了这段形状：
@@ -31,12 +37,13 @@ class DictRemoteException(message: String, cause: Throwable? = null) : Exception
  */
 class DictRemote(private val context: Context) {
 
-    suspend fun loadCatalogue(): List<DictBookInfo> = withContext(Dispatchers.IO) {
+    suspend fun loadCatalogue(): CatalogueResult = withContext(Dispatchers.IO) {
         val online = runCatching { readText(CATALOGUE_URL, timeoutMillis = 15_000) }.getOrNull()
-        val source = online ?: runCatching {
+        if (online != null) return@withContext CatalogueResult(DictBookParser.parseCatalogue(online), true)
+        val snapshot = runCatching {
             context.assets.open(CATALOGUE_ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
         }.getOrNull() ?: throw DictRemoteException("目录获取失败且无本地快照")
-        DictBookParser.parseCatalogue(source)
+        CatalogueResult(DictBookParser.parseCatalogue(snapshot), fromNetwork = false)
     }
 
     /** 下载整本词表并解析；[onProgress] 取值 0f..1f，服务端不给 Content-Length 时恒为 0f */

@@ -113,6 +113,20 @@ fun DictStoreScreen(
                         )
                     }
                 }
+                if (state.online == false) {
+                    // 快照与在线目录内容一模一样，不标出来的话「能列出书」就会被当成「联网成功」的证据
+                    item(key = "snapshot_notice") {
+                        AppCard(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "手机没连上，下面这份是打包进 App 的目录快照，可能不是最新；" +
+                                    "下载词表需要网络。",
+                                style = texts.caption,
+                            )
+                            Spacer(Modifier.height(AppTheme.space.sm))
+                            AppButton(text = "重新连一次", secondary = true, onClick = viewModel::refresh)
+                        }
+                    }
+                }
                 state.error?.let { message ->
                     item(key = "error_line") {
                         Text(text = message, style = texts.caption.copy(color = colors.warningInk))

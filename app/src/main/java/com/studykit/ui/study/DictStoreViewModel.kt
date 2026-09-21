@@ -44,6 +44,8 @@ data class DictStoreUiState(
     val progress: Map<String, Float> = emptyMap(),
     val query: String = "",
     val error: String? = null,
+    /** 目录来源：null 还没拉过，true 在线，false 回落到内置快照（界面必须区分，见 DictStoreScreen） */
+    val online: Boolean? = null,
 ) {
     /** 搜索命中书名或任一标签；空查询返回全部 */
     val visibleBooks: List<DictBookInfo>
@@ -90,8 +92,13 @@ class DictStoreViewModel(application: Application) : AndroidViewModel(applicatio
         _books.value = _books.value.copy(phase = DictStorePhase.LOADING, error = null)
         viewModelScope.launch {
             runCatching { remote.loadCatalogue() }
-                .onSuccess { list ->
-                    _books.value = _books.value.copy(phase = DictStorePhase.READY, books = list, error = null)
+                .onSuccess { result ->
+                    _books.value = _books.value.copy(
+                        phase = DictStorePhase.READY,
+                        books = result.books,
+                        online = result.fromNetwork,
+                        error = null,
+                    )
                 }
                 .onFailure { error ->
                     _books.value = _books.value.copy(
