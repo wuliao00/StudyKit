@@ -49,7 +49,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.CheckIn
@@ -61,6 +60,7 @@ import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.HabitSnake
 import com.studykit.ui.components.RingGauge
+import com.studykit.ui.components.SnakeTrackHeight
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
@@ -171,11 +171,10 @@ private fun countdownText(item: HabitItemUi): String = when {
 
 /** 热力图窗口宽度：卡片文案「近 N 周坚持」与网格列数同源，改这里即同时改两处 */
 // 20 周 ≈ 4.5 个月：卡内可用宽约 288dp，20 列 × (10dp 方格 + 4dp 间距) 正好铺满；
-// 8 列时方格被 108dp 画布高度限到 12dp，整块只占卡宽四成、两侧大片留白（真机实测）。
+// 旧版方格热力图时代，周数受卡片宽度限制（8 列时格子被 108dp 画布限到 12dp，整块只占卡宽四成）。
+// 换成可左右滑的单条贪吃蛇之后，周数只决定轨道**长度**（一节一天），不再决定格子大小，
+// 所以这里可以放心留 20 周；轨道尺寸见 ui/components/HabitSnake.kt 的那几枚 private 度量。
 private const val HEATMAP_WEEKS = 20
-
-/** 贪吃蛇画布高度：20 列时边长由列宽定（约 11dp），7 行 + 6 × 4dp 间距实占约 98dp，画布留足 108dp（[HabitSnake] 取宽高中较小者定边长并居中） */
-private val heatmapCanvasHeight: Dp = 108.dp
 
 /**
  * 习惯列表页：页标题 + 日历入口 + 近 20 周热力图 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口。
@@ -429,25 +428,27 @@ private fun CalendarEntryCard(onClick: () -> Unit) {
 }
 
 /**
- * 近 20 周坚持卡（贪吃蛇版历史图）：全部习惯的打卡日期并集，蛇身一节一天，
- * 打过的那节发亮、漏掉的那节是暗色，蛇头停在今天。
+ * 近 20 周坚持卡（可左右滑的贪吃蛇）：全部习惯的打卡日期并集，一天一节，
+ * 打过的那节发亮、漏掉的那节是暗色，蛇头在今天，进来时自动滚到那一端。
  *
  * 语义提醒：按天聚合，多个习惯同日打卡也只是一节亮（不是更深的色阶），
- * 「窗口起点早于习惯创建日」的那几天仍是暗色节 —— 与原来那张方格热力图同一套读法，
- * 只是折返之后**行不再等于星期**，纵向的"周几总漏"要改去日历页看。
+ * 「窗口起点早于习惯创建日」的那几天仍是暗色节。轨道是**单条横向**的，
+ * 星期不再对应某一行；要看星期分布去「日历」页按周看。
  */
 @Composable
 private fun HeatmapCard(activeDays: Set<LocalDate>) {
     val texts = AppTheme.texts
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "近 $HEATMAP_WEEKS 周坚持", style = texts.cardTitle)
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(text = "一天一节，亮的是打过卡的日子 · 左右滑动看更早的", style = texts.caption)
         Spacer(Modifier.height(AppTheme.space.sm))
         HabitSnake(
             activeDays = activeDays,
             weeks = HEATMAP_WEEKS,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(heatmapCanvasHeight),
+                .height(SnakeTrackHeight),
         )
     }
 }

@@ -1,45 +1,72 @@
 package com.studykit.ui.components
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import com.studykit.ui.habit.SnakeCell
-import com.studykit.ui.habit.buildSnakePath
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.studykit.ui.habit.buildSnakeDays
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
-import kotlin.math.abs
-import kotlin.math.min
-import kotlin.math.sqrt
+
+/** 一节占的横向距离（含右侧间距）；轨道总长 = 天数 × 这一档 */
+private val SnakeTrackPitch: Dp = 20.dp
+
+/** 一节本体的边长 */
+private val SnakeCellSide: Dp = 14.dp
+
+/** 蛇头比身子大一档，让"哪端是今天"不用看眼睛也分得出来 */
+private val SnakeHeadSide: Dp = 18.dp
+
+/** 连接各节的脊柱粗细 */
+private val SnakeSpineWidth: Dp = 7.dp
+
+/** 轨道绘制高度（含月份刻度那一条）；卡片按这个高度下发 */
+val SnakeTrackHeight: Dp = 56.dp
 
 /**
- * 习惯历史图：**贪吃蛇版打卡图**（纯 Canvas 自绘，零素材、零依赖）。
+ * 习惯历史图：**一条可以左右滑的贪吃蛇**（纯 Canvas 自绘，零素材、零依赖）。
  *
- * 近 [weeks] 周摊成 20 列 × 7 行的格子，但不再是一颗颗散点 —— 而是**一条从窗口第一天爬到今天的蛇**：
- * 路径按列推进、偶数列自上而下、奇数列自下而上（骨架见 `ui/habit/HeatmapLogic.kt` 的 [buildSnakePath]），
- * 所以相邻两天永远共用一条边，身子是连着的。
+ * 一天一节，从窗口第一天一路排到今天，整条轨道横向铺开、超出卡片的部分靠**左右滑动**看
+ * （Codex CLI 那种"历史在一条线上跑"的味道）：
  *
- * 三件事各自怎么读：
- * - **亮段（`accent`）= 那天打过卡**，暗段（`heatIdle`）= 那天漏了。蛇身长度 = 窗口内已过的天数（固定），
- *   会发亮的节数才是"坚持"，所以这不是"越长越好"，而是"越亮越好"。
- *   一格"打过"所占据的视觉长度 = 它自己那格 + 它爬向下一天的那条接缝（接缝色跟出发的格子，见下）。
- * - **蛇头永远停在今天**那一格，带两只眼睛，朝向爬行方向。头一律用 `accent` 实色，
- *   它标的是"现在爬到这儿"，与"今天打没打"是两件事 —— 否则今天没打卡时头上还要再分一档色，读起来更累。
- * - **尾细头粗**（节宽从 0.46 到 0.86 倍格边长线性变），这条锥度是"像蛇"的主要来源，
- *   比给每节加圆角管用得多。
+ * - **落点永远在今天**（轨道最右端）：首帧之后自己滚到头，之后不再抢用户的滚动。
+ * - **亮节（`accent`）= 那天打过卡，暗节（`heatIdle`）= 漏了**。节与节之间有一条 `divider` 色的脊柱
+ *   连着，所以读起来是"一条蛇"而不是一排点。
+ * - **蛇头在最右**，比身子大一档，带两只朝右的眼睛。
+ * - 蛇头右边一枚**脉动的终端光标**，意思是"今天还没吃，可以吃"；「减弱动效」一开就不建这个动画。
+ * - 每月第一天那节下面有一道竖刻度，用来在长轨道上定位月份（画线不排字，Canvas 里排文字要另走
+ *   TextLayoutCache，不值当）。
  *
- * 换来的代价，写在明处：折返之后**行不再等于星期**（奇数列里周日是该列第一格），
- * 所以"我周三总漏"这类纵向规律在这张图上读不出来了；要看星期分布去「日历」页按周看。
+ * 帧预算：轨道本体是**静态**的，只有数据或主题变化才重录；脉动光标是独立的小节点，
+ * 每帧重绘的面积只有那 3×18dp，不会拖着 140 节一起重画。
  *
- * 绘制预算：一次记录约 140 节 + 139 条接缝 = 不到 300 个圆角矩形。它只在数据/主题变化时重录，
- * 滚动时复用已录好的 RenderNode，不参与每帧（本版 A/B 实测：滚动 p50 7ms，与底栏玻璃无关）。
- * 所有颜色只取 `AppTheme.colors`，间距只取 `AppTheme.space`。
+ * @param weeks 往回看多少周（一节一天，轨道长度 = 天数 × [SnakeTrackPitch]）
  */
 @Composable
 fun HabitSnake(
@@ -48,107 +75,123 @@ fun HabitSnake(
     modifier: Modifier = Modifier,
 ) {
     val colors = AppTheme.colors
-    val cols = weeks.coerceAtLeast(1)
     val today = LocalDate.now()
-    val path = remember(today, cols) { buildSnakePath(today, cols) }
-    val activeDayCount = remember(path, activeDays) { path.count { it.date in activeDays } }
-    val gap = AppTheme.space.xs
+    val days = remember(today, weeks) { buildSnakeDays(today, weeks.coerceAtLeast(1)) }
+    val activeDayCount = remember(days, activeDays) { days.count { it in activeDays } }
+    val reduceMotion = AppTheme.settings.reduceMotion
+
     val eaten = colors.accent
     val skipped = colors.heatIdle
-    val headColor = colors.accent
-    // 眼睛取卡面色：亮段上的两只眼要在青绿上跳出来，取 onAccent 那一档（浅色=白、夜间=暖墨）更稳
+    val spineColor = colors.divider
     val eyeColor = colors.onAccent
-    val description = "近 $cols 周打卡贪吃蛇，${activeDayCount} 天有打卡，蛇头停在今天"
+    val tickColor = colors.secondaryText
 
-    Canvas(modifier = modifier.semantics { contentDescription = description }) {
-        val n = path.size
-        if (n == 0) return@Canvas
-        val gapPx = gap.toPx()
-        val cellW = (size.width - gapPx * (cols - 1)) / cols
-        val cellH = (size.height - gapPx * 6f) / 7f
-        val side = min(cellW, cellH)
-        if (side <= 0f) return@Canvas
-        // 整块网格在画布里居中（沿用旧热力图的口径，卡片变宽时蛇不会贴左）
-        val gridW = cols * side + (cols - 1) * gapPx
-        val gridH = 7f * side + 6f * gapPx
-        val originX = (size.width - gridW) / 2f
-        val originY = (size.height - gridH) / 2f
-
-        fun centerOf(cell: SnakeCell): Offset = Offset(
-            x = originX + cell.col * (side + gapPx) + side / 2f,
-            y = originY + cell.row * (side + gapPx) + side / 2f,
-        )
-
-        /** 尾细头粗：i 从 0（窗口第一天）到 n-1（今天）线性变粗 */
-        fun widthOf(i: Int): Float {
-            val t = if (n <= 1) 1f else i.toFloat() / (n - 1)
-            return side * (0.46f + 0.40f * t)
+    val scrollState = rememberScrollState()
+    // 只在第一次（且已经量出可滚范围时）自动滚到今天；之后用户滚到哪就停在哪
+    var didCenter by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(days.size, scrollState.maxValue) {
+        if (!didCenter && scrollState.maxValue > 0) {
+            didCenter = true
+            scrollState.scrollTo(scrollState.maxValue)
         }
+    }
 
-        fun segmentColor(index: Int): Color =
-            if (path[index].date in activeDays) eaten else skipped
+    val trackWidth = SnakeTrackPitch * days.size + AppTheme.space.sm
+    val description = "近 $weeks 周打卡贪吃蛇，共 ${days.size} 天、其中 $activeDayCount 天有打卡，" +
+        "蛇头在今天，左右滑动可看更早的历史"
 
-        // 1) 接缝先画：方形节随后盖住两端，接缝宽度取两节里较细的那条，才不会露出"胖接头"。
-        //    颜色跟**出发的那一节**（i-1）而不是抵达的那一节：蛇身读起来是"某天占自己这格 +
-        //    爬向下一天的那段身子"。若跟 i，今天还没打卡时"爬进蛇头"的接缝就染成漏卡的 heatIdle，
-        //    蛇头会被凭空截成一颗孤立的圆点 —— 而"今天还没打"恰是每天最常见的那个状态。
-        for (i in 1 until n) {
-            val a = centerOf(path[i - 1])
-            val b = centerOf(path[i])
-            val thickness = min(widthOf(i - 1), widthOf(i))
-            val dx = abs(b.x - a.x)
-            val dy = abs(b.y - a.y)
-            val horizontal = dx > dy
-            drawRoundRect(
-                color = segmentColor(i - 1),
-                topLeft = if (horizontal) Offset(min(a.x, b.x), a.y - thickness / 2f)
-                else Offset(a.x - thickness / 2f, min(a.y, b.y)),
-                size = if (horizontal) Size(dx, thickness) else Size(thickness, dy),
-                cornerRadius = CornerRadius(thickness / 2f),
-            )
+    Box(modifier = modifier.horizontalScroll(scrollState).semantics { contentDescription = description }) {
+        Box(modifier = Modifier.size(width = trackWidth, height = SnakeTrackHeight)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                if (days.isEmpty()) return@Canvas
+                val pitch = SnakeTrackPitch.toPx()
+                val cell = SnakeCellSide.toPx()
+                val head = SnakeHeadSide.toPx()
+                val spineW = SnakeSpineWidth.toPx()
+                val midY = (size.height - cell) / 2f
+                fun centerX(index: Int): Float = pitch * index + pitch / 2f
+
+                // 1) 脊柱先画，节再盖上去，接缝不会露白
+                for (i in 1 until days.size) {
+                    drawRect(
+                        color = spineColor,
+                        topLeft = Offset(centerX(i - 1) + cell / 2f, midY + cell / 2f - spineW / 2f),
+                        size = Size(pitch - cell, spineW),
+                    )
+                }
+                // 2) 每月第一天的刻度
+                for (i in days.indices) {
+                    if (days[i].dayOfMonth == 1) {
+                        drawRect(
+                            color = tickColor,
+                            topLeft = Offset(centerX(i) - 1f, midY + cell + 4.dp.toPx()),
+                            size = Size(2f, 6.dp.toPx()),
+                        )
+                    }
+                }
+                // 3) 身子（不含最后一格，最后一格留给蛇头）
+                for (i in 0 until days.size - 1) {
+                    drawRoundRect(
+                        color = if (days[i] in activeDays) eaten else skipped,
+                        topLeft = Offset(centerX(i) - cell / 2f, midY),
+                        size = Size(cell, cell),
+                        cornerRadius = CornerRadius(cell * 0.32f),
+                    )
+                }
+                // 4) 蛇头 + 两只朝右的眼睛
+                val headLeft = centerX(days.size - 1) - head / 2f
+                val headTop = (size.height - head) / 2f
+                drawRoundRect(
+                    color = eaten,
+                    topLeft = Offset(headLeft, headTop),
+                    size = Size(head, head),
+                    cornerRadius = CornerRadius(head * 0.34f),
+                )
+                val eyeR = head * 0.11f
+                val eyeDx = head * 0.26f
+                val eyeDy = head * 0.22f
+                drawCircle(
+                    color = eyeColor,
+                    radius = eyeR,
+                    center = Offset(headLeft + head / 2f + eyeDx, headTop + head / 2f - eyeDy),
+                )
+                drawCircle(
+                    color = eyeColor,
+                    radius = eyeR,
+                    center = Offset(headLeft + head / 2f + eyeDx, headTop + head / 2f + eyeDy),
+                )
+            }
+
+            // 5) 终端光标：独立小节点，脉动只让它自己重绘；减弱动效时连动画都不建
+            if (!reduceMotion && days.isNotEmpty()) {
+                val blink = rememberInfiniteTransition(label = "snakeCursor")
+                val alpha by blink.animateFloat(
+                    initialValue = 0.15f,
+                    targetValue = 0.9f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 620, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                    label = "snakeCursorAlpha",
+                )
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = SnakeTrackPitch * (days.size - 1) +
+                                SnakeTrackPitch / 2f + SnakeHeadSide / 2f + 3.dp,
+                        )
+                        .size(width = 3.dp, height = SnakeHeadSide),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                color = colors.accentInk.copy(alpha = alpha),
+                                shape = RoundedCornerShape(1.dp),
+                            ),
+                    )
+                }
+            }
         }
-
-        // 2) 蛇身（不含最后一格，最后一格留给蛇头）
-        for (i in 0 until n - 1) {
-            val c = centerOf(path[i])
-            val w = widthOf(i)
-            drawRoundRect(
-                color = segmentColor(i),
-                topLeft = Offset(c.x - w / 2f, c.y - w / 2f),
-                size = Size(w, w),
-                cornerRadius = CornerRadius(w * 0.34f),
-            )
-        }
-
-        // 3) 蛇头 + 两只眼，眼睛朝向由"上一节 → 头"的方向决定
-        val head = centerOf(path[n - 1])
-        val hw = side * 0.96f
-        drawRoundRect(
-            color = headColor,
-            topLeft = Offset(head.x - hw / 2f, head.y - hw / 2f),
-            size = Size(hw, hw),
-            cornerRadius = CornerRadius(hw * 0.36f),
-        )
-        val prev = if (n >= 2) centerOf(path[n - 2]) else Offset(head.x - 1f, head.y)
-        var dx = head.x - prev.x
-        var dy = head.y - prev.y
-        val len = sqrt(dx * dx + dy * dy)
-        if (len > 0f) {
-            dx /= len
-            dy /= len
-        }
-        val eyeRadius = hw * 0.11f
-        val forward = hw * 0.20f
-        val spread = hw * 0.22f
-        drawCircle(
-            color = eyeColor,
-            radius = eyeRadius,
-            center = Offset(head.x + dx * forward - dy * spread, head.y + dy * forward + dx * spread),
-        )
-        drawCircle(
-            color = eyeColor,
-            radius = eyeRadius,
-            center = Offset(head.x + dx * forward + dy * spread, head.y + dy * forward - dx * spread),
-        )
     }
 }
