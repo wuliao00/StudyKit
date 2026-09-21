@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.studykit.data.AppSettings
 
 /**
  * 双主题颜色令牌：唯一取色入口。
@@ -107,7 +108,16 @@ fun buildAppTexts(c: AppColors): AppTexts = AppTexts(
 )
 
 @Immutable
-data class AppThemeVals(val colors: AppColors, val texts: AppTexts)
+data class AppThemeVals(
+    val colors: AppColors,
+    val texts: AppTexts,
+    /**
+     * 用户本地设置随主题一起下发。放这里而不是另开一个 CompositionLocal，
+     * 是因为材质（`AppTheme.glass`）与动效（`AppTheme.settings.reduceMotion`）都必须与配色同时生效，
+     * 分两个 Local 就会有两份"谁是最新"的问题。
+     */
+    val settings: AppSettings = AppSettings(),
+)
 
 val LocalAppTheme = staticCompositionLocalOf {
     AppThemeVals(LightColors, buildAppTexts(LightColors))
@@ -120,6 +130,10 @@ object AppTheme {
         @Composable @ReadOnlyComposable get() = current.colors
     val texts: AppTexts
         @Composable @ReadOnlyComposable get() = current.texts
+
+    /** 用户本地设置（主题之外的全部偏好），见 [AppThemeVals.settings] */
+    val settings: AppSettings
+        @Composable @ReadOnlyComposable get() = current.settings
 
     // ── 度量令牌：与主题无关的 dp 常量，取 `AppTheme.space.* / .radius.* / .elevation.*` ──
     // 与 colors/texts 不同，这些是普通 `val`（不需要 CompositionLocal），任何位置都能直接读。

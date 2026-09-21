@@ -6,6 +6,7 @@ import com.studykit.data.repository.BookRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
 import com.studykit.data.repository.QuestionRepository
+import com.studykit.data.repository.SettingsRepository
 import com.studykit.data.repository.WordListRepository
 import com.studykit.data.repository.WordRepository
 
@@ -29,4 +30,6 @@ class AppContainer(context: Context) {
     val bookRepository: BookRepository = BookRepository(database.bookDao())
 
     val mistakeRepository: MistakeRepository = MistakeRepository(database.mistakeDao())
+
+    val settingsRepository: SettingsRepository = SettingsRepository(database.appSettingDao())
 }

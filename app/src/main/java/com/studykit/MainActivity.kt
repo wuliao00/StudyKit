@@ -10,7 +10,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.data.AppSettings
 import com.studykit.ui.nav.AppNav
 import com.studykit.ui.theme.StudyKitTheme
 import com.studykit.util.ShareIntake
@@ -40,7 +44,15 @@ class MainActivity : ComponentActivity() {
             intake(intent)
         }
         setContent {
-            StudyKitTheme {
+            // 设置从 Room 来，冷启动会先拿到默认值、真值随后一到：
+            // 那一帧可能按默认画（浅色 + SOFT 玻璃），实测在同一台机器上看不出闪，
+            // 因此没有为它加"等首帧再渲染"的门 —— 那会让冷启动白屏更久。
+            val settings by (application as StudyKitApp).container.settingsRepository.settings
+                .collectAsStateWithLifecycle(initialValue = AppSettings())
+            StudyKitTheme(
+                darkTheme = settings.resolveDark(isSystemInDarkTheme()),
+                settings = settings,
+            ) {
                 AppNav(
                     sharedImage = sharedImageFlow,
                     onSharedConsumed = { sharedImageFlow.value = null },

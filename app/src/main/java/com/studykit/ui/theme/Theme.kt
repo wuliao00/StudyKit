@@ -13,6 +13,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.studykit.data.AppSettings
 
 // onPrimary / onError 取 `c.onAccent`（「压实底上的字」那一档），**不取 c.card**：
 // AppColors 的 KDoc 明令 card 随主题变化（light #FFFFFF / dark #26241F），不能再被当作「白墨」
@@ -35,10 +36,18 @@ private fun scheme(dark: Boolean, c: AppColors) = if (dark) darkColorScheme(
 @Composable
 fun StudyKitTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    /**
+     * 用户本地设置。默认值是"从没进过设置页"的那份，因此现有调用点不改也能编过、行为不变。
+     *
+     * 注意 `darkTheme` 现在由**调用方**负责用 [AppSettings.resolveDark] 算出来传进来：
+     * 主题硬指定（LIGHT/DARK）时不能再读系统的 `isSystemInDarkTheme()`，
+     * 所以这个默认参数只在没人传值时（预览、单测）才有意义。
+     */
+    settings: AppSettings = AppSettings(),
     content: @Composable () -> Unit,
 ) {
     val colors = if (darkTheme) DarkColors else LightColors
-    val vals = remember(colors) { AppThemeVals(colors, buildAppTexts(colors)) }
+    val vals = remember(colors, settings) { AppThemeVals(colors, buildAppTexts(colors), settings) }
     val view = LocalView.current
     SideEffect {
         (view.context as? Activity)?.window?.let {

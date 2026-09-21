@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.studykit.BuildConfig
+import com.studykit.data.dao.AppSettingDao
 import com.studykit.data.dao.BookDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
@@ -14,6 +15,7 @@ import com.studykit.data.dao.PracticeDao
 import com.studykit.data.dao.QuestionDao
 import com.studykit.data.dao.WordDao
 import com.studykit.data.dao.WordListDao
+import com.studykit.data.entity.AppSetting
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.CheckIn
@@ -39,8 +41,9 @@ import com.studykit.data.entity.WordReview
         Excerpt::class,
         BookReview::class,
         WordList::class,
+        AppSetting::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +55,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun mistakeDao(): MistakeDao
     abstract fun habitDao(): HabitDao
     abstract fun bookDao(): BookDao
+    abstract fun appSettingDao(): AppSettingDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -98,6 +102,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 → v4：新增「用户本地设置」键值表。纯加表，不动任何既有列，
+         * 因此装有 v2.1 数据的机器升级后词库、错题、打卡一条都不会少
+         * （这条升级路径的真机存活验证在计划 T14 里，CI 证明不了）。
+         *
+         * SQL 同样必须与 Room 依实体生成的建表语句逐字一致，理由见 [MIGRATION_2_3]。
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `app_settings` (" +
+                        "`key` TEXT NOT NULL, " +
+                        "`value` TEXT NOT NULL, " +
+                        "`updated_at` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`key`)" +
+                        ")",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -108,7 +132,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .addCallback(SeedCallback)
                     .build()
                     .also { instance = it }
