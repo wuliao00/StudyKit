@@ -1,5 +1,13 @@
 # StudyKit v2.2 玻璃材质 + 稳定满帧 + 设置 实施计划
 
+> **执行状态（2026-09-21 收尾）**：T1–T10 全部落地，head `e0bb5dc` CI 两 job 绿，v2.2.0 debug APK 已真机走查
+> （交付目录 `C:\Users\Administrator\Desktop\StudyKit-v2.2.0\`，证据与未验通项见其中 `真机验证报告.md`）。
+> 三处偏差按裁定改过并已写进 spec：①玻璃浮层站点从四处收成三处（看图对话框那条等于新造 UI，放弃）；
+> ②字号缩放/列表密度两项**本版不做**（会重开 M1 逐屏真机验收过的像素预算）；
+> ③T11–T13 的帧率只做到"立了一组基线 + RingGauge 分配修复"，底栏玻璃开/关那一对数字
+> （p50 10ms vs 6ms）**滚动距离不等、不足以归因**，账留给下一版用等距脚本滚动重测。
+> 下面勾选框保留原样作为任务清单，不再逐格回勾。
+
 **Goal:** 收口词库下载那一跳（根因已定性为明文 HTTP 被网络路径阻断），加上手绘玻璃材质与纸感卡，建立帧率基线并把重灾场景压回满帧，最后交付一个能把本地信息存下来的设置页。
 
 **Architecture:** 四条互不遮挡的轨道。①**网络修正**在 `data/remote/` 与 `util/importer/` 一处（纯函数改写 + 两跳尝试 + 门户判定）；②**设置**是新的纵切：Room 新增 `app_settings` 键值表 → `SettingsRepository`（Flow）→ `SettingsViewModel` → 一段三节滚动页；主题三态由 `MainActivity` 把 `SettingsRepository` 的值喂给 `StudyKitTheme(darkTheme=…)`；③**材质**是新的横切 `ui/material/Glass.kt`，只挂在四个浮层站点，`AppCard` 仅升级描边阴影不改填充；④**帧率**先测后改，改动集中在 `ui/components/` 的三枚 Canvas 组件。
