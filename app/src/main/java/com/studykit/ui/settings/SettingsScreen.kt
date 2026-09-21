@@ -490,13 +490,32 @@ fun SettingsScreen(
                 hint = "删除单词、词库、错题（含图片）、习惯与打卡、书目与摘录、题库与刷题记录；" +
                     "本页的设置一条不动。不可撤销，请先导出备份。",
             ) {
+                // 真机踩过：这一格原来是**单击直接清**的，走查时一次落在标题下方的误触就把
+                // 1177 个词清空了。它是全页唯一不可撤销的动作，必须有二次确认，
+                // 而且确认框的措辞要把"清掉哪些、留下哪些"说全（下面这段与 hint 同口径）。
+                var showClearDialog by rememberSaveable { mutableStateOf(false) }
                 AppButton(
                     text = "清除学习数据",
                     secondary = true,
                     tone = AppButtonTone.Warning,
                     enabled = !busy,
-                    onClick = { viewModel.clearBusinessData() },
+                    onClick = { showClearDialog = true },
                 )
+                if (showClearDialog) {
+                    ConfirmDialog(
+                        title = "清除全部学习数据？",
+                        body = "单词、词库、错题与它们的图片、习惯与打卡、书目与摘录、题库与刷题记录" +
+                            "会一起删掉，**无法撤销**；本页的设置一条不动。" +
+                            "先点上面的「选择一个位置导出 zip」存一份，再回来清。",
+                        confirmLabel = "清除学习数据",
+                        danger = true,
+                        onConfirm = {
+                            showClearDialog = false
+                            viewModel.clearBusinessData()
+                        },
+                        onDismiss = { showClearDialog = false },
+                    )
+                }
             }
             HorizontalDivider(color = colors.divider)
             SettingBlock(
