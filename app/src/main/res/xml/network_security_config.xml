@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  在线词库的词表 zip 只有一个源：`ydschool-online.nos.netease.com`，而它**不提供 HTTPS**
+  （实测 `https://` 该主机无响应，`http://` 返回 200；目录 81 本书的 offlinedata 全部指向这一个 host）。
+  targetSdk 35 默认禁止明文 HTTP，所以这里只给这一个域名开口，而不是全局
+  `usesCleartextTraffic="true"` —— 后者会把登录、日历等所有其它请求一起降级。
+  目录本身走的是 `https://raw.githubusercontent.com/...`，不在此列。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">ydschool-online.nos.netease.com</domain>
+    </domain-config>
+</network-security-config>
