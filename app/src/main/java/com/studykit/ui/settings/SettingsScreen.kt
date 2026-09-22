@@ -99,6 +99,27 @@ private val StrictnessChoices = listOf(
     ReviewStrictness.STRICT to "严格",
 )
 
+/** 「一天」开始的候选小时。5 格短标签，一行放得下 */
+private val BoundaryChoices = listOf(
+    0 to "00 点",
+    2 to "02 点",
+    3 to "03 点",
+    4 to "04 点",
+    5 to "05 点",
+)
+
+/** 打卡时段预设。索引与 `SettingsViewModel.setCheckInWindow` 一一对应 */
+private val WindowChoices = listOf(0 to "不限", 1 to "08–22", 2 to "07–23", 3 to "09–24")
+
+/** 由当前设置反推选中的预设档（手改备份出现自定义窗口时四档都不选中，可接受） */
+private fun currentWindowPreset(s: AppSettings): Int = when {
+    !s.restrictCheckIn -> 0
+    s.restrictStartMin == 8 * 60 && s.restrictEndMin == 22 * 60 -> 1
+    s.restrictStartMin == 7 * 60 && s.restrictEndMin == 23 * 60 -> 2
+    s.restrictStartMin == 9 * 60 && s.restrictEndMin == 24 * 60 -> 3
+    else -> -1
+}
+
 /** 提醒周期的常用档。WorkManager 的周期任务按小时粗粒度，1..72 的自由值靠备份恢复才会出现 */
 private val ReminderPresets = listOf(2, 4, 6, 12, 24)
 
@@ -441,6 +462,64 @@ fun SettingsScreen(
                             label = label,
                             selected = settings.reviewStrictness == level,
                             onClick = { viewModel.setReviewStrictness(level) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
+                title = "打卡规则",
+                hint = "「一天」从几点开始：选 03 点，凌晨两点的打卡就记进前一天，熬夜不再断签。" +
+                    "漏一天并不会毁掉习惯，所以补打卡也放开了（Lally 2010）。",
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                    modifier = Modifier.selectableGroup(),
+                ) {
+                    BoundaryChoices.forEach { (hour, label) ->
+                        ChoiceTile(
+                            label = label,
+                            selected = settings.dayBoundaryHour == hour,
+                            onClick = { viewModel.setDayBoundaryHour(hour) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
+                title = "允许补打卡",
+                hint = "过去 7 天内漏掉的日历格可以点进去补；补的会单独标识，不与当天打卡混算。",
+                trailing = {
+                    Switch(
+                        checked = settings.makeupAllowed,
+                        onCheckedChange = { viewModel.setMakeupAllowed(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = colors.accentInk,
+                            checkedBorderColor = colors.accentInk,
+                            checkedThumbColor = colors.card,
+                            uncheckedTrackColor = colors.divider,
+                            uncheckedBorderColor = colors.divider,
+                            uncheckedThumbColor = colors.card,
+                        ),
+                    )
+                },
+            )
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
+                title = "限制打卡时段",
+                hint = "窗口外点「确认打卡」会被拦下并说明原因；补打卡不受窗口限制。",
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                    modifier = Modifier.selectableGroup(),
+                ) {
+                    WindowChoices.forEach { (index, label) ->
+                        ChoiceTile(
+                            label = label,
+                            selected = currentWindowPreset(settings) == index,
+                            onClick = { viewModel.setCheckInWindow(index) },
                             modifier = Modifier.weight(1f),
                         )
                     }

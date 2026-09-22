@@ -2,6 +2,7 @@ package com.studykit.ui.habit
 
 import android.app.Application
 import android.content.Intent
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -114,6 +116,24 @@ internal fun habitStreak(dates: Set<LocalDate>, today: LocalDate = LocalDate.now
 /** 该日期是否可补打卡：过去 7 天内（不含今天与未来） */
 fun canMakeUp(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
     date.isBefore(today) && !date.isBefore(today.minusDays(MAKEUP_WINDOW_DAYS))
+
+/**
+ * 日界归属（纯函数）：boundary=b 时，"今天 b 点之前"发生的事算**前一天**。
+ * 例：boundary=3，凌晨 1 点的打卡 → 昨天。0 点边界原样返回。
+ */
+internal fun effectiveCheckInDate(now: java.time.Instant, zone: java.time.ZoneId, boundaryHour: Int): LocalDate =
+    now.atZone(zone).toLocalDateTime().minusHours(boundaryHour.coerceIn(0, 12).toLong()).toLocalDate()
+
+/**
+ * 打卡时段窗口（纯函数）。end ≤ start 视为跨零点窗口（如 22:00–06:00）；
+ * **start == end 视为不限制**而不是永久锁死 —— 那是手滑写错时把自己锁在门外的兜底。
+ */
+internal fun isWithinCheckInWindow(nowMinuteOfDay: Int, startMin: Int, endMin: Int): Boolean {
+    val s = startMin.coerceIn(0, 24 * 60)
+    val e = endMin.coerceIn(0, 24 * 60)
+    if (s == e) return true
+    return if (s < e) nowMinuteOfDay in s until e else nowMinuteOfDay >= s || nowMinuteOfDay < e
+}
 
 /** 把演示数据的旧图标键映射为 emoji；已是 emoji 则原样返回 */
 fun habitIconEmoji(icon: String): String = when (icon) {
@@ -250,11 +270,36 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
      * - 数量型传 amount>0 累加；天数型传 0 记一天
      * - 补卡仅限过去 [MAKEUP_WINDOW_DAYS] 天内
      */
-    fun submitCheckIn(habit: Habit, date: LocalDate, note: String, amount: Double) {
-        val today = LocalDate.now()
-        if (date.isAfter(today)) return
-        if (date.isBefore(today) && !canMakeUp(date, today)) return
-        viewModelScope.launch { repository.checkInOn(habit.id, date, note, amount) }
+    fun submitCheckIn(habit: Habit, date: LocalDate, note: String, amount: Double, isMakeup: Boolean = false) {
+        viewModelScope.launch {
+            val zone = ZoneId.systemDefault()
+            val now = java.time.Instant.now()
+            val s = settingsRepository.settings.first()
+            val today = now.atZone(zone).toLocalDate()
+            if (date.isAfter(today)) return@launch
+            val boundary = s.dayBoundaryHour.coerceIn(0, 12)
+            // 日界归属在**写入时**定对：boundary=b 时，今天 b 点之前的打卡算前一天。
+            // check_ins 只存日期串不存时刻，事后无法重算 —— 错过这里就永远错了。
+            val effective = if (date == today && boundary > 0) effectiveCheckInDate(now, zone, boundary) else date
+            if (effective.isBefore(today)) {
+                if (!s.makeupAllowed) return@launch
+                if (!canMakeUp(effective, today)) return@launch
+            }
+            if (s.restrictCheckIn && effective == today) {
+                val nowMin = now.atZone(zone).let { it.hour * 60 + it.minute }
+                if (!isWithinCheckInWindow(nowMin, s.restrictStartMin, s.restrictEndMin)) {
+                    // 静默拒绝最坑人 —— 用户以为打了，账上却没有。这里必须说话。
+                    Toast.makeText(
+                        getApplication(),
+                        "当前不在可打卡时段（${s.restrictStartMin / 60}:${"%02d".format(s.restrictStartMin % 60)}" +
+                            "–${s.restrictEndMin / 60}:${"%02d".format(s.restrictEndMin % 60)}）",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    return@launch
+                }
+            }
+            repository.checkInOn(habit.id, effective, note, amount, isMakeup)
+        }
     }
 
     /** 创建习惯（支持数量型与默认打卡文案），成功后回调（通常用于返回上一页） */

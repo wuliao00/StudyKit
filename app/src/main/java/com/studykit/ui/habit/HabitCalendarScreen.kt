@@ -277,7 +277,7 @@ fun HabitCalendarScreen(
             isMakeUp = true,
             onDismiss = { makeUpDate = null },
             onConfirm = { note, amount ->
-                viewModel.submitCheckIn(habit, makeUp, note, amount)
+                viewModel.submitCheckIn(habit, makeUp, note, amount, isMakeup = true)
                 makeUpDate = null
             },
         )

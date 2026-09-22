@@ -133,6 +133,25 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** 复习严格度：AUTO 由考试日期反推，其余三档把目标准确率钉死 */
     fun setReviewStrictness(value: ReviewStrictness) = write { it.copy(reviewStrictness = value) }
 
+    /** 「一天」从几点开始：凌晨打卡算前一天，熬夜不再断签 */
+    fun setDayBoundaryHour(value: Int) = write { it.copy(dayBoundaryHour = value) }
+
+    fun setMakeupAllowed(on: Boolean) = write { it.copy(makeupAllowed = on) }
+
+    /**
+     * 限制时段。**与 spec 的偏离**：本版给四档预设而不是自由填两个时间点 ——
+     * 自由时间要做 "HH:mm" 解析、校验、防 end≤start 的兜底 UI，一版塞不下；
+     * 预设已覆盖常用档，底层字段（分钟数）不变，以后放开只动 UI。
+     */
+    fun setCheckInWindow(preset: Int) = write {
+        when (preset) {
+            1 -> it.copy(restrictCheckIn = true, restrictStartMin = 8 * 60, restrictEndMin = 22 * 60)
+            2 -> it.copy(restrictCheckIn = true, restrictStartMin = 7 * 60, restrictEndMin = 23 * 60)
+            3 -> it.copy(restrictCheckIn = true, restrictStartMin = 9 * 60, restrictEndMin = 24 * 60)
+            else -> it.copy(restrictCheckIn = false)
+        }
+    }
+
     /** 减弱动效：关掉彩带、错峰入场与按压缩放 */
     fun setReduceMotion(on: Boolean) = write { it.copy(reduceMotion = on) }
 

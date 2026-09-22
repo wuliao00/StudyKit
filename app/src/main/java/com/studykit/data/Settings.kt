@@ -47,6 +47,19 @@ data class AppSettings(
     val reviewStrictness: ReviewStrictness = ReviewStrictness.AUTO,
     /** 贪吃蛇历史最高分（批次一）。只增不减：读档时取 max，防止手改备份把它清零 */
     val snakeBest: Int = 0,
+    /**
+     * 「一天」从几点开始（0~5，默认 0）：凌晨 0~4 点打卡算**前一天**。
+     * 修真实缺陷 —— 连续天数原本写死自然日，熬夜用户天天被断签
+     * （Lally 2010：漏一天并不毁掉习惯的自动性，断签清零才不科学）。
+     */
+    val dayBoundaryHour: Int = DEFAULT_DAY_BOUNDARY_HOUR,
+    /** 允许补打卡（近 7 天内的空格）。补的记 is_makeup，不断签但在日历与统计里单独标识 */
+    val makeupAllowed: Boolean = true,
+    /** 限制打卡时段（默认关）：开启后只允许窗口内打卡 */
+    val restrictCheckIn: Boolean = false,
+    /** 窗口起止（当天分钟数，默认 08:00–22:00） */
+    val restrictStartMin: Int = DEFAULT_RESTRICT_START_MIN,
+    val restrictEndMin: Int = DEFAULT_RESTRICT_END_MIN,
     /** 上一次词库下载失败的原文，只为诊断展示，不做任何判断 */
     val lastDictFailure: String = "",
 ) {
@@ -72,6 +85,11 @@ data class AppSettings(
         KEY_EXAM_DAY to examEpochDay.toString(),
         KEY_REVIEW_STRICTNESS to reviewStrictness.name,
         KEY_SNAKE_BEST to snakeBest.toString(),
+        KEY_DAY_BOUNDARY to dayBoundaryHour.toString(),
+        KEY_MAKEUP_ALLOWED to makeupAllowed.toString(),
+        KEY_RESTRICT_CHECK_IN to restrictCheckIn.toString(),
+        KEY_RESTRICT_START to restrictStartMin.toString(),
+        KEY_RESTRICT_END to restrictEndMin.toString(),
         KEY_DICT_FAILURE to lastDictFailure,
     )
 
@@ -86,6 +104,11 @@ data class AppSettings(
         const val KEY_EXAM_DAY = "exam_epoch_day"
         const val KEY_REVIEW_STRICTNESS = "review_strictness"
         const val KEY_SNAKE_BEST = "snake_best"
+        const val KEY_DAY_BOUNDARY = "day_boundary_hour"
+        const val KEY_MAKEUP_ALLOWED = "makeup_allowed"
+        const val KEY_RESTRICT_CHECK_IN = "restrict_check_in"
+        const val KEY_RESTRICT_START = "restrict_start_min"
+        const val KEY_RESTRICT_END = "restrict_end_min"
         const val KEY_DICT_FAILURE = "last_dict_failure"
 
         const val DEFAULT_WORD_GOAL = 20
@@ -100,6 +123,15 @@ data class AppSettings(
 
         /** 能接受考试日的区间：2000-01-01 至 2100-01-01 */
         val EXAM_DAY_RANGE = LocalDate.of(2000, 1, 1).toEpochDay()..LocalDate.of(2100, 1, 1).toEpochDay()
+
+        /** 「一天」的开始小时：0~5（再大就不是熬夜而是作息颠倒了） */
+        val DAY_BOUNDARY_RANGE = 0..5
+        const val DEFAULT_DAY_BOUNDARY_HOUR = 0
+
+        /** 打卡时段限制的分钟上限与默认窗口（08:00–22:00） */
+        const val MINUTES_OF_DAY = 24 * 60
+        const val DEFAULT_RESTRICT_START_MIN = 8 * 60
+        const val DEFAULT_RESTRICT_END_MIN = 22 * 60
 
         /**
          * 键值行 → 类型化设置。**永不抛异常**：库里的值可能被旧版本写过、被手改过的备份文件恢复进来，
@@ -125,6 +157,15 @@ data class AppSettings(
                     ?.let { raw -> ReviewStrictness.entries.firstOrNull { it.name == raw } }
                     ?: defaults.reviewStrictness,
                 snakeBest = map[KEY_SNAKE_BEST]?.toIntOrNull()?.coerceAtLeast(0) ?: defaults.snakeBest,
+                dayBoundaryHour = map[KEY_DAY_BOUNDARY]?.toIntOrNull()?.takeIf { it in DAY_BOUNDARY_RANGE }
+                    ?: defaults.dayBoundaryHour,
+                makeupAllowed = map[KEY_MAKEUP_ALLOWED]?.toBooleanStrictOrNull() ?: defaults.makeupAllowed,
+                restrictCheckIn = map[KEY_RESTRICT_CHECK_IN]?.toBooleanStrictOrNull()
+                    ?: defaults.restrictCheckIn,
+                restrictStartMin = map[KEY_RESTRICT_START]?.toIntOrNull()
+                    ?.takeIf { it in 0..MINUTES_OF_DAY } ?: defaults.restrictStartMin,
+                restrictEndMin = map[KEY_RESTRICT_END]?.toIntOrNull()
+                    ?.takeIf { it in 0..MINUTES_OF_DAY } ?: defaults.restrictEndMin,
                 // 诊断文本原样留着，包括空串；只在超长时掐掉，免得一次异常堆栈把设置页撑坏
                 lastDictFailure = map[KEY_DICT_FAILURE]?.take(400) ?: defaults.lastDictFailure,
             )

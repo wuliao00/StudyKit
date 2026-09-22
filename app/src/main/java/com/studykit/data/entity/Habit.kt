@@ -20,4 +20,17 @@ data class Habit(
     @ColumnInfo(name = "unit", defaultValue = "''") val unit: String = "",
     /** 默认打卡文案：一键打卡时自动带入打卡备注 */
     @ColumnInfo(name = "default_text", defaultValue = "''") val defaultText: String = "",
-)
+    /**
+     * 时段分类（v2.4 批次四）：ANY/MORNING/FORENOON/NOON/AFTERNOON/EVENING/NIGHT。
+     * 依据 Gardner 2021 —— 绑例程（"睡前"）比绑钟点（"22:30"）更易成习惯，
+     * 所以分类是"一天的哪一段"而不是提醒时刻。
+     */
+    @ColumnInfo(name = "category", defaultValue = "'ANY'") val category: String = CATEGORY_ANY,
+    /** 手动排序（长按拖动）；小值在前 */
+    @ColumnInfo(name = "sort_order", defaultValue = "0") val sortOrder: Int = 0,
+) {
+    companion object {
+        const val CATEGORY_ANY = "ANY"
+        val CATEGORIES = listOf(CATEGORY_ANY, "MORNING", "FORENOON", "NOON", "AFTERNOON", "EVENING", "NIGHT")
+    }
+}

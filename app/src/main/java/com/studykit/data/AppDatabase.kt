@@ -9,6 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.studykit.BuildConfig
 import com.studykit.data.dao.AppSettingDao
 import com.studykit.data.dao.BookDao
+import com.studykit.data.dao.ContractDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
 import com.studykit.data.dao.PracticeDao
@@ -19,6 +20,7 @@ import com.studykit.data.entity.AppSetting
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.CheckIn
+import com.studykit.data.entity.Contract
 import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Habit
 import com.studykit.data.entity.Mistake
@@ -42,8 +44,9 @@ import com.studykit.data.entity.WordReview
         BookReview::class,
         WordList::class,
         AppSetting::class,
+        Contract::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -56,6 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun habitDao(): HabitDao
     abstract fun bookDao(): BookDao
     abstract fun appSettingDao(): AppSettingDao
+    abstract fun contractDao(): ContractDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -177,6 +181,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6（v2.4，一次做完五批的全部 schema，不让用户为真机升级多冒一次险）：
+         * - `check_ins.is_makeup`：补打卡标记（Lally 2010：漏一天不毁习惯，补打卡不断签但单独标识）
+         * - `habits.category` / `habits.sort_order`：时段分类与手动排序
+         *   （habits.archived 已存在，不用加）
+         * - 新表 `contracts`：自我契约（批次五的存储，先建好逻辑后上）
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `check_ins` ADD COLUMN `is_makeup` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE `habits` ADD COLUMN `category` TEXT NOT NULL DEFAULT 'ANY'",
+                )
+                db.execSQL(
+                    "ALTER TABLE `habits` ADD COLUMN `sort_order` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `contracts` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`uuid` TEXT NOT NULL, " +
+                        "`syncStatus` INTEGER NOT NULL DEFAULT 0, " +
+                        "`habit_id` INTEGER NOT NULL, " +
+                        "`deadline_epoch_day` INTEGER NOT NULL, " +
+                        "`goal_count` INTEGER NOT NULL, " +
+                        "`promise_text` TEXT NOT NULL DEFAULT '', " +
+                        "`consequence_text` TEXT NOT NULL DEFAULT '', " +
+                        "`signed_by` TEXT NOT NULL DEFAULT '', " +
+                        "`signed_at_epoch_day` INTEGER NOT NULL, " +
+                        "`status` TEXT NOT NULL DEFAULT 'ACTIVE', " +
+                        "`settled_at` INTEGER" +
+                        ")",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -187,7 +228,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .addCallback(SeedCallback)
                     .build()
                     .also { instance = it }

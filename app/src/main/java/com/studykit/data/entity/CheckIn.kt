@@ -28,4 +28,10 @@ data class CheckIn(
     @ColumnInfo(name = "note", defaultValue = "''") val note: String = "",
     /** 本次打卡数量（数量型习惯累加用；天数型固定为 1） */
     @ColumnInfo(name = "amount", defaultValue = "1") val amount: Double = 1.0,
+    /**
+     * 补打卡标记（v2.4）：只能补近 7 天内的空格。
+     * 连续天数不断（Lally 2010：漏一天不毁自动性），但日历上描边降饱和、统计里单列，
+     * 不让它伪装成"当天就打了"。
+     */
+    @ColumnInfo(name = "is_makeup", defaultValue = "0") val isMakeup: Boolean = false,
 )

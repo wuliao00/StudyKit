@@ -56,7 +56,13 @@ class HabitRepository(private val habitDao: HabitDao) {
      * - 当日无记录：新增（amount<=0 时记 1，即天数型）
      * - 当日已有记录：数量型累加 amount；备注非空时覆盖（天数型重复打卡不会重复计数）
      */
-    suspend fun checkInOn(habitId: Long, date: LocalDate, note: String, amount: Double): Long {
+    suspend fun checkInOn(
+        habitId: Long,
+        date: LocalDate,
+        note: String,
+        amount: Double,
+        isMakeup: Boolean = false,
+    ): Long {
         val dateStr = date.format(dateFmt)
         val existing = habitDao.findCheckInOn(habitId, dateStr)
         return if (existing == null) {
@@ -67,6 +73,7 @@ class HabitRepository(private val habitDao: HabitDao) {
                     date = dateStr,
                     note = note.trim(),
                     amount = if (amount > 0) amount else 1.0,
+                    isMakeup = isMakeup,
                 ),
             )
         } else {
