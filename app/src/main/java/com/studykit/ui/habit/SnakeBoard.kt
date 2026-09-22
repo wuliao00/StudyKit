@@ -120,8 +120,6 @@ fun SnakeBoard(
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val cell = (maxWidth / BOARD_COLS).coerceAtMost(17.dp)
-            val boardPx = with(density) { cell.toPx() }
-            val corner = CornerRadius(cell.toPx() * 0.22f, cell.toPx() * 0.22f)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -161,6 +159,8 @@ fun SnakeBoard(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val step = size.width / BOARD_COLS
                     val gap = step * 0.12f
+                    // CornerRadius 要 toPx：DrawScope 本身就是 Density，在这里换算才合法
+                    val corner = CornerRadius(cell.toPx() * 0.22f, cell.toPx() * 0.22f)
                     // 底格：打过卡 = accentSoft，没打过 = heatIdle
                     for (x in 0 until BOARD_COLS) for (y in 0 until BOARD_ROWS) {
                         val date = dates[SnakeCell(x, y).key]
