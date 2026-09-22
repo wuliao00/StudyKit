@@ -86,9 +86,13 @@ fun SnakeBoard(
 
     var game by remember(checkedIn) { mutableStateOf(SnakeGame.start(BOARD_COLS, BOARD_ROWS, checkedIn)) }
     val latest = rememberUpdatedState(game)
+    // 第一次滑动前不开始计时：开局到右墙只有 18 格 ≈ 2.7 秒，
+    // 真机上第一局全都是"还没反应过来就撞墙"（装机走查抓到的）
+    var started by remember(checkedIn) { mutableStateOf(false) }
 
     // 游戏循环：keyed 在 isOver —— 转向不重置节拍；结束即停；再来一局（isOver 翻回 false）重启
-    LaunchedEffect(game.isOver, checkedIn) {
+    LaunchedEffect(game.isOver, started, checkedIn) {
+        if (!started) return@LaunchedEffect
         while (isActive && !latest.value.isOver) {
             delay(latest.value.stepMillis.toLong())
             game = latest.value.tick()
@@ -144,6 +148,7 @@ fun SnakeBoard(
                                     } else {
                                         if (accY > 0) SnakeDirection.DOWN else SnakeDirection.UP
                                     }
+                                    started = true
                                     game = latest.value.turn(dir)
                                     accX = 0f
                                     accY = 0f
@@ -199,6 +204,7 @@ fun SnakeBoard(
                             .background(colors.card.copy(alpha = 0.88f))
                             .pointerInput(Unit) {
                                 detectTapGestures {
+                                    started = false
                                     game = SnakeGame.start(BOARD_COLS, BOARD_ROWS, checkedIn)
                                 }
                             },
