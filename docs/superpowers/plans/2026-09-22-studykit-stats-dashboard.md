@@ -1,12 +1,26 @@
 # 记忆看板（统计页三块图）实施计划
 
-> **执行状态（2026-09-22）**：Task 1–3 已落地，提交 `e29d78f` / `c7e5c20` / `b2a9345`。
-> 两处与计划的偏离：① Task 3/4/5 合并成一个提交（每次 push 要等 3 分钟 CI，
-> 三块图同属一个页面，分开提交只是把等待时间乘三）；② `EmptyState` 的参数名是 `title`
-> 不是计划里写的 `text`，`StatsScreen` 里也去掉了 `DateTimeFormatter`（改用
-> `dayOfWeek.getDisplayName`），柱状标签因此是"一二三…"而不是"Mon Tue"。
-> CI 抓到的两个编译错（测试里 `ZoneId` 应为 `ZoneOffset`、`StatsViewModel` 漏 import
-> `viewModelScope`）都已修，并已把原因写进代码注释 —— 本机没有 JDK，这类错只能靠 CI 报回来。
+> **执行状态（2026-09-22）**：Task 1–5 已落地并 CI 全绿，最终 head `1152991`（两个 job 均 success）。
+> 提交序列 `e29d78f` → `c7e5c20` → `b2a9345` → `b223b1c` → `9528638` → `1152991`。
+>
+> 三处与计划的偏离，都记在这儿：
+> 1. **Task 3/4/5 合并成一个提交**。每次 push 要等 3~4 分钟 CI，三块图同属一个页面，
+>    分开提只是把等待时间乘三。
+> 2. `EmptyState` 的参数名是 `title` 不是计划里写的 `text`；柱状标签改用
+>    `dayOfWeek.getDisplayName(TextStyle.SHORT, ...)`，没再用 `DateTimeFormatter`。
+> 3. **计划里的代码本身有三处错**，全部由 CI 抓回（本机没有 JDK，这是唯一防线）：
+>    ① 测试里时区字段声明成 `ZoneId`，但 `LocalDateTime.toInstant()` 只收 `ZoneOffset`；
+>    ② `StatsViewModel` 漏 `import androidx.lifecycle.viewModelScope`；
+>    ③ **`DrawScope.drawLine` 根本没有收 `Path` 的重载** —— 只有
+>    `(brush|color, start, end, strokeWidth, cap, ...)` 两个，折线必须走
+>    `drawPath(path, color, style = Stroke(width, cap))`。计划里那两版代码是错的，
+>    已就地改成正确版本并把原因写进注释。
+>
+> 另外 CI 还抓出一个**实现** bug（不是笔误）：`forecastByDay` 最后一格用 `Long.MAX_VALUE` 收口，
+> 于是一个月后排到的词会被算进本周最后一天的柱子 —— 不崩不报错，只是图上凭空多一截。
+> 已改为以窗口结束那天 0 点为界，并补 `timestamps beyond the window never leak into the last bar`。
+> 这条值得记住：**聚合窗口的边界必须显式闭合**，"最后一格兜住所有"看着像省事，实际是把脏数据藏进图里。
+
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
