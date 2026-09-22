@@ -93,6 +93,20 @@ class MemoryHealthTest {
         assertEquals(listOf(0, 0), out.map { it.count })
     }
 
+    /**
+     * 窗口外的一条**不许落到最后一格**。
+     *
+     * 真错过一次：最后一格的右界写成 `Long.MAX_VALUE`，于是"一个月后要复习的词"
+     * 被算进本周最后一天的柱子里 —— 用户看到的那根柱子是凭空多出来的，
+     * 而且这种错不会崩、不会报错，只会让数字看着不对。
+     */
+    @Test
+    fun `timestamps beyond the window never leak into the last bar`() {
+        val far = stamp(2026, 12, 31)
+        val out = MemoryHealth.forecastByDay(listOf(far), utc, LocalDate.of(2026, 9, 22), days = 7)
+        assertEquals("窗口外的时间戳哪一格都不该进", listOf(0, 0, 0, 0, 0, 0, 0), out.map { it.count })
+    }
+
     // ── 实测遗忘曲线 ──────────────────────────────────────────────
 
     @Test
@@ -102,6 +116,7 @@ class MemoryHealthTest {
             GapSample(1.5, true), GapSample(2.5, false),  // 「1-3 天」1/2
             GapSample(5.0, false),                        // 「3-7 天」0/1
             GapSample(20.0, true),                        // 「7-30 天」1/1
+            GapSample(40.0, false),                       // 「30 天以上」0/1
         )
         val byLabel = MemoryHealth.forgettingCurve(samples).associateBy { it.label }
         assertEquals(1.0, byLabel["1 天内"]!!.observedRecall!!, 1e-9)
@@ -110,6 +125,7 @@ class MemoryHealthTest {
         assertEquals(1.0, byLabel["7-30 天"]!!.observedRecall!!, 1e-9)
         assertEquals(2, byLabel["1 天内"]!!.sampleCount)
         assertEquals(1, byLabel["30 天以上"]!!.sampleCount)
+        assertEquals(0.0, byLabel["30 天以上"]!!.observedRecall!!, 1e-9)
     }
 
     /** 空桶必须是 null，不是 0%。画成 0% 等于对用户撒谎说"你全忘了" */

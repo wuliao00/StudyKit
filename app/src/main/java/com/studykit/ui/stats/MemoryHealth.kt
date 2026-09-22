@@ -103,7 +103,10 @@ object MemoryHealth {
     ): List<DayLoad> {
         val starts = (0 until days)
             .map { from.plusDays(it.toLong()).atStartOfDay(zone).toInstant().toEpochMilli() }
-        val ends = starts.drop(1) + Long.MAX_VALUE
+        // 最后一格的右界必须是"窗口结束后那一天 0 点"，不能是 Long.MAX_VALUE ——
+        // 否则一个月后排到的词会被算进最后一格，图上那根柱子是凭空的
+        val ends = starts.drop(1) +
+            from.plusDays(days.toLong()).atStartOfDay(zone).toInstant().toEpochMilli()
         return (0 until days).map { i ->
             DayLoad(
                 date = from.plusDays(i.toLong()),
