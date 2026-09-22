@@ -56,6 +56,25 @@ class MemoryHealthTest {
         assertEquals(100, out[0].sharePercent)
     }
 
+    /**
+     * 有词但占比不到 0.5% 时，四舍五入会得到 0 —— 直接印出来就是"1 个 · 0%"，
+     * 一句话里自己打自己。真机上 1177 个词里 1 个扛过 10 天，就是这么显示的。
+     */
+    @Test
+    fun `a nonzero count never reads as zero percent`() {
+        val oneInMany = MemoryHealth.durability(List(1176) { 0.5 } + listOf(20.0))
+        assertEquals(1, oneInMany[0].count)
+        assertEquals(0, oneInMany[0].sharePercent)          // 条子按 0 画没问题
+        assertEquals("不足 1%", oneInMany[0].shareLabel)     // 文字不能骗人
+
+        val none = MemoryHealth.durability(listOf(0.5, 1.0))
+        assertEquals("0%", none[0].shareLabel)
+
+        val quarter = MemoryHealth.durability(listOf(20.0, 0.5, 0.5, 0.5))
+        assertEquals(25, quarter[0].sharePercent)
+        assertEquals("25%", quarter[0].shareLabel)
+    }
+
     // ── 未来复习量 ────────────────────────────────────────────────
 
     @Test

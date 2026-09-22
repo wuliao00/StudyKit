@@ -118,7 +118,8 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
                 DurabilityRow(
                     label = "≥ ${bucket.minHalfLifeDays} 天",
                     count = bucket.count,
-                    sharePercent = bucket.sharePercent,
+                    share = bucket.shareLabel,
+                    fraction = bucket.sharePercent / 100f,
                 )
             }
         }
@@ -212,28 +213,28 @@ private fun ForecastBars(forecast: List<DayLoad>) {
     }
 }
 
-/** 一行持久度：标签 + "N 个 · P%" + 比例条 */
+/** 一行持久度：标签 + "N 个 · 占比" + 比例条。占比文字取自 [DurabilityBucket.shareLabel]，不用裸百分数 */
 @Composable
-private fun DurabilityRow(label: String, count: Int, sharePercent: Int) {
+private fun DurabilityRow(label: String, count: Int, share: String, fraction: Float) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = AppTheme.space.sm)
-            .semantics { contentDescription = "$label：$count 个，占 $sharePercent%" },
+            .semantics { contentDescription = "$label：$count 个，占 $share" },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = label, style = texts.body, modifier = Modifier.weight(1f))
             Text(
-                text = "$count 个 · $sharePercent%",
+                text = "$count 个 · $share",
                 style = texts.caption,
                 color = colors.secondaryText,
             )
         }
         Spacer(Modifier.height(AppTheme.space.xs))
         LinearProgressIndicator(
-            progress = { sharePercent / 100f },
+            progress = { fraction },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(6.dp),

@@ -4,8 +4,21 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.pow
 
-/** 一个持久度档位：半衰期 ≥ [minHalfLifeDays] 天 */
-data class DurabilityBucket(val minHalfLifeDays: Int, val count: Int, val sharePercent: Int)
+/**
+ * 一个持久度档位：半衰期 ≥ [minHalfLifeDays] 天。
+ *
+ * [sharePercent] 供进度条用（四舍五入的整数）；**给用户看的必须是 [shareLabel]** ——
+ * 一千多个词里只有 1 个扛过 10 天时，四舍五入是 0%，
+ * 那行字就变成"1 个 · 0%"这种自相矛盾的话（真机上就这么显示过）。
+ */
+data class DurabilityBucket(val minHalfLifeDays: Int, val count: Int, val sharePercent: Int) {
+    val shareLabel: String
+        get() = when {
+            count == 0 -> "0%"
+            sharePercent == 0 -> "不足 1%"
+            else -> "$sharePercent%"
+        }
+}
 
 /** 某一天的复习负载 */
 data class DayLoad(val date: LocalDate, val count: Int)
