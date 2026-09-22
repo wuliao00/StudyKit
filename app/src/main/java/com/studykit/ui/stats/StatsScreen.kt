@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -288,8 +289,9 @@ private fun RetentionChart(
                         if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
                     }
                 },
-                strokeWidth = 2.dp.toPx(),
-                cap = StrokeCap.Round,
+                // Path 那个重载**没有** strokeWidth/cap 参数（那是 start/end 重载的），
+                // 线宽与线帽只能走 style —— 写成 strokeWidth 直接编译不过
+                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
             )
         }
         drawLine(
@@ -300,8 +302,7 @@ private fun RetentionChart(
                     if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
                 }
             },
-            strokeWidth = 2.dp.toPx(),
-            cap = StrokeCap.Round,
+            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
         )
         curve.forEach { pt ->
             val observed = pt.observedRecall ?: return@forEach

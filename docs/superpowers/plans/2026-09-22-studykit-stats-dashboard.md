@@ -1,5 +1,13 @@
 # 记忆看板（统计页三块图）实施计划
 
+> **执行状态（2026-09-22）**：Task 1–3 已落地，提交 `e29d78f` / `c7e5c20` / `b2a9345`。
+> 两处与计划的偏离：① Task 3/4/5 合并成一个提交（每次 push 要等 3 分钟 CI，
+> 三块图同属一个页面，分开提交只是把等待时间乘三）；② `EmptyState` 的参数名是 `title`
+> 不是计划里写的 `text`，`StatsScreen` 里也去掉了 `DateTimeFormatter`（改用
+> `dayOfWeek.getDisplayName`），柱状标签因此是"一二三…"而不是"Mon Tue"。
+> CI 抓到的两个编译错（测试里 `ZoneId` 应为 `ZoneOffset`、`StatsViewModel` 漏 import
+> `viewModelScope`）都已修，并已把原因写进代码注释 —— 本机没有 JDK，这类错只能靠 CI 报回来。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给 StudyKit 加一页「记忆看板」，把 v2.3 半衰期模型已经算得出来、但用户看不见的三件事摊开：我的记忆现在能扛多久、未来 7 天每天要复习多少、我自己的遗忘曲线和艾宾浩斯差多少。
