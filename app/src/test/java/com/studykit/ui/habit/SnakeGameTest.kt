@@ -106,12 +106,13 @@ class SnakeGameTest {
 
     @Test
     fun `biting your own body ends the game`() {
+        // 头 (1,1) 朝下撞 (1,2) —— (1,2) 在身子中段（尾巴是 (2,1)，不参与判定）
         val g = game(
             snake = listOf(
-                SnakeCell(2, 1), SnakeCell(1, 1), SnakeCell(1, 2), SnakeCell(2, 2),
+                SnakeCell(1, 1), SnakeCell(1, 2), SnakeCell(2, 2), SnakeCell(2, 1),
             ),
             direction = DOWN,
-            food = SnakeCell(0, 0),
+            food = SnakeCell(18, 0),
         )
         assertTrue(g.tick(rng).isOver)
     }
