@@ -131,8 +131,9 @@ internal fun effectiveCheckInDate(now: java.time.Instant, zone: java.time.ZoneId
 internal fun isWithinCheckInWindow(nowMinuteOfDay: Int, startMin: Int, endMin: Int): Boolean {
     val s = startMin.coerceIn(0, 24 * 60)
     val e = endMin.coerceIn(0, 24 * 60)
+    val now = nowMinuteOfDay.coerceIn(0, 24 * 60 - 1)
     if (s == e) return true
-    return if (s < e) nowMinuteOfDay in s until e else nowMinuteOfDay >= s || nowMinuteOfDay < e
+    return if (s < e) now in s until e else now >= s || now < e
 }
 
 /** 把演示数据的旧图标键映射为 emoji；已是 emoji 则原样返回 */
