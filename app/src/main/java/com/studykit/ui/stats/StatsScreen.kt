@@ -281,27 +281,27 @@ private fun RetentionChart(
             y = h * (1f - retention.toFloat()),
         )
         if (showModel && modelCurve.isNotEmpty()) {
-            drawLine(
-                color = colors.accent,
+            // DrawScope 的 drawLine **只有** (brush|color, start, end, ...) 两个重载，
+            // 没有收 Path 的版本 —— 折线要走 drawPath + style = Stroke。
+            drawPath(
                 path = Path().apply {
                     modelCurve.forEachIndexed { i, r ->
                         val p = point(i.toDouble(), r)
                         if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
                     }
                 },
-                // Path 那个重载**没有** strokeWidth/cap 参数（那是 start/end 重载的），
-                // 线宽与线帽只能走 style —— 写成 strokeWidth 直接编译不过
+                color = colors.accent,
                 style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
             )
         }
-        drawLine(
-            color = colors.warning,
+        drawPath(
             path = Path().apply {
                 ebbinghaus.forEachIndexed { i, (day, retention) ->
                     val p = point(day, retention)
                     if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y)
                 }
             },
+            color = colors.warning,
             style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
         )
         curve.forEach { pt ->
