@@ -112,4 +112,25 @@ interface WordDao {
      */
     @Query("SELECT next_review_at FROM words WHERE next_review_at > 0")
     fun observeScheduledTimestamps(): Flow<List<Long>>
+
+    /**
+     * 全库半衰期（记忆看板用）。
+     *
+     * 只取一列而不是 `observeAll()`：看板每改一次评分就会重算，
+     * 把一千多行整行（单词、释义、例句）拉过 Binder 是纯浪费。
+     */
+    @Query("SELECT half_life_days FROM words")
+    fun observeHalfLifeDays(): Flow<List<Double>>
+
+    /** 复习时的间隔与结果 —— 实测遗忘曲线的唯一原料 */
+    @Query("SELECT gap_days AS gapDays, correct FROM word_reviews")
+    fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>>
 }
+
+/**
+ * [WordDao.observeReviewGapAndResult] 的投影行。
+ *
+ * `gapDays` 可空：v2.3 之前的旧复习记录只有时间戳，没有"当时隔了多久"，
+ * 那种行参与不了曲线计算（算法层会过滤掉），但**不能假装它们是 0 天**。
+ */
+data class ReviewGapRow(val gapDays: Double?, val correct: Boolean)

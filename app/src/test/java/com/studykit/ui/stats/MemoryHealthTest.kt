@@ -5,7 +5,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.math.pow
 
@@ -17,7 +16,13 @@ import kotlin.math.pow
  */
 class MemoryHealthTest {
 
-    private val utc: ZoneId = ZoneOffset.UTC
+    /**
+     * 声明成 [ZoneOffset] 而不是 `ZoneId`：`LocalDateTime.toInstant(...)` 只收 `ZoneOffset`，
+     * 写成 `ZoneId` 会在编译期就报类型不匹配（本机没有 JDK，这类错只能等 CI 报回来，
+     * 所以类型要一次写对）。`ZoneOffset` 本身就是一个 `ZoneId`，
+     * 传给 `forecastByDay(zone = ...)` 不受影响。
+     */
+    private val utc: ZoneOffset = ZoneOffset.UTC
 
     private fun stamp(y: Int, m: Int, d: Int, hour: Int = 12): Long =
         LocalDate.of(y, m, d).atTime(hour, 0).toInstant(utc).toEpochMilli()

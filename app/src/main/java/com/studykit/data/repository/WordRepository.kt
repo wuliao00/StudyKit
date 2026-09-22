@@ -1,5 +1,6 @@
 package com.studykit.data.repository
 
+import com.studykit.data.dao.ReviewGapRow
 import com.studykit.data.dao.WordDao
 import com.studykit.data.entity.Word
 import com.studykit.data.entity.WordReview
@@ -90,4 +91,10 @@ class WordRepository(private val wordDao: WordDao) {
 
     /** 已排期的复习时刻，供首页/统计页算"未来 N 天要复习多少" */
     fun observeScheduledTimestamps(): Flow<List<Long>> = wordDao.observeScheduledTimestamps()
+
+    /** 全库半衰期（记忆看板：持久度分布与模型曲线） */
+    fun observeHalfLifeDays(): Flow<List<Double>> = wordDao.observeHalfLifeDays()
+
+    /** 复习间隔 + 结果（记忆看板：实测遗忘曲线） */
+    fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>> = wordDao.observeReviewGapAndResult()
 }
