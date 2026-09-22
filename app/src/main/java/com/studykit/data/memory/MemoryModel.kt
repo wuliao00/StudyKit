@@ -234,22 +234,27 @@ object MemoryModel {
      * 墨墨把这个数字直接印在按钮上（"认识 · 35 天后"），这是整套改造里最值的 UI 借鉴：
      * 用户不需要理解半衰期，但他看得见"我说认识，它就敢排 35 天"，
      * 也能在排得离谱的当场就知道模型错了。**别把它藏进设置页。**
+     *
+     * @param gapDays 必须传**这个词真实的已拖时间**（现在减上次复习），不能传"理想排期"。
+     *                真机踩过：一个拖了 22.8 小时的词，按理想排期预览算出「今日」，
+     *                实际点完却排到 2.8 天后 —— 因为越接近遗忘点提取，加固越强（间隔效应）。
+     *                预览低估只会让用户意外地少复习（方向安全），但按钮上的数字就是不许骗人。
      */
     fun preview(
         state: MemoryState,
+        gapDays: Double,
         targetRecall: Double,
         maxIntervalDays: Double,
         params: MemoryParams = MemoryParams(),
     ): GradePreview {
         val days = ReviewGrade.entries.associateWith { grade ->
-            schedule(update(state, intervalDays(state.halfLifeDays, targetRecall, params), grade, params),
-                grade, targetRecall, maxIntervalDays, params)
+            schedule(update(state, gapDays, grade, params), grade, targetRecall, maxIntervalDays, params)
         }
         return GradePreview(
             recallDays = days.getValue(ReviewGrade.RECALL),
             vagueDays = days.getValue(ReviewGrade.VAGUE),
             forgetDays = days.getValue(ReviewGrade.FORGET),
-            predictedRecall = recallProbability(0.0, state.halfLifeDays),
+            predictedRecall = recallProbability(gapDays, state.halfLifeDays),
         )
     }
 }

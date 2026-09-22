@@ -723,6 +723,9 @@ private fun SessionSummary(
 
 // ── 评分按钮：把模型的输出摊开给用户看 ────────────────────────────────────────
 
+/** 一天的毫秒数。预览要算"这个词已经拖了多久"，与 `StudyViewModel` 里那份同值 */
+private const val ONE_DAY_MS = 86400000L
+
 /**
  * 三个评分档，各自印出"点它之后这个词会排到多久以后"。
  *
@@ -741,8 +744,12 @@ private fun GradeRow(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    // 预览必须用这个词**真实已拖的时间**：拿理想排期算， overdue 的词会印出比实际短得多的间隔
+    val gapDays = (System.currentTimeMillis() - (word.lastReviewAt ?: word.createdAt))
+        .coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
     val preview = MemoryModel.preview(
         state = MemoryState(word.halfLifeDays, word.difficulty),
+        gapDays = gapDays,
         targetRecall = scheduling.targetRecall,
         maxIntervalDays = scheduling.maxIntervalDays,
     )

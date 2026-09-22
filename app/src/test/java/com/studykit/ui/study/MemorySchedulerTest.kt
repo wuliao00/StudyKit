@@ -68,22 +68,59 @@ class MemorySchedulerTest {
     @Test
     fun `preview keeps the ordering the buttons promise`() {
         val sched = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(120), today)
-        val preview = MemoryModel.preview(MemoryState(halfLifeDays = 3.0, difficulty = 1.0), sched.targetRecall, sched.maxIntervalDays)
+        val state = MemoryState(halfLifeDays = 3.0, difficulty = 1.0)
+        val preview = MemoryModel.preview(
+            state = state,
+            gapDays = MemoryModel.intervalDays(state.halfLifeDays, sched.targetRecall),
+            targetRecall = sched.targetRecall,
+            maxIntervalDays = sched.maxIntervalDays,
+        )
         assertTrue(
             "recall=${preview.recallDays} vague=${preview.vagueDays} forget=${preview.forgetDays}",
             preview.recallDays >= preview.vagueDays && preview.vagueDays > preview.forgetDays,
         )
         assertTrue("忘记后必须还在今天之内，实际 ${preview.forgetDays} 天", preview.forgetDays < 1.0)
         assertTrue("认识后的间隔 ${preview.recallDays} 天应落在 1~10 天量级", preview.recallDays in 1.0..10.0)
+        assertEquals(0.85, preview.predictedRecall, 0.01)
+    }
+
+    /**
+     * 拖得越久，按钮上的数字越大 —— 而且必须等于真机跑出来的那个值。
+     *
+     * 起因是真机第一轮：新词 abandon 拖了 22.8 小时，按钮印「今日」，
+     * 点完实际排到 2.84 天后。原因是预览当时按"理想排期"算 gap，
+     * 而越接近遗忘点提取、加固越强（间隔效应），于是预览严重低估。
+     * 数字不许骗人，所以 gap 一律取真实已拖时间。
+     */
+    @Test
+    fun `overdue words preview the interval they will actually get`() {
+        val sched = MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today)
+        val fresh = MemoryModel.preview(
+            state = MemoryState.NEW, gapDays = 0.0,
+            targetRecall = sched.targetRecall, maxIntervalDays = sched.maxIntervalDays,
+        )
+        val overdue = MemoryModel.preview(
+            state = MemoryState.NEW, gapDays = 0.9507,
+            targetRecall = sched.targetRecall, maxIntervalDays = sched.maxIntervalDays,
+        )
+        // 刚加进来、还没拖的词：提取发生在 p≈1 时，(1−p) 被夹到 1e-3，加固量几乎为零 → 仍排今天
+        assertTrue("未拖的词应还排在今天内，实际 ${fresh.recallDays} 天", fresh.recallDays < 0.2)
+        assertTrue("拖久了预览反而变短就是算错了：fresh=${fresh.recallDays} overdue=${overdue.recallDays}",
+            overdue.recallDays > fresh.recallDays)
+        // 真机实测值：h 0.5 → 18.7232，间隔 2.8437 天
+        assertEquals(2.8437, overdue.recallDays, 0.02)
+        assertEquals(0.2677, overdue.predictedRecall, 0.005)
     }
 
     @Test
     fun `preview never exceeds the cap`() {
         val sched = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(30), today)
+        val state = MemoryState(halfLifeDays = 900.0, difficulty = 1.0)
         val preview = MemoryModel.preview(
-            MemoryState(halfLifeDays = 900.0, difficulty = 1.0),
-            sched.targetRecall,
-            sched.maxIntervalDays,
+            state = state,
+            gapDays = MemoryModel.intervalDays(state.halfLifeDays, sched.targetRecall),
+            targetRecall = sched.targetRecall,
+            maxIntervalDays = sched.maxIntervalDays,
         )
         assertEquals(6.0, preview.recallDays, 1e-9)   // 600 天的半衰期也被 30 天考试的 6 天上限夹住
         assertTrue(preview.vagueDays <= 6.0 && preview.forgetDays <= 6.0)
