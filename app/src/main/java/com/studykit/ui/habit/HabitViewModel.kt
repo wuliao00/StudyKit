@@ -129,6 +129,21 @@ private fun List<CheckIn>.toLocalDates(): Set<LocalDate> =
 class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as StudyKitApp).container.habitRepository
+    private val settingsRepository = (application as StudyKitApp).container.settingsRepository
+
+    /** 贪吃蛇历史最高分（批次一）。 只增不减的逻辑在写入侧做，读档侧不兜底 */
+    val snakeBest: StateFlow<Int> = settingsRepository.settings
+        .map { it.snakeBest }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** 一局结束报分：只有真的破了纪录才写库，读档侧取 max 是双保险不是主逻辑 */
+    fun submitSnakeScore(score: Int) {
+        if (score <= 0) return
+        viewModelScope.launch {
+            val current = settingsRepository.current().snakeBest
+            if (score > current) settingsRepository.update { it.copy(snakeBest = score) }
+        }
+    }
 
     // ── 列表页状态：习惯流 × 各习惯打卡流，自动响应打卡写入 ─────────────
     // flatMapLatest 仍是实验 API：这里按调用点局部 opt-in，不给整个类挂 @OptIn（会把后续

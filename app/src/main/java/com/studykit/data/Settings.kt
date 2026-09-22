@@ -45,6 +45,8 @@ data class AppSettings(
      * 其余三档是把目标准确率钉死。默认 AUTO：不填考试日的用户不该被一个写死的数字对待。
      */
     val reviewStrictness: ReviewStrictness = ReviewStrictness.AUTO,
+    /** 贪吃蛇历史最高分（批次一）。只增不减：读档时取 max，防止手改备份把它清零 */
+    val snakeBest: Int = 0,
     /** 上一次词库下载失败的原文，只为诊断展示，不做任何判断 */
     val lastDictFailure: String = "",
 ) {
@@ -69,6 +71,7 @@ data class AppSettings(
         KEY_REMINDER_HOURS to reminderEveryHours.toString(),
         KEY_EXAM_DAY to examEpochDay.toString(),
         KEY_REVIEW_STRICTNESS to reviewStrictness.name,
+        KEY_SNAKE_BEST to snakeBest.toString(),
         KEY_DICT_FAILURE to lastDictFailure,
     )
 
@@ -82,6 +85,7 @@ data class AppSettings(
         const val KEY_REMINDER_HOURS = "reminder_every_hours"
         const val KEY_EXAM_DAY = "exam_epoch_day"
         const val KEY_REVIEW_STRICTNESS = "review_strictness"
+        const val KEY_SNAKE_BEST = "snake_best"
         const val KEY_DICT_FAILURE = "last_dict_failure"
 
         const val DEFAULT_WORD_GOAL = 20
@@ -120,6 +124,7 @@ data class AppSettings(
                 reviewStrictness = map[KEY_REVIEW_STRICTNESS]
                     ?.let { raw -> ReviewStrictness.entries.firstOrNull { it.name == raw } }
                     ?: defaults.reviewStrictness,
+                snakeBest = map[KEY_SNAKE_BEST]?.toIntOrNull()?.coerceAtLeast(0) ?: defaults.snakeBest,
                 // 诊断文本原样留着，包括空串；只在超长时掐掉，免得一次异常堆栈把设置页撑坏
                 lastDictFailure = map[KEY_DICT_FAILURE]?.take(400) ?: defaults.lastDictFailure,
             )

@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -197,6 +198,7 @@ fun HabitListScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snakeBest by viewModel.snakeBest.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var expandedDone by remember { mutableStateOf(false) }
     var sheetTarget by remember { mutableStateOf<SheetTarget?>(null) }
@@ -281,7 +283,11 @@ fun HabitListScreen(
             // 空账号不出全灰热力图（没有任何事实可画时它只是噪声），有习惯才亮出这一卡
             if (state.items.isNotEmpty()) {
                 item(key = "heatmap") {
-                    HeatmapCard(activeDays = state.items.flatMap { it.checkedDates }.toSet())
+                    HeatmapCard(
+                        activeDays = state.items.flatMap { it.checkedDates }.toSet(),
+                        best = snakeBest,
+                        onScore = viewModel::submitSnakeScore,
+                    )
                 }
             }
             item(key = "stat_tiles") {
@@ -436,20 +442,42 @@ private fun CalendarEntryCard(onClick: () -> Unit) {
  * 星期不再对应某一行；要看星期分布去「日历」页按周看。
  */
 @Composable
-private fun HeatmapCard(activeDays: Set<LocalDate>) {
+private fun HeatmapCard(activeDays: Set<LocalDate>, best: Int, onScore: (Int) -> Unit) {
+    val colors = AppTheme.colors
     val texts = AppTheme.texts
+    var playing by rememberSaveable { mutableStateOf(false) }
     AppCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "近 $HEATMAP_WEEKS 周坚持", style = texts.cardTitle)
-        Spacer(Modifier.height(AppTheme.space.xs))
-        Text(text = "一天一节，亮的是打过卡的日子 · 左右滑动看更早的", style = texts.caption)
-        Spacer(Modifier.height(AppTheme.space.sm))
-        HabitSnake(
-            activeDays = activeDays,
-            weeks = HEATMAP_WEEKS,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(SnakeTrackHeight),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (playing) "贪吃蛇 · 近 20 周" else "近 $HEATMAP_WEEKS 周坚持",
+                style = texts.cardTitle,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { playing = !playing }) {
+                Text(
+                    text = if (playing) "← 返回热力图" else "玩一把",
+                    style = texts.caption,
+                    color = colors.accentInk,
+                )
+            }
+        }
+        if (playing) {
+            SnakeBoard(
+                activeDays = activeDays,
+                best = best,
+                onScore = onScore,
+            )
+        } else {
+            Text(text = "一天一节，亮的是打过卡的日子 · 左右滑动看更早的", style = texts.caption)
+            Spacer(Modifier.height(AppTheme.space.sm))
+            HabitSnake(
+                activeDays = activeDays,
+                weeks = HEATMAP_WEEKS,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(SnakeTrackHeight),
+            )
+        }
     }
 }
 
