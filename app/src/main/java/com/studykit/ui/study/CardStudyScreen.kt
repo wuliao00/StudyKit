@@ -63,6 +63,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
+import com.studykit.data.memory.MemoryModel
+import com.studykit.data.memory.MemoryState
+import com.studykit.data.memory.ReviewGrade
+import com.studykit.data.memory.Scheduling
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
@@ -89,6 +93,7 @@ fun CardStudyScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val session by viewModel.session.collectAsStateWithLifecycle()
+    val scheduling by viewModel.scheduling.collectAsStateWithLifecycle()
     val state = session
 
     Column(
@@ -189,6 +194,15 @@ fun CardStudyScreen(
                         onGrade = { known ->
                             if (known) viewModel.markKnown() else viewModel.markUnknown()
                         },
+                    )
+                }
+                // 评分按钮印出「这次会排到几天后」：整套模型唯一的可见出口。
+                // 放在 AnimatedContent 之外，切卡时只有数字变，按钮本身不跟着滑走。
+                state.current?.let { card ->
+                    GradeRow(
+                        word = card,
+                        scheduling = scheduling,
+                        onGrade = { grade -> viewModel.gradeCard(grade) },
                     )
                 }
             }
@@ -705,4 +719,102 @@ private fun SessionSummary(
             modifier = Modifier.matchParentSize(),
         )
     }
+}
+
+// ── 评分按钮：把模型的输出摊开给用户看 ────────────────────────────────────────
+
+/**
+ * 三个评分档，各自印出"点它之后这个词会排到多久以后"。
+ *
+ * 抄的是墨墨真机上最有效的一处设计：它的按钮写着 `认识 · 35 天后`、`模糊 · 今日/4 天后`、
+ * `忘记 · 今日/3 天后`。用户不需要理解半衰期，但他能当场看见"我说认识，它敢不敢排 35 天"，
+ * 排错了也能当场发现。**别把间隔藏进设置页**，那是这套调度唯一的可见出口。
+ *
+ * 滑动仍然是两档快判（右=认识、左=忘记），中间这排按钮补齐"模糊"，
+ * 并且是唯一的精确入口 —— 犹豫的时候不该被迫在"全对"和"全错"里挑一个。
+ */
+@Composable
+private fun GradeRow(
+    word: Word,
+    scheduling: Scheduling,
+    onGrade: (ReviewGrade) -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val preview = MemoryModel.preview(
+        state = MemoryState(word.halfLifeDays, word.difficulty),
+        targetRecall = scheduling.targetRecall,
+        maxIntervalDays = scheduling.maxIntervalDays,
+    )
+    Spacer(Modifier.height(AppTheme.space.sm))
+    Text(
+        text = "现在按下去，预计还记得 ${(preview.predictedRecall * 100).roundToInt()}%",
+        style = texts.caption,
+        color = colors.secondaryText,
+    )
+    Spacer(Modifier.height(AppTheme.space.xs))
+    Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+        GradeButton(
+            label = "认识",
+            interval = formatIntervalLabel(preview.recallDays),
+            background = colors.successSoft,
+            ink = colors.successInk,
+            modifier = Modifier.weight(1f),
+            onClick = { onGrade(ReviewGrade.RECALL) },
+        )
+        GradeButton(
+            label = "模糊",
+            interval = formatIntervalLabel(preview.vagueDays),
+            background = colors.goldSoft,
+            ink = colors.goldInk,
+            modifier = Modifier.weight(1f),
+            onClick = { onGrade(ReviewGrade.VAGUE) },
+        )
+        GradeButton(
+            label = "忘记",
+            interval = formatIntervalLabel(preview.forgetDays),
+            background = colors.warningSoft,
+            ink = colors.warningInk,
+            modifier = Modifier.weight(1f),
+            onClick = { onGrade(ReviewGrade.FORGET) },
+        )
+    }
+    Spacer(Modifier.height(AppTheme.space.md))
+}
+
+@Composable
+private fun GradeButton(
+    label: String,
+    interval: String,
+    background: Color,
+    ink: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val texts = AppTheme.texts
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(AppTheme.radius.md))
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(vertical = AppTheme.space.md),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = label, style = texts.cardTitle, color = ink)
+        Spacer(Modifier.height(2.dp))
+        Text(text = interval, style = texts.caption, color = ink, textAlign = TextAlign.Center)
+    }
+}
+
+/**
+ * 天数 → 用户能读的一句话。
+ *
+ * "今日 / 明天 / N 天后"而不是"0.4 天后"：间隔是给决策用的，不是给核对用的。
+ * 小于一天一律说"今日"，因为用户今天确实还会再见到它。
+ */
+internal fun formatIntervalLabel(days: Double): String = when {
+    !days.isFinite() || days <= 0.0 -> "今日"
+    days < 1.0 -> "今日"
+    days < 1.5 -> "明天"
+    else -> "${days.roundToInt()} 天后"
 }

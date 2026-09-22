@@ -55,6 +55,7 @@ import com.studykit.BuildConfig
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
+import com.studykit.data.memory.ReviewStrictness
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
@@ -88,6 +89,14 @@ private val GlassChoices = listOf(
     GlassLevel.OFF to "关闭",
     GlassLevel.SOFT to "柔和",
     GlassLevel.STRONG to "浓郁",
+)
+
+/** 复习严格度。四格而不是滑条：这一项的语义是分档的，"自动"和三个固定档不在同一根轴上 */
+private val StrictnessChoices = listOf(
+    ReviewStrictness.AUTO to "自动",
+    ReviewStrictness.RELAXED to "宽松",
+    ReviewStrictness.STANDARD to "标准",
+    ReviewStrictness.STRICT to "严格",
 )
 
 /** 提醒周期的常用档。WorkManager 的周期任务按小时粗粒度，1..72 的自由值靠备份恢复才会出现 */
@@ -405,6 +414,35 @@ fun SettingsScreen(
                         ) {
                             Text(text = "清除", color = colors.warningInk)
                         }
+                    }
+                }
+            }
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
+                title = "复习严格度",
+                hint = buildString {
+                    append("决定「预测还记得多少」时就把词送回来 —— 越严越早送回、复习次数越多；")
+                    append("越松则让它多忘一会儿，那一次提取的加固效果反而更强。")
+                    append(
+                        when {
+                            settings.reviewStrictness != ReviewStrictness.AUTO -> "当前为固定档，不随考试日变化。"
+                            settings.examDate != null -> "当前跟随考试日：考得越近越严。"
+                            else -> "当前为自动，但未填考试日，按 90% 执行。"
+                        },
+                    )
+                },
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                    modifier = Modifier.selectableGroup(),
+                ) {
+                    StrictnessChoices.forEach { (level, label) ->
+                        ChoiceTile(
+                            label = label,
+                            selected = settings.reviewStrictness == level,
+                            onClick = { viewModel.setReviewStrictness(level) },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }

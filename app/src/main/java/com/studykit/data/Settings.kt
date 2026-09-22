@@ -1,6 +1,7 @@
 package com.studykit.data
 
 import androidx.compose.runtime.Immutable
+import com.studykit.data.memory.ReviewStrictness
 import java.time.LocalDate
 
 /** 主题选择。[SYSTEM] 沿用系统的 `isSystemInDarkTheme()`，另两档是用户硬指定。 */
@@ -39,6 +40,11 @@ data class AppSettings(
     val reminderEveryHours: Int = DEFAULT_REMINDER_HOURS,
     /** 考试日，存 `LocalDate.toEpochDay()`；0 表示未设置（epochDay 0 = 1970-01-01，不可能被当考试日） */
     val examEpochDay: Long = 0L,
+    /**
+     * 复习严格度。AUTO = 由考试日期反推（越远的目标越宽松），
+     * 其余三档是把目标准确率钉死。默认 AUTO：不填考试日的用户不该被一个写死的数字对待。
+     */
+    val reviewStrictness: ReviewStrictness = ReviewStrictness.AUTO,
     /** 上一次词库下载失败的原文，只为诊断展示，不做任何判断 */
     val lastDictFailure: String = "",
 ) {
@@ -62,6 +68,7 @@ data class AppSettings(
         KEY_WORD_GOAL to dailyWordGoal.toString(),
         KEY_REMINDER_HOURS to reminderEveryHours.toString(),
         KEY_EXAM_DAY to examEpochDay.toString(),
+        KEY_REVIEW_STRICTNESS to reviewStrictness.name,
         KEY_DICT_FAILURE to lastDictFailure,
     )
 
@@ -74,6 +81,7 @@ data class AppSettings(
         const val KEY_WORD_GOAL = "daily_word_goal"
         const val KEY_REMINDER_HOURS = "reminder_every_hours"
         const val KEY_EXAM_DAY = "exam_epoch_day"
+        const val KEY_REVIEW_STRICTNESS = "review_strictness"
         const val KEY_DICT_FAILURE = "last_dict_failure"
 
         const val DEFAULT_WORD_GOAL = 20
@@ -109,6 +117,9 @@ data class AppSettings(
                     ?: defaults.reminderEveryHours,
                 examEpochDay = map[KEY_EXAM_DAY]?.toLongOrNull()?.takeIf { it != 0L && it in EXAM_DAY_RANGE }
                     ?: defaults.examEpochDay,
+                reviewStrictness = map[KEY_REVIEW_STRICTNESS]
+                    ?.let { raw -> ReviewStrictness.entries.firstOrNull { it.name == raw } }
+                    ?: defaults.reviewStrictness,
                 // 诊断文本原样留着，包括空串；只在超长时掐掉，免得一次异常堆栈把设置页撑坏
                 lastDictFailure = map[KEY_DICT_FAILURE]?.take(400) ?: defaults.lastDictFailure,
             )

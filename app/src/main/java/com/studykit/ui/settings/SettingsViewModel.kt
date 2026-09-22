@@ -12,6 +12,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
+import com.studykit.data.memory.ReviewStrictness
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OneShotGate
 import com.studykit.util.backup.BackupArchive
@@ -128,6 +129,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     /** 玻璃档位。材质只服务底栏与弹层那几个浮层站点，卡面恒为实底 */
     fun setGlass(level: GlassLevel) = write { it.copy(glass = level) }
+
+    /** 复习严格度：AUTO 由考试日期反推，其余三档把目标准确率钉死 */
+    fun setReviewStrictness(value: ReviewStrictness) = write { it.copy(reviewStrictness = value) }
 
     /** 减弱动效：关掉彩带、错峰入场与按压缩放 */
     fun setReduceMotion(on: Boolean) = write { it.copy(reduceMotion = on) }

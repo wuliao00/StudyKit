@@ -38,12 +38,56 @@ class WordRepository(private val wordDao: WordDao) {
     suspend fun updateStatus(id: Long, status: String, nextReviewAt: Long = 0L) =
         wordDao.updateStatus(id, status, nextReviewAt)
 
-    /** 写入一次学习记录 */
-    suspend fun recordReview(wordId: Long, correct: Boolean): Long =
-        wordDao.insertReview(
-            WordReview(uuid = UUID.randomUUID().toString(), wordId = wordId, correct = correct),
-        )
+    /**
+     * 复习后写回模型状态（半衰期、难度、下一次时刻、计数）。
+     *
+     * 调用顺序必须是"先 [applyReview] 再 [recordGradedReview]"：万一中间被杀进程，
+     * 后果是"这次复习没进历史"，下次复习时刻仍然正确，用户无感；
+     * 反过来则会出现"历史里有一次复习，但词的半衰期没涨"，
+     * 那条记录会在以后的校准里被当成一次真实评分去拟合，属于污染数据。
+     */
+    suspend fun applyReview(
+        wordId: Long,
+        halfLifeDays: Double,
+        difficulty: Double,
+        status: String,
+        nextReviewAt: Long,
+        lastReviewAt: Long,
+        lapseInc: Int,
+    ) = wordDao.applyReview(wordId, halfLifeDays, difficulty, status, nextReviewAt, lastReviewAt, lapseInc)
+
+    /**
+     * 写入一次带档位的复习记录。
+     *
+     * `gapDays / pAtReview / hBefore / hAfter` 是校准的原料：没有它们，
+     * 事后无法回答"模型给这个人的估计准不准"，只能继续猜参数。
+     */
+    suspend fun recordGradedReview(
+        wordId: Long,
+        grade: Int,
+        correct: Boolean,
+        gapDays: Double,
+        pAtReview: Double,
+        hBefore: Double,
+        hAfter: Double,
+        reactionMs: Long?,
+    ): Long = wordDao.insertReview(
+        WordReview(
+            uuid = UUID.randomUUID().toString(),
+            wordId = wordId,
+            correct = correct,
+            gapDays = gapDays,
+            pAtReview = pAtReview,
+            grade = grade,
+            hBefore = hBefore,
+            hAfter = hAfter,
+            reactionMs = reactionMs,
+        ),
+    )
 
     /** 全部复习时间戳（连续学习天数/今日完成数用） */
     fun observeReviewTimestamps(): Flow<List<Long>> = wordDao.observeReviewTimestamps()
+
+    /** 已排期的复习时刻，供首页/统计页算"未来 N 天要复习多少" */
+    fun observeScheduledTimestamps(): Flow<List<Long>> = wordDao.observeScheduledTimestamps()
 }

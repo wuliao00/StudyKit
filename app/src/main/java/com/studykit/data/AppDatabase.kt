@@ -43,7 +43,7 @@ import com.studykit.data.entity.WordReview
         WordList::class,
         AppSetting::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -122,6 +122,61 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5：把复习从"写死的 1 天 / 3 天阶梯"换成半衰期模型所需的状态列。
+         *
+         * 全部是**带默认值的 ADD COLUMN**，不删不改任何既有列 —— 用户已有一千多条词数据，
+         * 丢不起，而且这条路径 CI 测不出来（`exportSchema = false`，Room 只在真机升级时才校验）。
+         *
+         * 老数据不是"重置"而是"折算"：`status` 里其实存着历史信息
+         * （MASTERED 说明它至少被答对过两轮），所以按档位给一个起步半衰期，
+         * 比一律回到 0.5 天少一次"刚升级就被排到 10 分钟后"的惊吓。
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `words` ADD COLUMN `half_life_days` REAL NOT NULL DEFAULT 0.5",
+                )
+                db.execSQL(
+                    "ALTER TABLE `words` ADD COLUMN `difficulty` REAL NOT NULL DEFAULT 1.0",
+                )
+                db.execSQL("ALTER TABLE `words` ADD COLUMN `last_review_at` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `words` ADD COLUMN `total_reviews` INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL("ALTER TABLE `words` ADD COLUMN `lapses` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE `words` SET `half_life_days` = CASE `status` " +
+                        "WHEN 'MASTERED' THEN 30.0 WHEN 'LEARNING' THEN 3.0 ELSE 0.5 END",
+                )
+                /**
+                 * **防洪**：到期判据从「未掌握且到期」改成「有排期且到期」之后，
+                 * 老库里那些"答对两次就被永久冻结"的 MASTERED 词会全部同时到期 ——
+                 * 用户升级后打开 app 会看到几十上百个待复习，直接劝退。
+                 * 这里给它们统一排到 4 天后（h=30 天、target 0.9 时模型自己会算出 ≈4.5 天），
+                 * 让它们错峰回流。只动 MASTERED：LEARNING 里过期的那些本来就该今天见。
+                 */
+                val now = System.currentTimeMillis()
+                db.execSQL(
+                    "UPDATE `words` SET `next_review_at` = " + (now + 4 * 24 * 3600_000L) +
+                        " WHERE `status` = 'MASTERED' AND `next_review_at` > 0",
+                )
+
+                db.execSQL("ALTER TABLE `word_reviews` ADD COLUMN `gap_days` REAL")
+                db.execSQL("ALTER TABLE `word_reviews` ADD COLUMN `p_at_review` REAL")
+                db.execSQL(
+                    "ALTER TABLE `word_reviews` ADD COLUMN `grade` INTEGER NOT NULL DEFAULT -1",
+                )
+                db.execSQL("ALTER TABLE `word_reviews` ADD COLUMN `h_before` REAL")
+                db.execSQL("ALTER TABLE `word_reviews` ADD COLUMN `h_after` REAL")
+                db.execSQL("ALTER TABLE `word_reviews` ADD COLUMN `reaction_ms` INTEGER")
+                // 旧行只有布尔：认识→0、忘记→2。"模糊"这一档历史上不存在，不要瞎猜成 1
+                db.execSQL(
+                    "UPDATE `word_reviews` SET `grade` = CASE WHEN `correct` = 1 THEN 0 ELSE 2 END",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -132,7 +187,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DB_NAME,
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addCallback(SeedCallback)
                     .build()
                     .also { instance = it }

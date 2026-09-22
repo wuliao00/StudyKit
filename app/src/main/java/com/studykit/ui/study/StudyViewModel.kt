@@ -8,6 +8,13 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
+import com.studykit.data.memory.MemoryModel
+import com.studykit.data.memory.MemoryParams
+import com.studykit.data.memory.MemoryScheduler
+import com.studykit.data.memory.MemoryState
+import com.studykit.data.memory.ReviewGrade
+import com.studykit.data.memory.ReviewStrictness
+import com.studykit.data.memory.Scheduling
 import com.studykit.util.OneShotGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +38,13 @@ fun parseOptions(optionsJson: String): List<String> = try {
     emptyList()
 }
 
-/** 学习首页状态：今日待复习 / 单词总数 / 已掌握 / 未掌握错题数 / 连续学习天数 / 今日完成次数 */
+/**
+ * 学习首页状态：今日待复习 / 单词总数 / 已掌握 / 未掌握错题数 / 连续学习天数 / 今日完成次数
+ *
+ * [tomorrowCount] 是"明天要复习多少"——把排期的未来摊到用户眼前。
+ * 墨墨的学习情况页直接把柱子画到未来 6 天，这是它整套调度能被信任的原因：
+ * 用户看得见"今天少背两个，明天就少五个"，而不是一句"坚持下去"。
+ */
 data class StudyHomeUiState(
     val dueCount: Int = 0,
     val totalCount: Int = 0,
@@ -39,13 +52,15 @@ data class StudyHomeUiState(
     val mistakeCount: Int = 0,
     val streakDays: Int = 0,
     val todayDone: Int = 0,
+    val tomorrowCount: Int = 0,
 )
 
-/** 卡片学习会话状态：队列快照 + 当前下标 + 认识/不认识统计 */
+/** 卡片学习会话状态：队列快照 + 当前下标 + 三档评分统计 */
 data class CardSessionUi(
     val queue: List<Word> = emptyList(),
     val index: Int = 0,
     val knownCount: Int = 0,
+    val vagueCount: Int = 0,
     val unknownCount: Int = 0,
 ) {
     val total: Int get() = queue.size
@@ -79,12 +94,37 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val wordRepository = container.wordRepository
     private val questionRepository = container.questionRepository
     private val mistakeRepository = container.mistakeRepository
+    private val settingsRepository = container.settingsRepository
 
     companion object {
         private val ONE_DAY_MS = TimeUnit.DAYS.toMillis(1)
-        private val RETRY_MS = TimeUnit.MINUTES.toMillis(10)
         private const val SESSION_SIZE = 10
         private const val QUIZ_SIZE = 10
+
+        /** 半衰期到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列） */
+        private const val MASTERED_HALF_LIFE_DAYS = 7.0
+    }
+
+    /**
+     * 本轮生效的调度参数（目标准确率 + 间隔上限），跟着设置页的考试日期与严格度走。
+     *
+     * 卡片页要拿它算"按这个按钮会排到几天后"并直接印在按钮上，所以是 StateFlow 而不是内部变量。
+     */
+    private val _scheduling = MutableStateFlow(
+        MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, LocalDate.now()),
+    )
+    val scheduling: StateFlow<Scheduling> = _scheduling
+
+    init {
+        viewModelScope.launch {
+            settingsRepository.settings.collect { s ->
+                _scheduling.value = MemoryScheduler.forSettings(
+                    strictness = s.reviewStrictness,
+                    examEpochDay = s.examEpochDay,
+                    today = LocalDate.now(),
+                )
+            }
+        }
     }
 
     // ── 学习首页状态 ──────────────────────────────────────────────────────
@@ -93,20 +133,26 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         mistakeRepository.observeUnmasteredCount(),
         wordRepository.observeReviewTimestamps(),
         questionRepository.observePracticeTimestamps(),
-    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps ->
+        wordRepository.observeScheduledTimestamps(),
+    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, scheduled ->
         val now = System.currentTimeMillis()
         // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
         val all = reviewTimestamps + practiceTimestamps
+        // 「明天要复习多少」的区间：按本地日切，不用 SQL 的 date()（不吃时区）
+        val tomorrowStart = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val dayAfterStart = today.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
         StudyHomeUiState(
-            dueCount = words.count { it.status != Word.STATUS_MASTERED && it.nextReviewAt <= now },
+            // 判据从「未掌握且到期」改成「有排期且到期」：见 WordDao.getDueForReview 的注释
+            dueCount = words.count { it.nextReviewAt in 1L..now },
             totalCount = words.size,
             masteredCount = words.count { it.status == Word.STATUS_MASTERED },
             mistakeCount = unmasteredMistakes,
             streakDays = StudyStreak.streakDays(all, zone, today),
             todayDone = all.count { it in dayStart..now },
+            tomorrowCount = scheduled.count { it in tomorrowStart until dayAfterStart },
         )
     }
         // Room 的 flowOn 只作用上游，combine 变换（全量时间戳拼接 + HashSet 重建）默认落在
@@ -126,7 +172,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val _session = MutableStateFlow<CardSessionUi?>(null)
     val session: StateFlow<CardSessionUi?> = _session
 
-    /** 组一轮学习队列：今日到期（next_review_at <= now）且未掌握的单词，取前 10 个 */
+    /** 组一轮学习队列：有排期且已到期的单词，按到期时刻升序取前 10 个 */
     fun startCardSession() {
         // 入口先同步清空：`_session` 是 VM 里的常驻状态，上一轮跑完后它是 `finished` 的小结态。
         // 不等这一步的话，重进页面会先渲染「上一轮已完成 + 彩带」（页面只在下一帧才拿到新队列），
@@ -135,45 +181,77 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val queue = wordRepository.getAll()
-                .filter { it.status != Word.STATUS_MASTERED && it.nextReviewAt <= now }
+                .filter { it.nextReviewAt in 1L..now }
                 .sortedBy { it.nextReviewAt }
                 .take(SESSION_SIZE)
             _session.value = CardSessionUi(queue = queue)
         }
     }
 
-    /** 「认识」：状态推进（NEW→LEARNING→MASTERED），间隔顺延 +1 天 / +3 天 */
-    fun markKnown() = answerCard(correct = true)
+    fun markKnown() = gradeCard(ReviewGrade.RECALL)
 
-    /** 「不认识」：保持状态，10 分钟后再复习 */
-    fun markUnknown() = answerCard(correct = false)
+    /** 「模糊」：想起来了但犹豫过。加固照算，难度照涨 —— 不是"半个错" */
+    fun markVague() = gradeCard(ReviewGrade.VAGUE)
 
-    private fun answerCard(correct: Boolean) {
+    fun markUnknown() = gradeCard(ReviewGrade.FORGET)
+
+    /**
+     * 评一次分：把半衰期模型走一遍并落库。
+     *
+     * 取代原来的"答对 +1 天 / +3 天、答错 +10 分钟"写死阶梯 ——
+     * 那套阶梯与历史答对次数无关，背到第 20 次仍然只隔 3 天。
+     *
+     * @param reactionMs 从翻面到按下按钮的毫秒数。只入库供以后校准参考，**不进模型**：
+     *                   自我评分的犹豫时长和真实提取时长不是一回事。
+     */
+    fun gradeCard(grade: ReviewGrade, reactionMs: Long? = null) {
         val state = _session.value ?: return
         val word = state.current ?: return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            if (correct) {
-                val nextStatus = if (word.status == Word.STATUS_NEW) {
-                    Word.STATUS_LEARNING
-                } else {
-                    Word.STATUS_MASTERED
-                }
-                val interval = if (word.status == Word.STATUS_NEW) ONE_DAY_MS else ONE_DAY_MS * 3
-                wordRepository.updateStatus(word.id, nextStatus, now + interval)
-            } else {
-                val keepStatus = if (word.status == Word.STATUS_MASTERED) {
-                    Word.STATUS_LEARNING
-                } else {
-                    word.status
-                }
-                wordRepository.updateStatus(word.id, keepStatus, now + RETRY_MS)
+            val sched = _scheduling.value
+            val params = MemoryParams()
+            val before = MemoryState(word.halfLifeDays, word.difficulty)
+            // 从没复习过的词拿"加入学习"那天当锚点：Δt=0 会让第一次评分的加固量归零
+            // （成功支里 (1−p)^0.970 在 p=1 时被夹到 1e-3，间隔效应直接消失）
+            val anchor = word.lastReviewAt ?: word.createdAt
+            val gapDays = (now - anchor).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
+
+            val predicted = MemoryModel.recallProbability(gapDays, before.halfLifeDays)
+            val after = MemoryModel.update(before, gapDays, grade, params)
+            val days = MemoryModel.schedule(after, grade, sched.targetRecall, sched.maxIntervalDays, params)
+            val status = when {
+                grade == ReviewGrade.FORGET -> Word.STATUS_LEARNING
+                after.halfLifeDays >= MASTERED_HALF_LIFE_DAYS -> Word.STATUS_MASTERED
+                else -> Word.STATUS_LEARNING
             }
-            wordRepository.recordReview(word.id, correct)
+
+            // 顺序不能反：先写状态、再写历史。中间被杀进程只丢一条历史记录（下次复习时刻仍对）；
+            // 反过来会留下"历史里有一次评分、但半衰期没涨"的行，那是在污染以后的校准样本。
+            wordRepository.applyReview(
+                wordId = word.id,
+                halfLifeDays = after.halfLifeDays,
+                difficulty = after.difficulty,
+                status = status,
+                nextReviewAt = now + (days * ONE_DAY_MS).toLong().coerceAtLeast(TimeUnit.MINUTES.toMillis(5)),
+                lastReviewAt = now,
+                lapseInc = if (grade == ReviewGrade.FORGET) 1 else 0,
+            )
+            wordRepository.recordGradedReview(
+                wordId = word.id,
+                grade = grade.ordinal,
+                correct = grade != ReviewGrade.FORGET,
+                gapDays = gapDays,
+                pAtReview = predicted,
+                hBefore = before.halfLifeDays,
+                hAfter = after.halfLifeDays,
+                reactionMs = reactionMs,
+            )
             _session.value = state.copy(
                 index = state.index + 1,
-                knownCount = state.knownCount + if (correct) 1 else 0,
-                unknownCount = state.unknownCount + if (correct) 0 else 1,
+                knownCount = state.knownCount + if (grade == ReviewGrade.RECALL) 1 else 0,
+                vagueCount = state.vagueCount + if (grade == ReviewGrade.VAGUE) 1 else 0,
+                unknownCount = state.unknownCount + if (grade == ReviewGrade.FORGET) 1 else 0,
             )
         }
     }
