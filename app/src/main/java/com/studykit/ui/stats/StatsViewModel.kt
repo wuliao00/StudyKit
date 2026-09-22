@@ -2,6 +2,7 @@ package com.studykit.ui.stats
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.dao.ReviewGapRow
 import kotlinx.coroutines.Dispatchers

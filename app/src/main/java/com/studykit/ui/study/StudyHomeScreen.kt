@@ -3,6 +3,7 @@ package com.studykit.ui.study
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +69,7 @@ fun StudyHomeScreen(
     onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
     onBulkImportQuestions: () -> Unit,
+    onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val colors = AppTheme.colors
@@ -141,6 +143,26 @@ fun StudyHomeScreen(
                 label = "已掌握",
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // 「明天还要复习 N 个」同时兼任记忆看板的入口：这一行讲的就是"接下来要还多少债"，
+        // 点进去看详情是同一个心智动作，不必再摆一枚孤立的"统计"按钮。
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(AppTheme.radius.md))
+                .clickable(onClick = onOpenStats)
+                .padding(horizontal = AppTheme.space.sm, vertical = AppTheme.space.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (state.tomorrowCount > 0) "明天还要复习 ${state.tomorrowCount} 个" else "明天没有排期",
+                style = texts.caption,
+                color = colors.secondaryText,
+                modifier = Modifier.weight(1f),
+            )
+            Text(text = "记忆看板 ›", style = texts.caption, color = colors.accentInk)
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))

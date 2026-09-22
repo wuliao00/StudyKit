@@ -64,6 +64,8 @@ import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.settings.SettingsScreen
 import com.studykit.ui.settings.SettingsViewModel
+import com.studykit.ui.stats.StatsScreen
+import com.studykit.ui.stats.StatsViewModel
 import com.studykit.ui.study.CardStudyScreen
 import com.studykit.ui.study.DictStoreScreen
 import com.studykit.ui.study.DictStoreViewModel
@@ -108,6 +110,9 @@ object StudyRoutes {
     const val QUIZ = "study/quiz"
     const val WORD_CREATE = "study/word/create"
     const val QUESTION_CREATE = "study/question/create"
+
+    /** 记忆看板：半衰期模型的三块图（未来量 / 持久度分布 / 遗忘曲线） */
+    const val STATS = "study/stats"
 }
 
 /** 在线词库商店（唯一需要联网的界面） */
@@ -175,6 +180,7 @@ fun AppNav(
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
     val dictStoreViewModel: DictStoreViewModel = viewModel()
+    val statsViewModel: StatsViewModel = viewModel()
     val settingsViewModel: SettingsViewModel = viewModel()
 
     // 分享进来的图走错题录入页既有的 pendingCapture 通道（与拍照同一条路，页面零分支）。
@@ -307,6 +313,9 @@ fun AppNav(
                     onBulkImportQuestions = {
                         navController.navigate(ImportRoutes.paste(ImportKind.QUESTION)) { launchSingleTop = true }
                     },
+                    onOpenStats = {
+                        navController.navigate(StudyRoutes.STATS) { launchSingleTop = true }
+                    },
                     onOpenSettings = {
                         navController.navigate(SettingsRoutes.SETTINGS) { launchSingleTop = true }
                     },
@@ -428,6 +437,13 @@ fun AppNav(
                     onBack = { navController.popBackStack() },
                     // 下载完直接进预览：商店不碰 words 表，判重与坏行处理只有一套实现
                     onPreview = { navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true } },
+                )
+            }
+
+            composable(StudyRoutes.STATS) {
+                StatsScreen(
+                    viewModel = statsViewModel,
+                    onBack = { navController.popBackStack() },
                 )
             }
 
