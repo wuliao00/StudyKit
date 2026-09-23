@@ -18,6 +18,10 @@ interface HabitDao {
     @Query("SELECT * FROM habits ORDER BY start_date DESC")
     suspend fun getAll(): List<Habit>
 
+    /** 全部习惯**含已归档**（整理页用，v2.4 批次四）；组序在内存侧纯函数里定，SQL 不背分类知识 */
+    @Query("SELECT * FROM habits")
+    fun observeAllIncludingArchived(): Flow<List<Habit>>
+
     @Insert
     suspend fun insert(habit: Habit): Long
 
@@ -26,6 +30,18 @@ interface HabitDao {
 
     @Query("UPDATE habits SET archived = 1 WHERE id = :id")
     suspend fun archive(id: Long)
+
+    /** 归档开关（整理页，v2.4 批次四）：true=归档隐藏，false=取消归档恢复显示 */
+    @Query("UPDATE habits SET archived = :archived WHERE id = :id")
+    suspend fun setArchived(id: Long, archived: Boolean)
+
+    /** 改时段分类（整理页，v2.4 批次四）：ANY/MORNING/.../NIGHT，取值由 UI 层收口 */
+    @Query("UPDATE habits SET category = :category WHERE id = :id")
+    suspend fun updateCategory(id: Long, category: String)
+
+    /** 写手动排序（整理页上移/下移，v2.4 批次四）：成对交换由调用方保证原子语义 */
+    @Query("UPDATE habits SET sort_order = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: Long, sortOrder: Int)
 
     @Query("SELECT * FROM check_ins WHERE habit_id = :habitId ORDER BY date DESC")
     fun observeCheckIns(habitId: Long): Flow<List<CheckIn>>

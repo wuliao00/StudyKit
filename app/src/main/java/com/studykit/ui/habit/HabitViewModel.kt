@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -207,7 +208,11 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             HabitListUiState(
-                items             = items,
+                // 时段分类排序（v2.4 批次四）：当前时段的组置顶、组内按 sortOrder；
+                // 归档的 observeAll 本就查不出来，这里再滤一道是纯函数自身口径的兜底。
+                // 下游（HabitListScreen 的待打卡/已打卡分区、HeatmapCard 的 activeDays 并集、
+                // 统计磁贴计数）都只依赖集合与计数，不依赖原 start_date 序，换序无副作用。
+                items             = sortedForList(items = items, now = LocalTime.now()),
                 checkedTodayCount = items.count { it.checkedInToday },
                 maxStreak         = items.maxOfOrNull { it.streak } ?: 0,
             )
@@ -260,6 +265,53 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadDetail(habitId: Long) {
         _detailId.value = habitId
+    }
+
+    // ── 整理页（v2.4 批次四）：分类 / 排序 / 归档 ─────────────────────────
+    /**
+     * 整理页状态：全部习惯**含已归档**，已归档沉底、组间按 CATEGORIES 序、组内按 sortOrder。
+     * 与 [uiState] 分开供给：列表页只要未归档，整理页要全量 —— 两个口径各自收口，不互相将就。
+     */
+    val organizeHabits: StateFlow<List<Habit>> = repository.observeAllIncludingArchived()
+        .map { habits ->
+            habits.sortedWith(
+                comparator = compareBy(
+                    { habit -> habit.archived },
+                    { habit -> categoryOrderIndex(category = habit.category) },
+                    { habit -> habit.sortOrder },
+                ),
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 改习惯的时段分类；写库后 observeAllIncludingArchived 自动刷新 */
+    fun setCategory(id: Long, category: String) {
+        viewModelScope.launch { repository.updateCategory(id = id, category = category) }
+    }
+
+    /**
+     * 上移/下移一个位置：与**相邻同分类**习惯互换 sortOrder；已是最前/最后时不动。
+     * 只在未归档链上换位 —— 整理页里归档组沉底独立展示，不参与组内排序。
+     */
+    fun moveHabit(id: Long, delta: Int) {
+        if (delta == 0) return
+        viewModelScope.launch {
+            val all = repository.getAll()
+            val me = all.firstOrNull { it.id == id } ?: return@launch
+            val chain = all
+                .filter { habit -> !habit.archived && habit.category == me.category }
+                .sortedBy { it.sortOrder }
+            val index = chain.indexOfFirst { it.id == id }
+            if (index < 0) return@launch
+            val neighbor = chain.getOrNull(index + delta) ?: return@launch
+            repository.updateSortOrder(id = id, sortOrder = neighbor.sortOrder)
+            repository.updateSortOrder(id = neighbor.id, sortOrder = me.sortOrder)
+        }
+    }
+
+    /** 归档开关：归档后列表页（observeAll）自动隐藏，整理页沉底可找回 */
+    fun setArchived(id: Long, archived: Boolean) {
+        viewModelScope.launch { repository.setArchived(id = id, archived = archived) }
     }
 
     /** 查某习惯某日的既有打卡记录（打卡弹层预填用） */

@@ -56,6 +56,7 @@ import com.studykit.ui.habit.HabitCalendarScreen
 import com.studykit.ui.habit.HabitCreateScreen
 import com.studykit.ui.habit.HabitListScreen
 import com.studykit.ui.habit.HabitViewModel
+import com.studykit.ui.habit.OrganizeScreen
 import com.studykit.ui.material.glassContainerColor
 import com.studykit.ui.material.glassSurface
 import com.studykit.ui.material.rememberGlassStyle
@@ -110,6 +111,9 @@ object HabitRoutes {
 
     /** 自我契约（v2.4 批次五）：写下来，到期对账 */
     const val CONTRACTS = "habit/contracts"
+
+    /** 整理页（v2.4 批次四）：分类 / 排序 / 归档 */
+    const val ORGANIZE = "habit/organize"
     fun calendar(habitId: Long) = "habit/calendar/$habitId"
     fun focus(habitId: Long) = "habit/focus/$habitId"
 }
@@ -350,6 +354,9 @@ fun AppNav(
                     onOpenContracts = {
                         navController.navigate(HabitRoutes.CONTRACTS) { launchSingleTop = true }
                     },
+                    onOpenOrganize = {
+                        navController.navigate(HabitRoutes.ORGANIZE) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Book.route) {
@@ -395,6 +402,12 @@ fun AppNav(
             composable(HabitRoutes.CONTRACTS) {
                 ContractsScreen(
                     viewModel = contractsViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(HabitRoutes.ORGANIZE) {
+                OrganizeScreen(
+                    viewModel = habitViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }

@@ -197,6 +197,7 @@ fun HabitListScreen(
     onAddClick: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenContracts: () -> Unit,
+    onOpenOrganize: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -265,6 +266,16 @@ fun HabitListScreen(
                 ) {
                     Text(text = "习惯", style = texts.largeTitle)
                     Spacer(Modifier.weight(1f))
+                    // 整理入口（v2.4 批次四）：一个文字按钮即可 —— 与「添加」同款写法
+                    TextButton(onClick = onOpenOrganize) {
+                        Text(
+                            text = "整理",
+                            style = texts.aux.copy(
+                                color = colors.accentInk,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        )
+                    }
                     TextButton(onClick = onAddClick) {
                         Icon(
                             imageVector = Icons.Filled.Add,
@@ -711,10 +722,18 @@ private fun HabitCard(
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = if (item.isCountType) {
-                        "累计 ${item.progressText} · 连续 ${item.streak} 天"
-                    } else {
-                        "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
+                    // 时段分类（v2.4 批次四）：副标题行追加时段名；ANY 是"没绑例程"，不显示
+                    text = buildString {
+                        append(
+                            if (item.isCountType) {
+                                "累计 ${item.progressText} · 连续 ${item.streak} 天"
+                            } else {
+                                "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
+                            },
+                        )
+                        if (item.habit.category != Habit.CATEGORY_ANY) {
+                            append(" · ${categoryLabel(category = item.habit.category)}")
+                        }
                     },
                     style = texts.caption,
                 )

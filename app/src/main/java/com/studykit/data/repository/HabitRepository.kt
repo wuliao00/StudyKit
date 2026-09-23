@@ -38,6 +38,18 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     suspend fun archive(id: Long) = habitDao.archive(id)
 
+    /** 归档开关（整理页，v2.4 批次四）：归档与取消归档共用一条 UPDATE，Room 自动刷新观察流 */
+    suspend fun setArchived(id: Long, archived: Boolean) = habitDao.setArchived(id = id, archived = archived)
+
+    /** 改时段分类（整理页，v2.4 批次四） */
+    suspend fun updateCategory(id: Long, category: String) = habitDao.updateCategory(id = id, category = category)
+
+    /** 写手动排序（整理页上移/下移，v2.4 批次四） */
+    suspend fun updateSortOrder(id: Long, sortOrder: Int) = habitDao.updateSortOrder(id = id, sortOrder = sortOrder)
+
+    /** 全部习惯含已归档（整理页用，v2.4 批次四） */
+    fun observeAllIncludingArchived(): Flow<List<Habit>> = habitDao.observeAllIncludingArchived()
+
     fun observeCheckIns(habitId: Long): Flow<List<CheckIn>> = habitDao.observeCheckIns(habitId)
 
     /** 全部打卡记录（全局日历按日叠加用） */
