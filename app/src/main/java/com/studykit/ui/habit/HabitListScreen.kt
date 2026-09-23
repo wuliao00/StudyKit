@@ -192,6 +192,7 @@ private const val HEATMAP_WEEKS = 20
 fun HabitListScreen(
     viewModel: HabitViewModel,
     onOpenHabit: (Long) -> Unit,
+    onFocusHabit: (Long) -> Unit,
     onAddClick: () -> Unit,
     onOpenCalendar: () -> Unit,
 ) {
@@ -339,6 +340,7 @@ fun HabitListScreen(
                         modifier = Modifier.animateItem(),
                         onClick = { onOpenHabit(item.habit.id) },
                         onCheckIn = { onCheckInClick(item) },
+                        onFocus = { onFocusHabit(item.habit.id) },
                     )
                 }
                 if (done.isNotEmpty()) {
@@ -357,6 +359,7 @@ fun HabitListScreen(
                                 modifier = Modifier.animateItem(),
                                 onClick = { onOpenHabit(item.habit.id) },
                                 onCheckIn = { onCheckInClick(item) },
+                                onFocus = { onFocusHabit(item.habit.id) },
                             )
                         }
                     }
@@ -598,7 +601,7 @@ private fun RecordActionsCard(
 }
 
 /**
- * 习惯卡片：图标 + 名称（达成标记）+ 进度文案 + 倒计时 + 最近备注 + 进度环 + 打卡按钮。
+ * 习惯卡片：图标 + 名称（达成标记）+ 进度文案 + 倒计时 + 最近备注 + 进度环 + 打卡按钮 + 专注入口。
  * 达成后整体转金色态（`goldInk` 档）；进度环用共享组件 [RingGauge]，换色策略仍留在本页（达成 = goldInk）。
  */
 @Composable
@@ -606,6 +609,7 @@ private fun HabitCard(
     item: HabitItemUi,
     onClick: () -> Unit,
     onCheckIn: () -> Unit,
+    onFocus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = AppTheme.colors
@@ -711,6 +715,14 @@ private fun HabitCard(
                 )
             }
             Spacer(Modifier.width(AppTheme.space.md))
+            // 「专注」入口（v2.4 批次三）：与玩一把同一份小文字按钮写法，
+            // 紧挨打卡按钮 —— 它本来就是"换一种方式完成今天"的备选
+            TextButton(onClick = onFocus) {
+                Text(
+                    text = "专注",
+                    style = texts.caption.copy(color = colors.accentInk),
+                )
+            }
             CheckInButton(checked = item.checkedInToday, onClick = onCheckIn)
         }
     }

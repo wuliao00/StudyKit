@@ -47,6 +47,7 @@ import com.studykit.ui.bulkimport.ImportKind
 import com.studykit.ui.bulkimport.ImportPreviewScreen
 import com.studykit.ui.bulkimport.ImportResultScreen
 import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.habit.FocusScreen
 import com.studykit.ui.habit.GlobalCalendarScreen
 import com.studykit.ui.habit.GlobalCalendarViewModel
 import com.studykit.ui.habit.HabitCalendarScreen
@@ -101,7 +102,11 @@ object HabitRoutes {
     const val CALENDAR = "habit/calendar/{habitId}"
     const val CALENDAR_GLOBAL = "habit/calendar-global"
     const val CREATE = "habit/create"
+
+    /** 专注一场（v2.4 批次三）：全屏倒计时，分钟数写进该习惯当天 */
+    const val FOCUS = "habit/focus/{habitId}"
     fun calendar(habitId: Long) = "habit/calendar/$habitId"
+    fun focus(habitId: Long) = "habit/focus/$habitId"
 }
 
 object StudyRoutes {
@@ -327,6 +332,9 @@ fun AppNav(
                     onOpenHabit = { habitId ->
                         navController.navigate(HabitRoutes.calendar(habitId)) { launchSingleTop = true }
                     },
+                    onFocusHabit = { habitId ->
+                        navController.navigate(HabitRoutes.focus(habitId)) { launchSingleTop = true }
+                    },
                     onAddClick = {
                         navController.navigate(HabitRoutes.CREATE) { launchSingleTop = true }
                     },
@@ -379,6 +387,16 @@ fun AppNav(
                 HabitCreateScreen(
                     viewModel = habitViewModel,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = HabitRoutes.FOCUS,
+                arguments = listOf(navArgument("habitId") { type = NavType.LongType }),
+            ) { entry ->
+                FocusScreen(
+                    habitId = entry.arguments?.getLong("habitId") ?: 0L,
+                    viewModel = habitViewModel,
+                    onExit = { navController.popBackStack() },
                 )
             }
 
