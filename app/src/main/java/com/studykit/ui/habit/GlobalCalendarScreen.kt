@@ -184,7 +184,7 @@ fun GlobalCalendarScreen(
             checkedHabits = checkInsByDate[selectedDate].orEmpty(),
             events = system.eventsByDate[selectedDate].orEmpty(),
             showEvents = system.permissionGranted && !system.loadError,
-            habits = habitItems.map { it.habit },
+            habits = habitItems.items.map { it.habit },
             showMakeUp = makeupAllowed,
             onMakeUp = { makeUpFor = it },
         )
