@@ -157,6 +157,11 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         .map { it.snakeBest }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /** 是否允许补打卡：全局日历的空日面板据此决定显不显示补卡入口（守卫在 submitCheckIn） */
+    val makeupAllowed: StateFlow<Boolean> = settingsRepository.settings
+        .map { it.makeupAllowed }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     /** 一局结束报分：只有真的破了纪录才写库，读档侧取 max 是双保险不是主逻辑 */
     fun submitSnakeScore(score: Int) {
         if (score <= 0) return

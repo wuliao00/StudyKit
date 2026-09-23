@@ -371,6 +371,7 @@ fun AppNav(
             composable(HabitRoutes.CALENDAR_GLOBAL) {
                 GlobalCalendarScreen(
                     viewModel = globalCalendarViewModel,
+                    habitViewModel = habitViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }

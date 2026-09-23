@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.SystemEvent
+import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
@@ -102,12 +103,17 @@ private fun eventTimeText(event: SystemEvent): String {
 @Composable
 fun GlobalCalendarScreen(
     viewModel: GlobalCalendarViewModel,
+    habitViewModel: HabitViewModel,
     onBack: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val checkInsByDate by viewModel.checkInsByDate.collectAsStateWithLifecycle()
     val system by viewModel.system.collectAsStateWithLifecycle()
+    val habitItems by habitViewModel.uiState.collectAsStateWithLifecycle()
+    val makeupAllowed by habitViewModel.makeupAllowed.collectAsStateWithLifecycle()
+    // 补打卡：选中「过去 7 天内没打卡」的空日时，日详情卡里给出习惯条
+    var makeUpFor by remember { mutableStateOf<Habit?>(null) }
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
 
@@ -178,7 +184,23 @@ fun GlobalCalendarScreen(
             checkedHabits = checkInsByDate[selectedDate].orEmpty(),
             events = system.eventsByDate[selectedDate].orEmpty(),
             showEvents = system.permissionGranted && !system.loadError,
+            habits = habitItems.map { it.habit },
+            showMakeUp = makeupAllowed,
+            onMakeUp = { makeUpFor = it },
         )
+        makeUpFor?.let { habit ->
+            CheckInSheet(
+                habit = habit,
+                date = selectedDate,
+                existing = null,
+                isMakeUp = true,
+                onDismiss = { makeUpFor = null },
+                onConfirm = { note, amount ->
+                    habitViewModel.submitCheckIn(habit, selectedDate, note, amount, isMakeup = true)
+                    makeUpFor = null
+                },
+            )
+        }
 
         Spacer(Modifier.height(AppTheme.space.lg))
     }
@@ -562,13 +584,16 @@ private fun GlobalDayCell(
     }
 }
 
-/** 选中日详情卡片：打卡情况 + 系统日历事件列表 */
+/** 选中日详情卡片：打卡情况 + 系统日历事件列表；过去 7 天的空日给补卡入口 */
 @Composable
 private fun DayDetailCard(
     date: LocalDate,
     checkedHabits: List<String>,
     events: List<SystemEvent>,
     showEvents: Boolean,
+    habits: List<Habit>,
+    showMakeUp: Boolean,
+    onMakeUp: (Habit) -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -595,6 +620,22 @@ private fun DayDetailCard(
         Spacer(Modifier.height(AppTheme.space.xs))
         if (checkedHabits.isEmpty()) {
             Text(text = "该日暂无打卡", style = texts.aux.copy(color = colors.secondaryText))
+            // 补卡入口只给「过去 7 天内且未打卡」的空日（canMakeUp 是唯一判据，
+            // 与写入侧守卫同一份实现，别在这里再发明一套日期算术）
+            if (canMakeUp(date) && showMakeUp && habits.isNotEmpty()) {
+                Spacer(Modifier.height(AppTheme.space.sm))
+                Text(text = "补打卡：", style = texts.caption)
+                habits.forEach { habit ->
+                    Text(
+                        text = "· ${habit.name}",
+                        style = texts.body.copy(color = colors.accentInk),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onMakeUp(habit) }
+                            .padding(vertical = AppTheme.space.xs),
+                    )
+                }
+            }
         } else {
             checkedHabits.forEach { name ->
                 Row(
