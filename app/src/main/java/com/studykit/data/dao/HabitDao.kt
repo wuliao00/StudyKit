@@ -44,6 +44,17 @@ interface HabitDao {
     @Query("SELECT * FROM check_ins WHERE habit_id = :habitId AND date = :date LIMIT 1")
     suspend fun findCheckInOn(habitId: Long, date: String): CheckIn?
 
+    /**
+     * 某习惯在 [fromStr, toStr] 闭区间内的打卡次数（自我契约对账用，v2.4 批次五）。
+     *
+     * `check_ins.date` 存的是 'yyyy-MM-dd' TEXT：四位定长年份 + 零填充月日，**字典序与日期序一致**，
+     * 所以 SQL 的 BETWEEN 直接比字符串就是日期区间，不必逐日展开或另建数值列；
+     * 反过来也意味着调用方必须保证传进来的串严格是 yyyy-MM-dd（格式化集中在
+     * `ContractRepository.countCheckInsBetween`，不散落各处）。
+     */
+    @Query("SELECT COUNT(*) FROM check_ins WHERE habit_id = :habitId AND date BETWEEN :fromStr AND :toStr")
+    suspend fun countCheckIns(habitId: Long, fromStr: String, toStr: String): Int
+
     @Update
     suspend fun updateCheckIn(checkIn: CheckIn)
 

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -195,6 +196,7 @@ fun HabitListScreen(
     onFocusHabit: (Long) -> Unit,
     onAddClick: () -> Unit,
     onOpenCalendar: () -> Unit,
+    onOpenContracts: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -281,6 +283,8 @@ fun HabitListScreen(
                 }
             }
             item(key = "calendar_entry") { CalendarEntryCard(onClick = onOpenCalendar) }
+            // 自我契约入口（v2.4 批次五）：与日历卡同款形态，紧挨着放
+            item(key = "contracts_entry") { ContractsEntryCard(onClick = onOpenContracts) }
             // 空账号不出全灰热力图（没有任何事实可画时它只是噪声），有习惯才亮出这一卡
             if (state.items.isNotEmpty()) {
                 item(key = "heatmap") {
@@ -391,6 +395,49 @@ fun HabitListScreen(
                     viewModel.submitCheckIn(target.habit, target.date, note, amount)
                     sheetTarget = null
                 },
+            )
+        }
+    }
+}
+
+/**
+ * 自我契约入口卡片（v2.4 批次五）：与日历卡同款形态，文案把"对账"两个字挑明 ——
+ * 契约不是许愿，到期是要按打卡记录算账的。
+ */
+@Composable
+private fun ContractsEntryCard(onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    AppCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(colors.goldSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Create,
+                    contentDescription = null,
+                    tint = colors.goldInk,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(Modifier.width(AppTheme.space.md))
+            Column(Modifier.weight(1f)) {
+                Text(text = "自我契约", style = texts.cardTitle)
+                Spacer(Modifier.height(2.dp))
+                Text(text = "写下来，到期对账", style = texts.caption)
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "进入自我契约",
+                tint = colors.secondaryText,
             )
         }
     }

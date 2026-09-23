@@ -3,6 +3,7 @@ package com.studykit
 import android.content.Context
 import com.studykit.data.AppDatabase
 import com.studykit.data.repository.BookRepository
+import com.studykit.data.repository.ContractRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
 import com.studykit.data.repository.QuestionRepository
@@ -26,6 +27,10 @@ class AppContainer(context: Context) {
         QuestionRepository(database.questionDao(), database.practiceDao())
 
     val habitRepository: HabitRepository = HabitRepository(database.habitDao())
+
+    /** 自我契约（v2.4 批次五）：计数取自 habitDao（check_ins），存取取自 contractDao */
+    val contractRepository: ContractRepository =
+        ContractRepository(database.contractDao(), database.habitDao())
 
     val bookRepository: BookRepository = BookRepository(database.bookDao())
 

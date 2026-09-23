@@ -47,6 +47,8 @@ import com.studykit.ui.bulkimport.ImportKind
 import com.studykit.ui.bulkimport.ImportPreviewScreen
 import com.studykit.ui.bulkimport.ImportResultScreen
 import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.habit.ContractsScreen
+import com.studykit.ui.habit.ContractsViewModel
 import com.studykit.ui.habit.FocusScreen
 import com.studykit.ui.habit.GlobalCalendarScreen
 import com.studykit.ui.habit.GlobalCalendarViewModel
@@ -105,6 +107,9 @@ object HabitRoutes {
 
     /** 专注一场（v2.4 批次三）：全屏倒计时，分钟数写进该习惯当天 */
     const val FOCUS = "habit/focus/{habitId}"
+
+    /** 自我契约（v2.4 批次五）：写下来，到期对账 */
+    const val CONTRACTS = "habit/contracts"
     fun calendar(habitId: Long) = "habit/calendar/$habitId"
     fun focus(habitId: Long) = "habit/focus/$habitId"
 }
@@ -179,6 +184,7 @@ fun AppNav(
     val showBottomBar = Tabs.any { it.route == currentRoute }
     val tabRoutes = remember { Tabs.map { it.route }.toSet() }
     val habitViewModel: HabitViewModel = viewModel()
+    val contractsViewModel: ContractsViewModel = viewModel()
     val globalCalendarViewModel: GlobalCalendarViewModel = viewModel()
     val bookViewModel: BookViewModel = viewModel()
     val studyViewModel: StudyViewModel = viewModel()
@@ -341,6 +347,9 @@ fun AppNav(
                     onOpenCalendar = {
                         navController.navigate(HabitRoutes.CALENDAR_GLOBAL) { launchSingleTop = true }
                     },
+                    onOpenContracts = {
+                        navController.navigate(HabitRoutes.CONTRACTS) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Book.route) {
@@ -380,6 +389,12 @@ fun AppNav(
                 GlobalCalendarScreen(
                     viewModel = globalCalendarViewModel,
                     habitViewModel = habitViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(HabitRoutes.CONTRACTS) {
+                ContractsScreen(
+                    viewModel = contractsViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }
