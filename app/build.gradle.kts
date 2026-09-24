@@ -6,16 +6,60 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+/**
+ * debug 签名必须**跨构建稳定**。
+ *
+ * 病根：AGP 在没配 signingConfig 时，用构建机上现生成的 `~/.android/debug.keystore`。
+ * GitHub Actions 的 runner 每次都是新机器，于是每次 CI 出的 debug 包**签名都不同**，
+ * `adb install -r` 必报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` —— 而这个仓是直接发 APK 的，
+ * 用户换包只能"卸载再装"，卸载 = 本地学习数据全没。2026-09-24 真机走查时它就咬了我一口
+ * （想覆盖安装"修完之后"的包，装不上）。
+ *
+ * 解法：CI 从仓库 secret 里取出固定 keystore，路径通过 `STUDYKIT_DEBUG_KEYSTORE` 传进来。
+ * 本地没有这个变量时退回 AGP 默认行为（自己机器上装没问题，只是与 CI 包互不兼容）。
+ *
+ * 为什么还要 `REQUIRE_DEBUG_KEYSTORE` 那一层硬失败：静默退回随机 key，症状要等到
+ * 下一次覆盖安装才暴露，而且看起来像"设备/签名玄学"。宁可构建当场红。
+ * 只在 debug 构建那条路上要求（release job 不签名，见 .github/workflows/ci.yml 的注释）。
+ */
+val sharedDebugKeystorePath: String? = System.getenv("STUDYKIT_DEBUG_KEYSTORE")
+val sharedDebugKeystoreFile: File? = sharedDebugKeystorePath?.let { path ->
+    val f = file(path)
+    if (!f.isFile) {
+        error("STUDYKIT_DEBUG_KEYSTORE 指向的文件不存在：$path（secret 解码步骤没跑成？）")
+    }
+    f
+}
+if (System.getenv("REQUIRE_DEBUG_KEYSTORE")?.toBoolean() == true && sharedDebugKeystoreFile == null) {
+    error(
+        "这一条 CI 路径必须带固定 debug keystore（STUDYKIT_DEBUG_KEYSTORE），" +
+            "否则产物签名每次都不一样，用户换包就得卸载重装、连学习数据一起丢。",
+    )
+}
+
 android {
     namespace = "com.studykit"
     compileSdk = 35
+
+    signingConfigs {
+        if (sharedDebugKeystoreFile != null) {
+            create("sharedDebug") {
+                storeFile = sharedDebugKeystoreFile
+                // 与 AGP 默认 debug keystore 同一套口令：这把钥匙只用于 debug 包，
+                // 不进应用商店，也不是"应用身份"（release 至今不签名，见 CHANGELOG 的发版决定）。
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.4.1"
+        versionCode = 8
+        versionName = "2.4.2"
         // ML Kit 的 bundled OCR 给四个 ABI 各带一份 libmlkit_google_ocr_pipeline.so
         // （x86_64 11.6MB + x86 11.6MB + arm64 11.1MB + armeabi 6.8MB = 41MB），
         // 而本仓是**直接发 APK**（GitHub Release / 网盘），不是走应用商店的 per-device split，
@@ -26,6 +70,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 只有 CI 提供了固定 keystore 时才覆盖；本地留空 = 用 AGP 默认 debug keystore
+            if (sharedDebugKeystoreFile != null) {
+                signingConfig = signingConfigs.getByName("sharedDebug")
+            }
+        }
         release {
             // 开启混淆与资源收缩；混淆后的 release 包需在本地真机完整回归验证（详见 CHANGELOG）
             isMinifyEnabled = true

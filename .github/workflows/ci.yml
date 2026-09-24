@@ -22,8 +22,53 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # debug 包必须跨构建同签名，否则用户换包只能卸载重装（= 学习数据全丢）。
+      # 详见 app/build.gradle.kts 里 sharedDebug 那段注释：这里负责把 secret 落成文件，
+      # 再把路径与"必须用到它"的开关交给构建。
+      - name: Restore pinned debug keystore
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEBUG_KEYSTORE_B64:-}" ]; then
+            echo "::error::secret DEBUG_KEYSTORE_B64 是空的。宁可构建失败，也不要静默签出一个"
+            echo "   随机 debug keystore —— 那会让下一次覆盖安装报 INSTALL_FAILED_UPDATE_INCOMPATIBLE"
+            echo "   （fork 的 PR 拿不到 secret，属于预期失败，直接 push 分支再出包）"
+            exit 1
+          fi
+          ks="${RUNNER_TEMP}/studykit-debug.keystore"
+          printf '%s' "${DEBUG_KEYSTORE_B64}" | base64 -d > "${ks}"
+          echo "STUDYKIT_DEBUG_KEYSTORE=${ks}" >> "${GITHUB_ENV}"
+          echo "REQUIRE_DEBUG_KEYSTORE=true" >> "${GITHUB_ENV}"
+          echo "keystore bytes: $(wc -c < "${ks}")"
+
       - name: Lint, unit tests and debug build
         run: ./gradlew lint testDebugUnitTest assembleDebug
+
+      # 上一轮 CI 全绿、包也装不上 —— 因为"签名对不对"这件事没有任何地方在断言。
+      # 这里把产物 APK 的签名证书和 keystore 里的证书对一次，不一致就红。
+      - name: Assert APK is signed with the pinned debug key
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          ks="${STUDYKIT_DEBUG_KEYSTORE:?STUDYKIT_DEBUG_KEYSTORE 未设置}"
+          fp() { tr -d ' \t:' | tr 'a-f' 'A-F' | grep -oE '[0-9A-F]{64}' | head -n1; }
+          want="$(keytool -list -v -keystore "${ks}" -storepass android -alias androiddebugkey | fp)"
+          apksigner="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk}}/build-tools" \
+            -name apksigner -type f 2>/dev/null | sort | tail -n1)"
+          if [ -z "${apksigner}" ]; then
+            echo "::error::runner 上找不到 apksigner，无法核对签名（宁可红，不要跳过这一关）"
+            exit 1
+          fi
+          got="$("${apksigner}" verify --print-certs "${apk}" | grep 'certificate SHA-256 digest' | fp)"
+          echo "keystore cert = ${want}"
+          echo "APK cert      = ${got}"
+          if [ -z "${want}" ] || [ "${want}" != "${got}" ]; then
+            echo "::error::debug APK 的签名证书与固定 keystore 不一致（或解析失败）——" \
+                 "换包会报 INSTALL_FAILED_UPDATE_INCOMPATIBLE，用户只能卸载重装丢数据"
+            exit 1
+          fi
+          echo "✅ debug 包签名与固定 keystore 一致，后续 CI 产物可互相覆盖安装" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
