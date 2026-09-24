@@ -49,6 +49,14 @@ android {
         // AGP 8 默认不生成 BuildConfig；AppDatabase 依 BuildConfig.DEBUG 决定是否播种演示数据
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric 要读合并后的 manifest（Compose 测试规则需要它提供的 LaunchActivity），
+            // 还要能取到资源；缺任一条，`createComposeRule()` 在 JVM 上直接起不来。
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -88,4 +96,30 @@ dependencies {
     // 仅测试期：android.jar 里的 org.json 是 `Stub!` 占位，JVM 单测一调就抛
     // （既有 `Question.parseOptions` 因此一直没被测过）。运行时仍用系统实现，APK 零影响。
     testImplementation(libs.json)
+
+    // Compose 渲染守卫：`CheckInSheet` 那类"内容根本没进语义树"的缺陷，纯 JVM 逻辑测试抓不到。
+    // 走 Robolectric 而不是 instrumented test —— 后者要模拟器，本仓 CI 唯一的执行器是
+    // `testDebugUnitTest`（见 .github/workflows/ci.yml），引模拟器会把构建时长和变红风险一起抬上去。
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    // Compose 的 createComposeRule 经 instrumentation 起宿主 activity，需要 espresso。
+    // 通常由 ui-test-junit4 传递带进来，这里显式声明，免得哪天 BOM 升级后静默消失。
+    testImplementation(libs.androidx.test.espresso.core)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    // `ui-test-manifest` 提供那个宿主 `androidx.activity.ComponentActivity`，**必须是
+    // debugImplementation**：manifest 只合进 debug 那一份，而 Robolectric 读的正是它。
+    // 写成 testImplementation 的症状极有迷惑性 —— 每条测试统一抛
+    // `Unable to resolve activity for Intent { cmp=com.studykit/...ComponentActivity }`，
+    // 看着像断言失败，其实一个测试都没跑起来（见 robolectric/robolectric#4736）。
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// 测试失败时把完整堆栈打到 CI 控制台。默认只给一个异常类名，等于每排查一次就要重跑一轮构建
+// —— 而本仓唯一的执行器是 CI，一轮七八分钟，看不见的失败就是白跑。
+tasks.withType<Test>().configureEach {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
+        events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+    }
 }
