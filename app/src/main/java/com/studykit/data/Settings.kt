@@ -53,7 +53,13 @@ data class AppSettings(
      * （Lally 2010：漏一天并不毁掉习惯的自动性，断签清零才不科学）。
      */
     val dayBoundaryHour: Int = DEFAULT_DAY_BOUNDARY_HOUR,
-    /** 允许补打卡（近 7 天内的空格）。补的记 is_makeup，不断签但在日历与统计里单独标识 */
+    /**
+     * 允许补打卡（近 7 天内的空格）。补的记 `check_ins.is_makeup`，
+     * **计入连续与累计（不断签），但在全局日历的日详情卡上带「补」字药丸单独标识**。
+     *
+     * 注意别写成"日历与统计里都单独标识"：统计侧（累计打卡天数、热力图）本来就该把补卡算进去，
+     * 也没有逐条列打卡明细的界面，所以那里没有可依附的标识位。
+     */
     val makeupAllowed: Boolean = true,
     /** 限制打卡时段（默认关）：开启后只允许窗口内打卡 */
     val restrictCheckIn: Boolean = false,

@@ -330,7 +330,7 @@ private fun PermissionNoticeCard(onRetry: () -> Unit) {
 private fun MonthCard(
     month: YearMonth,
     onMonthChange: (YearMonth) -> Unit,
-    checkInsByDate: Map<LocalDate, List<String>>,
+    checkInsByDate: Map<LocalDate, List<CheckedHabit>>,
     eventsByDate: Map<LocalDate, List<SystemEvent>>,
     selectedDate: LocalDate,
     onSelectDate: (LocalDate) -> Unit,
@@ -588,7 +588,7 @@ private fun GlobalDayCell(
 @Composable
 private fun DayDetailCard(
     date: LocalDate,
-    checkedHabits: List<String>,
+    checkedHabits: List<CheckedHabit>,
     events: List<SystemEvent>,
     showEvents: Boolean,
     habits: List<Habit>,
@@ -637,7 +637,7 @@ private fun DayDetailCard(
                 }
             }
         } else {
-            checkedHabits.forEach { name ->
+            checkedHabits.forEach { record ->
                 Row(
                     modifier = Modifier.padding(vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -649,7 +649,18 @@ private fun DayDetailCard(
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(Modifier.width(AppTheme.space.sm))
-                    Text(text = name, style = texts.aux)
+                    Text(text = record.name, style = texts.aux)
+                    // 补卡要看得见是补的 —— 更新说明与 AppSettings 注释都承诺了「单独标识」，
+                    // 而标记位此前只写不读，界面上等于没这回事（2026-09-24 走查发现）。
+                    // 用 gold 而非 accent：accent 已被「今天」药丸占了，两者同色会读不出区别。
+                    if (record.isMakeup) {
+                        Spacer(Modifier.width(AppTheme.space.sm))
+                        AppPill(
+                            container = colors.goldSoft,
+                            ink = colors.goldInk,
+                            label = "补",
+                        )
+                    }
                 }
             }
         }
