@@ -12,9 +12,11 @@ import com.studykit.ui.theme.LightColors
 import com.studykit.ui.theme.LocalAppTheme
 import com.studykit.ui.theme.buildAppTexts
 import java.time.LocalDate
+import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -37,6 +39,11 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+// 名字序强制**对照组先跑**。JUnit 默认方法序不保证，而失败的那条测试会漏出未捕获异常，
+// 让同 JVM 里后跑的测试直接抛 `UncaughtExceptionsBeforeTest`（连断言都执行不到）。
+// 上一版守卫测试先跑 SOFT、它失败，于是本该绿的对照组也被拖成红 —— 一整轮 CI 什么也问不出来。
+// 对照组拿到干净结果，才谈得上"判别力"：坏代码上必须是「对照绿 + 守卫红」。
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class CheckInSheetRenderTest {
 
     @get:Rule
@@ -72,7 +79,7 @@ class CheckInSheetRenderTest {
     }
 
     @Test
-    fun `补打卡弹层在玻璃开着时也要把内容渲染出来`() {
+    fun `b_guard_玻璃开着时弹层内容必须渲染出来`() {
         // 这就是当初坏掉的那个条件：AppSettings 默认档位就是 SOFT
         showSheet(GlassLevel.SOFT)
 
@@ -83,8 +90,9 @@ class CheckInSheetRenderTest {
     }
 
     @Test
-    fun `玻璃关闭时同样渲染`() {
-        // 对照组。若只有这条绿、上面那条红，说明问题出在材质而不是弹层本身。
+    fun `a_control_玻璃关闭时弹层内容同样渲染`() {
+        // 对照组，名字前缀保证它先跑。若只有这条绿、上面那条红，说明问题出在材质而不是弹层本身；
+        // 若两条一起红在同一个框架异常上，那是量具坏了，不能当成"守卫生效"。
         showSheet(GlassLevel.OFF)
 
         composeRule.onNodeWithText("补打卡").assertIsDisplayed()
