@@ -52,15 +52,22 @@ jobs:
           set -euo pipefail
           apk=app/build/outputs/apk/debug/app-debug.apk
           ks="${STUDYKIT_DEBUG_KEYSTORE:?STUDYKIT_DEBUG_KEYSTORE 未设置}"
-          fp() { tr -d ' \t:' | tr 'a-f' 'A-F' | grep -oE '[0-9A-F]{64}' | head -n1; }
-          want="$(keytool -list -v -keystore "${ks}" -storepass android -alias androiddebugkey | fp)"
+          # 指纹有两种写法：keytool 用冒号分组（FD:4C:...），apksigner 用裸 64 位十六进制。
+          # 两边都归一成"大写无冒号 64 位"再比。
+          # 注意别用 `tr -d ' :'` + `[0-9A-F]{64}` 一把梭：keytool 那行标签是
+          # "SHA256: FD:4C:..."，去掉冒号后 "A256" 本身是合法十六进制，
+          # 正则会从标签里开始匹配、把真指纹的头 4 位吃掉（第一轮就是这么红的）。
+          hex64='([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64}'
+          want="$(keytool -list -v -keystore "${ks}" -storepass android -alias androiddebugkey \
+            | grep -oE "${hex64}" | head -n1 | tr -d ':' | tr 'a-f' 'A-F')"
           apksigner="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk}}/build-tools" \
             -name apksigner -type f 2>/dev/null | sort | tail -n1)"
           if [ -z "${apksigner}" ]; then
             echo "::error::runner 上找不到 apksigner，无法核对签名（宁可红，不要跳过这一关）"
             exit 1
           fi
-          got="$("${apksigner}" verify --print-certs "${apk}" | grep 'certificate SHA-256 digest' | fp)"
+          got="$("${apksigner}" verify --print-certs "${apk}" \
+            | grep 'certificate SHA-256 digest' | grep -oE "${hex64}" | head -n1 | tr -d ':' | tr 'a-f' 'A-F')"
           echo "keystore cert = ${want}"
           echo "APK cert      = ${got}"
           if [ -z "${want}" ] || [ "${want}" != "${got}" ]; then
