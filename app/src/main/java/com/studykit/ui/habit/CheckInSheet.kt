@@ -25,7 +25,6 @@ import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
-import com.studykit.ui.material.glassContainerColor
 import com.studykit.ui.material.glassSurface
 import com.studykit.ui.material.rememberGlassStyle
 import com.studykit.ui.motion.MotionSpec
@@ -84,16 +83,27 @@ fun CheckInSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // 弹层是浮在内容之上的，正是玻璃该待的地方。sheet 弹入时亮带扫过一次（一次性动画，
-        // 跑完即静止），减弱动效或玻璃关掉时这次动画根本不排。
-        modifier = Modifier.glassSurface(style = glass, shape = sheetShape, scrollPhase = { sweep.value }),
+        // 材质**不挂在这里**。ModalBottomSheet 的 modifier 落在 dialog 根容器上，与它的面板
+        // 测量打架：玻璃开着时整棵内容子树不进树，只剩一层遮罩 —— 屏幕变暗看得见，内容点不着，
+        // uiautomator 里也查不到任何节点（2026-09-24 真机 A/B 定位：只切「玻璃材质」这一个变量，
+        // 开 = dump 2663 字节仅「关闭工作表」，关 = 5951 字节含「确认补卡」等全部节点，开→关→开可复现）。
+        // 所以底色的活交给 containerColor 画整块面板（连拖动手柄那一条一起画，不留接缝），
+        // 入射光、亮带与描边画在下面那个内容 Column 上 —— 那里是普通 composable，
+        // 与底栏、词库状态卡是同一种用法，那两处的玻璃一直是好的。
+        // 弹入时亮带仍扫过一次（一次性动画，跑完即静止）；减弱动效或玻璃关掉时这次动画根本不排。
         sheetState = rememberModalBottomSheetState(),
-        containerColor = glassContainerColor(),
+        containerColor = if (glass.enabled) glass.tint else colors.card,
         shape = sheetShape,
     ) {
         androidx.compose.foundation.layout.Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .glassSurface(
+                    style = glass,
+                    shape = sheetShape,
+                    paintTint = false,
+                    scrollPhase = { sweep.value },
+                )
                 .padding(horizontal = AppTheme.space.pageH)
                 .padding(bottom = AppTheme.space.xl),
         ) {

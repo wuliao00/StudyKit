@@ -14,8 +14,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "2.4.0"
+        versionCode = 7
+        versionName = "2.4.1"
         // ML Kit 的 bundled OCR 给四个 ABI 各带一份 libmlkit_google_ocr_pipeline.so
         // （x86_64 11.6MB + x86 11.6MB + arm64 11.1MB + armeabi 6.8MB = 41MB），
         // 而本仓是**直接发 APK**（GitHub Release / 网盘），不是走应用商店的 per-device split，

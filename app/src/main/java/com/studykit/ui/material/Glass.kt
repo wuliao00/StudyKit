@@ -72,6 +72,9 @@ data class GlassStyle(
  *
  * @param pressed 0f..1f 按压进度，把亮带提亮（手指压在玻璃上，光先聚到那儿）
  * @param scrollPhase 0f..1f 归一化滚动量，驱动亮带扫过玻璃
+ * @param paintTint 要不要画第 1 层半透明底。默认要；**只有当底色已由别处负责时**才传 false
+ *   —— 目前唯一的使用者是打卡弹层：它的整块面板底色由 `ModalBottomSheet.containerColor` 画
+ *   （连拖动手柄那一条一起，不留接缝），这里就只补入射光、亮带与描边。
  *
  * 两个动画量都是 **`() -> Float`** 而不是 `Float`：调用方把 `State` 的读取推迟到绘制期
  * （`pressed = { pressScale }`、`scrollPhase = { sweep.value }`），于是值变化只触发重绘。
@@ -80,12 +83,13 @@ data class GlassStyle(
 fun Modifier.glassSurface(
     style: GlassStyle,
     shape: Shape,
+    paintTint: Boolean = true,
     pressed: () -> Float = { 0f },
     scrollPhase: () -> Float = { 0f },
 ): Modifier {
     if (!style.enabled) return this
-    return this
-        .background(color = style.tint, shape = shape)
+    val tinted = if (paintTint) this.background(color = style.tint, shape = shape) else this
+    return tinted
         .background(brush = style.glossBrush, shape = shape)
         .clip(shape)
         .drawWithCache {
