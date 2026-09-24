@@ -9,10 +9,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 打卡规则三件套的纯函数：日界归属与时段窗口。
+ * 打卡规则的纯函数：日界归属、时段窗口、补卡入口判定。
  *
- * 这两个函数错了都是**静默**的：日期记错一天，账面上永远看不出来是规则错了还是用户真没打；
- * 窗口锁死，用户只会觉得"这个 app 坏了"。所以边界全部钉死。
+ * 这些函数错了都是**静默**的：日期记错一天，账面上永远看不出来是规则错了还是用户真没打；
+ * 窗口锁死，用户只会觉得"这个 app 坏了"；补卡入口判错，用户点了确认却没记上账。
+ * 所以边界全部钉死。
  */
 class HabitRulesTest {
 
@@ -74,5 +75,33 @@ class HabitRulesTest {
     fun `out of range minutes are clamped before comparing`() {
         assertTrue(isWithinCheckInWindow(-5, 0, 24 * 60))
         assertTrue(isWithinCheckInWindow(2000, 0, 24 * 60))
+    }
+
+    // ── 补卡入口（日历格子能不能点开弹层）────────────────────────
+
+    private val today: LocalDate = LocalDate.of(2026, 9, 22)
+
+    /**
+     * 真机踩过的洞：只用日期窗口判，不读设置里的开关。
+     * 结果关掉补卡后灰圈照旧可点，填完点确认才被写入层静默丢掉。
+     */
+    @Test
+    fun `makeup switch closes the entry`() {
+        assertTrue(isMakeUpEligible(checked = false, makeupAllowed = true, date = today.minusDays(1), today = today))
+        assertFalse(isMakeUpEligible(checked = false, makeupAllowed = false, date = today.minusDays(1), today = today))
+    }
+
+    @Test
+    fun `checked days are never makeup targets`() {
+        assertFalse(isMakeUpEligible(checked = true, makeupAllowed = true, date = today.minusDays(1), today = today))
+    }
+
+    /** 窗口边界：第 7 天还在，第 8 天出去；今天和明天都不算"补" */
+    @Test
+    fun `makeup window is seven past days only`() {
+        assertTrue(isMakeUpEligible(false, true, today.minusDays(7), today))
+        assertFalse(isMakeUpEligible(false, true, today.minusDays(8), today))
+        assertFalse(isMakeUpEligible(false, true, today, today))
+        assertFalse(isMakeUpEligible(false, true, today.plusDays(1), today))
     }
 }

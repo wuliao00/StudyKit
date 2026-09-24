@@ -119,6 +119,22 @@ fun canMakeUp(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
     date.isBefore(today) && !date.isBefore(today.minusDays(MAKEUP_WINDOW_DAYS))
 
 /**
+ * 日历上一格**能不能点开补卡弹层**（纯函数）：没打过 + 设置允许补卡 + 在窗口内。
+ *
+ * 为什么把"设置允许"并进这个函数、而不是让各页面自己判：`canMakeUp` 只管日期窗口，
+ * 页面上只用它的话，开关关了格子照样画成灰圈、照样能点，填完弹层才被
+ * `submitCheckIn` 静默丢掉 —— 全局日历是 `canMakeUp(date) && showMakeUp` 两条一起判的，
+ * 习惯日历漏了后一条（2026-09-24 读代码走查发现，不是真机撞上的）。
+ * 入口判定和写入判定共用一条规则，才不会一处开门一处锁门。
+ */
+internal fun isMakeUpEligible(
+    checked: Boolean,
+    makeupAllowed: Boolean,
+    date: LocalDate,
+    today: LocalDate,
+): Boolean = !checked && makeupAllowed && canMakeUp(date, today)
+
+/**
  * 日界归属（纯函数）：boundary=b 时，"今天 b 点之前"发生的事算**前一天**。
  * 例：boundary=3，凌晨 1 点的打卡 → 昨天。0 点边界原样返回。
  */
@@ -340,24 +356,44 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             // check_ins 只存日期串不存时刻，事后无法重算 —— 错过这里就永远错了。
             val effective = if (date == today && boundary > 0) effectiveCheckInDate(now, zone, boundary) else date
             if (effective.isBefore(today)) {
-                if (!s.makeupAllowed) return@launch
-                if (!canMakeUp(effective, today)) return@launch
+                // 三条拒绝路径必须**全都**说话。下面"限时段"那条早就有 Toast，理由写在
+                // 它自己的注释里（"静默拒绝最坑人 —— 用户以为打了，账上却没有"），
+                // 但补卡的这两条一直是 `return@launch` 装死。两个入口页面（习惯日历、
+                // 全局日历）现在都做了闸门，正常路径走不到这里；走到就是闸门漏了
+                // （新增页面、或设置刚被改过），那时候静默就等于丢数据。
+                if (!s.makeupAllowed) {
+                    rejectWithToast("补打卡已在设置里关闭，这次没有记上")
+                    return@launch
+                }
+                if (!canMakeUp(effective, today)) {
+                    rejectWithToast("只能补最近 $MAKEUP_WINDOW_DAYS 天的空缺，$effective 已经过期了")
+                    return@launch
+                }
             }
             if (s.restrictCheckIn && effective == today) {
                 val nowMin = now.atZone(zone).let { it.hour * 60 + it.minute }
                 if (!isWithinCheckInWindow(nowMin, s.restrictStartMin, s.restrictEndMin)) {
                     // 静默拒绝最坑人 —— 用户以为打了，账上却没有。这里必须说话。
-                    Toast.makeText(
-                        getApplication(),
+                    rejectWithToast(
                         "当前不在可打卡时段（${s.restrictStartMin / 60}:${"%02d".format(s.restrictStartMin % 60)}" +
                             "–${s.restrictEndMin / 60}:${"%02d".format(s.restrictEndMin % 60)}）",
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    )
                     return@launch
                 }
             }
             repository.checkInOn(habit.id, effective, note, amount, isMakeup)
         }
+    }
+
+    /**
+     * 打卡被规则挡下时**一定要说一句话**。
+     *
+     * 抽出来是因为拒绝路径不止一条（限时段、补卡开关、补卡窗口），而每一条静默返回的代价
+     * 都一样：用户按了确认，账上没有。界面上不留任何痕迹 —— 不在那一页专门关一次开关再点一次，
+     * 走查是发现不了的。
+     */
+    private fun rejectWithToast(message: String) {
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
     /** 创建习惯（支持数量型与默认打卡文案），成功后回调（通常用于返回上一页） */

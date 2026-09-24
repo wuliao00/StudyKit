@@ -90,6 +90,8 @@ fun HabitCalendarScreen(
     // 自动落回既有的空网格形态（那是本页本来的样子，不新造视觉），所以只有
     // `MistakeDetailScreen` / `BookDetailScreen` 需要早返回分支。三页统一的是这条守卫本身。
     val detail = requestedDetail?.takeIf { it.habit.id == habitId }
+    // 补打卡开关（设置页）：这一页原来**没有**读它，见下面 makeUpEligible 处的注释
+    val makeupAllowed by viewModel.makeupAllowed.collectAsStateWithLifecycle()
     var month by remember { mutableStateOf(YearMonth.now()) }
     // 翻月方向：+1 = 往未来（新网格从右侧进），-1 = 回过去。与 month 同一帧写入，
     // 因此 AnimatedContent 触发转场时读到的就是本次手势的方向。
@@ -214,7 +216,17 @@ fun HabitCalendarScreen(
                                     Spacer(Modifier.weight(1f).aspectRatio(1f))
                                 } else {
                                     val checked = date in checkedDates
-                                    val makeUpEligible = !checked && canMakeUp(date, today)
+                                    // 原来这里只判 `canMakeUp(date, today)`（日期窗口），
+                                    // 没读设置里的补卡开关：关掉开关后灰圈照样出现、照样能点，
+                                    // 填完弹层点确认才被 `submitCheckIn` 静默丢掉 —— 账上什么都没有。
+                                    // 判定收进 `isMakeUpEligible` 这个纯函数，开关是它的入参，
+                                    // 漏传就编译不过，也不会只在一处页面生效。
+                                    val makeUpEligible = isMakeUpEligible(
+                                        checked = checked,
+                                        makeupAllowed = makeupAllowed,
+                                        date = date,
+                                        today = today,
+                                    )
                                     // 转场期间出场的旧月网格只负责动效，不再吃点击：否则 220ms 里
                                     // 屏幕上是两个月份，TalkBack 也会把同一批日期读第二遍
                                     val interactive = shownMonth == month
@@ -237,8 +249,13 @@ fun HabitCalendarScreen(
         }
 
         Spacer(Modifier.height(AppTheme.space.sm))
+        // 这句话跟着开关走：关了还说"可点击补打卡"就是骗人，而页面上确实一个圈都点不动
         Text(
-            text = "过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内漏打卡的日期（灰色圈）可点击补打卡",
+            text = if (makeupAllowed) {
+                "过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内漏打卡的日期（灰色圈）可点击补打卡"
+            } else {
+                "补打卡已在设置里关闭：漏掉的日子点不动，连续记录会就此中断"
+            },
             style = texts.caption,
         )
 
