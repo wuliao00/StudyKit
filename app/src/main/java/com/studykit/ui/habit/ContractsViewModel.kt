@@ -38,6 +38,16 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
     val habits: StateFlow<List<Habit>> = habitRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * 全部习惯，**含已归档**：只用来给契约卡解析习惯名。
+     *
+     * 为什么不能拿 [habits] 那份去查：归档只是从习惯页收起来，打卡记录和契约都还在，
+     * 用"看不见"的列表反查就会把一张活契约标成「已删除的习惯」—— 而"删除习惯"这个动作
+     * 在本应用里根本不存在（只有归档和「清除学习数据」）。名字解析必须看全量。
+     */
+    val allHabits: StateFlow<List<Habit>> = habitRepository.observeAllIncludingArchived()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** 每张契约的当前进度（N/goalCount 的 N），契约 id → 次数 */
     private val _progress = MutableStateFlow<Map<Long, Int>>(emptyMap())
     val progress: StateFlow<Map<Long, Int>> = _progress.asStateFlow()

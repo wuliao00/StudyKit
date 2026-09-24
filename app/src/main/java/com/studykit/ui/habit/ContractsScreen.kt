@@ -82,6 +82,7 @@ fun ContractsScreen(
     val texts = AppTheme.texts
     val contracts by viewModel.contracts.collectAsStateWithLifecycle()
     val habits by viewModel.habits.collectAsStateWithLifecycle()
+    val allHabits by viewModel.allHabits.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
     var showCreate by rememberSaveable { mutableStateOf(false) }
 
@@ -134,13 +135,29 @@ fun ContractsScreen(
                     caption = "把目标、期限和违约后果写下来并签名，到期由数据自动对账",
                 )
                 Spacer(modifier = Modifier.height(AppTheme.space.lg))
-                AppButton(text = "签第一份契约", onClick = { showCreate = true })
+                // 空态这一枚按钮原来无条件可点，而表头的「写一份」是 `habits.isNotEmpty()` 才出现的
+                // —— 两条入口对同一个前提不一致。零习惯（清除学习数据之后、或还没建过习惯）时点它，
+                // 会开出一个没有单选项的弹层，「签名生效」永远灰着且不告诉为什么。
+                // 所以限制画在被限制的对象上：按钮自己变灰，旁边说清缺什么。
+                AppButton(
+                    text = "签第一份契约",
+                    enabled = habits.isNotEmpty(),
+                    onClick = { showCreate = true },
+                )
+                if (habits.isEmpty()) {
+                    Spacer(modifier = Modifier.height(AppTheme.space.sm))
+                    Text(
+                        text = "契约按打卡次数对账，先在「习惯」页建一个习惯",
+                        style = texts.caption.copy(color = colors.secondaryText),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = AppTheme.space.lg),
+                    )
+                }
             }
         } else {
             contracts.forEach { contract ->
                 ContractCard(
                     contract = contract,
-                    habitName = habits.firstOrNull { it.id == contract.habitId }?.name ?: "已删除的习惯",
+                    habitName = contractHabitName(contract.habitId, allHabits),
                     completedCount = progress[contract.id] ?: 0,
                 )
                 Spacer(modifier = Modifier.height(AppTheme.space.md))
@@ -161,6 +178,19 @@ fun ContractsScreen(
             },
         )
     }
+}
+
+/**
+ * 契约卡上的习惯名。**纯函数**，传全量习惯（含已归档）：
+ *
+ * - 习惯还在、也没归档 → 原名；
+ * - 习惯被归档 → `名字（已归档）`。归档只是从习惯页收起来，打卡记录与契约都还活着，
+ *   说成"已删除"是假的（本应用没有"删除单个习惯"这个动作，只有归档和「清除学习数据」）；
+ * - habit_id 指向不存在的行（清库残留、或从旧备份恢复出来的契约）→ `已删除的习惯`。
+ */
+internal fun contractHabitName(habitId: Long, allHabits: List<Habit>): String {
+    val habit = allHabits.firstOrNull { it.id == habitId } ?: return "已删除的习惯"
+    return if (habit.archived) "${habit.name}（已归档）" else habit.name
 }
 
 /**

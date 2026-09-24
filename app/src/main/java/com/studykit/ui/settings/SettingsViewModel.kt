@@ -231,10 +231,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /**
      * 清除学习数据，**保留设置**（`app_settings` 一行不动）。
      *
-     * 覆盖十张表：`words` + `word_reviews` + `word_lists`、`questions` + `practice_records`、
-     * `mistakes`、`habits` + `check_ins`、`books` + `excerpts` + `book_reviews`。
+     * 覆盖十二张表：`words` + `word_reviews` + `word_lists`、`questions` + `practice_records`、
+     * `mistakes`、`habits` + `check_ins` + `contracts`、`books` + `excerpts` + `book_reviews`。
      * 成对清是刻意的 —— 只删主表会留下悬空子表（复习记录挂在已消失的词上、打卡挂在已删除的习惯上），
      * 而热力图与"已学天数"会跟着虚高，那是比"没清干净"更难查的病。
+     *
+     * `contracts` 表是批次五新建的，而这里的清空当时漏了它：它指向习惯，却**没有外键**
+     * （`Contract.habitId` 是裸 Long），所以删习惯时数据库不会替它做级联。漏掉的后果不是"占地方"，
+     * 而是清完库仍然看得到旧契约、进度恒 0、到期被判未达成 —— 一条凭空多出来的失败记录。
      *
      * 顺序有两条硬规定：**图片路径必须在删 `mistakes` 行之前读出来**（行没了就再也找不到文件），
      * 而文件删除放在事务**之外**（磁盘操作失败不该回滚一次已经完成的清库，反之会把事务挂着等 IO）。
@@ -254,6 +258,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     db.withTransaction {
                         db.habitDao().deleteAllCheckIns()
                         db.habitDao().deleteAllHabits()
+                        db.contractDao().deleteAll()
                         db.practiceDao().deleteAll()
                         db.questionDao().deleteAll()
                         db.bookDao().deleteAllReviews()
@@ -270,7 +275,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
             result.onSuccess { (wordCount, listCount, mistakeCount) ->
                 _message.value = "学习数据已清除：$wordCount 条单词（含 $listCount 本词库）、" +
-                    "$mistakeCount 道错题，习惯 / 题目 / 答题记录 / 读书三表一并清零。设置保留。"
+                    "$mistakeCount 道错题，习惯 / 打卡 / 契约 / 题目 / 答题记录 / 读书三表一并清零。设置保留。"
                 _stats.value = null
             }.onFailure { error ->
                 _message.value = "清除失败：${error.rootMessage()}"

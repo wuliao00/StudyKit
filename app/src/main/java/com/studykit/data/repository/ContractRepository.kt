@@ -29,6 +29,9 @@ class ContractRepository(
 
     suspend fun update(contract: Contract) = contractDao.update(contract)
 
+    /** 整表清空：与习惯同进同退，理由见 [ContractDao.deleteAll] */
+    suspend fun deleteAll() = contractDao.deleteAll()
+
     /** 某习惯在 [from, to] 闭区间内的打卡次数（对账判据：到截止日累计打卡 ≥ goalCount） */
     suspend fun countCheckInsBetween(habitId: Long, from: LocalDate, to: LocalDate): Int =
         habitDao.countCheckIns(habitId, from.format(dateFmt), to.format(dateFmt))
