@@ -37,6 +37,17 @@
   并加 `dismissLabel`（默认「取消」，三处既有调用点按名传参、源码兼容）。
   契约页复用而非再写一个近似重复的确认框。
 
+### 修复
+- **同一张契约会庆祝两遍**（上面那条仪式自己的缺陷，真机走查抓到）：三张真达成被摆成
+  「第 1 / 共 5 张」，逐张收下时背单词出现了两次。`settleDue` 当时逐张 `await update()`，
+  每张各一桩隐式事务，Room 每提交一张就失效一次 `contracts` 表 —— 下一趟 collect 于是拿到
+  **半新半旧**的快照，里面还没提交的那几张照旧写着 ACTIVE 且已过期，被再判一次、再报一次。
+  两头各钉一处：一批写进同一桩事务（`ContractRepository.updateAll`），队列按 id 幂等
+  （`nextRitualQueue` 规则 4）。落库侧新增 `ContractBatchSettleTest`（Robolectric + 真 in-memory
+  Room）钉"没观察到中间快照"到底是真原子还是量具坏了 —— 它带自己的对照组，
+  与下面那条"渲染侧没有 CI 防线"**不矛盾**：坏掉的是 Compose 渲染测试的顺序可复现性，
+  Room 行为这一层可复现（全量两遍各 368 项 0 失败）。
+
 ### 已知限制
 - **这一页"真的摆出来了"没有 CI 防线**。为它写过一条 Robolectric 渲染测试：聚焦跑绿，
   全量跑红成 `UncaughtExceptionsBeforeTest` —— 红的不是断言，是**别处**残留的未捕获异常，
