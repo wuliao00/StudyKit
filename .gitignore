@@ -31,3 +31,6 @@ _*.bin
 # 过程工件（任务 brief / report / diff 走查记录）：本地留档用，不入版本库。
 # 此前只靠 .superpowers/sdd/.gitignore 自忽略，根级再兜一层，避免该目录下新增内容漏出去。
 .superpowers/
+
+# Kotlin 分析插件的本地缓存（gradle 一跑就生成，8KB，不该入库）
+.kotlin/
