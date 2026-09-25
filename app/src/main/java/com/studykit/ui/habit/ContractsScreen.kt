@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +48,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -101,6 +103,8 @@ private val TakenRitualsSaver: Saver<List<Long>, LongArray> = Saver(
  * 根是一层 `Box`：契约被结算成 ACHIEVED 时（[ContractsViewModel.achievedToCelebrate]，计划 R1）
  * 上面盖一整页仪式 [ContractRitualLayer]，彩带按 [ConfettiBurst] 的 KDoc 挂在**根 Box** 的
  * `matchParentSize` 层上（卡片 Surface 有圆角裁剪，粒子放进卡里会被切成方框）。
+ * 仪式在的时候下面那棵页面内容**整棵摘掉语义**（`clearAndSetSemantics`）：不透明底色加吞点击只
+ * 挡住了手指，读屏用户否则能隔着这一页摸到卡片上的删除。
  */
 @Composable
 fun ContractsScreen(
@@ -131,7 +135,13 @@ fun ContractsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = AppTheme.space.pageH),
+                .padding(horizontal = AppTheme.space.pageH)
+                // 仪式盖住整页时，下面这些**看上去**已经不存在了（不透明底色 + 吞点击），但它们在
+                // a11y 树里照样在：吞点击只挡得住手指，挡不住 Explore-by-touch / TalkBack ——
+                // 读屏用户于是能在一页写着「收下」的界面底下摸到「写一份」、每张卡的「撤销」/「删除」
+                // 和「返回」，而「删除」是破坏性的。跟 `CardStudyScreen` 里 CardFace 同一手法，
+                // 按可见性摘语义：空块的 clearAndSetSemantics 把整棵子树从语义里摘掉，不影响绘制与布局。
+                .then(if (ritual == null) Modifier else Modifier.clearAndSetSemantics { }),
         ) {
             Spacer(modifier = Modifier.height(AppTheme.space.sm))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -211,22 +221,29 @@ fun ContractsScreen(
         }
 
         ritual?.let { settled ->
-            ContractRitualLayer(
-                contract = settled,
-                habitName = contractHabitName(settled.habitId, allHabits),
-                completedCount = progress[settled.id] ?: 0,
-                onDismiss = {
-                    takenRituals = takenRituals + settled.id
-                    viewModel.dismissRitual(settled.id)
-                },
-            )
-            // 彩带挂在根 Box 上、排在仪式层之后（盖在它上面），不是仪式层的子节点：
-            // 挂进卡面那种带圆角裁剪的容器里粒子出不了框，见 ConfettiBurst 的 KDoc。
-            // 「减弱动效」开着时它自己不跑（组件内部早退），这一层的入场动效另有闸门。
-            ConfettiBurst(
-                trigger = settled.id,
-                modifier = Modifier.matchParentSize(),
-            )
+            // 键必须是**契约 id**：一批多张时"收下"那一下会同时写两道闸（页面记 id + ViewModel 摘队列），
+            // 于是队列头从 X 直接换成 Y，而调用点这个 `let` 组从头到尾没离开过组合 —— 不另起 keyed 组的话
+            // `rememberRitualEntrance` 里那枚 `remember` 已经是 true、`animateFloatAsState` 的目标值也没变，
+            // 第二张就**没有入场动效**（只有彩带会重放，它按 trigger 重建），`rememberScrollState()` 那一份
+            // 滚动位置还会从 X 带到 Y。"一次多张全选中"是 brief 点名的四种情况之一，动效不能悄悄缺席。
+            key(settled.id) {
+                ContractRitualLayer(
+                    contract = settled,
+                    habitName = contractHabitName(settled.habitId, allHabits),
+                    completedCount = progress[settled.id] ?: 0,
+                    onDismiss = {
+                        takenRituals = takenRituals + settled.id
+                        viewModel.dismissRitual(settled.id)
+                    },
+                )
+                // 彩带挂在根 Box 上、排在仪式层之后（盖在它上面），不是仪式层的子节点：
+                // 挂进卡面那种带圆角裁剪的容器里粒子出不了框，见 ConfettiBurst 的 KDoc。
+                // 「减弱动效」开着时它自己不跑（组件内部早退），这一层的入场动效另有闸门。
+                ConfettiBurst(
+                    trigger = settled.id,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
         }
     }
 
@@ -476,18 +493,26 @@ private fun StatusPill(status: String) {
  * 挂在 `ContractsScreen` 根 Box 上、排在页面内容之后（画在上面），底色取 `colors.background`，
  * 并用 `pointerInput` 把落在空白处的点击**吞掉**：不吞的话 Compose 的命中测试会继续往下找
  * 有输入节点的兄弟，于是仪式明明盖着页面，用户还能隔着它点到「写一份」和卡片上的「撤销」。
+ * 吞点击只管得住手指，管不住读屏 —— 被盖住的那棵内容子树因此还要**摘掉语义**，
+ * 见调用点那枚 `clearAndSetSemantics`（否则 Explore-by-touch 能在一页「收下」底下摸到删除）。
  *
  * ## 动效
  * 入场是淡入 + 从下方 `space.lg` 落位 + 轻微放大（[rememberRitualEntrance]，减弱动效时不跑），
  * 彩带由调用方挂在根 Box 上（`ConfettiBurst` 自己那道闸门见其 KDoc）。两处合起来才是
- * "减弱动效开着 = 这一页直接摆在那儿"。
+ * "减弱动效开着 = 这一页直接摆在那儿"。一批多张时每一张都要有这套入场动效，靠的是调用点
+ * 那层 `key(契约 id)`：队列头换成下一张时那一整组会重挂，否则 `rememberRitualEntrance` 里的
+ * `remember` 已经是"放过一次"的样子，第二张就没有动效（彩带反倒会重放，它另按 trigger 重建）。
  *
  * 这一层保持 `private`，**不**为渲染测试放开可见性：Robolectric 的渲染守卫在这个仓里给不出可复现的
- * 判定 —— 同一份测试单独跑绿、进全量跑就被同 JVM 里前一条 Robolectric 测试留下的未捕获异常毒成
- * `UncaughtExceptionsBeforeTest`（`StudyKitApp.onCreate` 起的设置观察者会在后台线程调 WorkManager，
- * 而 Robolectric 下它没初始化，异常落在哪条测试头上取决于跑序，详见 task-2 报告）。
- * 这一页的内容正确性因此由下面那六句字面量与真机复验负责；"该不该放"那条判定另有纯函数与它的
- * JVM 单测（`newlySettled` / `newlyAchieved`）。
+ * 判定。实测到的形状是：同一份测试单独跑绿、进全量跑就红成 `UncaughtExceptionsBeforeTest`，红的不是
+ * 断言而是**别处**残留的未捕获异常 —— 实测到的那一条来自后台线程上的 WorkManager 调用
+ * （`StudyKitApp.onCreate` 挂上的设置观察者 → `ReminderScheduler.applyInterval`，那个 scope 是
+ * `Dispatchers.Default`），异常落在哪条测试头上取决于跑序。**为什么**那一趟里它会抛没查清，也就不写进结论：
+ * manifest 里没有关掉 WorkManager 的默认 initializer（只声明了 FileProvider），`StudyKitApp` 也没实现
+ * `Configuration.Provider`，所以"Robolectric 下它没初始化"是当时的一句猜测，别再当理由传下去。
+ * 想让这一页有渲染防线，得先把那枚异常按 task-2 报告第五节的记录查清楚，不是在这里放开可见性。
+ * 这一页的内容正确性因此由下面那六句字面量与真机复验负责；"该不该放、放完还剩哪几张"那条判定
+ * 另有纯函数与它们的 JVM 单测（`newlySettled` / `newlyAchieved` / `nextRitualQueue`）。
  */
 @Composable
 private fun ContractRitualLayer(

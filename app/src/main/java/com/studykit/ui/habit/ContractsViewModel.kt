@@ -72,9 +72,11 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
      * 挂 `ConfettiBurst`），没有事件总线也没有新库。这里同理：页面渲染队列第一条没收下的，
      * 收下时把它从队列里摘掉（[dismissRitual]），并在页面侧按契约 id 记住。
      *
-     * 入队是**往上加**而不是"覆盖成本次的结果"：`settleDue` 落库之后 Room 会立刻重放
+     * 队列的转移规则（**往上加**而不是"覆盖成本次的结果"、加完跟库里的现状对一遍、本趟那几张要一起
+     * 放行）不写在这段协程里，而是抽成纯函数 [nextRitualQueue] 并配 JVM 单测：落库之后 Room 会立刻重放
      * `observeAll()`，第二趟什么都不结算 —— 覆盖式写法会在仪式出现后的下一批重组里把队列抹成空列表，
-     * 用户只看见闪一下就没了。摘出去只由 [dismissRitual] 负责。
+     * 用户只看见闪一下就没了；而并集那一步漏了会把刚挑出来的全筛掉，仪式一次都不出现。两条都是
+     * "错了没有任何声音"的失败模式。摘出去只由 [dismissRitual] 负责。
      *
      * 摘除为什么必须在 ViewModel 这一侧：`ContractsViewModel` 是在 `AppNav` 根 composable 里
      * `viewModel()` 拿的，作用域是 **Activity**，退出契约页再进来它不会重建 —— 只靠页面的
@@ -97,19 +99,15 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
                 // 队列的发布排在 progress 之后：反过来的话会有一帧"仪式已经盖住整页、进度还是空表"，
                 // 仪式上就写着「进度 0/N 次」—— 那是个假数字。
                 //
-                // 入队是往上加（不是覆盖成本次的结果）：本趟落库之后 Room 立刻重放，第二趟什么都
-                // 结算不出来，覆盖式写法会把正在展示的仪式抹没 —— 机制见 [achievedToCelebrate]。
-                //
-                // 加完还要跟库里的现状对一遍，只对**还活着**的：那张契约不在库里（或已经不当 ACHIEVED）
-                // 就把它摘出去。挡的是"结算之后、收下之前被「清除学习数据」抹掉"那一条 ——
-                // 为一行已经不存在的契约摆整页仪式是句假话。
-                // 本趟的 [achieved] 必须并进来一起放行：`all` 是**结算前**的快照，那几张在库里刚变成
-                // ACHIEVED，这一份快照里它们还写着 ACTIVE，不对账就等于把刚挑出来的全筛掉了。
-                val stillAchieved = all.filter { it.status == Contract.STATUS_ACHIEVED }
-                    .map { it.id }
-                    .toSet() + achieved.map { it.id }
-                _achievedToCelebrate.value =
-                    (_achievedToCelebrate.value + achieved).filter { it.id in stillAchieved }
+                // 队列本身的转移规则（只加不减、跟库的现状对一遍、本趟那几张要一起放行）全在纯函数
+                // [nextRitualQueue] 里，那里逐条写了为什么少一条就整个功能不响，并配 JVM 单测
+                // （ContractRitualQueueTest）。这一处只是按顺序调它 —— 这段协程 JVM 单测够不着，
+                // 而它出错又只会表现为"仪式一次都没出现"，所以判定不许留在 collect 里面。
+                _achievedToCelebrate.value = nextRitualQueue(
+                    current = _achievedToCelebrate.value,
+                    newlyAchieved = achieved,
+                    snapshot = all,
+                )
             }
         }
     }

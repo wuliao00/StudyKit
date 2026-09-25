@@ -63,3 +63,38 @@ internal fun newlySettled(
  */
 internal fun newlyAchieved(settled: List<Contract>): List<Contract> =
     settled.filter { it.status == Contract.STATUS_ACHIEVED }
+
+/**
+ * 结算完一批之后**新的仪式队列**长什么样 —— [ContractsViewModel.achievedToCelebrate] 的转移函数，
+ * 三条规则全在这里（协程里那一段只是调它），因为这三条**少一条就整个功能不响**，而两种坏法在界面上
+ * 都只表现为"没放/只放了一张"，没有任何日志会说话。
+ *
+ * 1. **只加不减**：`newlyAchieved` 追加在 [current] 之后（DAO 顺序即播放顺序）。覆盖式写法会当场把
+ *    正在展示的仪式抹没：落库之后 Room 立刻重放 `observeAll()`，第二趟什么都结算不出来，
+ *    "覆盖成本次的结果"于是等于"新的一趟是空表"。
+ * 2. **跟现状对一遍，只放行还活着的**：[current] 里那一张如果在 [snapshot] 里已经没有这行（被「撤销」
+ *    了，或整个库被「清除学习数据」抹了），或者已经不再是 ACHIEVED，就摘出去 —— 为一行不存在的契约
+ *    摆整页仪式是句假话。
+ * 3. **本趟挑出来的要一起放行**：[snapshot] 是**结算前**的那一份列表，刚被判成 ACHIEVED 的
+ *    几张在里面还写着 ACTIVE。少了这一步并集，规则 2 会把规则 1 刚加进来的全筛掉，
+ *    整页仪式一次都不会出现（本仓第一版就写错在这里，见 task-2 报告 §六.5）。
+ *
+ * 返回的元素取自 `current + newlyAchieved`，**不会**换成 [snapshot] 里那一份：结算后的副本带着
+ * `settledAt`，换成快照那份就落不了款（`contractRitualSignatureLine` 读的就是它）。
+ * 收下的那一张由 `dismissRitual` 从 [current] 里摘掉；本函数只从 `current + newlyAchieved` 里挑，
+ * 所以摘掉的不会因为"库里它还是 ACHIEVED"自己长回来。
+ *
+ * @param current 当前队列（还没被收下的那几张，按 DAO 顺序）
+ * @param newlyAchieved 本趟结算真判成 ACHIEVED 的那几张（[newlySettled] 的结果再按状态筛一道）
+ * @param snapshot 这一趟拿到的**结算前**契约列表：只用来判断"那一张还在不在库里、还是不是 ACHIEVED"
+ */
+internal fun nextRitualQueue(
+    current: List<Contract>,
+    newlyAchieved: List<Contract>,
+    snapshot: List<Contract>,
+): List<Contract> {
+    val stillAchieved = snapshot.filter { it.status == Contract.STATUS_ACHIEVED }
+        .map { it.id }
+        .toSet() + newlyAchieved.map { it.id }
+    return (current + newlyAchieved).filter { it.id in stillAchieved }
+}
