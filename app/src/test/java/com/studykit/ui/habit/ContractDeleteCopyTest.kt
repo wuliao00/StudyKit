@@ -13,11 +13,19 @@ import org.junit.Test
  * 现在发生的到底是"撤掉一份还没判的约定"还是"抹掉一条已经判完的历史"。
  * 分叉留在 Composable 里的话测试碰不到它 —— 抽成纯函数就是为了能被钉住。
  *
- * 三种状态各钉四件事：入口标签、确认框标题、正文、确认按钮标签。
+ * 三种状态各钉五件事：入口标签、确认框标题、正文、确认按钮标签、放弃按钮标签。
  * 删除是物理删除且不可恢复（计划 R3），所以文案不许出现"可以恢复""还能找回"那类
  * 过度承诺；进行中的那句还必须点明"打卡不受影响"—— 那是用户真正担心的连带损失。
  */
 class ContractDeleteCopyTest {
+
+    /** 四种状态串：三种真实状态 + 一个认不出来的（兜底分支也要一起钉） */
+    private val allStatuses = listOf(
+        Contract.STATUS_ACTIVE,
+        Contract.STATUS_ACHIEVED,
+        Contract.STATUS_FAILED,
+        "UNKNOWN",
+    )
 
     // ── 入口标签 ─────────────────────────────────────────────
 
@@ -83,6 +91,29 @@ class ContractDeleteCopyTest {
         assertEquals("删除记录", contractDeleteConfirmLabel(Contract.STATUS_FAILED))
     }
 
+    // ── 放弃按钮的标签 ───────────────────────────────────────
+
+    /**
+     * ACTIVE 的放弃按钮不许用组件默认的「取消」：那一支的破坏性动词就是「撤销」，
+     * 而「取消这份契约」是它的日常同义词 —— 想撤的人会把「取消」读成"把契约取消掉"，
+     * 点下去只是关掉对话框，什么也没说明。`DictStoreScreen` 撤销词库那枚对话框
+     * 已经做过同一个判断（用「留着」），这里跟着它。
+     */
+    @Test
+    fun `active dismiss label avoids the revoke synonym`() {
+        val dismiss = contractDeleteDismissLabel(Contract.STATUS_ACTIVE)
+        assertEquals("留着", dismiss)
+        assertFalse("「$dismiss」与「撤销」同义，会把放弃读成撤销", dismiss.contains("取消"))
+    }
+
+    /** 已结算那一支的动词是「删除」，「取消」不与之撞车 —— 维持组件默认措辞，与设置页同口径 */
+    @Test
+    fun `settled dismiss label keeps the default wording`() {
+        assertEquals("取消", contractDeleteDismissLabel(Contract.STATUS_ACHIEVED))
+        assertEquals("取消", contractDeleteDismissLabel(Contract.STATUS_FAILED))
+        assertEquals("取消", contractDeleteDismissLabel(""))
+    }
+
     // ── 文案纪律 ─────────────────────────────────────────────
 
     /** 两种措辞不许串台：进行中的框不把契约说成"记录"，已结算的框不暗示还能"撤" */
@@ -97,24 +128,34 @@ class ContractDeleteCopyTest {
         assertFalse(settled.second.contains("撤销"))
     }
 
+    /** 放弃那枚按钮不许复述破坏性动词：它一读起来像"这就删/撤了"，就等于把确认框变成陷阱 */
+    @Test
+    fun `dismiss label never echoes the destructive verb`() {
+        allStatuses.forEach { status ->
+            val dismiss = contractDeleteDismissLabel(status)
+            listOf("撤销", "删除").forEach { verb ->
+                assertFalse("「$dismiss」里不该出现「$verb」", dismiss.contains(verb))
+            }
+        }
+    }
+
     /** 物理删除没有回收站：任何一条文案都不许留"能找回来"的口子 */
     @Test
     fun `copy never promises recovery`() {
         val forbidden = listOf("可恢复", "可以恢复", "还能找回", "随时找回", "回收站", "撤销后可恢复")
-        val statuses = listOf(
-            Contract.STATUS_ACTIVE,
-            Contract.STATUS_ACHIEVED,
-            Contract.STATUS_FAILED,
-            "UNKNOWN",
-        )
-        statuses.forEach { status ->
+        allStatuses.forEach { status ->
             val (title, body) = contractDeleteConfirmText(status)
-            listOf(title, body, contractDeleteLabel(status), contractDeleteConfirmLabel(status))
-                .forEach { text ->
-                    forbidden.forEach { phrase ->
-                        assertFalse("「$text」里不该出现「$phrase」", text.contains(phrase))
-                    }
+            listOf(
+                title,
+                body,
+                contractDeleteLabel(status),
+                contractDeleteConfirmLabel(status),
+                contractDeleteDismissLabel(status),
+            ).forEach { text ->
+                forbidden.forEach { phrase ->
+                    assertFalse("「$text」里不该出现「$phrase」", text.contains(phrase))
                 }
+            }
         }
     }
 }

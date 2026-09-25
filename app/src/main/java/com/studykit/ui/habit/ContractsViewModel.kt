@@ -1,6 +1,7 @@
 package com.studykit.ui.habit
 
 import android.app.Application
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
@@ -115,9 +116,15 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * 门是防连点双删：两次 DELETE 打到同一行 id 幂等无害，但第二次那一下
      * 会多跑一次 flow 重放与逐张对账，白花钱。
+     * 门是**每 ViewModel 一道**而不是每份契约一道，所以极快连续确认两张不同卡片时
+     * 第二张也会被挡下 —— 被挡这一下界面上不留痕迹（确认框已由调用方收掉），
+     * 所以这条分支必须说话，见 [rejectWithToast]。
      */
     fun deleteContract(id: Long) {
-        if (!deletingContract.tryEnter()) return
+        if (!deletingContract.tryEnter()) {
+            rejectWithToast("上一条还在处理，这一下没有生效 —— 稍等一下再点一次")
+            return
+        }
         viewModelScope.launch {
             try {
                 contractRepository.deleteById(id)
@@ -125,6 +132,18 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
                 deletingContract.leave()
             }
         }
+    }
+
+    /**
+     * 挡下用户这一下时**一定要说一句话**（`HabitViewModel.rejectWithToast` 同一模式）。
+     *
+     * 本仓纪律：任何拒绝用户动作的分支都不许静默 —— 走查时不专门复现一次就永远发现不了，
+     * 而用户那边是"我按了确认，什么也没发生"。措辞刻意不带动词（撤销/删除）：门是全页一道，
+     * 被挡的可能是另一张卡，说"这张没删掉"就不一定成立；"这一下没有生效"只陈述本次调用
+     * 没有执行，这是真的，并且给了下一步（稍等一下再点一次）。
+     */
+    private fun rejectWithToast(message: String) {
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
     /**

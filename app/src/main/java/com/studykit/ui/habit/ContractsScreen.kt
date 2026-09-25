@@ -226,6 +226,21 @@ internal fun contractDeleteConfirmLabel(status: String): String =
     if (status == Contract.STATUS_ACTIVE) "撤销契约" else "删除记录"
 
 /**
+ * 确认框里那枚放弃按钮的标签（纯函数）。
+ *
+ * ACTIVE 这一支**不能**吃组件默认的「取消」：入口和确认按钮的动词都是「撤销」，而
+ * "取消这份契约"正是「撤销」的日常同义词 —— 想撤的人点「取消」，字面读起来是"把契约取消掉"，
+ * 实际只是关掉了对话框，什么也没说明，那份契约还留在列表里。换成「留着」，
+ * 与 `DictStoreScreen` 撤销词库那枚对话框同一个判断（那边的破坏性动词也是「撤销」）。
+ *
+ * 已结算那一支的动词是「删除」，「取消」不是它的同义词、没有这条误读，所以维持默认措辞，
+ * 与设置页那三枚（动词是清空/清除/覆盖）一个口径。它仍然写成显式分支而不是省略参数：
+ * "放弃按钮的措辞跟不跟状态走"这条判定要留在能被单测钉住的地方，不做内联 when。
+ */
+internal fun contractDeleteDismissLabel(status: String): String =
+    if (status == Contract.STATUS_ACTIVE) "留着" else "取消"
+
+/**
  * 契约卡：状态药丸 + 习惯名 + 承诺原文 + 进度 + 截止日 + 签名，右下角一枚撤销/删除入口。
  * 达成态：goldSoft 底药丸 + gold 描边整卡突出（品牌色只做描边这一处非文本用途）；
  * 未达成：warning 系药丸 + 违约后果原文 —— 当初自己写的话，原样摆出来。
@@ -333,6 +348,8 @@ private fun ContractCard(
             title = title,
             body = body,
             confirmLabel = contractDeleteConfirmLabel(contract.status),
+            // 放弃按钮的措辞也按状态取：ACTIVE 那支的动词是「撤销」，默认的「取消」会和它撞车
+            dismissLabel = contractDeleteDismissLabel(contract.status),
             danger = true,
             onConfirm = {
                 confirming = false
