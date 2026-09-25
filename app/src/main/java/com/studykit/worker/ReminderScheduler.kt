@@ -103,13 +103,53 @@ object ReminderScheduler {
         Log.i(TAG, "复习提醒周期任务已入队（每 $target 小时，策略 $policy）")
     }
 
-    /** 由 [StudyKitApp] 在启动时挂上：设置里的周期一变就重新入队 */
+    /**
+     * 由 [StudyKitApp] 在启动时挂上：设置里的周期一变就重新入队。
+     *
+     * **整段收集都要包住**，不能只包 `applyInterval` —— 异常不在"排任务"那一步，
+     * 而在**读设置流**这一步，而它发生在另一个线程上，外面套多少层 try 都拦不住，
+     * 除非套在收集本身上。这条是 2026-09-26 用一份完整堆栈定位到的，
+     * 它同时解释了这个仓追了两轮的那个现象（见下）。
+     *
+     * ## 这段协程逃出去的异常，就是本仓 Robolectric 测试"随机红"的源头
+     *
+     * `scope` 挂在 `object` 上，**生命周期等于进程**，而 [android.app.Application] 没有
+     * `onDestroy`，所以这里没有任何东西会取消它。真机上这是对的：库开一整个进程，
+     * 观察者也该活一整个进程。但在 Robolectric 下不是：
+     * 每个测试类都会重建一次 `StudyKitApp`（于是多挂一个收集者），
+     * 而每个类结束时 Robolectric 会把 SQLite 连接拆掉 —— **收集者还活着**。
+     * 下一个类一开始，那个上一轮的收集者就去查一张已经关掉的库：
+     *
+     * ```
+     * Exception in thread "DefaultDispatcher-worker-2 @coroutine#52"
+     * java.lang.IllegalStateException: Illegal connection pointer 138.
+     *     Current pointers for thread Thread[#47,arch_disk_io_1 ...] []
+     *   at org.robolectric.shadows.ShadowLegacySQLiteConnection...
+     *   at com.studykit.data.dao.AppSettingDao_Impl$6.call(AppSettingDao_Impl.java:132)
+     *   at com.studykit.worker.ReminderScheduler$observeAndApply$1.invokeSuspend(ReminderScheduler.kt:112)
+     * ```
+     *
+     * 它落在 `Dispatchers.Default` 上、没人接，于是成为**未捕获异常**；
+     * 而 kotlinx-coroutines-test 在**下一个**进入 `runTest` 的测试那里把它报成
+     * `UncaughtExceptionsBeforeTest` —— **红的不是那条测试的断言，受害者取决于跑序**。
+     * 这就是 2026-09-24 那条 Compose 渲染守卫"聚焦跑绿、全量跑红"最后被整批撤回的真因
+     * （当时只查到"来自后台线程上的一次数据库访问"，没查到是哪一条）。
+     *
+     * 捕获之后它不再外溢，所以那条渲染守卫**可以**留在 CI 里。
+     * 代价是真机上如果设置流哪天读挂了，这个观察者会静默停止工作 ——
+     * 所以必须落一条 ERROR，且说清"本进程内后续改周期不会再自动重排"。
+     */
     fun observeAndApply(context: Context, repository: SettingsRepository) {
         scope.launch {
-            repository.settings
-                .map { it.reminderEveryHours }
-                .distinctUntilChanged()
-                .collect { applyInterval(context, it) }
+            try {
+                repository.settings
+                    .map { it.reminderEveryHours }
+                    .distinctUntilChanged()
+                    .collect { applyInterval(context, it) }
+            } catch (t: Throwable) {
+                Log.e(TAG, "复习提醒的设置观察者已停止：本进程内再改提醒周期不会自动重排" +
+                        "（下次冷启动会重新挂上）", t)
+            }
         }
     }
 }
