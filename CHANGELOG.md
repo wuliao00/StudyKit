@@ -59,7 +59,14 @@
   最后一张不报数（`queue.size<=1` 返回 null）。
   ② 一批多张→依次出现且**都有入场动效** ✅ 录屏逐帧看：三屏各自有彩带群
   （第二屏整屏散布、第三屏在标题处刚起），`key(contract.id)` 重挂那道确实各放一次。
-  ③ 减弱动效（`animator_duration_scale=0`）→ 静态摆出来 ✅ 内容齐全，不是"跑了看不见"。
+  ③ 减弱动效 → 静态摆出来 ✅ **走的是 app 自己的那个开关**（设置页「减弱动效」→
+  `app_settings.reduce_motion`，闸门在 `ConfettiBurst.kt:56` 与 `ContractsScreen.kt:729`）：
+  开关状态从库里读回确认 `false → true`，仪式内容齐全地摆出来（契约达成 / 习惯名 / 承诺 /
+  进度 / 落款 / 计数 / 「收下」），且**彩带不飞** —— 同一屏在开关关掉时满屏粒子、开着时零粒子。
+  跑完开关已复原为 `false`。
+  （这一项第一版测错了对象：我改的是系统 `animator_duration_scale`，那是 Compose 全局时长缩放，
+  与本 app 的闸门是两回事 —— 它也会让画面变静态，于是"验过了"这个结论看着成立。
+  读一遍 `if (AppTheme.settings.reduceMotion) return` 那一行就能发现点的不是同一个东西。）
   **仍欠一项：TalkBack 实际开屏走查**（见下一条）。
 - **仪式那扇窗口对读屏是否隔离，没有上过设备**。按 `Dialog` 的结构它应当把手势与焦点关在自己里面，
   但这是结构推理、不是实测结论；页面内容那棵子树因此另带一道 `clearAndSetSemantics`
