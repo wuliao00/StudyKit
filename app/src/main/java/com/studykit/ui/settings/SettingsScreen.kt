@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -61,6 +60,7 @@ import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.backup.StorageStats
@@ -828,36 +828,4 @@ private fun StatCell(value: String, label: String, modifier: Modifier = Modifier
         Spacer(modifier = Modifier.height(AppTheme.space.xs))
         Text(text = label, style = texts.caption)
     }
-}
-
-/** 破坏性动作的确认对话框（写法与 `MistakeDetailScreen` 的删除确认同一套）。 */
-@Composable
-private fun ConfirmDialog(
-    title: String,
-    body: String,
-    confirmLabel: String,
-    danger: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val colors = AppTheme.colors
-    val texts = AppTheme.texts
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = title, style = texts.cardTitle) },
-        text = { Text(text = body, style = texts.aux) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = confirmLabel,
-                    color = if (danger) colors.warningInk else colors.accentInk,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "取消", color = colors.secondaryText)
-            }
-        },
-    )
 }

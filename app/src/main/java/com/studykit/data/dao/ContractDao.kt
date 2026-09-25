@@ -32,4 +32,19 @@ interface ContractDao {
      */
     @Query("DELETE FROM contracts")
     suspend fun deleteAll()
+
+    /**
+     * 撤销单份契约（契约页「撤销」/「删除」入口）。
+     *
+     * **物理删除，不是软删/归档**（计划 R3）：契约本来就是一张凭据，留着一条"被撤销的契约"
+     * 没有任何消费方 —— 卡面不再展示它，对账也不再碰它，统计里没有它的位置；
+     * 而 `archived` 这个语义已经被习惯占用了，借来用会让两张表的"归档"含义分叉。
+     * 已结算的（ACHIEVED / FAILED）同样直接删：历史的所有权属于用户，
+     * app 没有权利替人留着一条他自己要抹掉的记录。
+     *
+     * 只删 `contracts` 这一行：`check_ins` 与契约无关（打卡记录归习惯），
+     * 撤销契约不会让已经打过的卡消失。
+     */
+    @Query("DELETE FROM contracts WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

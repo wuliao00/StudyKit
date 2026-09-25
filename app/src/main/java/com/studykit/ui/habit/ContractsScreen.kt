@@ -48,6 +48,7 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
@@ -159,6 +160,8 @@ fun ContractsScreen(
                     contract = contract,
                     habitName = contractHabitName(contract.habitId, allHabits),
                     completedCount = progress[contract.id] ?: 0,
+                    // 删除入口回调**逐张**捕获自己的 contract：挂在页面级循环外面会删错张
+                    onDelete = { viewModel.deleteContract(contract.id) },
                 )
                 Spacer(modifier = Modifier.height(AppTheme.space.md))
             }
@@ -194,20 +197,55 @@ internal fun contractHabitName(habitId: Long, allHabits: List<Habit>): String {
 }
 
 /**
- * 契约卡：状态药丸 + 习惯名 + 承诺原文 + 进度 + 截止日 + 签名。
+ * 卡片上删除入口的标签（纯函数）。
+ *
+ * ACTIVE 用「撤销」—— 契约还没判，撤掉的是**一份自己刚签下的承诺**；
+ * ACHIEVED / FAILED 用「删除」—— 账已经结完，抹掉的是**一条历史**。
+ * 动词跟着契约的生命周期走，不写成统一的「删除」，是为了不把"撤掉一份进行中的约定"
+ * 说成"删一条记录"（那听着像清理缓存，用户会以为撤了还能找回）。
+ */
+internal fun contractDeleteLabel(status: String): String =
+    if (status == Contract.STATUS_ACTIVE) "撤销" else "删除"
+
+/**
+ * 确认框的标题与正文（纯函数，`danger = true` 由调用方固定给）。
+ *
+ * 两种文案都必须把"删了就没了"说清（计划 R3 定为物理删除、没有回收站、撤销后不可恢复），
+ * 同时说清**不会**顺手带走什么 —— ACTIVE 那句要点名"已打的打卡不受影响"，
+ * 因为契约与打卡是两张表，用户担心的正是"撤契约会不会把卡也抹了"。
+ */
+internal fun contractDeleteConfirmText(status: String): Pair<String, String> =
+    if (status == Contract.STATUS_ACTIVE) {
+        "撤销这份契约？" to "撤销后这条契约连同它的判定一起消失，不会留下记录；已打的打卡不受影响。"
+    } else {
+        "删除这条记录？" to "这是已经判完的历史，删了就找不回来。"
+    }
+
+/** 确认框里那枚确认按钮的标签（纯函数）：说清点下去发生的是撤销还是删除 */
+internal fun contractDeleteConfirmLabel(status: String): String =
+    if (status == Contract.STATUS_ACTIVE) "撤销契约" else "删除记录"
+
+/**
+ * 契约卡：状态药丸 + 习惯名 + 承诺原文 + 进度 + 截止日 + 签名，右下角一枚撤销/删除入口。
  * 达成态：goldSoft 底药丸 + gold 描边整卡突出（品牌色只做描边这一处非文本用途）；
  * 未达成：warning 系药丸 + 违约后果原文 —— 当初自己写的话，原样摆出来。
+ *
+ * 确认框的状态开在**本卡作用域**里，并以 `contract.id` 为 remember 键（`DictStoreScreen`
+ * 的 `ImportedListRow` 同一写法）：列表会因为删除而重排，不带键的话 slot 复用会把
+ * "正在确认"这个布尔传给挪进来的下一张卡。
  */
 @Composable
 private fun ContractCard(
     contract: Contract,
     habitName: String,
     completedCount: Int,
+    onDelete: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val achieved = contract.status == Contract.STATUS_ACHIEVED
     val failed = contract.status == Contract.STATUS_FAILED
+    var confirming by rememberSaveable(contract.id) { mutableStateOf(false) }
 
     AppCard(
         modifier = Modifier
@@ -272,9 +310,35 @@ private fun ContractCard(
         }
         Spacer(modifier = Modifier.height(AppTheme.space.xs))
         val signedAt = LocalDate.ofEpochDay(contract.signedAtEpochDay)
-        Text(
-            text = "署名：${contract.signedBy.ifBlank { "未署名" }} · $signedAt",
-            style = texts.caption.copy(color = colors.secondaryText),
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "署名：${contract.signedBy.ifBlank { "未署名" }} · $signedAt",
+                style = texts.caption.copy(color = colors.secondaryText),
+                modifier = Modifier.weight(1f),
+            )
+            // 入口是一枚有字的 TextButton（同 OrganizeScreen 的「归档」、DictStoreScreen 的「撤销」），
+            // 不用图标按钮 —— contentDescription 只有读屏用户听得见，而这颗按钮是删数据的门
+            TextButton(onClick = { confirming = true }) {
+                Text(
+                    text = contractDeleteLabel(contract.status),
+                    style = texts.caption.copy(color = colors.warningInk),
+                )
+            }
+        }
+    }
+
+    if (confirming) {
+        val (title, body) = contractDeleteConfirmText(contract.status)
+        ConfirmDialog(
+            title = title,
+            body = body,
+            confirmLabel = contractDeleteConfirmLabel(contract.status),
+            danger = true,
+            onConfirm = {
+                confirming = false
+                onDelete()
+            },
+            onDismiss = { confirming = false },
         )
     }
 }

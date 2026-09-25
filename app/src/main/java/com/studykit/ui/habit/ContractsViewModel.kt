@@ -101,6 +101,33 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
     private val creatingContract = OneShotGate()
 
     /**
+     * 撤销/删除契约的一次性门：与 [creatingContract] 同一模式，各用各的门
+     * （同一份连点"签两次"和"删两次"是两回事，共用一门会互相挡）。
+     */
+    private val deletingContract = OneShotGate()
+
+    /**
+     * 撤销一份契约（物理删除，ACTIVE 与已结算都允许，为什么不软删见 `ContractDao.deleteById` 的注释）。
+     *
+     * 列表不用手动改：`contracts` 与 `progress` 都订在 `observeAll()` 上，
+     * Room 在 DELETE 之后重放 flow，卡片自己就消失了 —— 手动摘 StateFlow 那一份
+     * 只会让"界面"和"库"两套真相短暂分叉，重进页面还可能复活。
+     *
+     * 门是防连点双删：两次 DELETE 打到同一行 id 幂等无害，但第二次那一下
+     * 会多跑一次 flow 重放与逐张对账，白花钱。
+     */
+    fun deleteContract(id: Long) {
+        if (!deletingContract.tryEnter()) return
+        viewModelScope.launch {
+            try {
+                contractRepository.deleteById(id)
+            } finally {
+                deletingContract.leave()
+            }
+        }
+    }
+
+    /**
      * 签一份契约：签名 = 设置里的昵称（SettingsScreen 的 nickname 字段），签约日 = 今天。
      * 昵称为空就存空串，展示侧显示"未署名" —— 不代填假名。
      */
