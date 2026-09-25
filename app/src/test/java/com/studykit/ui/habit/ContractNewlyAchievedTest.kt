@@ -10,7 +10,8 @@ import java.time.LocalDate
  * 「本次结算里挑出达成那几张」的纯函数（计划 R1 的落点，达成仪式唯一的触发条件）。
  *
  * 仪式绑的是**本次 settleDue 真的写成了 ACHIEVED**，不是"看到一张达成的契约" —— 后者会让用户
- * 每次进契约页都庆祝一遍（那是噪音）。这条线一旦错，要么吵、要么整个功能不响，而两种错在界面上
+ * 每次进契约页、每次列表重放都庆祝一遍（那是噪音；对账本身跑在整个进程寿命里，见
+ * `ContractsViewModel.achievedToCelebrate`）。这条线一旦错，要么吵、要么整个功能不响，而两种错在界面上
  * 都只表现为"放了/没放"，所以全部判据钉在这里测。
  *
  * 四件事是验收点：未到期不选、到期但判 FAILED 不选、已经结算过的不选（防重）、一次多张全选中。
@@ -101,7 +102,8 @@ class ContractNewlyAchievedTest {
     /**
      * 这条就是"不需要是否看过这一列"的**全部**理由：结算写完，Room 会立刻用同一批数据重放一次
      * collect，第二趟拿到的已经是判完的契约 —— 挑不出东西，所以仪式不会被第二次触发，
-     * 也不会被第二趟**抹掉**（队列只由页面的"收下"负责摘，见 ContractsViewModel.achievedToCelebrate）。
+     * 也不会被第二趟**抹掉**（队列只由 `dismissRitual` 摘，「收下」与系统返回都走那里，
+     * 见 ContractsViewModel.achievedToCelebrate）。
      */
     @Test
     fun `re-running over the just settled rows picks nothing`() {

@@ -69,7 +69,7 @@ internal fun newlyAchieved(settled: List<Contract>): List<Contract> =
  * 三条规则全在这里（协程里那一段只是调它），因为这三条**少一条就整个功能不响**，而两种坏法在界面上
  * 都只表现为"没放/只放了一张"，没有任何日志会说话。
  *
- * 1. **只加不减**：`newlyAchieved` 追加在 [current] 之后（DAO 顺序即播放顺序）。覆盖式写法会当场把
+ * 1. **只加不减**：[justAchieved] 追加在 [current] 之后（DAO 顺序即播放顺序）。覆盖式写法会当场把
  *    正在展示的仪式抹没：落库之后 Room 立刻重放 `observeAll()`，第二趟什么都结算不出来，
  *    "覆盖成本次的结果"于是等于"新的一趟是空表"。
  * 2. **跟现状对一遍，只放行还活着的**：[current] 里那一张如果在 [snapshot] 里已经没有这行（被「撤销」
@@ -77,24 +77,27 @@ internal fun newlyAchieved(settled: List<Contract>): List<Contract> =
  *    摆整页仪式是句假话。
  * 3. **本趟挑出来的要一起放行**：[snapshot] 是**结算前**的那一份列表，刚被判成 ACHIEVED 的
  *    几张在里面还写着 ACTIVE。少了这一步并集，规则 2 会把规则 1 刚加进来的全筛掉，
- *    整页仪式一次都不会出现（本仓第一版就写错在这里，见 task-2 报告 §六.5）。
+ *    整页仪式一次都不会出现 —— 这不是假想，本仓第一版就写错在这里，症状是"功能整个不响、
+ *    而且没有任何日志会说话"。
  *
- * 返回的元素取自 `current + newlyAchieved`，**不会**换成 [snapshot] 里那一份：结算后的副本带着
+ * 返回的元素取自 `current + justAchieved`，**不会**换成 [snapshot] 里那一份：结算后的副本带着
  * `settledAt`，换成快照那份就落不了款（`contractRitualSignatureLine` 读的就是它）。
- * 收下的那一张由 `dismissRitual` 从 [current] 里摘掉；本函数只从 `current + newlyAchieved` 里挑，
- * 所以摘掉的不会因为"库里它还是 ACHIEVED"自己长回来。
+ * 收下那一张由 `dismissRitual` 从 [current] 里摘掉；本函数只从 `current + justAchieved` 里挑，
+ * 所以摘掉的不会因为"库里它还是 ACHIEVED"自己长回来 —— 这也是"这张已经放过"唯一的记法，
+ * 页面不再另存一份 id 清单（两处记同一件事迟早各说一套）。
  *
  * @param current 当前队列（还没被收下的那几张，按 DAO 顺序）
- * @param newlyAchieved 本趟结算真判成 ACHIEVED 的那几张（[newlySettled] 的结果再按状态筛一道）
+ * @param justAchieved 本趟结算真判成 ACHIEVED 的那几张（[newlySettled] 的结果再按状态筛一道）；
+ *   不叫 `newlyAchieved` 是为了不跟同文件那个顶层纯函数 [newlyAchieved] 撞名
  * @param snapshot 这一趟拿到的**结算前**契约列表：只用来判断"那一张还在不在库里、还是不是 ACHIEVED"
  */
 internal fun nextRitualQueue(
     current: List<Contract>,
-    newlyAchieved: List<Contract>,
+    justAchieved: List<Contract>,
     snapshot: List<Contract>,
 ): List<Contract> {
     val stillAchieved = snapshot.filter { it.status == Contract.STATUS_ACHIEVED }
         .map { it.id }
-        .toSet() + newlyAchieved.map { it.id }
-    return (current + newlyAchieved).filter { it.id in stillAchieved }
+        .toSet() + justAchieved.map { it.id }
+    return (current + justAchieved).filter { it.id in stillAchieved }
 }

@@ -38,7 +38,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +53,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Contract
 import com.studykit.data.entity.Habit
@@ -81,15 +82,6 @@ private val DeadlinePresets = listOf(7, 14, 30, 60)
 private const val PROMISE_TEMPLATE = "如果到了【填写场景】，我就完成当日打卡。"
 
 /**
- * 「已经收下过哪几张仪式」的存档器（契约 id 列表）。
- * 自动存档只认基础类型与 `ArrayList`，`Set` 存不进 Bundle，所以显式给一条 toLongArray 的路。
- */
-private val TakenRitualsSaver: Saver<List<Long>, LongArray> = Saver(
-    save = { it.toLongArray() },
-    restore = { it.toList() },
-)
-
-/**
  * 自我契约页（v2.4 批次五）：监督计划的**离线替身**。
  *
  * 第一句话就是定位语 —— Ariely 意义上的 precommitment 没有外部监督人，约束力弱于真人监督，
@@ -97,14 +89,16 @@ private val TakenRitualsSaver: Saver<List<Long>, LongArray> = Saver(
  *
  * 颜色与文字只取 `AppTheme` tokens；达成态用 gold 系（goldSoft 药丸 + goldInk 字，
  * 品牌色 gold 只做卡面描边这一处非文本用途）；未达成把当初自己写的后果原文摆出来。
- * 页面结构与表单页同一套纪律：内容 Column 只有 `fillMaxSize + verticalScroll + padding(pageH)`，
+ * 页面结构与表单页同一套纪律：根就是那棵内容 `Column`，只有 `fillMaxSize + verticalScroll + padding(pageH)`，
  * insets 全交给 AppNav 根 Scaffold 的 innerPadding。
  *
- * 根是一层 `Box`：契约被结算成 ACHIEVED 时（[ContractsViewModel.achievedToCelebrate]，计划 R1）
- * 上面盖一整页仪式 [ContractRitualLayer]，彩带按 [ConfettiBurst] 的 KDoc 挂在**根 Box** 的
- * `matchParentSize` 层上（卡片 Surface 有圆角裁剪，粒子放进卡里会被切成方框）。
- * 仪式在的时候下面那棵页面内容**整棵摘掉语义**（`clearAndSetSemantics`）：不透明底色加吞点击只
- * 挡住了手指，读屏用户否则能隔着这一页摸到卡片上的删除。
+ * 契约被结算成 ACHIEVED 时（[ContractsViewModel.achievedToCelebrate]，计划 R1），仪式 [ContractRitualDialog]
+ * 开在**自己那一扇窗口**里（裁决 R7）—— 它不是盖在页面根上的一层浮层：浮层管不住别的窗口，
+ * 而本仓的确认框 [ConfirmDialog] 与创建弹层都是 Material3 `AlertDialog`、各自活在自己的窗口里、
+ * 永远画在页面之上，于是一张确认框能坐在庆祝页上面，而浮层那套吞点击与摘语义都伸不进那一层。
+ * 系统返回也由那扇窗口接住，走的是与「收下」同一条路。窗口自己就把手势与焦点关在外面，
+ * 内容 Column 在仪式期间仍然**摘掉语义**（`clearAndSetSemantics`）：那是 belt-and-braces，
+ * 两道防线各管什么、哪一道还没上设备验过，都写在它旁边那段注释里。
  */
 @Composable
 fun ContractsScreen(
@@ -120,92 +114,95 @@ fun ContractsScreen(
     val toCelebrate by viewModel.achievedToCelebrate.collectAsStateWithLifecycle()
     var showCreate by rememberSaveable { mutableStateOf(false) }
 
-    // 「这张已经放过」按契约 id 记住，转屏/重组不重放（第一道闸在 ViewModel 的队列里，
-    // 收下时那张会被摘掉 —— 两道闸各挡什么见 ContractsViewModel.achievedToCelebrate 的说明）。
-    // 必须显式给存档器：`emptyList()` 不是 ArrayList，自动存档会直接把这一格存崩（转屏即抛）。
-    var takenRituals by rememberSaveable(stateSaver = TakenRitualsSaver) {
-        mutableStateOf(emptyList<Long>())
-    }
+    // 队列头就是"还等着摆的那一张"：哪几张放过由 `dismissRitual` 在 ViewModel 那一侧记着，
+    // 页面不另存一份 id 清单（裁决 R6 —— 同一件事记两处，两处就会各说一套）。
     // allHabits 还没吐过第一帧时先不摆仪式：那时 contractHabitName 的兜底会把一张活习惯
     // 说成「已删除的习惯」，那是句假话。习惯到得很快，晚一帧进场没人看得出来。
-    val ritual = toCelebrate.firstOrNull { it.id !in takenRituals }?.takeIf { allHabits.isNotEmpty() }
+    val ritual = toCelebrate.firstOrNull()?.takeIf { allHabits.isNotEmpty() }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = AppTheme.space.pageH)
-                // 仪式盖住整页时，下面这些**看上去**已经不存在了（不透明底色 + 吞点击），但它们在
-                // a11y 树里照样在：吞点击只挡得住手指，挡不住 Explore-by-touch / TalkBack ——
-                // 读屏用户于是能在一页写着「收下」的界面底下摸到「写一份」、每张卡的「撤销」/「删除」
-                // 和「返回」，而「删除」是破坏性的。跟 `CardStudyScreen` 里 CardFace 同一手法，
-                // 按可见性摘语义：空块的 clearAndSetSemantics 把整棵子树从语义里摘掉，不影响绘制与布局。
-                .then(if (ritual == null) Modifier else Modifier.clearAndSetSemantics { }),
-        ) {
-            Spacer(modifier = Modifier.height(AppTheme.space.sm))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = colors.accentInk,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AppTheme.space.pageH)
+            // 第二道防线，不是唯一那道：仪式已经搬进自己的窗口（`ContractRitualDialog`），
+            // 窗口把触摸关在外面、下面的卡片按结构就点不到。这一句管的是另一件事 —— **语义树**：
+            // 窗口对 Explore-by-touch / TalkBack 是否真的隔离，本仓**没有在设备上验过**（在控制器的
+            // 真机清单里），而这一句是本地可证的：空块的 clearAndSetSemantics 把整棵子树从语义里
+            // 摘掉，不影响绘制与布局。留着它，读屏用户就不会在一页写着「收下」的界面底下
+            // 摸到「写一份」和每张卡上的「撤销」/「删除」——「删除」是破坏性的。
+            // 同一手法见 `CardStudyScreen` 里给 CardFace 挂的那一行。
+            // 条件用 ritual（这一页此刻到底摆没摆），所以"allHabits 未出第一帧、仪式不摆"
+            // 那条分支不会误伤语义：仪式不在，语义就在。
+            .then(if (ritual == null) Modifier else Modifier.clearAndSetSemantics { }),
+    ) {
+        Spacer(modifier = Modifier.height(AppTheme.space.sm))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = colors.accentInk,
+                )
+            }
+            Spacer(modifier = Modifier.width(AppTheme.space.xs))
+            Text(text = "自我契约", style = texts.pageTitle, modifier = Modifier.weight(1f))
+            if (habits.isNotEmpty()) {
+                TextButton(onClick = { showCreate = true }) {
+                    Text(
+                        text = "写一份",
+                        style = texts.aux.copy(
+                            color = colors.accentInk,
+                            fontWeight = FontWeight.Medium,
+                        ),
                     )
-                }
-                Spacer(modifier = Modifier.width(AppTheme.space.xs))
-                Text(text = "自我契约", style = texts.pageTitle, modifier = Modifier.weight(1f))
-                if (habits.isNotEmpty()) {
-                    TextButton(onClick = { showCreate = true }) {
-                        Text(
-                            text = "写一份",
-                            style = texts.aux.copy(
-                                color = colors.accentInk,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                        )
-                    }
                 }
             }
+        }
 
-            // 定位语：先说清约束从哪来、弱在哪，再谈功能
-            Text(
-                text = "没有监督人，约束靠你自己 —— 这是把 Ariely 的 precommitment 装进单机的样子",
-                style = texts.caption.copy(color = colors.secondaryText),
-                modifier = Modifier.padding(top = AppTheme.space.xs),
-            )
-            Spacer(modifier = Modifier.height(AppTheme.space.md))
+        // 定位语：先说清约束从哪来、弱在哪，再谈功能
+        Text(
+            text = "没有监督人，约束靠你自己 —— 这是把 Ariely 的 precommitment 装进单机的样子",
+            style = texts.caption.copy(color = colors.secondaryText),
+            modifier = Modifier.padding(top = AppTheme.space.xs),
+        )
+        Spacer(modifier = Modifier.height(AppTheme.space.md))
 
-            if (contracts.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Spacer(modifier = Modifier.height(AppTheme.space.xl * 2))
-                    EmptyState(
-                        title = "还没有契约",
-                        caption = "把目标、期限和违约后果写下来并签名，到期由数据自动对账",
+        if (contracts.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(modifier = Modifier.height(AppTheme.space.xl * 2))
+                EmptyState(
+                    title = "还没有契约",
+                    caption = "把目标、期限和违约后果写下来并签名，到期由数据自动对账",
+                )
+                Spacer(modifier = Modifier.height(AppTheme.space.lg))
+                // 空态这一枚按钮原来无条件可点，而表头的「写一份」是 `habits.isNotEmpty()` 才出现的
+                // —— 两条入口对同一个前提不一致。零习惯（清除学习数据之后、或还没建过习惯）时点它，
+                // 会开出一个没有单选项的弹层，「签名生效」永远灰着且不告诉为什么。
+                // 所以限制画在被限制的对象上：按钮自己变灰，旁边说清缺什么。
+                AppButton(
+                    text = "签第一份契约",
+                    enabled = habits.isNotEmpty(),
+                    onClick = { showCreate = true },
+                )
+                if (habits.isEmpty()) {
+                    Spacer(modifier = Modifier.height(AppTheme.space.sm))
+                    Text(
+                        text = "契约按打卡次数对账，先在「习惯」页建一个习惯",
+                        style = texts.caption.copy(color = colors.secondaryText),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = AppTheme.space.lg),
                     )
-                    Spacer(modifier = Modifier.height(AppTheme.space.lg))
-                    // 空态这一枚按钮原来无条件可点，而表头的「写一份」是 `habits.isNotEmpty()` 才出现的
-                    // —— 两条入口对同一个前提不一致。零习惯（清除学习数据之后、或还没建过习惯）时点它，
-                    // 会开出一个没有单选项的弹层，「签名生效」永远灰着且不告诉为什么。
-                    // 所以限制画在被限制的对象上：按钮自己变灰，旁边说清缺什么。
-                    AppButton(
-                        text = "签第一份契约",
-                        enabled = habits.isNotEmpty(),
-                        onClick = { showCreate = true },
-                    )
-                    if (habits.isEmpty()) {
-                        Spacer(modifier = Modifier.height(AppTheme.space.sm))
-                        Text(
-                            text = "契约按打卡次数对账，先在「习惯」页建一个习惯",
-                            style = texts.caption.copy(color = colors.secondaryText),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = AppTheme.space.lg),
-                        )
-                    }
                 }
-            } else {
-                contracts.forEach { contract ->
+            }
+        } else {
+            contracts.forEach { contract ->
+                // 每一项按 id 建键：`ContractCard` 里"确认框开没开"那格记在组合槽位上，
+                // 删除会让列表重排，不建键的话 slot 复用会把"正在确认"传给挪进来的下一张卡 ——
+                // 与下面仪式那层 `key(契约 id)` 是同一类 bug，那一处上一轮评审抓到过，这一处是漏掉的另半边。
+                key(contract.id) {
                     ContractCard(
                         contract = contract,
                         habitName = contractHabitName(contract.habitId, allHabits),
@@ -216,34 +213,26 @@ fun ContractsScreen(
                     Spacer(modifier = Modifier.height(AppTheme.space.md))
                 }
             }
-
-            Spacer(modifier = Modifier.height(AppTheme.space.xl))
         }
 
-        ritual?.let { settled ->
-            // 键必须是**契约 id**：一批多张时"收下"那一下会同时写两道闸（页面记 id + ViewModel 摘队列），
-            // 于是队列头从 X 直接换成 Y，而调用点这个 `let` 组从头到尾没离开过组合 —— 不另起 keyed 组的话
-            // `rememberRitualEntrance` 里那枚 `remember` 已经是 true、`animateFloatAsState` 的目标值也没变，
-            // 第二张就**没有入场动效**（只有彩带会重放，它按 trigger 重建），`rememberScrollState()` 那一份
-            // 滚动位置还会从 X 带到 Y。"一次多张全选中"是 brief 点名的四种情况之一，动效不能悄悄缺席。
-            key(settled.id) {
-                ContractRitualLayer(
-                    contract = settled,
-                    habitName = contractHabitName(settled.habitId, allHabits),
-                    completedCount = progress[settled.id] ?: 0,
-                    onDismiss = {
-                        takenRituals = takenRituals + settled.id
-                        viewModel.dismissRitual(settled.id)
-                    },
-                )
-                // 彩带挂在根 Box 上、排在仪式层之后（盖在它上面），不是仪式层的子节点：
-                // 挂进卡面那种带圆角裁剪的容器里粒子出不了框，见 ConfettiBurst 的 KDoc。
-                // 「减弱动效」开着时它自己不跑（组件内部早退），这一层的入场动效另有闸门。
-                ConfettiBurst(
-                    trigger = settled.id,
-                    modifier = Modifier.matchParentSize(),
-                )
-            }
+        Spacer(modifier = Modifier.height(AppTheme.space.xl))
+    }
+
+    ritual?.let { settled ->
+        // 键必须是**契约 id**：一批多张时"收下"那一下摘掉队列头，队列头由 X 直接换成 Y，
+        // 而调用点这个 `let` 组从头到尾没离开过组合 —— 不另起 keyed 组的话
+        // `rememberRitualEntrance` 里那枚 `remember` 已经是 true、`animateFloatAsState` 的目标值也没变，
+        // 第二张就**没有入场动效**（只有彩带会重放，它按 trigger 重建），`rememberScrollState()` 那一份
+        // 滚动位置还会从 X 带到 Y。搬进窗口之后这道键更省不得：整扇 Dialog 连同它的窗口都会重挂，
+        // 那才是"再放一张"该有的样子。"一次多张全选中"是 brief 点名的四种情况之一，动效不许悄悄缺席。
+        key(settled.id) {
+            ContractRitualDialog(
+                contract = settled,
+                habitName = contractHabitName(settled.habitId, allHabits),
+                completedCount = progress[settled.id] ?: 0,
+                positionLine = contractRitualPositionLine(queue = toCelebrate, currentId = settled.id),
+                onDismiss = { viewModel.dismissRitual(settled.id) },
+            )
         }
     }
 
@@ -295,6 +284,31 @@ internal fun contractRitualSignatureLine(contract: Contract): String {
     val signed = "署名：${contract.signedBy.ifBlank { "未署名" }}"
     val settledOn = contractSettledDate(contract) ?: return signed
     return "$signed · 对账于 $settledOn"
+}
+
+/**
+ * 仪式上那一行「第 k / 共 n 张」（纯函数）：让出口**可数**（裁决 R8）。
+ *
+ * 为什么要有这一行：对账跑在整个进程寿命里（`ContractsViewModel` 在 `AppNav` 根上就创建了），
+ * 攒下十几张是可达状态；而仪式每收下一张才出下一张，中间没有别的出口。没有计数的时候，
+ * "再点一次收下"和"这一层永远在"在界面上长得一模一样 —— 那是把用户关在一个没说清边界的房间里。
+ *
+ * 为什么是计数器、不是给一次访问封顶（R8 的那一行理由）：**封顶要凭空回答"剩下的什么时候算"**
+ * —— 它们已经结完账了，没有哪个时刻是它们该被庆祝的；而 n 的上限就是用户自己签下的契约数，
+ * 是个他造得出来、也数得完的数。
+ *
+ * 只有一张时返回 null：单张不需要报数（仪式那句"一句多一句都算吵"的纪律还在），
+ * 这一行只在真的成批时出现。
+ *
+ * 队列里没有 [currentId] 也返回 null：那是"这一张正在被摘掉的路上"，宁可少一行也不编一个序号。
+ * [queue] 就是 [ContractsViewModel.achievedToCelebrate] 那一份队列：k 数的是它在队列里的位置，
+ * n 数的是还剩几张（含正在摆的这一张）。
+ */
+internal fun contractRitualPositionLine(queue: List<Contract>, currentId: Long): String? {
+    if (queue.size <= 1) return null
+    val index = queue.indexOfFirst { it.id == currentId }
+    if (index < 0) return null
+    return "第 ${index + 1} / 共 ${queue.size} 张"
 }
 
 /**
@@ -478,30 +492,109 @@ private fun StatusPill(status: String) {
 }
 
 /**
- * 达成仪式（计划 R1/R2）：一张契约被结算成 ACHIEVED 的那一刻盖**一整页**，不是一枚 toast。
+ * 达成仪式那扇**窗口**（计划 R1/R2，形态按裁决 R7）：一张契约被结算成 ACHIEVED 就摆出**一整页**，
+ * 不是一枚 toast。
+ *
+ * ## 为什么是一扇窗口，而不是页面里的一层
+ * 挂在页面根上的浮层盖得住自家的卡片，盖不住**别的窗口**：本仓的确认框 [ConfirmDialog] 与创建弹层
+ * 都是 Material3 `AlertDialog`，各自活在自己的窗口里、永远画在页面之上 —— 于是确认框能坐在庆祝页上面，
+ * 而浮层那套吞点击与摘语义都伸不进那一层。浮层也接不住系统返回：没有 `BackHandler` 时那一下直接
+ * 弹栈，而队列活在 Activity 作用域的 ViewModel 里，"返回"于是悄悄变成"这次仪式无限期推迟"。
+ * 窗口把这两件事都换成结构性的：页面在它下面点不到，[Dialog] 的 `onDismissRequest` 与「收下」
+ * 是同一个动作，所以返回**收下当前这一张**、而不是逃出这一页（本仓挡返回的先例是
+ * `ui/habit/FocusScreen.kt` 里那枚 `BackHandler`）。
+ *
+ * 一处没关死、也不假装关死：确认框**先**开着、仪式**后**结算出来时两扇窗口会同在，谁叠在谁上面
+ * 没在设备上验过（在控制器的真机清单里）。那一刻用户手上是他自己按下去的破坏性确认，
+ * 把确认框盖掉是更坏的处理，所以这里只把话说清、不改行为。
+ *
+ * @param positionLine 一批多张时那一行「第 k / 共 n 张」（[contractRitualPositionLine]，裁决 R8）；
+ *   单张传 null，就不多这一行
+ * @param onDismiss 收下这一张 —— 系统返回走的也是这里
+ */
+@Composable
+private fun ContractRitualDialog(
+    contract: Contract,
+    habitName: String,
+    completedCount: Int,
+    positionLine: String?,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            // 仪式吃满整扇窗口（`MistakeDetailScreen` 看图灯箱同一写法），不是屏幕中间一小块
+            usePlatformDefaultWidth = false,
+            // 内容铺满时本就没有"外面"：这两行写死是为了把"只能从「收下」或返回走"钉在代码上，
+            // 而不是依赖默认值
+            dismissOnClickOutside = false,
+            dismissOnBackPress = true,
+            // `decorFitsSystemWindows` 保持默认（true）：与仓内那枚全屏看图灯箱同口径，
+            // 窗口让开系统栏，钉在下面的「收下」就不会躲进导航条底下。代价是状态栏那一条
+            // 落在窗口之外（那儿露出的是窗口自己的遮罩），观感如何没上设备看过 —— 在真机清单里。
+        ),
+    ) {
+        // 窗口自己的根 Box：`ConfettiBurst` 的 KDoc 要求彩带挂在**根 Box** 的 `matchParentSize`
+        // 层上（取父尺寸、不反过来参与父测量），窗口里这一棵就是那层"全屏、不裁剪"的容器。
+        Box(modifier = Modifier.fillMaxSize()) {
+            ContractRitualLayer(
+                contract = contract,
+                habitName = habitName,
+                completedCount = completedCount,
+                positionLine = positionLine,
+                onDismiss = onDismiss,
+            )
+            // 彩带排在仪式层之后（盖在它上面），不是仪式层的子节点：挂进卡面那种带圆角裁剪的
+            // 容器里粒子出不了框。trigger = 契约 id，一张一个稳定标识（`ImportResultScreen` 的
+            // 先例：别用会变的 trigger，否则重组再放一次）。「减弱动效」开着时它自己不跑
+            // （组件内部早退），这一页的入场动效另有闸门。
+            ConfettiBurst(
+                trigger = contract.id,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+    }
+}
+
+/**
+ * 仪式那一页摆出来的东西（由 [ContractRitualDialog] 放在它自己的窗口里）。
  *
  * 内容自上而下六样，一句多一句都算吵：「契约达成」/ 习惯名 / 承诺原文（引号包裹，同卡面）/
- * 进度 N/goal 次 / 落款那一行 / 一枚「收下」。不做音效、不做震动、不做分享图。
+ * 进度 N/goal 次 / 落款那一行 / 一枚「收下」。成批时另外多一行「第 k / 共 n 张」——那是出口
+ * 的一部分（裁决 R8：让"还要收几张"数得出来），不是第七句庆祝词。
+ * 不做音效、不做震动、不做分享图。
+ *
+ * 什么时候摆由队列说，不由"看到卡片是达成态"说（计划 R1）：结算可能发生在用户停在别的页面的时候
+ * （`ContractsViewModel` 全程活着），那几张就攒在队列里，等他回到契约页才摆 —— 这一页本身
+ * 只挂在契约页的组合里。
  *
  * ## 配色：只用 gold 系 tokens
- * `goldSoft` 底 + `goldInk` 字 + `gold` 描边，与卡面的达成态同族（品牌色 gold 做非文本用途
- * **只允许描边这一处**，见 `AppTheme` 的 T15 墨水纪律）。唯一的例外是「收下」那枚 [AppButton]：
- * 它吃全仓同一份实底按钮（`accentInk` 容器 + `onAccent` 字），因为 gold 压白字在浅色主题只有
- * 1.79:1 —— 按钮是操作件，不该为了配色统一把可达性押上去。
+ * 金卡那一截是 `goldSoft` 底 + `goldInk` 字 + `gold` 描边，与卡面的达成态同族（品牌色 gold 做
+ * 非文本用途**只允许描边这一处**，见 `AppTheme` 的 T15 墨水纪律）。金卡之外这一层只多两个元素：
+ * 计数那一行走 `secondaryText`（它是辅助信息，不是庆祝词的一部分），以及「收下」那枚 [AppButton]
+ * —— 后者吃全仓同一份实底按钮（`accentInk` 容器 + `onAccent` 字），因为 gold 压白字在浅色主题只有
+ * 1.79:1：按钮是操作件，不该为了配色统一把可达性押上去。
  *
- * ## 这一层盖住整页
- * 挂在 `ContractsScreen` 根 Box 上、排在页面内容之后（画在上面），底色取 `colors.background`，
- * 并用 `pointerInput` 把落在空白处的点击**吞掉**：不吞的话 Compose 的命中测试会继续往下找
- * 有输入节点的兄弟，于是仪式明明盖着页面，用户还能隔着它点到「写一份」和卡片上的「撤销」。
- * 吞点击只管得住手指，管不住读屏 —— 被盖住的那棵内容子树因此还要**摘掉语义**，
- * 见调用点那枚 `clearAndSetSemantics`（否则 Explore-by-touch 能在一页「收下」底下摸到删除）。
+ * ## 出口钉在滚动区之外
+ * 承诺是用户自己写的自由文本，创建表单那一格也没给它设长度上限：长起来能把整页顶到可以滚。
+ * 于是可滚的只有那张金卡（`weight(1f, fill = false)` = 最多吃到"屏幕减去出口"那么多，短内容
+ * 仍按内容高），「收下」与计数那一行留在滚动区外面 —— 原来出口挂在滚动区末尾，长承诺能把
+ * **唯一的**出口顶到折叠线以下（评审 M3）。金卡仍然可滚，仪式不许把承诺原文裁掉。
+ *
+ * ## 它在自己那一扇窗口里
+ * 底色取 `colors.background` 铺满窗口，并用 `pointerInput` 把落在空白处的点击**吞掉**。
+ * 搬进窗口之后这一句从"必须"降级成"留着不亏"：不吞的话 Compose 的命中测试会往下找有输入节点的
+ * 兄弟，隔着浮层就点得到下面的「写一份」和「撤销」；而页面在另一扇窗口之下时，那一下根本送不到它手上。
+ * 语义那一侧是同一层意思 —— 被盖住的那棵内容子树还要**摘掉语义**（belt-and-braces），
+ * 见调用点那枚 `clearAndSetSemantics`。
  *
  * ## 动效
  * 入场是淡入 + 从下方 `space.lg` 落位 + 轻微放大（[rememberRitualEntrance]，减弱动效时不跑），
- * 彩带由调用方挂在根 Box 上（`ConfettiBurst` 自己那道闸门见其 KDoc）。两处合起来才是
- * "减弱动效开着 = 这一页直接摆在那儿"。一批多张时每一张都要有这套入场动效，靠的是调用点
- * 那层 `key(契约 id)`：队列头换成下一张时那一整组会重挂，否则 `rememberRitualEntrance` 里的
- * `remember` 已经是"放过一次"的样子，第二张就没有动效（彩带反倒会重放，它另按 trigger 重建）。
+ * 彩带由 [ContractRitualDialog] 挂在窗口那棵根 Box 上（`ConfettiBurst` 自己那道闸门见其 KDoc）。
+ * 两处合起来才是"减弱动效开着 = 这一页直接摆在那儿"。一批多张时每一张都要有这套入场动效，
+ * 靠的是调用点那层 `key(契约 id)`：队列头换成下一张时整组连同窗口会重挂，否则
+ * `rememberRitualEntrance` 里的 `remember` 已经是"放过一次"的样子，第二张就没有动效
+ * （彩带反倒会重放，它另按 trigger 重建）。
  *
  * 这一层保持 `private`，**不**为渲染测试放开可见性：Robolectric 的渲染守卫在这个仓里给不出可复现的
  * 判定。实测到的形状是：同一份测试单独跑绿、进全量跑就红成 `UncaughtExceptionsBeforeTest`，红的不是
@@ -510,15 +603,17 @@ private fun StatusPill(status: String) {
  * `Dispatchers.Default`），异常落在哪条测试头上取决于跑序。**为什么**那一趟里它会抛没查清，也就不写进结论：
  * manifest 里没有关掉 WorkManager 的默认 initializer（只声明了 FileProvider），`StudyKitApp` 也没实现
  * `Configuration.Provider`，所以"Robolectric 下它没初始化"是当时的一句猜测，别再当理由传下去。
- * 想让这一页有渲染防线，得先把那枚异常按 task-2 报告第五节的记录查清楚，不是在这里放开可见性。
- * 这一页的内容正确性因此由下面那六句字面量与真机复验负责；"该不该放、放完还剩哪几张"那条判定
- * 另有纯函数与它们的 JVM 单测（`newlySettled` / `newlyAchieved` / `nextRitualQueue`）。
+ * 想让这一页有渲染防线，得先把那枚异常查清楚（那是独立的一票，不在本功能里顺手做），
+ * 不是在这里放开可见性。这一页的内容正确性因此由下面那几句字面量与真机复验负责；
+ * "该不该放、放完还剩哪几张、这一张排第几"那几条判定另有纯函数与它们的 JVM 单测
+ * （`newlySettled` / `newlyAchieved` / `nextRitualQueue` / `contractRitualPositionLine`）。
  */
 @Composable
 private fun ContractRitualLayer(
     contract: Contract,
     habitName: String,
     completedCount: Int,
+    positionLine: String?,
     onDismiss: () -> Unit,
 ) {
     val colors = AppTheme.colors
@@ -544,54 +639,74 @@ private fun ContractRitualLayer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = AppTheme.space.pageH)
-                .clip(shape)
-                .background(colors.goldSoft)
-                .border(width = 1.dp, color = colors.gold, shape = shape)
-                // 承诺是用户自己写的自由文本，长起来没有上限：这一层可滚，仪式不许把原文裁掉
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = AppTheme.space.lg,
-                    vertical = AppTheme.space.xl,
-                ),
+                .padding(horizontal = AppTheme.space.pageH),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                text = "契约达成",
-                style = texts.largeTitle.copy(color = colors.goldInk),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.height(AppTheme.space.md))
-            Text(
-                text = habitName,
-                style = texts.cardTitle,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (contract.promiseText.isNotBlank()) {
-                Spacer(modifier = Modifier.height(AppTheme.space.sm))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // fill = false：短内容时金卡只占内容高（外层 Box 会把它居中），
+                    // 长内容时它最多长到"屏幕减去出口"，出口因此永远在折叠线以上
+                    .weight(1f, fill = false)
+                    .clip(shape)
+                    .background(colors.goldSoft)
+                    .border(width = 1.dp, color = colors.gold, shape = shape)
+                    // 承诺原文可能很长：可滚的是这一张卡，仪式不许把它裁掉
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        horizontal = AppTheme.space.lg,
+                        vertical = AppTheme.space.xl,
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 Text(
-                    text = "「${contract.promiseText}」",
-                    style = texts.body,
+                    text = "契约达成",
+                    style = texts.largeTitle.copy(color = colors.goldInk),
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(AppTheme.space.md))
+                Text(
+                    text = habitName,
+                    style = texts.cardTitle,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (contract.promiseText.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(AppTheme.space.sm))
+                    Text(
+                        text = "「${contract.promiseText}」",
+                        style = texts.body,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(modifier = Modifier.height(AppTheme.space.md))
+                Text(
+                    text = "进度 $completedCount/${contract.goalCount} 次",
+                    style = texts.aux.copy(color = colors.goldInk, fontWeight = FontWeight.Medium),
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(AppTheme.space.xs))
+                Text(
+                    text = contractRitualSignatureLine(contract),
+                    style = texts.caption,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(modifier = Modifier.height(AppTheme.space.md))
-            Text(
-                text = "进度 $completedCount/${contract.goalCount} 次",
-                style = texts.aux.copy(color = colors.goldInk, fontWeight = FontWeight.Medium),
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.height(AppTheme.space.xs))
-            Text(
-                text = contractRitualSignatureLine(contract),
-                style = texts.caption,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // 出口这一截不滚：承诺再长也长不到它头上（评审 M3）
             Spacer(modifier = Modifier.height(AppTheme.space.lg))
+            if (positionLine != null) {
+                Text(
+                    text = positionLine,
+                    style = texts.caption.copy(color = colors.secondaryText),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(AppTheme.space.sm))
+            }
             AppButton(text = "收下", onClick = onDismiss)
+            Spacer(modifier = Modifier.height(AppTheme.space.lg))
         }
     }
 }

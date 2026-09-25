@@ -24,7 +24,10 @@ import java.util.UUID
  * [settle] 判定后落库。防抖就是过滤本身 —— 只有 `deadline < today` 的到期 ACTIVE 契约才会
  * 触发写库，未到期的与已对账的只是读，flow 重放不会反复 update。对账写在
  * `viewModelScope.launch` 的协程里逐张 await：Room 的 suspend 调用串行排队，天然不并发抢写。
- * 每一趟结算把真判成 ACHIEVED 的那几张推进 [achievedToCelebrate]，页面的整页仪式读它（计划 R1/R2）。
+ * **这个订阅跟着进程活着**，不跟着契约页：本类在 `AppNav` 根上就创建好了（Activity 作用域），
+ * 所以用户在哪一页都在对账 —— 别按"进页面才结算"来读下面那段（[achievedToCelebrate] 里写清了
+ * 这件事对仪式意味着什么）。每一趟结算把真判成 ACHIEVED 的那几张推进 [achievedToCelebrate]，
+ * 页面的整页仪式读它（计划 R1/R2）。
  */
 class ContractsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -55,36 +58,42 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
     val progress: StateFlow<Map<Long, Int>> = _progress.asStateFlow()
 
     /**
-     * 等着摆整页达成仪式的契约队列（本次 `settleDue` 真判成 ACHIEVED 的那几张，按 DAO 顺序）。
+     * 等着摆整页达成仪式的契约队列（`settleDue` 真判成 ACHIEVED、还没被收下的那几张，按 DAO 顺序）。
      *
      * ## 触发条件是"结算发生了"，不是"卡片显示达成"（计划 R1）
      *
-     * 对账是惰性的，而 `settle()` 只动 `ACTIVE && deadline < today` 的契约 —— **一张契约一生只被结算
-     * 一次**，判完它就变 ACHIEVED/FAILED，之后每次 flow 重放都只是原样读出来。所以"本次 settleDue
-     * 真的写成了 ACHIEVED"天然就是 once-per-contract，**不需要加"是否看过"的数据库列，也不需要
-     * Room 迁移**：这条队列就是"看过没有"的载体，它活在本 ViewModel 里就够了
-     * （为什么不必落库，见下面"摘除为什么必须在 ViewModel 这一侧"那一段）。
+     * `settle()` 只动 `ACTIVE && deadline < today` 的契约 —— **一张契约一生只被结算一次**，
+     * 判完它就变 ACHIEVED/FAILED，之后每次 flow 重放都只是原样读出来。所以"本次 settleDue 真的写成了
+     * ACHIEVED"天然就是 once-per-contract，**不需要加"是否看过"的数据库列，也不需要 Room 迁移**：
+     * 这条队列就是"看过没有"的唯一记法。
+     *
+     * 但**别把队列读成"进页面才结算出来的东西"**：对账不是惰性的。`init` 订阅的是源头
+     * `observeAll()`，而 `ContractsViewModel` 在 `AppNav` 根 composable 里就 `viewModel()` 出来了
+     * （`ui/nav/AppNav.kt`，`MainActivity` 一进来就走到那里）—— 所以**结算跑在整个进程寿命里**，
+     * 用户在「习惯」页、在别的页面，到期的契约一样会被判掉。于是仪式有两种到场时机，都对：
+     * 恰好在契约页时当场摆；不在这一页时先攒在队列里，等他下次进契约页再摆 —— 仪式那扇窗口挂在
+     * `ContractsScreen` 的组合里，页面不在组合里就没有窗口。R1 当年是按"进页面才结算"论证延迟的，
+     * 那个前提不成立，但结论（延迟可接受）成立：攒着的这几张仍然是"这次结算发生过"的凭据。
      *
      * ## 为什么是 StateFlow 队列而不是 Channel / SharedFlow（P2）
      *
      * 跟着本仓庆祝事件的既有写法走：`ui/habit/HabitListScreen.kt` 的 `celebration` 就是
-     * "可观察状态 + 页面侧记住这条已经放过"（`LaunchedEffect` 把新事件写进一个 state，页面按 state
-     * 挂 `ConfettiBurst`），没有事件总线也没有新库。这里同理：页面渲染队列第一条没收下的，
-     * 收下时把它从队列里摘掉（[dismissRitual]），并在页面侧按契约 id 记住。
+     * "可观察状态 + 页面按状态挂 `ConfettiBurst`"，没有事件总线也没有新库。这里同理：
+     * 页面渲染队列第一条，收下时由 [dismissRitual] 把它摘掉。
      *
      * 队列的转移规则（**往上加**而不是"覆盖成本次的结果"、加完跟库里的现状对一遍、本趟那几张要一起
      * 放行）不写在这段协程里，而是抽成纯函数 [nextRitualQueue] 并配 JVM 单测：落库之后 Room 会立刻重放
      * `observeAll()`，第二趟什么都不结算 —— 覆盖式写法会在仪式出现后的下一批重组里把队列抹成空列表，
      * 用户只看见闪一下就没了；而并集那一步漏了会把刚挑出来的全筛掉，仪式一次都不出现。两条都是
-     * "错了没有任何声音"的失败模式。摘出去只由 [dismissRitual] 负责。
+     * "错了没有任何声音"的失败模式。
      *
-     * 摘除为什么必须在 ViewModel 这一侧：`ContractsViewModel` 是在 `AppNav` 根 composable 里
-     * `viewModel()` 拿的，作用域是 **Activity**，退出契约页再进来它不会重建 —— 只靠页面的
-     * `rememberSaveable` 记"这张放过"，页面一销毁那份记录就没了，队列里的旧货会被再放一次，
-     * 正是 R1 要避免的噪音。页面那一层记录是第二道闸（防同一份队列在重组里重放），见 `ContractsScreen`。
+     * 摘除为什么只在 ViewModel 这一侧：作用域是 **Activity**，退出契约页再进来它不会重建，
+     * 队列里"还没被收下的"这件事就跟着它一起活着 —— 一份事实一个地方记。页面上再存一份
+     * "哪些放过"（本仓曾这么写过）是同一件事的第二份内存：两道各清一次，谁没清干净都不出错，
+     * 于是没人能证明它挡过什么 —— 整枝评审的 I6/I7 点了这一条，裁决 R6 把它删了。
      *
      * 代价（计划 R1 明写可以接受）：结算发生之后、用户收下之前整个进程被杀掉，这次仪式就没了 ——
-     * 对账本身也是那一刻才发生的，卡面上的达成态仍然摆着，不补第二次庆祝。
+     * 卡面上的达成态仍然摆着，不补第二次庆祝。
      */
     private val _achievedToCelebrate = MutableStateFlow<List<Contract>>(emptyList())
     val achievedToCelebrate: StateFlow<List<Contract>> = _achievedToCelebrate.asStateFlow()
@@ -105,7 +114,7 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
                 // 而它出错又只会表现为"仪式一次都没出现"，所以判定不许留在 collect 里面。
                 _achievedToCelebrate.value = nextRitualQueue(
                     current = _achievedToCelebrate.value,
-                    newlyAchieved = achieved,
+                    justAchieved = achieved,
                     snapshot = all,
                 )
             }
@@ -143,6 +152,10 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
 
     /**
      * 收下某一张达成仪式：把它从队列里摘掉，页面据此决定还要不要摆下一张。
+     *
+     * 这是"哪几张已经放过"的**唯一**记法（裁决 R6）：本仓曾在页面上另存一份契约 id 清单，
+     * 与这里各清一次 —— 同一件事两份内存，迟早各说一套。摘除只认这一处。
+     * 仪式上那扇窗口的系统返回走的也是这里（裁决 R7），所以"返回"与"收下"是同一个动作。
      *
      * 摘掉的这一张不会再回来：它的状态已经是 ACHIEVED，[settle] 从此不再动它，
      * 于是它也再进不了 [newlySettled] 的结果 —— 不需要任何"看过"的持久化标记。

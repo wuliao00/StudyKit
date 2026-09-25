@@ -16,9 +16,11 @@ import java.time.ZoneId
  * 会说话。三条性质各对应一种失败模式（详见 [nextRitualQueue] 的 KDoc），逐条钉住：
  *
  * 1. **刚挑出来的不被筛掉**：`snapshot` 是**结算前**的那一份，本趟那张在里面还写着 ACTIVE。
- *    并集漏了这一步 = 队列永远空，功能整个不响（本仓第一版就错在这里，见 task-2 报告 §六.5）。
+ *    并集漏了这一步 = 队列永远空，功能整个不响 —— 本仓第一版就错在这里，症状是
+ *    "仪式一次都没出现过，而且没有任何日志会说话"。
  * 2. **行消失后被摘掉**：库里没这一行（撤销了、或「清除学习数据」）就不再摆它。
  * 3. **收下后的那张不回来**：摘掉的就是摘掉了，"库里它还是 ACHIEVED"不许成为把它塞回去的理由。
+ *    这条性质就是"放过没有"的全部记法 —— 页面上那份重复的 id 清单已经删掉了（裁决 R6）。
  */
 class ContractRitualQueueTest {
 
@@ -65,7 +67,7 @@ class ContractRitualQueueTest {
     fun `the contract just picked survives the pre-settle snapshot`() {
         val queue = nextRitualQueue(
             current = emptyList(),
-            newlyAchieved = listOf(achieved(1L)),
+            justAchieved = listOf(achieved(1L)),
             snapshot = listOf(beforeSettle(1L)),
         )
         assertEquals(listOf(1L), ids(queue))
@@ -76,7 +78,7 @@ class ContractRitualQueueTest {
     fun `a batch of several just picked contracts all survive`() {
         val queue = nextRitualQueue(
             current = emptyList(),
-            newlyAchieved = listOf(achieved(1L), achieved(3L)),
+            justAchieved = listOf(achieved(1L), achieved(3L)),
             snapshot = listOf(
                 beforeSettle(1L),
                 contract(id = 2L, status = Contract.STATUS_FAILED),
@@ -93,7 +95,7 @@ class ContractRitualQueueTest {
     fun `appending a second batch does not overwrite the one being shown`() {
         val queue = nextRitualQueue(
             current = listOf(achieved(1L)),
-            newlyAchieved = listOf(achieved(2L)),
+            justAchieved = listOf(achieved(2L)),
             // 第二趟的重放：1 号在库里已经是 ACHIEVED，2 号还写着结算前的 ACTIVE
             snapshot = listOf(achieved(1L), beforeSettle(2L)),
         )
@@ -106,13 +108,13 @@ class ContractRitualQueueTest {
         val current = listOf(achieved(1L), achieved(2L))
         val replay = nextRitualQueue(
             current = current,
-            newlyAchieved = emptyList(),
+            justAchieved = emptyList(),
             snapshot = current,
         )
         assertEquals(listOf(1L, 2L), ids(replay))
         val nothing = nextRitualQueue(
             current = emptyList(),
-            newlyAchieved = emptyList(),
+            justAchieved = emptyList(),
             snapshot = emptyList(),
         )
         assertTrue(nothing.isEmpty())
@@ -125,7 +127,7 @@ class ContractRitualQueueTest {
     fun `queued contract whose row disappeared is pruned`() {
         val queue = nextRitualQueue(
             current = listOf(achieved(1L), achieved(2L)),
-            newlyAchieved = emptyList(),
+            justAchieved = emptyList(),
             snapshot = listOf(achieved(2L)),
         )
         assertEquals(listOf(2L), ids(queue))
@@ -136,7 +138,7 @@ class ContractRitualQueueTest {
     fun `queued contract that is no longer achieved is pruned`() {
         val queue = nextRitualQueue(
             current = listOf(achieved(1L), achieved(2L)),
-            newlyAchieved = emptyList(),
+            justAchieved = emptyList(),
             snapshot = listOf(
                 achieved(1L),
                 contract(id = 2L, status = Contract.STATUS_FAILED, settledAt = settleStamp),
@@ -150,7 +152,7 @@ class ContractRitualQueueTest {
     fun `pruning one survivor does not swallow the rest`() {
         val queue = nextRitualQueue(
             current = listOf(achieved(1L), achieved(2L)),
-            newlyAchieved = listOf(achieved(3L)),
+            justAchieved = listOf(achieved(3L)),
             // 1、2 是上一趟结算并落库过的，3 是本趟刚判的（快照里还写着 ACTIVE）
             snapshot = listOf(achieved(1L), achieved(2L), beforeSettle(3L)),
         )
@@ -158,7 +160,7 @@ class ContractRitualQueueTest {
         // 这时 2、3 两行从库里消失了（撤销、「清除学习数据」、或恢复旧备份之后的样子）
         val afterWipe = nextRitualQueue(
             current = queue,
-            newlyAchieved = listOf(achieved(4L)),
+            justAchieved = listOf(achieved(4L)),
             snapshot = listOf(achieved(1L), beforeSettle(4L)),
         )
         assertEquals(listOf(1L, 4L), ids(afterWipe))
@@ -168,20 +170,21 @@ class ContractRitualQueueTest {
 
     /**
      * 收下 = `dismissRitual` 把它从 current 里摘掉。此后哪怕快照里它仍然写着 ACHIEVED，
-     * 它也不许自己长回来 —— 本函数只从 `current + newlyAchieved` 里挑，快照只用于放行。
+     * 它也不许自己长回来 —— 本函数只从 `current + justAchieved` 里挑，快照只用于放行。
+     * 页面不再另存一份"哪些放过"（裁决 R6），所以这条性质是唯一的防线，钉死它。
      */
     @Test
     fun `a taken contract never comes back`() {
         val queue = nextRitualQueue(
             current = emptyList(),
-            newlyAchieved = emptyList(),
+            justAchieved = emptyList(),
             snapshot = listOf(achieved(1L)),
         )
         assertTrue(queue.isEmpty())
         // 同一条契约在库里躺着，本趟又结算出别的一张：回来的只有新那张
         val next = nextRitualQueue(
             current = emptyList(),
-            newlyAchieved = listOf(achieved(2L)),
+            justAchieved = listOf(achieved(2L)),
             snapshot = listOf(achieved(1L), beforeSettle(2L)),
         )
         assertEquals(listOf(2L), ids(next))
@@ -192,7 +195,7 @@ class ContractRitualQueueTest {
     fun `the queued item stays the post-settle copy`() {
         val queue = nextRitualQueue(
             current = emptyList(),
-            newlyAchieved = listOf(achieved(1L)),
+            justAchieved = listOf(achieved(1L)),
             snapshot = listOf(beforeSettle(1L)),
         )
         val kept = queue.single()
