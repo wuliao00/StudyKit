@@ -92,8 +92,10 @@ class CheckInSheetRenderTest {
         glass = GlassLevel.SOFT
         composeRule.waitForIdle()
         clue("守卫命中：玻璃【柔和】时弹层内容没渲染出来 —— " +
-            "这就是 Modifier.glassSurface 被挂到 ModalBottomSheet.modifier 上的那个缺陷，" +
-            "详见 v2.4 真机走查报告 §2；材质应画在弹层内容容器上，不要画在 ModalBottomSheet 自身。") {
+            "这就是 Modifier.glassSurface 被挂到 ModalBottomSheet.modifier 上的那个缺陷：" +
+            "2026-09-24 真机上玻璃开着时这一层只剩遮罩，标题、备注、「确认补卡」整棵子树" +
+            "都不进语义树；把材质改画到弹层**内容容器**上就全回来了。" +
+            "材质应画在内容容器上，不要画在 ModalBottomSheet 自身。") {
             composeRule.onNodeWithText("补打卡").assertIsDisplayed()
             composeRule.onNodeWithText("背单词 · 9月22日（补卡限过去 7 天内）").assertIsDisplayed()
             composeRule.onNodeWithText("备注").assertIsDisplayed()
@@ -123,7 +125,7 @@ class CheckInSheetRenderTest {
  * 所以换档靠外层传入的 `glass` 状态触发重组。
  * 之所以要挤进一个方法而不是拆两个 `@Test`：拆开会互相污染（上一条在 teardown 漏出的
  * 未捕获异常会把下一条毒成 `UncaughtExceptionsBeforeTest`，与成败无关），
- * 见类文档与 v2.4 真机走查报告 §2。
+ * 见类文档 —— 这条是本仓实测出来的，不写在仓外的走查记录里就没人能找到。
  *
  * `reduceMotion = true` 只为让弹入时那一次亮带扫描动画不排 —— 挂着 `Animatable`
  * 的话测试规则等不到 idle。材质本体（background / clip / drawWithCache / border）

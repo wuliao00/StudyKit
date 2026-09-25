@@ -274,4 +274,52 @@ class ContractRitualQueueTest {
         // 留下的是队列里原本那一份，不是本趟新造的那一份
         assertSame(queuedAgain, queue.single { it.id == 2L })
     }
+
+    // ── 摘除：R6 之后"放过没有"的唯一记法 ───────────────────────
+
+    /**
+     * 只摘点名的那一张，**其余连顺序都不动**。
+     *
+     * 顺序不是小事：队列顺序就是播放顺序（DAO 按 `deadline_epoch_day ASC`），
+     * 写成 `filter{...}.sortedBy{...}` 之类会重排的实现，会让用户先看到不该先看到的那张。
+     */
+    @Test
+    fun dismissing_one_takes_only_that_entry_out_and_keeps_the_order() {
+        val queue = listOf(achieved(1L), achieved(2L), achieved(3L))
+        assertEquals(listOf(1L, 3L), ids(dismissedQueue(queue, 2L)))
+        // 留下的还是原本那两份实例，不是复制出来的
+        assertSame(queue[0], dismissedQueue(queue, 2L).first())
+    }
+
+    /**
+     * id 不在队列里时原样返回 —— 那是"同一帧连点两次收下"或"收下与 Room 重放撞上"。
+     * 这时清空队列会把还没摆过的仪式一起抹掉，抛异常更是当场崩。
+     */
+    @Test
+    fun dismissing_an_id_that_is_not_queued_changes_nothing() {
+        val queue = listOf(achieved(1L), achieved(2L))
+        assertEquals(listOf(1L, 2L), ids(dismissedQueue(queue, 99L)))
+        assertEquals(emptyList<Long>(), ids(dismissedQueue(emptyList(), 1L)))
+    }
+
+    /**
+     * 摘掉的那张**不许自己长回来**。
+     *
+     * 这条看着显然，但它是 R6 删掉页面那把锁之后**唯一**的防线：库里那一行此后一直是 ACHIEVED，
+     * 而 [nextRitualQueue] 的规则 3 会放行"快照里仍是 ACHIEVED"的每一张 ——
+     * 换句话说，放行名单**本来是会把它捞回来的**，它不回来只是因为
+     * 既不在 `current` 也不在 `justAchieved`。写成"按快照里所有 ACHIEVED 重建队列"的
+     * 实现会当场红在这里，症状是"收下一张又冒出来一张"。
+     */
+    @Test
+    fun a_dismissed_contract_does_not_come_back_even_though_the_library_still_says_achieved() {
+        val queue = listOf(achieved(1L), achieved(2L))
+        val afterTaking = dismissedQueue(queue, 1L)
+        assertEquals(listOf(2L), ids(afterTaking))
+
+        // 收下之后 Room 又重放了一趟：快照里 1 号仍然写着 ACHIEVED，而本趟什么都没结算出来
+        val snapshot = listOf(achieved(1L), achieved(2L))
+        val again = nextRitualQueue(current = afterTaking, justAchieved = emptyList(), snapshot = snapshot)
+        assertEquals("放过的那张不许因为库里还是 ACHIEVED 就自己回来", listOf(2L), ids(again))
+    }
 }

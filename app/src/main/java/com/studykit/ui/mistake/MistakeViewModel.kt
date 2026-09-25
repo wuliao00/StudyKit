@@ -1,7 +1,6 @@
 package com.studykit.ui.mistake
 
 import android.app.Application
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
@@ -10,6 +9,7 @@ import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
 import com.studykit.util.OneShotGate
+import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -331,9 +331,5 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     /** 缩略图相对路径 → 候选文件（同样是纯拼接，不 stat；缺失时调用方回退大图） */
     fun thumbFile(relativePath: String): File =
         MistakeImageStore.thumbFile(getApplication(), relativePath)
-
-    private fun toast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
-    }
 }
 

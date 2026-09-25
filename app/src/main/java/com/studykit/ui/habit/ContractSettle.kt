@@ -118,3 +118,26 @@ internal fun nextRitualQueue(
     val appended = justAchieved.filter { seen.add(it.id) }
     return (current + appended).filter { it.id in stillAchieved }
 }
+
+/**
+ * 收下某一张之后队列长什么样 —— [ContractsViewModel.dismissRitual] 的转移函数。
+ *
+ * 为什么要把它抽出来：裁决 R6 之后，"这张放过没有"**全靠这一手摘除**记着
+ * （页面上那份重复的 id 清单已删），所以它是整条仪式链上唯一的记忆点。
+ * 而记忆点留在 `ViewModel` 里的话 JVM 单测就够不着它 —— 起 `AndroidViewModel` 要
+ * `Application`，连带起 `AppContainer` 与真库。抽成纯函数之后它和 [nextRitualQueue]
+ * 一样可测，`dismissRitual` 只剩"调它并写回 StateFlow"这一行壳。
+ *
+ * 两条性质各钉一条用例（见 `ContractRitualQueueTest` 的「摘除」那组）：
+ * ① **只摘点名的那一张**，别的连顺序都不动 —— 队列顺序就是播放顺序（DAO 的
+ *    `deadline_epoch_day ASC`），重排会让用户先看到不该先看到的那张；
+ * ② **摘掉的不许自己长回来** —— 这条看着显然，但它成立的前提是"库里它已经是 ACHIEVED，
+ *    [settle] 不再动它"，而那个前提写在 [newlySettled] 里。这里钉的是形状：
+ *    拿一份"库里仍是 ACHIEVED"的快照再喂一趟 [nextRitualQueue]，被摘掉的那张也不该回来
+ *    （它既不在 `current` 也不在 `justAchieved`，规则 3 的放行名单救不了它）。
+ *
+ * id 不在队列里时原样返回：那是"同一帧里连点两次收下"或者"收下与 Room 重放撞上"，
+ * 不该因此把队列清空，也不该抛。
+ */
+internal fun dismissedQueue(current: List<Contract>, contractId: Long): List<Contract> =
+    current.filterNot { it.id == contractId }

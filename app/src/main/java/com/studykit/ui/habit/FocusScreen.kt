@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
+import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
 import kotlinx.coroutines.delay
@@ -259,32 +259,22 @@ fun FocusScreen(
 
     // ── 放弃确认：二次确认 + 注意力残留（Leroy 2009）────────────
     if (showGiveUpDialog) {
-        AlertDialog(
-            onDismissRequest = { showGiveUpDialog = false },
-            title = { Text(text = "放弃这一场？", style = texts.cardTitle) },
-            text = {
-                Text(
-                    text = "中途停下不会记录任何打卡。打断是有代价的 —— " +
-                        "Leroy（2009）的注意力残留研究：被打断的注意力会残留在这里。",
-                    style = texts.aux,
-                )
+        ConfirmDialog(
+            title = "放弃这一场？",
+            body = "中途停下不会记录任何打卡。打断是有代价的 —— " +
+                "Leroy（2009）的注意力残留研究：被打断的注意力会残留在这里。",
+            confirmLabel = "放弃",
+            // danger 只管字色：这一支确实是"丢掉这一场"，与清除数据同档
+            danger = true,
+            // 放弃按钮不叫「取消」—— 这里「取消」的日常语义恰好是"继续专注"，
+            // 两个按钮会撞车。措辞跟着动词走，见 ConfirmDialog 的 dismissLabel。
+            dismissLabel = "继续专注",
+            onConfirm = {
+                showGiveUpDialog = false
+                // 放弃 = 不记任何打卡直接退出：中断如实，不伪造数据（设计文档口径）
+                onExit()
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showGiveUpDialog = false
-                        // 放弃 = 不记任何打卡直接退出：中断如实，不伪造数据（设计文档口径）
-                        onExit()
-                    },
-                ) {
-                    Text(text = "放弃", color = colors.warningInk)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGiveUpDialog = false }) {
-                    Text(text = "继续专注", color = colors.accentInk)
-                }
-            },
+            onDismiss = { showGiveUpDialog = false },
         )
     }
 }

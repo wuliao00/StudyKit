@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +38,7 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.material.glassSurface
@@ -224,24 +224,22 @@ private fun ImportedListRow(list: WordList, onDelete: () -> Unit) {
         }
     }
     if (confirm) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text(text = "撤销《${list.title}》？") },
-            text = {
-                Text(text = "会删掉这本词库带进来的 ${list.importedCount} 个单词，手工录入的不受影响。")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirm = false
-                        onDelete()
-                    },
-                ) { Text(text = "撤销", color = colors.warningInk) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirm = false }) { Text(text = "留着", color = colors.accentInk) }
-            },
+        ConfirmDialog(
+            title = "撤销《${list.title}》？",
+            body = "会删掉这本词库带进来的 ${list.importedCount} 个单词，手工录入的不受影响。",
+            confirmLabel = "撤销",
+            danger = true,
+            // 破坏性动词就是「撤销」，所以放弃按钮必须避开「取消」这个日常同义词 ——
+            // 想撤的人会把「取消这份词库」当成退出对话框。契约页 ACTIVE 那一支同一个判断。
+            dismissLabel = "留着",
+            // 这一只框历史上就是卡面色（其余确认框用 Material 默认底），收进组件时
+            // 不顺手抹平：那是它自己的选择，要改应该是一次专门的视觉决定。
             containerColor = colors.card,
+            onConfirm = {
+                confirm = false
+                onDelete()
+            },
+            onDismiss = { confirm = false },
         )
     }
 }

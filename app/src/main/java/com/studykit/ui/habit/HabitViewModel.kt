@@ -2,13 +2,13 @@ package com.studykit.ui.habit
 
 import android.app.Application
 import android.content.Intent
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
 import com.studykit.util.OneShotGate
+import com.studykit.util.rejectWithToast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -383,17 +383,6 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             }
             repository.checkInOn(habit.id, effective, note, amount, isMakeup)
         }
-    }
-
-    /**
-     * 打卡被规则挡下时**一定要说一句话**。
-     *
-     * 抽出来是因为拒绝路径不止一条（限时段、补卡开关、补卡窗口），而每一条静默返回的代价
-     * 都一样：用户按了确认，账上没有。界面上不留任何痕迹 —— 不在那一页专门关一次开关再点一次，
-     * 走查是发现不了的。
-     */
-    private fun rejectWithToast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
     /** 创建习惯（支持数量型与默认打卡文案），成功后回调（通常用于返回上一页） */

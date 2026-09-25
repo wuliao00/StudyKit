@@ -1,7 +1,6 @@
 package com.studykit.ui.study
 
 import android.app.Application
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
@@ -16,6 +15,7 @@ import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.data.memory.Scheduling
 import com.studykit.util.OneShotGate
+import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -367,9 +367,5 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 savingQuestion.leave()
             }
         }
-    }
-
-    private fun toast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 }

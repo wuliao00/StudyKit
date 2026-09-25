@@ -1,9 +1,11 @@
 package com.studykit.ui.components
 
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import com.studykit.ui.theme.AppTheme
 
 /**
@@ -22,6 +24,11 @@ import com.studykit.ui.theme.AppTheme
  * 什么也没说明，这份契约还留着。那种调用方必须换一个不撞车的词（`DictStoreScreen`
  * 撤销词库那枚对话框用「留着」，同一个判断）。措辞跟着动词走这件事留在调用方的纯函数里，
  * 组件只提供这个口子。
+ *
+ * `containerColor` 默认 `null` = 用 Material3 自己的 `surfaceContainerHigh`，
+ * 也就是本组件既有调用点现在的样子。`DictStoreScreen` 的撤销词库框历史上显式传了卡面色，
+ * 那是它自己的选择 —— 收进来时**不为"统一"而改掉它**，所以留这个口子而不是抹平。
+ * 想改的话应该是一次专门的视觉决定，不是组件推广的副作用。
  */
 @Composable
 fun ConfirmDialog(
@@ -32,11 +39,13 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     dismissLabel: String = "取消",
+    containerColor: Color? = null,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { Text(text = title, style = texts.cardTitle) },
         text = { Text(text = body, style = texts.aux) },
         confirmButton = {

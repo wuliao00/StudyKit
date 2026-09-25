@@ -1,13 +1,13 @@
 package com.studykit.ui.habit
 
 import android.app.Application
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Contract
 import com.studykit.data.entity.Habit
 import com.studykit.util.OneShotGate
+import com.studykit.util.rejectWithToast
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -179,9 +179,12 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * 摘掉的这一张不会再回来：它的状态已经是 ACHIEVED，[settle] 从此不再动它，
      * 于是它也再进不了 [newlySettled] 的结果 —— 不需要任何"看过"的持久化标记。
+     *
+     * 摘除规则本身抽成纯函数 [dismissedQueue] 并配了 JVM 用例：这一手是 R6 之后唯一的记忆点，
+     * 而它留在 `ViewModel` 里就没人测得到（起 `AndroidViewModel` 要 `Application` 和真库）。
      */
     fun dismissRitual(contractId: Long) {
-        _achievedToCelebrate.value = _achievedToCelebrate.value.filterNot { it.id == contractId }
+        _achievedToCelebrate.value = dismissedQueue(_achievedToCelebrate.value, contractId)
     }
 
     /** 进度条的 N：进行中数到今天为止，已对账的数到截止日（不再随之后的打卡变化） */
@@ -219,7 +222,7 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
      * 会多跑一次 flow 重放与逐张对账，白花钱。
      * 门是**每 ViewModel 一道**而不是每份契约一道，所以极快连续确认两张不同卡片时
      * 第二张也会被挡下 —— 被挡这一下界面上不留痕迹（确认框已由调用方收掉），
-     * 所以这条分支必须说话，见 [rejectWithToast]。
+     * 所以这条分支必须说话，见 `util.rejectWithToast`。
      */
     fun deleteContract(id: Long) {
         if (!deletingContract.tryEnter()) {
@@ -233,18 +236,6 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
                 deletingContract.leave()
             }
         }
-    }
-
-    /**
-     * 挡下用户这一下时**一定要说一句话**（`HabitViewModel.rejectWithToast` 同一模式）。
-     *
-     * 本仓纪律：任何拒绝用户动作的分支都不许静默 —— 走查时不专门复现一次就永远发现不了，
-     * 而用户那边是"我按了确认，什么也没发生"。措辞刻意不带动词（撤销/删除）：门是全页一道，
-     * 被挡的可能是另一张卡，说"这张没删掉"就不一定成立；"这一下没有生效"只陈述本次调用
-     * 没有执行，这是真的，并且给了下一步（稍等一下再点一次）。
-     */
-    private fun rejectWithToast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
     /**

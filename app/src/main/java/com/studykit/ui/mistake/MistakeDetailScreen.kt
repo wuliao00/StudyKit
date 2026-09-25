@@ -49,6 +49,7 @@ import com.studykit.data.entity.Mistake
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
@@ -361,23 +362,16 @@ fun MistakeDetailScreen(
 
     // ── 删除确认 ──────────────────────────────────────────────────────────
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text(text = "删除错题", style = texts.cardTitle) },
-            text = { Text(text = "删除后不可恢复，相关图片也会一并清理。", style = texts.aux) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    viewModel.delete(mistakeId) { leaveOnce() }
-                }) {
-                    Text(text = "删除", color = colors.warningInk)
-                }
+        ConfirmDialog(
+            title = "删除错题",
+            body = "删除后不可恢复，相关图片也会一并清理。",
+            confirmLabel = "删除",
+            danger = true,
+            onConfirm = {
+                showDeleteDialog = false
+                viewModel.delete(mistakeId) { leaveOnce() }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text(text = "取消", color = colors.accentInk)
-                }
-            },
+            onDismiss = { showDeleteDialog = false },
         )
     }
 }

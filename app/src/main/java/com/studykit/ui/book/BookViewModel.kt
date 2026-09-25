@@ -1,7 +1,6 @@
 package com.studykit.ui.book
 
 import android.app.Application
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
@@ -9,6 +8,7 @@ import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.Excerpt
 import com.studykit.util.OneShotGate
+import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -246,10 +246,6 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
                 savingReview.leave()
             }
         }
-    }
-
-    private fun toast(message: String) {
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 }
 
