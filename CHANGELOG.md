@@ -2,10 +2,12 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased] — 契约收尾：可以撤销 + 达成给一整页仪式
+## [2.4.3] - 2026-09-26
 
-补 2.4.2 走查留下的两个口子（见 `docs/superpowers/plans/2026-09-24-studykit-contract-ritual-and-undo.md`）。
-版本号未动 —— 这一条等发版时再落到具体版本上。
+补 2.4.2 走查留下的两个口子（见 `docs/superpowers/plans/2026-09-24-studykit-contract-ritual-and-undo.md`）：
+**契约可以撤销/删除**，以及设计文档 v2.4 §6 一直欠着的**达成给一整页仪式**。
+顺带把评审判为"不阻塞合并"的工程残留一次清完，并追到了本仓追两轮的那个
+Robolectric 随机红的真凶 —— 于是仪式这一页第一次有了站得住的 CI 渲染守卫。
 
 ### 新增
 - **契约可以撤销/删除**：`ContractDao.deleteById` → 仓储 → `ContractsViewModel.deleteContract`
