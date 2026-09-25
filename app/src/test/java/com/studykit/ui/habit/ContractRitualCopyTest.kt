@@ -10,7 +10,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * 达成仪式上那几行纯文案：落款那一行 + 对账日 + 成批时那一行「第 k / 共 n 张」。
+ * 达成仪式上那几行纯文案：落款那一行 + 对账日 + 成批时那一行「还有 n 张待收下」。
  *
  * 钉的是三条诚实线：
  * 1. **对账日读的是 `settle()` 写下的那一天**，不是"此刻" —— 拿 `LocalDate.now()` 顶的话，
@@ -108,11 +108,16 @@ class ContractRitualCopyTest {
         assertFalse(line.contains(LocalDate.now().toString()))
     }
 
-    // ── 一批多张时那一行「第 k / 共 n 张」（裁决 R8：让出口可数）────────
+    // ── 一批多张时那一行「还有 n 张待收下」（裁决 R8：让出口可数）──────
     //
     // 钉的是"这一行什么时候该出现、出现的数字是从哪来的"：对账跑在整个进程寿命里，
     // 攒下一批是可达状态，而每收下一张才出下一张 —— 没有计数时"再点一次"和"这层永远在"
-    // 在界面上长得一样。k 取的是这一张在队列里的位置，不是写死的 1（换成写死 1 下面第 3 条就红）。
+    // 在界面上长得一样。
+    //
+    // 措辞从裁决 R8 原定的「第 k / 共 n 张」改成了「还有 n 张待收下」（2026-09-25，见 R8′）：
+    // 仪式永远摆队列头那一张，k **恒等于 1**，那个永远不动的分子读起来像卡住了；
+    // 而旧实现为了算 k 留的 `index > 0` 分支从唯一调用点不可达。真正在变的只有 n，
+    // 所以只报 n。R8 的实质（**不设张数封顶、让出口可数**）一个字没动。
 
     /** 只有一张：不报数（仪式"一句多一句都算吵"的纪律还在，单张也没什么可数的） */
     @Test
@@ -121,29 +126,30 @@ class ContractRitualCopyTest {
         assertNull(contractRitualPositionLine(queue = emptyList(), currentId = 1L))
     }
 
-    /** 一批三张：队列头那一张读作「第 1 / 共 3 张」，n 含正在摆的这一张 */
+    /** 一批三张：队列头那一张读作「还有 3 张待收下」，n 含正在摆的这一张 */
     @Test
-    fun `a batch numbers the head of the queue`() {
+    fun `a batch counts what is still queued`() {
         val queue = listOf(contract(id = 7L), contract(id = 8L), contract(id = 9L))
-        assertEquals("第 1 / 共 3 张", contractRitualPositionLine(queue = queue, currentId = 7L))
+        assertEquals("还有 3 张待收下", contractRitualPositionLine(queue = queue, currentId = 7L))
     }
 
     /**
-     * 序号取自这一张在队列里的位置 —— 这是**纯函数的通式**，不是界面上看得到的每一档。
-     * 页面永远把队列头那一张交给仪式（`achievedToCelebrate.firstOrNull()`），
-     * 而收下会把它从队列里摘掉，所以**屏幕上只会出现「第 1 / 共 n 张」，n 逐次变小**，
-     * 下面这两档是把函数写通用之后的覆盖，不是"用户点了收下之后会看到的样子"。
+     * 报的是**队列还剩几张**，与"正在摆的是第几张"无关 —— 页面永远摆头一张，
+     * 所以这一行随收下而递减：3 → 2 →（只剩一张时整行消失）。
+     * 这条同时是旧 `index > 0` 死分支的墓碑：谁哪天把 k 加回来，这里先红。
      */
     @Test
-    fun `the position follows the place in the queue`() {
+    fun `the count is the queue size no matter which entry is showing`() {
         val queue = listOf(contract(id = 7L), contract(id = 8L), contract(id = 9L))
-        assertEquals("第 2 / 共 3 张", contractRitualPositionLine(queue = queue, currentId = 8L))
-        assertEquals("第 3 / 共 3 张", contractRitualPositionLine(queue = queue, currentId = 9L))
+        assertEquals("还有 3 张待收下", contractRitualPositionLine(queue = queue, currentId = 8L))
+        assertEquals("还有 3 张待收下", contractRitualPositionLine(queue = queue, currentId = 9L))
+        val twoLeft = queue.take(2)
+        assertEquals("还有 2 张待收下", contractRitualPositionLine(queue = twoLeft, currentId = 7L))
     }
 
     /**
      * 队列里没有这一张（它正在被 `dismissRitual` 摘掉的路上）：宁可不显示这一行，
-     * 也不编一个"第 0 张"或"第 4 / 共 3 张"出来。
+     * 也不报一个不含它的数。
      */
     @Test
     fun `a contract outside the queue yields no position line`() {
@@ -152,12 +158,12 @@ class ContractRitualCopyTest {
     }
 
     /**
-     * 这一行只报位置：不发奖励、不给称号、不喊口号；措辞按裁决 R8 给的字面走
-     * （「第 k / 共 n 张」），不改写成"还有 n 张"那类同义说法，免得复评时以为换了一件事。
+     * 这一行只报张数：不发奖励、不给称号、不喊口号。
+     * 「还有」在 R8′ 之前是被禁的（那时措辞钉死为「第 k / 共 n 张」），现在它就是措辞本身。
      */
     @Test
-    fun `position line states only the position`() {
-        val forbidden = listOf("奖励", "获得", "徽章", "称号", "加油", "继续", "已同步", "解锁", "还有")
+    fun `position line states only the count`() {
+        val forbidden = listOf("奖励", "获得", "徽章", "称号", "加油", "继续", "已同步", "解锁")
         val queue = listOf(contract(id = 7L), contract(id = 8L))
         val line = contractRitualPositionLine(queue = queue, currentId = 7L)
         assertNotNull(line)

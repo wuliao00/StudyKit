@@ -287,7 +287,7 @@ internal fun contractRitualSignatureLine(contract: Contract): String {
 }
 
 /**
- * 仪式上那一行「第 k / 共 n 张」（纯函数）：让出口**可数**（裁决 R8）。
+ * 仪式上那一行「还有 n 张待收下」（纯函数）：让出口**可数**（裁决 R8，措辞见 R8′）。
  *
  * 为什么要有这一行：对账跑在整个进程寿命里（`ContractsViewModel` 在 `AppNav` 根上就创建了），
  * 攒下十几张是可达状态；而仪式每收下一张才出下一张，中间没有别的出口。没有计数的时候，
@@ -300,20 +300,19 @@ internal fun contractRitualSignatureLine(contract: Contract): String {
  * 只有一张时返回 null：单张不需要报数（仪式那句"一句多一句都算吵"的纪律还在），
  * 这一行只在真的成批时出现。
  *
- * 队列里没有 [currentId] 也返回 null：那是"这一张正在被摘掉的路上"，宁可少一行也不编一个序号。
- * [queue] 就是 [ContractsViewModel.achievedToCelebrate] 那一份队列：k 数的是它在队列里的位置，
- * n 数的是还剩几张（含正在摆的这一张）。
+ * 队列里没有 [currentId] 也返回 null：那是"这一张正在被摘掉的路上"，宁可少一行也不编一个数。
+ * [queue] 就是 [ContractsViewModel.achievedToCelebrate] 那一份队列；n 数的是还剩几张
+ * （**含正在摆的这一张** —— 与旧口径一致，改的只是措辞）。
  *
- * **界面上看得到的只有 n 在缩**：仪式永远摆队列头那一张，收下即把它摘掉，
- * 所以渲染出来始终是「第 1 / 共 n 张」→「第 1 / 共 n-1 张」。k 的通式是给函数自己的，
- * 别把它当成"用户会看到第 2 张"。若哪天觉得重复的「第 1」读着像卡住了，
- * 换成「还有 n 张待收下」更贴近这份数据本来的含义。
+ * 为什么措辞是"还剩几张"而不是"第 k / 共 n 张"：仪式永远摆队列头那一张，收下即把它摘掉，
+ * 所以 k **恒等于 1** —— 一行里那个永远不动的分子读起来像卡住了，而真正在变的只有 n。
+ * 旧实现里为了算 k 而有的 `index > 0` 分支从唯一调用点**不可达**，属于"给函数写的通式
+ * 被当成界面会走到的档位"。现在只报 n，那个死分支一并去掉。
  */
 internal fun contractRitualPositionLine(queue: List<Contract>, currentId: Long): String? {
     if (queue.size <= 1) return null
-    val index = queue.indexOfFirst { it.id == currentId }
-    if (index < 0) return null
-    return "第 ${index + 1} / 共 ${queue.size} 张"
+    if (queue.none { it.id == currentId }) return null
+    return "还有 ${queue.size} 张待收下"
 }
 
 /**
@@ -513,7 +512,7 @@ private fun StatusPill(status: String) {
  * 没在设备上验过（在控制器的真机清单里）。那一刻用户手上是他自己按下去的破坏性确认，
  * 把确认框盖掉是更坏的处理，所以这里只把话说清、不改行为。
  *
- * @param positionLine 一批多张时那一行「第 k / 共 n 张」（[contractRitualPositionLine]，裁决 R8）；
+ * @param positionLine 一批多张时那一行「还有 n 张待收下」（[contractRitualPositionLine]，裁决 R8）；
  *   单张传 null，就不多这一行
  * @param onDismiss 收下这一张 —— 系统返回走的也是这里
  */
@@ -565,7 +564,7 @@ private fun ContractRitualDialog(
  * 仪式那一页摆出来的东西（由 [ContractRitualDialog] 放在它自己的窗口里）。
  *
  * 内容自上而下六样，一句多一句都算吵：「契约达成」/ 习惯名 / 承诺原文（引号包裹，同卡面）/
- * 进度 N/goal 次 / 落款那一行 / 一枚「收下」。成批时另外多一行「第 k / 共 n 张」——那是出口
+ * 进度 N/goal 次 / 落款那一行 / 一枚「收下」。成批时另外多一行「还有 n 张待收下」——那是出口
  * 的一部分（裁决 R8：让"还要收几张"数得出来），不是第七句庆祝词。
  * 不做音效、不做震动、不做分享图。
  *
