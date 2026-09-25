@@ -14,8 +14,27 @@ interface ContractDao {
     @Insert
     suspend fun insert(contract: Contract): Long
 
+    /**
+     * 单张更新。
+     *
+     * **一次要写多张不要在这里套循环**：每张各开一次隐式事务，`contracts` 表就失效几次，
+     * 观察者会收到"半新半旧"的快照 —— 批量对账走 [updateAll]，理由见那里的注释。
+     */
     @Update
     suspend fun update(contract: Contract)
+
+    /**
+     * 一批契约一次写完（到期对账走这条路，见 `ContractRepository.updateAll`）。
+     *
+     * 为什么要有它：`@Update` 逐张提交时每张各是一次事务，Room 每提交一张就失效一次
+     * `contracts` 表，于是 `observeAll()` 的观察者可能收到**部分更新**的中间快照。
+     * 结算逻辑是按"这一张的状态变了没有"判定"本次结算了哪几张"的，中间快照里那些
+     * 还写着 ACTIVE 且已到期的契约会被再判一次、再报一次 —— 真机上表现为达成仪式
+     * 队列为三张真达成占了五个槽、同一张放两遍。整批一次写，配合仓储层的事务，
+     * 失效只在全部写完之后送到观察者手里一次。
+     */
+    @Update
+    suspend fun updateAll(contracts: List<Contract>)
 
     @Query("SELECT * FROM contracts ORDER BY deadline_epoch_day ASC")
     fun observeAll(): Flow<List<Contract>>

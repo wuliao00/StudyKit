@@ -23,7 +23,9 @@ import java.util.UUID
  * 对账的触发点是**每次契约列表更新**：列表一变就逐张检查，ACTIVE 且已过期的查打卡计数、
  * [settle] 判定后落库。防抖就是过滤本身 —— 只有 `deadline < today` 的到期 ACTIVE 契约才会
  * 触发写库，未到期的与已对账的只是读，flow 重放不会反复 update。对账写在
- * `viewModelScope.launch` 的协程里逐张 await：Room 的 suspend 调用串行排队，天然不并发抢写。
+ * `viewModelScope.launch` 的协程里，**一批一次事务**（`ContractRepository.updateAll`）：
+ * 逐张提交会让 Room 每张失效一次 `contracts` 表，下一趟于是拿到半新半旧的快照
+ * （成因与后果见 [achievedToCelebrate] 那段的规则 4）。
  * **这个订阅跟着进程活着**，不跟着契约页：本类在 `AppNav` 根上就创建好了（Activity 作用域），
  * 所以用户在哪一页都在对账 —— 别按"进页面才结算"来读下面那段（[achievedToCelebrate] 里写清了
  * 这件事对仪式意味着什么）。每一趟结算把真判成 ACHIEVED 的那几张推进 [achievedToCelebrate]，
@@ -82,10 +84,19 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
      * 页面渲染队列第一条，收下时由 [dismissRitual] 把它摘掉。
      *
      * 队列的转移规则（**往上加**而不是"覆盖成本次的结果"、加完跟库里的现状对一遍、本趟那几张要一起
-     * 放行）不写在这段协程里，而是抽成纯函数 [nextRitualQueue] 并配 JVM 单测：落库之后 Room 会立刻重放
-     * `observeAll()`，第二趟什么都不结算 —— 覆盖式写法会在仪式出现后的下一批重组里把队列抹成空列表，
-     * 用户只看见闪一下就没了；而并集那一步漏了会把刚挑出来的全筛掉，仪式一次都不出现。两条都是
-     * "错了没有任何声音"的失败模式。
+     * 放行、同一张只进一次）不写在这段协程里，而是抽成纯函数 [nextRitualQueue] 并配 JVM 单测：落库之后
+     * Room 会立刻重放 `observeAll()`，第二趟什么都不结算 —— 覆盖式写法会在仪式出现后的下一批重组里
+     * 把队列抹成空列表，用户只看见闪一下就没了；而并集那一步漏了会把刚挑出来的全筛掉，仪式一次都不出现。
+     * 两条都是"错了没有任何声音"的失败模式。
+     *
+     * 但**规则抽干净不等于这段协程就没病了**：2026-09 真机走查在这里撞到过重复 enqueue ——
+     * 三张真达成占了五个槽（「第 1 / 共 5 张」），收下时同一张放了两遍。病因不在判定规则而在
+     * **调用时机**：那时 [settleDue] 是一张一次 `await`，Room 每提交一张失效一次 `contracts` 表，
+     * 于是这一趟拿到半新半旧的快照，还没提交的那几张被再判一次、再报一次，而纯函数照单全收。
+     * 两处一起收口：一批改成一桩事务（`ContractRepository.updateAll`，中间快照不再存在）+
+     * [nextRitualQueue] 规则 4 按 id 幂等（将来再有写路径把 emission 交错开，也不许放两遍）。
+     * 这段协程依然没有 JVM 单测够得着，所以它的两条不变量各自钉在够得着的地方：队列侧
+     * `ContractRitualQueueTest`，落库侧 `ContractBatchSettleTest`。
      *
      * 摘除为什么只在 ViewModel 这一侧：作用域是 **Activity**，退出契约页再进来它不会重建，
      * 队列里"还没被收下的"这件事就跟着它一起活着 —— 一份事实一个地方记。页面上再存一份
@@ -108,10 +119,14 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
                 // 队列的发布排在 progress 之后：反过来的话会有一帧"仪式已经盖住整页、进度还是空表"，
                 // 仪式上就写着「进度 0/N 次」—— 那是个假数字。
                 //
-                // 队列本身的转移规则（只加不减、跟库的现状对一遍、本趟那几张要一起放行）全在纯函数
-                // [nextRitualQueue] 里，那里逐条写了为什么少一条就整个功能不响，并配 JVM 单测
-                // （ContractRitualQueueTest）。这一处只是按顺序调它 —— 这段协程 JVM 单测够不着，
-                // 而它出错又只会表现为"仪式一次都没出现"，所以判定不许留在 collect 里面。
+                // 队列本身的转移规则（只加不减、跟库的现状对一遍、本趟那几张要一起放行、同一张只进一次）
+                // 全在纯函数 [nextRitualQueue] 里，逐条配了 JVM 单测（ContractRitualQueueTest）。
+                // 这里当初写过"规则抽出去了、这段协程单测够不着所以没事" —— 那半句话是错的：
+                // 抽走的是**规则**，留下的**调用时机**没人管，而病正在时机上。2026-09 真机走查撞到的
+                // 重复 enqueue（三张达成占五个槽、同一张放两遍）就是这么来的：下面 [settleDue]
+                // 逐张提交，Room 每提交一张失效一次表，半新半旧的快照于是又被判了一趟。
+                // 现在两头各钉一处 —— 落库整批一桩事务（`ContractRepository.updateAll`），
+                // 队列按 id 幂等（[nextRitualQueue] 规则 4），判定照旧不许留在 collect 里面。
                 _achievedToCelebrate.value = nextRitualQueue(
                     current = _achievedToCelebrate.value,
                     justAchieved = achieved,
@@ -122,7 +137,8 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * 对到期的 ACTIVE 契约逐张对账并落库，返回**本次被结算成 ACHIEVED** 的契约（[newlyAchieved]）。
+     * 对到期的 ACTIVE 契约逐张对账、**整批一次落库**，返回**本次被结算成 ACHIEVED** 的契约
+     * （[newlyAchieved]）。
      *
      * 计数区间 = 签约日..截止日（闭区间）：契约目标就是"这段约定里的打卡"，签约之前的
      * 历史不计入 —— precommitment 承诺的是"从现在起"。
@@ -130,6 +146,10 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
      * 查库范围这里自己圈一次"到期 + 进行中"：未到期的与已经判完的去查打卡计数是白花钱。
      * 这不算把判定写第二遍 —— "这张到底判成什么、算不算本次结算"只由 [newlySettled] 里的
      * [settle] 说了算，这一层只是决定**要不要为它跑一次查询**。
+     *
+     * 写侧必须是**一次** `ContractRepository.updateAll` 而不是 `forEach { update(it) }`：
+     * 逐张提交 = 每张一桩事务 = 每提交一张就送观察者一份新快照，还没提交的那几张在里面
+     * 仍写着 ACTIVE 且已过期，于是下一趟被再判一次、再报一次（真机上的重复 enqueue）。
      */
     private suspend fun settleDue(all: List<Contract>): List<Contract> {
         val today = LocalDate.now()
@@ -146,7 +166,7 @@ class ContractsViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
         val settledNow = newlySettled(all, counts, today)
-        settledNow.forEach { contractRepository.update(it) }
+        contractRepository.updateAll(settledNow)
         return newlyAchieved(settledNow)
     }
 

@@ -3,6 +3,7 @@ package com.studykit.ui.habit
 import com.studykit.data.entity.Contract
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
@@ -13,7 +14,7 @@ import java.time.ZoneId
  *
  * 为什么钉这个函数而不是钉 `ContractsViewModel` 那段 collect：那段跑在 JVM 单测够不着的协程里，
  * 而它一旦写错，症状只有两种 —— "整页仪式一次都没出现过"或"闪一下就没了"，界面上没有任何日志
- * 会说话。三条性质各对应一种失败模式（详见 [nextRitualQueue] 的 KDoc），逐条钉住：
+ * 会说话。四条性质各对应一种失败模式（详见 [nextRitualQueue] 的 KDoc），逐条钉住：
  *
  * 1. **刚挑出来的不被筛掉**：`snapshot` 是**结算前**的那一份，本趟那张在里面还写着 ACTIVE。
  *    并集漏了这一步 = 队列永远空，功能整个不响 —— 本仓第一版就错在这里，症状是
@@ -21,6 +22,9 @@ import java.time.ZoneId
  * 2. **行消失后被摘掉**：库里没这一行（撤销了、或「清除学习数据」）就不再摆它。
  * 3. **收下后的那张不回来**：摘掉的就是摘掉了，"库里它还是 ACHIEVED"不许成为把它塞回去的理由。
  *    这条性质就是"放过没有"的全部记法 —— 页面上那份重复的 id 清单已经删掉了（裁决 R6）。
+ * 4. **同一张不许进两次**：2026-09 真机走查撞到的重复 enqueue（三张达成占了五个槽、
+ *    收下时同一张放两遍）。成因在调用时机那一侧 —— 逐张落库让 Room 把**半新半旧**的快照
+ *    又送了一趟，那张还没提交的契约于是被再判一次、再追加一次。这里钉的是它的**形状**。
  */
 class ContractRitualQueueTest {
 
@@ -202,5 +206,72 @@ class ContractRitualQueueTest {
         assertEquals(Contract.STATUS_ACHIEVED, kept.status)
         assertNotNull(kept.settledAt)
         assertEquals(today, contractSettledDate(kept))
+    }
+
+    // ── 性质 4：同一张不许进两次 ───────────────────────────────
+
+    /**
+     * 复现 2026-09 真机走查那个缺陷的**形状**（纯函数一侧，不需要 Room、不需要协程）。
+     *
+     * 第一趟把 A、B 两张都推进队列。缺陷出在落库的时机：`settleDue` 当时是一张一次 `await`，
+     * 每提交一张 Room 就失效一次 `contracts` 表，于是 A 已提交、B 还写着 ACTIVE 的**半新半旧**
+     * 快照又被送进 collect 一趟 —— [newlySettled] 只认"状态变了没有"，把 B 再判一次，
+     * [newlyAchieved] 于是又交出 B 一次。
+     *
+     * 界面上看到的是「第 1 / 共 5 张」为三张真达成占了五个槽，收下时
+     * 早起 → 阅读 → 背单词 → 背单词**又一遍** → 空。
+     * 去重按 id 判，不看内容：两张 B 是不同实例，`distinct()` 那种"看着一样就是一条"的写法
+     * 在这里挡不住（结算后的副本 `settledAt` 逐毫秒都可能不同）。
+     */
+    @Test
+    fun `a contract reported again by a partially updated emission is queued once`() {
+        val afterFirst = nextRitualQueue(
+            current = emptyList(),
+            justAchieved = listOf(achieved(1L), achieved(2L)),
+            snapshot = listOf(beforeSettle(1L), beforeSettle(2L)),
+        )
+        assertEquals(listOf(1L, 2L), ids(afterFirst))
+
+        // 第二趟：1 号已经落库（快照里写着 ACHIEVED），2 号那一行还没提交，仍是结算前的 ACTIVE，
+        // 于是它又被 newlySettled 挑了出来
+        val second = nextRitualQueue(
+            current = afterFirst,
+            justAchieved = listOf(achieved(2L)),
+            snapshot = listOf(achieved(1L), beforeSettle(2L)),
+        )
+        assertEquals("两张达成不许占三个槽", listOf(1L, 2L), ids(second))
+        assertEquals(2, second.size)
+        assertEquals("队列里出现了重复 id", second.size, ids(second).toSet().size)
+    }
+
+    /** 同一趟里那张被报了两遍（同一份快照被送进来两次）：也只许留一个槽 */
+    @Test
+    fun `the same contract listed twice in one batch still takes one slot`() {
+        val queue = nextRitualQueue(
+            current = listOf(achieved(1L)),
+            justAchieved = listOf(achieved(1L), achieved(1L)),
+            snapshot = listOf(beforeSettle(1L)),
+        )
+        assertEquals(listOf(1L), ids(queue))
+    }
+
+    /**
+     * 去重只许拦"再追加一次"，不许顺手把排在队列里的那一张筛掉。
+     *
+     * 这一趟的快照里 2 号还写着 ACTIVE（规则 2 不放行它），而它同时出现在 [justAchieved] 里 ——
+     * 如果实现写成"重复的那张直接从结果里去掉"，症状就从"放两遍"变成"闪一下就没了"，
+     * 那是更难查的另一个坑。留在原位的那一份（带 `settledAt` 的旧副本）必须活着。
+     */
+    @Test
+    fun `dedup suppresses the second append without evicting the queued copy`() {
+        val queuedAgain = achieved(2L)
+        val queue = nextRitualQueue(
+            current = listOf(achieved(1L), queuedAgain),
+            justAchieved = listOf(achieved(2L), achieved(3L)),
+            snapshot = listOf(achieved(1L), beforeSettle(2L), beforeSettle(3L)),
+        )
+        assertEquals(listOf(1L, 2L, 3L), ids(queue))
+        // 留下的是队列里原本那一份，不是本趟新造的那一份
+        assertSame(queuedAgain, queue.single { it.id == 2L })
     }
 }

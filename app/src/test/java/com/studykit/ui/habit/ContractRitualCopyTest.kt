@@ -128,7 +128,12 @@ class ContractRitualCopyTest {
         assertEquals("第 1 / 共 3 张", contractRitualPositionLine(queue = queue, currentId = 7L))
     }
 
-    /** 序号来自它在队列里的位置：中间与末尾各读自己那一档（收下头一张之后就是这一档） */
+    /**
+     * 序号取自这一张在队列里的位置 —— 这是**纯函数的通式**，不是界面上看得到的每一档。
+     * 页面永远把队列头那一张交给仪式（`achievedToCelebrate.firstOrNull()`），
+     * 而收下会把它从队列里摘掉，所以**屏幕上只会出现「第 1 / 共 n 张」，n 逐次变小**，
+     * 下面这两档是把函数写通用之后的覆盖，不是"用户点了收下之后会看到的样子"。
+     */
     @Test
     fun `the position follows the place in the queue`() {
         val queue = listOf(contract(id = 7L), contract(id = 8L), contract(id = 9L))

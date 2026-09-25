@@ -303,6 +303,11 @@ internal fun contractRitualSignatureLine(contract: Contract): String {
  * 队列里没有 [currentId] 也返回 null：那是"这一张正在被摘掉的路上"，宁可少一行也不编一个序号。
  * [queue] 就是 [ContractsViewModel.achievedToCelebrate] 那一份队列：k 数的是它在队列里的位置，
  * n 数的是还剩几张（含正在摆的这一张）。
+ *
+ * **界面上看得到的只有 n 在缩**：仪式永远摆队列头那一张，收下即把它摘掉，
+ * 所以渲染出来始终是「第 1 / 共 n 张」→「第 1 / 共 n-1 张」。k 的通式是给函数自己的，
+ * 别把它当成"用户会看到第 2 张"。若哪天觉得重复的「第 1」读着像卡住了，
+ * 换成「还有 n 张待收下」更贴近这份数据本来的含义。
  */
 internal fun contractRitualPositionLine(queue: List<Contract>, currentId: Long): String? {
     if (queue.size <= 1) return null

@@ -28,9 +28,11 @@ class AppContainer(context: Context) {
 
     val habitRepository: HabitRepository = HabitRepository(database.habitDao())
 
-    /** 自我契约（v2.4 批次五）：计数取自 habitDao（check_ins），存取取自 contractDao */
-    val contractRepository: ContractRepository =
-        ContractRepository(database.contractDao(), database.habitDao())
+    /**
+     * 自我契约（v2.4 批次五）：计数取自 habitDao（check_ins），存取取自 contractDao。
+     * 整个 db 传进去只为批量对账那一桩事务（见 `ContractRepository.updateAll`）。
+     */
+    val contractRepository: ContractRepository = ContractRepository(database)
 
     val bookRepository: BookRepository = BookRepository(database.bookDao())
 
