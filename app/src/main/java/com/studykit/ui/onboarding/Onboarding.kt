@@ -285,7 +285,7 @@ fun UpgradeGate(versionName: String = BuildConfig.VERSION_NAME) {
                 text = "去下载",
                 onClick = {
                     context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(newer.releaseUrl)),
+                        Intent(Intent.ACTION_VIEW, Uri.parse(newer.downloadUrl)),
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),

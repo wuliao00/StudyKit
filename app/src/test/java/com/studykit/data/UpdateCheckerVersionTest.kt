@@ -60,4 +60,32 @@ class UpdateCheckerVersionTest {
         UpdateChecker.compareVersions("2.4.4", "")
         UpdateChecker.compareVersions("v", "2.4.4")
     }
+
+    // ── Gitee 那条线的判别步骤（2026-09-26 换源时补）─────────────────
+
+    /**
+     * Gitee 侧只有 tag、没有 Release，所以"哪些 tag 算版本"这件事本身成了判据：
+     * 混进来的非版本 tag 必须被忽略，否则 `maxWith` 会拿它去比、比出一个假的新版本，
+     * 结果是**所有用户被要求升级**。
+     */
+    @Test
+    fun `非版本号形状的 tag 不参与比较`() {
+        val names = listOf("v2.4.5", "test-abc", "backup", "release-candidate", "v2.4.4")
+        assertEquals("v2.4.5", UpdateChecker.newestVersion(names))
+    }
+
+    /** 一条版本 tag 都没有 ⇒ 返回 null（调用方据此走"放行"，不拦任何人） */
+    @Test
+    fun `没有版本号形状的 tag 时返回 null`() {
+        assertEquals(null, UpdateChecker.newestVersion(emptyList()))
+        assertEquals(null, UpdateChecker.newestVersion(listOf("test", "tmp", "wip")))
+    }
+
+    /** 挑最高时仍然按数字段比，不是按列表顺序、也不是字典序 */
+    @Test
+    fun `挑最高版不受列表顺序与字典序影响`() {
+        val names = listOf("v2.4.9", "v2.4.10", "v2.4.2")
+        assertEquals("v2.4.10", UpdateChecker.newestVersion(names))
+        assertEquals("v2.5.0", UpdateChecker.newestVersion(listOf("v2.4.10", "v2.5.0", "v2.4.9")))
+    }
 }
