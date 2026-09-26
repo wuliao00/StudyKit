@@ -20,6 +20,12 @@ import com.studykit.ui.theme.StudyKitTheme
 import com.studykit.util.ShareIntake
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import com.studykit.ui.onboarding.UpgradeGate
+import com.studykit.ui.onboarding.OnboardingScreen
+import com.studykit.ui.onboarding.DisclaimerScreen
+import com.studykit.data.Disclaimer
+import androidx.compose.runtime.rememberCoroutineScope
 
 class MainActivity : ComponentActivity() {
 
@@ -53,10 +59,37 @@ class MainActivity : ComponentActivity() {
                 darkTheme = settings.resolveDark(isSystemInDarkTheme()),
                 settings = settings,
             ) {
-                AppNav(
-                    sharedImage = sharedImageFlow,
-                    onSharedConsumed = { sharedImageFlow.value = null },
-                )
+                val repository = (application as StudyKitApp).container.settingsRepository
+                val scope = rememberCoroutineScope()
+                // 三道闸门按顺序：免责声明（必同意）→ 首启引导（可跳过）→ 版本闸门 + 主界面。
+                // 它们都在主题**之内**，所以遵守用户选的主题；也都在 AppNav **之外**，
+                // 没同意之前主界面不存在（不是盖在上面一层，是压根没组合）。
+                when {
+                    settings.disclaimerVersion < Disclaimer.TEXT_VERSION -> DisclaimerScreen(
+                        onAccept = {
+                            scope.launch {
+                                repository.update { it.copy(disclaimerVersion = Disclaimer.TEXT_VERSION) }
+                            }
+                        },
+                        // 不同意就退出。这一屏没有"稍后再说"：声明里写着"卸载会丢数据"，
+                        // 不接受这句话就不该继续用。
+                        onDecline = { finish() },
+                    )
+
+                    !settings.onboardingSeen -> OnboardingScreen(
+                        onDone = {
+                            scope.launch { repository.update { it.copy(onboardingSeen = true) } }
+                        },
+                    )
+
+                    else -> {
+                        UpgradeGate()
+                        AppNav(
+                            sharedImage = sharedImageFlow,
+                            onSharedConsumed = { sharedImageFlow.value = null },
+                        )
+                    }
+                }
             }
         }
     }

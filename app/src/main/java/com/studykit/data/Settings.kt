@@ -45,6 +45,14 @@ data class AppSettings(
      * 其余三档是把目标准确率钉死。默认 AUTO：不填考试日的用户不该被一个写死的数字对待。
      */
     val reviewStrictness: ReviewStrictness = ReviewStrictness.AUTO,
+    /**
+     * 已同意的免责声明版本。0 = 从没同意过（首启必弹）。
+     * **带版本号**：以后改免责文案就把 [com.studykit.data.Disclaimer.TEXT_VERSION] 加一，
+     * 老用户下次启动会再看到一次 —— 否则改了条款而没人看到，改了等于没改。
+     */
+    val disclaimerVersion: Int = 0,
+    /** 首启引导是否看过（同意免责声明之后走一遍）。只影响"要不要再自动放一次" */
+    val onboardingSeen: Boolean = false,
     /** 贪吃蛇历史最高分（批次一）。只增不减：读档时取 max，防止手改备份把它清零 */
     val snakeBest: Int = 0,
     /**
@@ -90,6 +98,8 @@ data class AppSettings(
         KEY_REMINDER_HOURS to reminderEveryHours.toString(),
         KEY_EXAM_DAY to examEpochDay.toString(),
         KEY_REVIEW_STRICTNESS to reviewStrictness.name,
+        KEY_DISCLAIMER_VERSION to disclaimerVersion.toString(),
+        KEY_ONBOARDING_SEEN to onboardingSeen.toString(),
         KEY_SNAKE_BEST to snakeBest.toString(),
         KEY_DAY_BOUNDARY to dayBoundaryHour.toString(),
         KEY_MAKEUP_ALLOWED to makeupAllowed.toString(),
@@ -110,6 +120,8 @@ data class AppSettings(
         const val KEY_EXAM_DAY = "exam_epoch_day"
         const val KEY_REVIEW_STRICTNESS = "review_strictness"
         const val KEY_SNAKE_BEST = "snake_best"
+        const val KEY_DISCLAIMER_VERSION = "disclaimer_version"
+        const val KEY_ONBOARDING_SEEN = "onboarding_seen"
         const val KEY_DAY_BOUNDARY = "day_boundary_hour"
         const val KEY_MAKEUP_ALLOWED = "makeup_allowed"
         const val KEY_RESTRICT_CHECK_IN = "restrict_check_in"
@@ -162,6 +174,10 @@ data class AppSettings(
                 reviewStrictness = map[KEY_REVIEW_STRICTNESS]
                     ?.let { raw -> ReviewStrictness.entries.firstOrNull { it.name == raw } }
                     ?: defaults.reviewStrictness,
+                disclaimerVersion = map[KEY_DISCLAIMER_VERSION]?.toIntOrNull()
+                    ?.coerceAtLeast(0) ?: defaults.disclaimerVersion,
+                onboardingSeen = map[KEY_ONBOARDING_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.onboardingSeen,
                 snakeBest = map[KEY_SNAKE_BEST]?.toIntOrNull()?.coerceAtLeast(0) ?: defaults.snakeBest,
                 dayBoundaryHour = map[KEY_DAY_BOUNDARY]?.toIntOrNull()?.takeIf { it in DAY_BOUNDARY_RANGE }
                     ?: defaults.dayBoundaryHour,
