@@ -780,7 +780,20 @@ private fun HabitCard(
                     ),
                 )
             }
-            Spacer(Modifier.width(AppTheme.space.md))
+        }
+        Spacer(Modifier.height(AppTheme.space.sm))
+        // ── 动作行（2026-09-26 重排）─────────────────────────────────
+        // 这一行曾经和上面的文字**挤在同一个 Row 里**。那份布局从未成立过：
+        // 图标 44dp + 进度环 52dp + 「专注」按钮 ~58dp + 打卡圆钮 52dp + 三段间距，
+        // 在 360dp 宽的屏上固定元素合计 ~246dp，`weight(1f)` 的文字列只剩 **42dp** ——
+        // 一行放不下一个词，于是「连续 0 天 · 累计 1 天」变成一个字一行的竖条
+        // （2026-09-24 的旧截图 `walk/s105_habits_cards.png` 就是这个样子，不是 2.4.3 改坏的）。
+        // 拆成两行之后文字列拿到 ~176dp，副标题回到一行；两枚动作靠右、仍然都够 48dp 触达。
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Spacer(Modifier.weight(1f))
             // 「专注」入口（v2.4 批次三）：与玩一把同一份小文字按钮写法，
             // 紧挨打卡按钮 —— 它本来就是"换一种方式完成今天"的备选
             TextButton(onClick = onFocus) {
@@ -789,6 +802,7 @@ private fun HabitCard(
                     style = texts.caption.copy(color = colors.accentInk),
                 )
             }
+            Spacer(Modifier.width(AppTheme.space.md))
             CheckInButton(checked = item.checkedInToday, onClick = onCheckIn)
         }
     }
