@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -48,8 +47,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
+import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.components.StatTileTier
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
@@ -121,9 +122,13 @@ fun StudyHomeScreen(
             todayDone = state.todayDone,
             dueCount = state.dueCount,
             streakDays = state.streakDays,
+            onStart = onOpenWords,
         )
 
         Spacer(Modifier.height(AppTheme.space.md))
+        // 三块磁贴全部走 Reference 档：这屏的第一等重点已经在上面那块（今日待办 + 主行动），
+        // 这里只放"查得到"的参考数字。原来三块等重的 34sp 大数把顶部压成了一排同样重的白板，
+        // 重点浮不出来（2026-09-26 使用者反馈「没有突出重点」）。
         Row(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
             modifier = Modifier.height(IntrinsicSize.Max),
@@ -132,16 +137,19 @@ fun StudyHomeScreen(
                 value = "${state.dueCount}",
                 label = "今日待复习",
                 modifier = Modifier.weight(1f),
+                tier = StatTileTier.Reference,
             )
             StatTile(
                 value = "${state.totalCount}",
                 label = "单词总数",
                 modifier = Modifier.weight(1f),
+                tier = StatTileTier.Reference,
             )
             StatTile(
                 value = "${state.masteredCount}",
                 label = "已掌握",
                 modifier = Modifier.weight(1f),
+                tier = StatTileTier.Reference,
             )
         }
 
@@ -167,18 +175,10 @@ fun StudyHomeScreen(
 
         Spacer(Modifier.height(AppTheme.space.lg))
 
+        // 「背单词」那张入口卡已删：它的职责被上面 hero 里的实心主行动接手了。
+        // 留着的代价是同一屏出现两条通往同一个地方的路，而且那条路和「题库练习」「错题本」
+        // 长得一模一样 —— 这屏就不再有一个"该往哪走"的答案。
         StaggeredIn(index = 0) {
-            EntryCard(
-                icon = Icons.Outlined.Star,
-                iconColor = colors.accent,
-                iconContainerColor = colors.accentSoft,
-                title = "背单词",
-                caption = "今日待复习 ${state.dueCount} 个 · 卡片翻面记忆",
-                onClick = onOpenWords,
-            )
-        }
-        Spacer(Modifier.height(AppTheme.space.md))
-        StaggeredIn(index = 1) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,
                 iconColor = colors.success,
@@ -207,7 +207,7 @@ fun StudyHomeScreen(
             )
         }
         Spacer(Modifier.height(AppTheme.space.md))
-        StaggeredIn(index = 2) {
+        StaggeredIn(index = 1) {
             EntryCard(
                 icon = Icons.Outlined.Close,
                 iconColor = colors.warning,
@@ -240,6 +240,7 @@ private fun TodayHeroCard(
     todayDone: Int,
     dueCount: Int,
     streakDays: Int,
+    onStart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = AppTheme.colors
@@ -252,12 +253,20 @@ private fun TodayHeroCard(
     // 空日（total == 0）显示空环而非满环：gold/达成态须由真实完成数驱动，
     // progress >= 1f 在 0/0 下不再可能
     val progress = if (total == 0) 0f else todayDone.toFloat() / total
-    AppCard(modifier = modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(88.dp),
-                contentAlignment = Alignment.Center,
-            ) {
+
+    HeroSummaryCard(
+        label = "今日待办",
+        value = "$todayDone / $total",
+        caption = if (todayDone >= goal) {
+            "今日目标 $goal 词，已完成"
+        } else {
+            "今日目标 $goal 词，还差 ${goal - todayDone}"
+        },
+        actionLabel = "去背单词",
+        onAction = onStart,
+        modifier = modifier,
+        leading = {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 RingGauge(
                     progress = progress,
                     modifier = Modifier.fillMaxSize(),
@@ -270,25 +279,12 @@ private fun TodayHeroCard(
                 // 且刷题结果页 132dp 环的环心数字用的就是它 —— 两页的环心数同一档。
                 Text(text = "$todayDone", style = texts.statValue)
             }
-            Spacer(Modifier.width(AppTheme.space.lg))
-            Column(Modifier.weight(1f)) {
-                Text(text = "今日待办", style = texts.caption)
-                Spacer(Modifier.height(AppTheme.space.xs))
-                Text(text = "$todayDone / $total", style = texts.pageTitle)
-                Spacer(Modifier.height(AppTheme.space.sm))
-                // 目标那一行：没设置考试日时它是这卡上唯一一行说明文字，设了则两行都在。
-                Text(
-                    text = if (todayDone >= goal) {
-                        "今日目标 $goal 词，已完成"
-                    } else {
-                        "今日目标 $goal 词，还差 ${goal - todayDone}"
-                    },
-                    style = texts.caption,
-                )
+        },
+        supporting = {
+            Column {
                 // 考试倒计时来自设置（未设置时整行不存在，不显示"还剩 0 天"那种废话）
                 AppTheme.settings.examDate?.let { exam ->
                     val days = ChronoUnit.DAYS.between(LocalDate.now(), exam)
-                    Spacer(Modifier.height(AppTheme.space.xs))
                     Text(
                         text = when {
                             days > 0 -> "距考试还有 $days 天"
@@ -298,12 +294,12 @@ private fun TodayHeroCard(
                         style = texts.caption,
                         color = if (days in 0..7) colors.warningInk else colors.secondaryText,
                     )
+                    if (streakDays > 0) Spacer(Modifier.height(AppTheme.space.sm))
                 }
-                Spacer(Modifier.height(AppTheme.space.sm))
                 if (streakDays > 0) FlameBadge(days = streakDays)
             }
-        }
-    }
+        },
+    )
 }
 
 /**

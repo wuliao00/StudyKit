@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -131,10 +133,21 @@ private fun CheckInButton(
             .size(AppTheme.size.pill)
             .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(CircleShape)
-            .background(colors.successSoft.copy(alpha = colors.successSoft.alpha * fillAlpha.coerceIn(0f, 1f)))
+            // 未打卡 = **实心 accentInk + onAccent 的勾**：打卡是这一屏每天唯一的动作，
+            // 而它原来是全卡最弱的东西（一圈 45% 灰描边、里面什么都没有）—— 一屏五张卡里
+            // 最该被点的那一枚反而最不像能被点。实底档按 T15 只认 accent 这一对
+            // （`accentInk` 容器 + `onAccent` 内容），与 AppButton 的实底同源。
+            // 已打卡 = 原来的 successSoft 柔底 + successInk 勾，保持不变（"做完了"该退下去）。
+            .background(
+                if (checked) {
+                    colors.successSoft.copy(alpha = colors.successSoft.alpha * fillAlpha.coerceIn(0f, 1f))
+                } else {
+                    colors.accentInk
+                },
+            )
             .border(
-                width = 2.dp,
-                color = if (checked) colors.success else colors.secondaryText.copy(alpha = 0.45f),
+                width = if (checked) 2.dp else 0.dp,
+                color = if (checked) colors.success else Color.Transparent,
                 shape = CircleShape,
             )
             .clickable(
@@ -150,17 +163,16 @@ private fun CheckInButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (checked) {
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = null,
-                // 勾是这枚按钮唯一的「已打卡」图形，按 T15 墨水批次走 soft 底 + successInk：
-                // 旧写法是 success 实底压白勾（浅色主题 2.22:1），而白字/白图压实底只留给 accent 一处。
-                // 描边仍是 success 品牌色（非文本元素），两主题的绿都还在。
-                tint = colors.successInk,
-                modifier = Modifier.size(26.dp),
-            )
-        }
+        // 两个状态都画勾：未打卡画**空心勾**（它就是这一枚按钮的动作提示），
+        // 已打卡画实心勾。以前未打卡态里面是空的，读起来像个装饰圆点。
+        Icon(
+            imageVector = if (checked) Icons.Filled.Check else Icons.Outlined.Check,
+            contentDescription = null,
+            // 图形充当"文字槽位"（旁边没有等价文字），按 T15 走 ink 档：
+            // 已打卡 successInk 压 successSoft（4.96:1）；未打卡 onAccent 压 accentInk（5.81:1）。
+            tint = if (checked) colors.successInk else colors.onAccent,
+            modifier = Modifier.size(26.dp),
+        )
     }
 }
 
