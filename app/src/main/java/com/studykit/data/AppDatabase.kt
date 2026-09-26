@@ -237,8 +237,12 @@ abstract class AppDatabase : RoomDatabase() {
         private val SeedCallback = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
-                // 仅 Debug 构建播种演示数据，Release 首装保持空库
-                if (BuildConfig.DEBUG) DemoSeeder.seed(db)
+                // 演示数据**默认不播种**（开关见 `app/build.gradle.kts` 的 DEMO_SEED）。
+                // 这里原来写的是 `BuildConfig.DEBUG`，而分发的正是 assembleDebug 产物 ——
+                // 那个条件对真实使用者恒为 true，于是"仅 Debug 播种"实际等于每次都播种：
+                // 全新安装会被灌进 20 个演示单词、3 个演示习惯 + 打卡记录、题目、书、错题。
+                // 首启应当是干净的空库，用户看到的是自己的空白而不是别人的假数据。
+                if (BuildConfig.DEMO_SEED) DemoSeeder.seed(db)
             }
         }
     }

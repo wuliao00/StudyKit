@@ -5,8 +5,13 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /**
- * 演示数据播种器。仅在 Debug 构建的数据库首次创建（onCreate）时调用，
- * 保证可重复执行（幂等）；Release 首装不播种，避免真实用户得到假数据。
+ * 演示数据播种器。**默认不跑**：只有显式打开 `DEMO_SEED`（见 `app/build.gradle.kts`，
+ * `./gradlew assembleDebug -PdemoSeed=true`）且数据库是首次创建（`onCreate`）时才调用，
+ * 保证可重复执行（幂等）。
+ *
+ * 原先的闸门是「仅 Debug 构建」，但本仓分发的就是 debug 产物（不引入 release 签名是既定决定），
+ * 于是那道闸门对真实使用者恒开 —— 全新安装会拿到 20 个演示单词、3 个演示习惯连打卡记录、
+ * 题目、书、错题。**一个学习应用的首启应当是空的**，用户看到的该是自己的空白。
  */
 object DemoSeeder {
 

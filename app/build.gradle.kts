@@ -96,8 +96,27 @@ android {
     }
     buildFeatures {
         compose = true
-        // AGP 8 默认不生成 BuildConfig；AppDatabase 依 BuildConfig.DEBUG 决定是否播种演示数据
+        // AGP 8 默认不生成 BuildConfig；AppDatabase 依 BuildConfig.DEMO_SEED 决定是否播种演示数据
         buildConfig = true
+    }
+
+    defaultConfig {
+        // 演示数据播种开关，**默认关**。
+        //
+        // 原先的闸门是 `BuildConfig.DEBUG`，但**我们分发的正是 assembleDebug 产物** ——
+        // 对真实使用者来说那个条件恒为 true，等于没有闸门：全新安装会被灌进
+        // 20 个演示单词、3 个演示习惯（背单词/跑步/阅读）连打卡记录、题目、书、错题。
+        // 一个学习应用的首启应该是干净的空库，让用户看到自己的空白，而不是别人的假数据。
+        //
+        // 本地预览想看有内容的界面，显式开：
+        //     ./gradlew assembleDebug -PdemoSeed=true
+        // 注意这里必须算出 "true"/"false" 两个字面量：`findProperty(...).toString()`
+        // 在没有该属性时给出的是字符串 "null"，生成到 BuildConfig 里是个编译不过的表达式。
+        buildConfigField(
+            "boolean",
+            "DEMO_SEED",
+            "${project.findProperty("demoSeed") == "true"}",
+        )
     }
 
     testOptions {
