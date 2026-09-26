@@ -1,6 +1,7 @@
 package com.studykit.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,6 +68,16 @@ import com.studykit.util.backup.StorageStats
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import com.studykit.ui.onboarding.TutorialScreen
+import com.studykit.data.UpdateChecker
+import com.studykit.data.Disclaimer
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 
 /**
  * 文本格的防抖写入：昵称/目标/考试日都是「逐字改」的输入框，
@@ -155,6 +166,27 @@ fun SettingsScreen(
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+
+    // 关于与支持：两个只读弹层的开关 + 手动检查更新的临时状态
+    var showTutorial by rememberSaveable { mutableStateOf(false) }
+    var showDisclaimer by rememberSaveable { mutableStateOf(false) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateNote by remember { mutableStateOf<String?>(null) }
+    val aboutScope = rememberCoroutineScope()
+    val appVersion = BuildConfig.VERSION_NAME
+    val checkForUpdate: () -> Unit = {
+        checkingUpdate = true
+        aboutScope.launch {
+            val r = withContext(Dispatchers.IO) { UpdateChecker.check(appVersion) }
+            updateNote = when (r) {
+                is UpdateChecker.UpdateCheck.UpToDate -> "已经是最新版。"
+                is UpdateChecker.UpdateCheck.Newer -> "发现新版本 ${r.version}，启动时会要求更新。"
+                // 手动检查失败也照实说，并且说清"这不影响使用"
+                is UpdateChecker.UpdateCheck.Unknown -> "检查失败（${r.reason}），不影响使用。"
+            }
+            checkingUpdate = false
+        }
+    }
 
     // ── SAF：文件名带日期，用户自己挑落地位置 ──────────────────────
     val exportLauncher = rememberLauncherForActivityResult(
@@ -661,6 +693,56 @@ fun SettingsScreen(
             }
         }
 
+        SectionHeader(title = "关于与支持", modifier = Modifier.padding(top = AppTheme.space.lg))
+
+        SettingBlock(
+            title = "源码仓库",
+            hint = "StudyKit 是开源的。有 bug、想要功能、或者发现词库里有不该收录的内容，都可以去仓库提 issue。",
+            trailing = {
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Disclaimer.REPO_URL)))
+                }) {
+                    Text(text = "打开", style = texts.aux.copy(color = colors.accentInk))
+                }
+            },
+        )
+
+        SettingBlock(
+            title = "使用教程",
+            hint = "四个页签各能做什么、打卡与契约怎么用、数据存在哪 —— 一共五节，随时可回看。",
+            trailing = {
+                TextButton(onClick = { showTutorial = true }) {
+                    Text(text = "查看", style = texts.aux.copy(color = colors.accentInk))
+                }
+            },
+        )
+
+        SettingBlock(
+            title = "免责声明",
+            hint = "首次启动时同意过的那一份。改了条款会重新征求一次同意。",
+            trailing = {
+                TextButton(onClick = { showDisclaimer = true }) {
+                    Text(text = "查看", style = texts.aux.copy(color = colors.accentInk))
+                }
+            },
+        )
+
+        SettingBlock(
+            title = "当前版本",
+            hint = updateNote ?: "版本 $appVersion。检测到新版本会要求先更新再使用。",
+            trailing = {
+                TextButton(
+                    onClick = { checkForUpdate() },
+                    enabled = !checkingUpdate,
+                ) {
+                    Text(
+                        text = if (checkingUpdate) "检查中…" else "检查更新",
+                        style = texts.aux.copy(color = colors.accentInk),
+                    )
+                }
+            },
+        )
+
         Spacer(modifier = Modifier.height(AppTheme.space.xl))
     }
 
@@ -678,6 +760,74 @@ fun SettingsScreen(
             },
             onDismiss = { pendingRestore = null },
         )
+    }
+
+    // 教程与免责声明都用**全屏只读弹层**，不走导航路由：它们是"回看一遍"，
+    // 不产生新状态，也就没必要在路由表里占两个位置。
+    if (showTutorial) {
+        FullScreenReader(title = "使用教程", onClose = { showTutorial = false }) { TutorialScreen() }
+    }
+    if (showDisclaimer) {
+        FullScreenReader(title = "免责声明", onClose = { showDisclaimer = false }) {
+            DisclaimerReader()
+        }
+    }
+}
+
+/**
+ * 全屏只读阅读层：顶栏一枚「关闭」+ 可滚动正文。
+ * `usePlatformDefaultWidth = false` 才有真正的全屏（默认宽度的 Dialog 会在两侧留缝）。
+ */
+@Composable
+private fun FullScreenReader(
+    title: String,
+    onClose: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = AppTheme.space.pageH, vertical = AppTheme.space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = title, style = texts.pageTitle, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClose) {
+                    Text(text = "关闭", style = texts.aux.copy(color = colors.accentInk))
+                }
+            }
+            content()
+        }
+    }
+}
+
+/** 免责声明正文（只读，与首启那份同源） */
+@Composable
+private fun DisclaimerReader() {
+    val texts = AppTheme.texts
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AppTheme.space.pageH),
+    ) {
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Disclaimer.paragraphs.forEach { p ->
+            Text(text = p, style = texts.aux)
+            Spacer(Modifier.height(AppTheme.space.md))
+        }
+        Text(text = Disclaimer.REPO_URL, style = texts.caption)
+        Spacer(Modifier.height(AppTheme.space.lg))
     }
 }
 
