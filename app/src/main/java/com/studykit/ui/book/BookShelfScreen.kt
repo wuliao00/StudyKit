@@ -19,12 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -39,7 +36,9 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
+import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.components.StatTileTier
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
@@ -67,14 +66,19 @@ private fun StatusTag(finished: Boolean) {
     )
 }
 
-/** 书架页：页标题 + 添加入口、统计磁贴、带书脊色带的书籍卡片 */
+/**
+ * 书架页：页标题 + 在读 hero（第一等数字 + 这一屏唯一的实心主行动）+ 参考统计 + 带书脊色带的书籍卡片。
+ *
+ * 顶部原先是三块**等重**的统计磁贴，于是「在读几本」（今天继续读哪本）和「一共攒了多少书摘」
+ * （查得到就行）在视觉上同权，整屏读起来像一列白板子。现在按四屏共享的口径重排：
+ * [HeroSummaryCard] 承担第一等数字与主行动，其余数字退成 [StatTileTier.Reference] 的参考档。
+ */
 @Composable
 fun BookShelfScreen(
     viewModel: BookViewModel,
     onOpenBook: (Long) -> Unit,
     onAddClick: () -> Unit,
 ) {
-    val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.shelfState.collectAsStateWithLifecycle()
 
@@ -84,52 +88,7 @@ fun BookShelfScreen(
             .padding(horizontal = AppTheme.space.pageH),
     ) {
         Spacer(Modifier.height(AppTheme.space.sm))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(text = "读书", style = texts.largeTitle)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onAddClick) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = colors.accentInk,
-                )
-                Spacer(Modifier.width(AppTheme.space.xs))
-                Text(
-                    text = "添加",
-                    style = texts.aux.copy(
-                        color = colors.accentInk,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(AppTheme.space.md))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
-            modifier = Modifier.height(IntrinsicSize.Max),
-        ) {
-            StatTile(
-                value = "${state.readingCount}",
-                label = "在读",
-                modifier = Modifier.weight(1f),
-            )
-            StatTile(
-                value = "${state.finishedCount}",
-                label = "已读完",
-                modifier = Modifier.weight(1f),
-            )
-            StatTile(
-                value = "${state.excerptCount}",
-                label = "书摘总数",
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Spacer(Modifier.height(AppTheme.space.lg))
+        Text(text = "读书", style = texts.largeTitle)
 
         if (state.items.isEmpty()) {
             Spacer(Modifier.height(AppTheme.space.xl * 2))
@@ -141,6 +100,49 @@ fun BookShelfScreen(
             Spacer(Modifier.height(AppTheme.space.lg))
             AppButton(text = "添加第一本书", onClick = onAddClick)
         } else {
+            Spacer(Modifier.height(AppTheme.space.md))
+            // 「在读」是这一屏的第一等数字：书架要回答的是「还有几本在路上」，
+            // 而不是「一共存了几本」。主行动（添加）随之从页头那枚文字按钮**搬进** hero ——
+            // 同一个动作在一屏里留两条路（右上角 + hero）重点就散了，
+            // 学习首页删掉「背单词」入口卡是同一条口径。
+            //
+            // caption 曾写成「已读完 N 本 · 书摘 M 条」，与紧挨着的那两块参考磁贴**字面重复** ——
+            // 同一对数字在上下相邻的两块里各出现一次，读起来像渲染了两遍（2026-09-27 真机截图撞到）。
+            // 改成回答「接着读哪本」：数字说的是"还有几本"，这句说的是"下一本是谁"。
+            val readingNow = state.items.firstOrNull { !it.isFinished }
+            HeroSummaryCard(
+                label = "在读",
+                value = "${state.readingCount}",
+                caption = readingNow?.let {
+                    "《${it.book.title}》读到 ${it.book.currentPage} / ${it.book.totalPages} 页"
+                } ?: "书架上的书都读完了",
+                actionLabel = "添加一本书",
+                onAction = onAddClick,
+            )
+
+            Spacer(Modifier.height(AppTheme.space.md))
+            // 参考档：hero 已经把「在读」摆到第一等，这两块退成「查得到」的数字
+            // （字号与墨色各降一档，描边也压淡一档）。磁贴里不再重复一块「在读」——
+            // 同一屏上下两块同样的数字，读起来像渲染了两遍。
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                modifier = Modifier.height(IntrinsicSize.Max),
+            ) {
+                StatTile(
+                    value = "${state.finishedCount}",
+                    label = "已读完",
+                    modifier = Modifier.weight(1f),
+                    tier = StatTileTier.Reference,
+                )
+                StatTile(
+                    value = "${state.excerptCount}",
+                    label = "书摘总数",
+                    modifier = Modifier.weight(1f),
+                    tier = StatTileTier.Reference,
+                )
+            }
+
+            Spacer(Modifier.height(AppTheme.space.lg))
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(AppTheme.space.md),
                 modifier = Modifier.fillMaxSize(),

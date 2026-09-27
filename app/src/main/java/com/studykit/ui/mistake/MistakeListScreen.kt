@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +56,7 @@ import com.studykit.data.entity.Mistake
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
+import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.MistakeImageStore
@@ -176,9 +176,16 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * 错题列表页（错题 Tab）：掌握态筛选 + 学科筛选 + 按学科分组 + 来源徽标 + 图片缩略图 + 拍照录入入口。
+ * 错题列表页（错题 Tab）：待复习 hero（第一等数字 + 拍照录入主行动）+ 掌握态筛选 + 学科筛选
+ * + 按学科分组 + 来源徽标 + 图片缩略图。
  *
  * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
+ *
+ * 顶部（2026-09 层级重排）：原先页头只有一行「共 N 道错题」小字 + 右上角一枚文字按钮「拍照录入」，
+ * 于是「待复习多少道」（这一屏唯一的数字）和「往哪录新题」（这一屏唯一的动作）都落在最弱的档上，
+ * 整屏读起来没有重点。现在按四屏共享的口径：计数升进 [HeroSummaryCard] 的第一等数字位，
+ * 拍照入口从页头**搬进** hero 当唯一的实心主行动（页头那枚文字按钮随之删掉 ——
+ * 同一个动作留两条路，重点就散了），下面只剩筛选与列表。
  *
  * 列表动效：分组标题与错题条目都挂 `Modifier.animateItem()`（[androidx.compose.foundation.lazy.LazyItemScope]）——
  * 拍照录入回来的新错题淡入、删除/标记掌握/切筛选时移除的条目淡出，其余条目用 spring 让位，
@@ -251,31 +258,30 @@ fun MistakeListScreen(
             .padding(horizontal = AppTheme.space.pageH),
     ) {
         Spacer(Modifier.height(AppTheme.space.sm))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(text = "错题本", style = texts.largeTitle)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                Text(
-                    text = "拍照录入",
-                    // 落在页面底色上的 accent 系文字一律走 ink（浅色 accent 仅 3.04:1）
-                    style = texts.aux.copy(color = colors.accentInk, fontWeight = FontWeight.SemiBold),
-                )
-            }
-        }
-        Text(
-            // 列表按掌握态分侧，计数文案跟着说明「这一列是哪一侧」
-            text = if (showMastered) "已掌握 ${mistakes.size} 道" else "共 ${mistakes.size} 道错题",
-            style = texts.caption,
+        Text(text = "错题本", style = texts.largeTitle)
+
+        Spacer(Modifier.height(AppTheme.space.md))
+        // 这一屏的第一等数字 = 当前那一侧（待复习 / 已掌握）的题数，也就是原来页头那行小字
+        // 「共 N 道错题」—— 它本来就该是重点，只是被排在了 caption 档。
+        // 主行动是页头原有的「拍照录入」（同一个 onClick：要相机权限 → 拍照 → 进录入页），
+        // 搬进 hero 之后页头那枚文字按钮就删了：同一屏两条通往同一个地方的路，重点会散。
+        HeroSummaryCard(
+            label = if (showMastered) "已掌握" else "待复习",
+            value = "${mistakes.size}",
+            caption = if (showMastered) {
+                "划掉的题收在这里，点一条可以回看"
+            } else {
+                "答错的题会自动收入，点一条可设复习时间"
+            },
+            actionLabel = "拍照录入",
+            onAction = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
         )
 
         if (showCameraRationale) {
             Spacer(Modifier.height(AppTheme.space.sm))
             Text(
                 text = "拍照录入需要相机权限。请在系统设置 → 应用 → StudyKit → 权限中允许「相机」，" +
-                    "或再次点击右上角「拍照录入」重新发起授权。",
+                    "或再次点击上面的「拍照录入」重新发起授权。",
                 style = texts.caption.copy(color = colors.warningInk),
             )
         }
@@ -298,7 +304,7 @@ fun MistakeListScreen(
             }
             val emptyCaption = when {
                 !hasAnyMistake || mistakes.isNotEmpty() ->
-                    "去「题库练习」答题自动收录，或点右上角「拍照录入」"
+                    "去「题库练习」答题自动收录，或点上面的「拍照录入」"
                 !showMastered -> "上面的题都划掉了，切到上方「已掌握」可以回看"
                 else -> "在错题详情里点「标记掌握」，题目就会挪到这里"
             }
