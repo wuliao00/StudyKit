@@ -9,8 +9,6 @@
 
 > Android-приложение для управления учёбой с полностью локальным хранением данных: карточки слов / тесты, трекинг привычек, читательские заметки и работа над ошибками — четыре основных модуля плюс улучшенный календарный вид, при этом все данные хранятся на вашем собственном телефоне.
 
-![banner](docs/screenshots/sk_gate.png)
-
 ## ✨ О приложении
 
 StudyKit — это универсальный помощник в учёбе для школьников, студентов и самоучек, построенный на дизайн-системе v2: токены двойной темы «тёплая бумага» (цвета, типографика и анимации выдаются из `ui/theme` и `ui/motion`), которая заменила минималистичные iOS-подобные токены единой светлой темы версии v1. **Учебные данные полностью локальны**: слова, отметки, контракты и ошибки хранятся в базе данных Room на вашем телефоне — ничего не отправляется, не синхронизируется, системы аккаунтов нет. Сеть нужна ровно для двух вещей, и обе можно не использовать: загрузка сторонних списков слов по HTTPS в «Онлайн-словарях» и одна проверка наличия новой версии при запуске.
@@ -143,8 +141,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | Канал | Ссылка / код | Примечания |
 | --- | --- | --- |
-| Quark Netdisk | Код: `/~23753aU0cK~:/`, ссылка: [https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h](https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h) | Код доступа `5Q3h`; откройте приложение Quark и вставьте весь код целиком, чтобы получить файл |
-| Lanzou Cloud | [https://www.ilanzou.com/s/h5bKvvNR?code=4449](https://www.ilanzou.com/s/h5bKvvNR?code=4449) | Просто откройте ссылку и скачайте |
+| Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Код доступа `z4Yk`. Это ссылка на **папку** — APK каждого следующего релиза попадает в тот же каталог, так что ссылка остаётся актуальной |
+| Lanzou Cloud | [https://www.ilanzou.com/s/RxVr5zVQ](https://www.ilanzou.com/s/RxVr5zVQ) | Просто откройте ссылку и скачайте |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | Исходный APK каждого релиза. Прямой доступ из материкового Китая нестабилен — используйте два канала выше |
 
 ## 🚦 Что вы увидите при первом запуске
@@ -172,52 +170,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ## 📸 Скриншоты
 
-> Все скриншоты ниже сделаны на реальных устройствах.
-
-### Первый запуск и установка
-
-| | |
-|:---:|:---:|
-| <img src="docs/screenshots/sk_gate.png" width="280" alt="Стартовый экран онбординга"> | <img src="docs/screenshots/sk_install_check.png" width="280" alt="Проверка завершения установки"> |
-
-### Модуль учёбы (слова / тесты)
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_study_home.png" width="260" alt="Главная страница учёбы"> | <img src="docs/screenshots/sk_study_card.png" width="260" alt="Карточки слов"> | <img src="docs/screenshots/sk_study_quiz.png" width="260" alt="Тесты"> |
-| <img src="docs/screenshots/fin_study.png" width="260" alt="Итоговый вид модуля учёбы"> | <img src="docs/screenshots/fin_quiz.png" width="260" alt="Итоговый вид тестов"> | |
-
-### Модуль трекинга привычек
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_habit_list.png" width="260" alt="Список привычек"> | <img src="docs/screenshots/sk_habit_calendar.png" width="260" alt="Календарь отметок"> | <img src="docs/screenshots/imp_habit_list.png" width="260" alt="Список привычек (улучшенная версия)"> |
-| <img src="docs/screenshots/imp_habit_count.png" width="260" alt="Подсчёт выполнений"> | <img src="docs/screenshots/imp_makeup.png" width="260" alt="Отметка пропущенного дня"> | <img src="docs/screenshots/fin_habit.png" width="260" alt="Итоговый вид модуля привычек"> |
-
-### Модуль читательских заметок
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_book_shelf.png" width="260" alt="Книжная полка"> | <img src="docs/screenshots/sk_book_detail.png" width="260" alt="Карточка книги"> | <img src="docs/screenshots/fin_book.png" width="260" alt="Итоговый вид модуля чтения"> |
-
-### Модуль работы над ошибками
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_mistake_list.png" width="260" alt="Список ошибок"> | <img src="docs/screenshots/sk_mistake_detail.png" width="260" alt="Детали ошибки"> | <img src="docs/screenshots/fin_mistake_list.png" width="260" alt="Список ошибок (итоговая версия)"> |
-| <img src="docs/screenshots/fin_mistake.png" width="260" alt="Итоговый вид модуля ошибок"> | <img src="docs/screenshots/imp_export.png" width="260" alt="Экспорт ошибок"> | |
-
-### Улучшенный календарь
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_calendar.png" width="260" alt="Глобальный календарный вид"> | <img src="docs/screenshots/sk_calendar_day.png" width="260" alt="Просмотр деталей за день"> | <img src="docs/screenshots/fin_calendar.png" width="260" alt="Итоговый вид календаря"> |
-
-### Хранение данных
-
-| |
-|:---:|
-| <img src="docs/screenshots/sk_db.png" width="280" alt="Проверка базы данных Room"> |
+> Раньше здесь был набор скриншотов, но они сделаны **до редизайна «тёплая бумага»**
+> (эпоха старой синей единой темы) — на них интерфейсы, которых больше нет; даже главный экран
+> уже не та сетка из четырёх карточек. Изображения удалены, чтобы не показывать то, что не совпадает.
+> Новые добавим после повторной съёмки.
+>
+> Единственный актуальный снимок — отказ от ответственности при первом запуске выше.
 
 ## 🙏 Благодарности
 

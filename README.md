@@ -9,8 +9,6 @@
 
 > 一款纯本地存储的安卓学习管理应用：背单词 / 刷题、习惯打卡、读书笔记、错题整理，四大模块 + 日历视图增强，所有数据都保存在你自己的手机上。
 
-![banner](docs/screenshots/sk_gate.png)
-
 ## ✨ 应用简介
 
 StudyKit 是一款面向学生和自学者的一站式学习助手，设计语言为 v2 的「暖纸感」双主题令牌体系（配色、排版、动效统一由 `ui/theme` 与 `ui/motion` 下发），已不再沿用 v1 的 iOS 风格单主题极简令牌。**学习数据完全本地**：单词、打卡、契约、错题全部写在手机上的 Room 数据库里，不上传、不同步、没有账号体系。需要联网的只有两件事，且都可以不用：「在线词库」下载第三方词表、以及启动时查一次有没有新版本。
@@ -139,8 +137,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | 渠道 | 链接 / 口令 | 说明 |
 | --- | --- | --- |
-| 夸克网盘 | 口令：`/~23753aU0cK~:/`，链接：[https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h](https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h) | 提取码 `5Q3h`；打开夸克 APP 粘贴整段口令内容即可获取 |
-| 蓝奏云 | [https://www.ilanzou.com/s/h5bKvvNR?code=4449](https://www.ilanzou.com/s/h5bKvvNR?code=4449) | 直接打开链接下载即可 |
+| 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；这是一个**文件夹**分享，以后每版的 APK 都放进同一个目录，收藏这一条就够 |
+| 蓝奏云 | [https://www.ilanzou.com/s/RxVr5zVQ](https://www.ilanzou.com/s/RxVr5zVQ) | 直接打开链接下载即可 |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK。国内直连不稳，优先用上面两个渠道 |
 
 ## 🚦 首次启动会看到什么
@@ -163,52 +161,11 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ## 📸 运行截图
 
-> 以下截图均为真机实测截图。
-
-### 首次启动与安装
-
-| | |
-|:---:|:---:|
-| <img src="docs/screenshots/sk_gate.png" width="280" alt="启动引导页"> | <img src="docs/screenshots/sk_install_check.png" width="280" alt="安装完成检查"> |
-
-### 学习模块（背单词 / 刷题）
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_study_home.png" width="260" alt="学习首页"> | <img src="docs/screenshots/sk_study_card.png" width="260" alt="单词卡片"> | <img src="docs/screenshots/sk_study_quiz.png" width="260" alt="题库练习"> |
-| <img src="docs/screenshots/fin_study.png" width="260" alt="学习模块最终效果"> | <img src="docs/screenshots/fin_quiz.png" width="260" alt="刷题最终效果"> | |
-
-### 习惯打卡模块
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_habit_list.png" width="260" alt="习惯列表"> | <img src="docs/screenshots/sk_habit_calendar.png" width="260" alt="打卡日历"> | <img src="docs/screenshots/imp_habit_list.png" width="260" alt="习惯列表（改进版）"> |
-| <img src="docs/screenshots/imp_habit_count.png" width="260" alt="完成次数计数"> | <img src="docs/screenshots/imp_makeup.png" width="260" alt="补卡功能"> | <img src="docs/screenshots/fin_habit.png" width="260" alt="习惯模块最终效果"> |
-
-### 读书笔记模块
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_book_shelf.png" width="260" alt="书架"> | <img src="docs/screenshots/sk_book_detail.png" width="260" alt="书籍详情"> | <img src="docs/screenshots/fin_book.png" width="260" alt="读书模块最终效果"> |
-
-### 错题整理模块
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_mistake_list.png" width="260" alt="错题列表"> | <img src="docs/screenshots/sk_mistake_detail.png" width="260" alt="错题详情"> | <img src="docs/screenshots/fin_mistake_list.png" width="260" alt="错题列表（最终版）"> |
-| <img src="docs/screenshots/fin_mistake.png" width="260" alt="错题模块最终效果"> | <img src="docs/screenshots/imp_export.png" width="260" alt="错题导出"> | |
-
-### 日历增强
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_calendar.png" width="260" alt="全局日历视图"> | <img src="docs/screenshots/sk_calendar_day.png" width="260" alt="按日查看明细"> | <img src="docs/screenshots/fin_calendar.png" width="260" alt="日历最终效果"> |
-
-### 数据存储
-
-| |
-|:---:|
-| <img src="docs/screenshots/sk_db.png" width="280" alt="Room 数据库验证"> |
+> 这里原先挂着一组截图，但它们是**暖纸风改版之前**（蓝色单主题那代）的 ——
+> 画的是已经不存在的界面，连首页都不是现在这个四页签的样子。
+> 图已一并撤掉：与其展示一组对不上号的截图，不如先空着。重拍之后会补回来。
+>
+> 现在唯一一张对得上号的实拍图是上面那张首次启动的免责声明。
 
 ## 🙏 致谢
 

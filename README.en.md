@@ -9,8 +9,6 @@
 
 > An Android learning management app with fully local data storage: vocabulary cards / quizzes, habit tracking, reading notes, and mistake collection — four core modules plus a calendar view enhancement, with all data stored on your own phone.
 
-![banner](docs/screenshots/sk_gate.png)
-
 ## ✨ Overview
 
 StudyKit is an all-in-one learning assistant for students and self-learners, built on the v2 "warm paper" dual-theme token system (colors, typography and motion are all dispatched from `ui/theme` and `ui/motion`), which replaces the v1 iOS-style single-theme minimalist tokens. **Your study data stays entirely local**: words, check-ins, contracts and mistakes all live in a Room database on your phone — nothing is uploaded, nothing is synced, and there is no account system. Only two things ever need the network, and both are optional: "Online dictionaries", which pulls third-party word lists over HTTPS, and a single version check at startup.
@@ -141,8 +139,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | Channel | Link / Code | Notes |
 | --- | --- | --- |
-| Quark Netdisk | Code: `/~23753aU0cK~:/`, link: [https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h](https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h) | Access code `5Q3h`; open the Quark app and paste the entire code to get the file |
-| Lanzou Cloud | [https://www.ilanzou.com/s/h5bKvvNR?code=4449](https://www.ilanzou.com/s/h5bKvvNR?code=4449) | Just open the link to download |
+| Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Access code `z4Yk`. This is a **folder** share — every future release's APK lands in the same directory, so this one link stays current |
+| Lanzou Cloud | [https://www.ilanzou.com/s/RxVr5zVQ](https://www.ilanzou.com/s/RxVr5zVQ) | Just open the link to download |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK of every release. Direct access from mainland China is unreliable — prefer the two channels above |
 
 ## 🚦 What You See on First Launch
@@ -169,52 +167,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ## 📸 Screenshots
 
-> All screenshots below were taken on real devices.
-
-### First Launch and Installation
-
-| | |
-|:---:|:---:|
-| <img src="docs/screenshots/sk_gate.png" width="280" alt="Launch onboarding page"> | <img src="docs/screenshots/sk_install_check.png" width="280" alt="Installation complete check"> |
-
-### Study Module (Vocabulary / Quizzes)
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_study_home.png" width="260" alt="Study home"> | <img src="docs/screenshots/sk_study_card.png" width="260" alt="Word cards"> | <img src="docs/screenshots/sk_study_quiz.png" width="260" alt="Question bank practice"> |
-| <img src="docs/screenshots/fin_study.png" width="260" alt="Study module final result"> | <img src="docs/screenshots/fin_quiz.png" width="260" alt="Quiz final result"> | |
-
-### Habit Tracking Module
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_habit_list.png" width="260" alt="Habit list"> | <img src="docs/screenshots/sk_habit_calendar.png" width="260" alt="Check-in calendar"> | <img src="docs/screenshots/imp_habit_list.png" width="260" alt="Habit list (improved)"> |
-| <img src="docs/screenshots/imp_habit_count.png" width="260" alt="Completed count"> | <img src="docs/screenshots/imp_makeup.png" width="260" alt="Missed check-in makeup"> | <img src="docs/screenshots/fin_habit.png" width="260" alt="Habit module final result"> |
-
-### Reading Notes Module
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_book_shelf.png" width="260" alt="Bookshelf"> | <img src="docs/screenshots/sk_book_detail.png" width="260" alt="Book details"> | <img src="docs/screenshots/fin_book.png" width="260" alt="Reading module final result"> |
-
-### Mistake Collection Module
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_mistake_list.png" width="260" alt="Mistake list"> | <img src="docs/screenshots/sk_mistake_detail.png" width="260" alt="Mistake details"> | <img src="docs/screenshots/fin_mistake_list.png" width="260" alt="Mistake list (final)"> |
-| <img src="docs/screenshots/fin_mistake.png" width="260" alt="Mistake module final result"> | <img src="docs/screenshots/imp_export.png" width="260" alt="Mistake export"> | |
-
-### Calendar Enhancement
-
-| | | |
-|:---:|:---:|:---:|
-| <img src="docs/screenshots/sk_calendar.png" width="260" alt="Global calendar view"> | <img src="docs/screenshots/sk_calendar_day.png" width="260" alt="Day detail view"> | <img src="docs/screenshots/fin_calendar.png" width="260" alt="Calendar final result"> |
-
-### Data Storage
-
-| |
-|:---:|
-| <img src="docs/screenshots/sk_db.png" width="280" alt="Room database verification"> |
+> This section used to hold a set of screenshots, but they were taken **before the "warm paper" redesign**
+> (the old blue single-theme era) — they show screens that no longer exist; even the home screen is no longer
+> the four-card grid they depict. The images were removed rather than kept as a set that no longer matches.
+> Fresh ones will be added back after re-shooting.
+>
+> The only current shot is the first-launch disclaimer above.
 
 ## 🙏 Acknowledgements
 

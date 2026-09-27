@@ -32,10 +32,13 @@ import org.json.JSONObject
  *
  * ## 下载去向
  *
- * 判定有新版时给的是 **Gitee 的 releases 页**。注意这一页现在还是空的
- * （本站只推了 tag），所以「去下载」要真的能下到东西，需要在 Gitee 上建一次 Release
- * 并挂上 APK；在那之前它只会打开一个空页面。这一条写在下面 [DOWNLOAD_PAGE] 的注释里，
- * 免得后来人以为"能跳转"就等于"能下载"。
+ * 判定有新版时给的是**夸克网盘那个文件夹分享**（见 [DOWNLOAD_PAGE]）。2026-09-27 之前这里给的是
+ * Gitee 的 releases 页 —— 而那个镜像只有 tag、从没建过 Release，所以点过去是一个空页。
+ * 换成网盘文件夹分享的理由是**它自己会更新**：以后每版的 APK 都放进同一个目录，
+ * 链接不变，拿到的永远是最新那个，不用每发一版就改一次代码、再发一版应用。
+ *
+ * 这份链接是**永久有效**的（夸克侧 `expired_type = 1`），并且分享的是公开目录而不是某个具体文件 ——
+ * 分享单个文件会把它锁死在那个版本上。
  */
 object UpdateChecker {
 
@@ -43,10 +46,10 @@ object UpdateChecker {
         "https://gitee.com/api/v5/repos/wuliao11541/studykit/tags?per_page=100"
 
     /**
-     * 「去下载」打开的地方。
-     * **它是空的，直到 Gitee 侧建过 Release 并上传 APK** —— 跳转成功不等于有东西可下。
+     * 「去下载」打开的地方：**夸克网盘的一个文件夹分享**（永久有效）。
+     * 分享的是目录而不是单个文件 —— 目录里的包会换，链接不用换。
      */
-    private const val DOWNLOAD_PAGE = "https://gitee.com/wuliao11541/studykit/releases"
+    private const val DOWNLOAD_PAGE = "https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk"
 
     /** 只认这两种形状：`v1.2.3` 与 `1.2.3`。其余 tag（`test-…`）不参与版本比较 */
     private val VERSION_TAG = Regex("^v?\\d+(\\.\\d+)*$")
