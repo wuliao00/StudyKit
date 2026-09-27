@@ -140,7 +140,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Channel | Link / Code | Notes |
 | --- | --- | --- |
 | Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Access code `z4Yk`. This is a **folder** share — every future release's APK lands in the same directory, so this one link stays current |
-| Lanzou Cloud | [https://www.ilanzou.com/s/RxVr5zVQ](https://www.ilanzou.com/s/RxVr5zVQ) | **Note: this one still holds 2.4.6**, and it is a `.7z` archive (extract it after downloading) — pending update. Use the Quark Netdisk link above |
+| Lanzou Cloud | [https://www.ilanzou.com/s/qzGr5dNn](https://www.ilanzou.com/s/qzGr5dNn) | That channel holds a **`.7z` archive** — extract it before installing; use the Quark Netdisk link above for the raw APK |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK of every release. Direct access from mainland China is unreliable — prefer the two channels above |
 
 ## 🚦 What You See on First Launch
