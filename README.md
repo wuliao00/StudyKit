@@ -141,18 +141,21 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | --- | --- | --- |
 | 夸克网盘 | 口令：`/~23753aU0cK~:/`，链接：[https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h](https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h) | 提取码 `5Q3h`；打开夸克 APP 粘贴整段口令内容即可获取 |
 | 蓝奏云 | [https://www.ilanzou.com/s/h5bKvvNR?code=4449](https://www.ilanzou.com/s/h5bKvvNR?code=4449) | 直接打开链接下载即可 |
-| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK，也是应用内「检查更新」指向的地方 |
+| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK。国内直连不稳，优先用上面两个渠道 |
 
 ## 🚦 首次启动会看到什么
 
 1. **免责声明（必须同意）**：写明这个应用真实存在的边界 —— 数据只在本机、卸载或清除数据会丢、
    在线词库来自第三方镜像、截图取词不保证正确、提醒可能被省电策略延迟。
    点「不同意并退出」会直接退出应用。**这份声明带版本号**：以后改条款会再征求一次同意。
-2. **五页引导（可跳过）**：学习 / 习惯 / 契约 / 读书与错题 / 数据，每页三行讲清那个模块能做什么。
+2. **六页引导（可跳过）**：第一页是「从这里开始」三步（① 先把词装进来 ② 再建一个习惯
+   ③ 想逼自己一把就签一份契约），之后是学习 / 习惯 / 自我契约 / 读书与错题 / 数据，
+   每页三行讲清那个模块能做什么。
 3. **之后随时可回看**：「设置 → 关于与支持」里有**使用教程**（与首启引导同一份内容）、
    **免责声明**、**源码仓库**入口，以及当前版本与「检查更新」。
 
-> 启动时会静默检查一次新版本（读 GitHub Releases）。检测到更新的版本会要求先更新再使用；
+> 启动时会静默检查一次新版本：读的是 **Gitee 仓库的 tags 接口**（不读 GitHub，那边国内直连不稳）。
+> 检测到更新的版本会要求先更新再使用，「去下载」打开的是**夸克网盘**那一页；
 > **取不到版本号一律放行** —— 没网、被限流、解析失败都当作"无需升级"，
 > 不会因为一次网络抖动把人锁在门外。
 

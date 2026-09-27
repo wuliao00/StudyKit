@@ -7,13 +7,13 @@
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84.svg?logo=android)
 ![API](https://img.shields.io/badge/API-26%2B-green.svg)
 
-> A fully offline Android learning management app: vocabulary cards / quizzes, habit tracking, reading notes, and mistake collection — four core modules plus a calendar view enhancement, with all data stored on your own phone.
+> An Android learning management app with fully local data storage: vocabulary cards / quizzes, habit tracking, reading notes, and mistake collection — four core modules plus a calendar view enhancement, with all data stored on your own phone.
 
 ![banner](docs/screenshots/sk_gate.png)
 
 ## ✨ Overview
 
-StudyKit is an all-in-one learning assistant for students and self-learners, built on the v2 "warm paper" dual-theme token system (colors, typography and motion are all dispatched from `ui/theme` and `ui/motion`), which replaces the v1 iOS-style single-theme minimalist tokens. The app runs completely offline, with no network requests or account system. All data is stored locally in a Room database — your privacy is fully protected.
+StudyKit is an all-in-one learning assistant for students and self-learners, built on the v2 "warm paper" dual-theme token system (colors, typography and motion are all dispatched from `ui/theme` and `ui/motion`), which replaces the v1 iOS-style single-theme minimalist tokens. **Your study data stays entirely local**: words, check-ins, contracts and mistakes all live in a Room database on your phone — nothing is uploaded, nothing is synced, and there is no account system. Only two things ever need the network, and both are optional: "Online dictionaries", which pulls third-party word lists over HTTPS, and a single version check at startup.
 
 - Day/night dual themes and high-frame-rate interaction motion: a warm-paper light palette and a warm-black dark palette switch automatically with the system, while card flips, check-ins and session results all run on spring animations that follow 90/120Hz refresh rates frame by frame
 
@@ -143,6 +143,29 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | --- | --- | --- |
 | Quark Netdisk | Code: `/~23753aU0cK~:/`, link: [https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h](https://pan.quark.cn/s/fce8a561b5b9?pwd=5Q3h) | Access code `5Q3h`; open the Quark app and paste the entire code to get the file |
 | Lanzou Cloud | [https://www.ilanzou.com/s/h5bKvvNR?code=4449](https://www.ilanzou.com/s/h5bKvvNR?code=4449) | Just open the link to download |
+| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK of every release. Direct access from mainland China is unreliable — prefer the two channels above |
+
+## 🚦 What You See on First Launch
+
+1. **Disclaimer (must be accepted)**: it spells out the limits this app really has — data lives on this device
+   only, uninstalling it or clearing data loses it, online dictionaries come from a third-party mirror,
+   screenshot-to-words is not guaranteed to be correct, and reminders may be delayed by battery-saving policies.
+   Tapping "Disagree and exit" closes the app immediately. **The disclaimer carries a version number**: if the
+   terms change later, your consent is asked for again.
+2. **Onboarding, six pages (skippable)**: the first page is a three-step "Start here" guide
+   (① get some words in, ② create a habit, ③ sign a self-contract if you want to push yourself), followed by
+   study / habits / contracts / reading and mistakes / data, three lines per page on what that module can do.
+3. **Revisitable at any time**: "Settings → About and Support" holds the **tutorial** (the same content as the
+   first-launch onboarding), the **disclaimer**, an entry point to the **source repository**, plus the current
+   version and "Check for updates".
+
+> At launch the app silently checks for a new version once: it reads the **tags API of the Gitee repository**
+> (not GitHub, which is unreliable to reach from mainland China). If a newer version is found, you are asked
+> to update before using the app, and "Go to download" opens the **Quark Netdisk** page;
+> **if the version number can't be retrieved, you are always let through** — no network, rate limiting or a
+> parse failure all count as "no update needed", so a single network hiccup never locks anyone out.
+
+![First-launch disclaimer](docs/screenshots/sk_disclaimer.png)
 
 ## 📸 Screenshots
 
