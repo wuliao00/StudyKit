@@ -142,7 +142,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Канал | Ссылка / код | Примечания |
 | --- | --- | --- |
 | Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Код доступа `z4Yk`. Это ссылка на **папку** — APK каждого следующего релиза попадает в тот же каталог, так что ссылка остаётся актуальной |
-| Lanzou Cloud | [https://www.ilanzou.com/s/RxVr5zVQ](https://www.ilanzou.com/s/RxVr5zVQ) | Просто откройте ссылку и скачайте |
+| Lanzou Cloud | [https://www.ilanzou.com/s/RxVr5zVQ](https://www.ilanzou.com/s/RxVr5zVQ) | **Внимание: здесь пока 2.4.6**, и это архив `.7z` (после скачивания нужно распаковать) — ждёт обновления. Используйте ссылку Quark Netdisk выше |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | Исходный APK каждого релиза. Прямой доступ из материкового Китая нестабилен — используйте два канала выше |
 
 ## 🚦 Что вы увидите при первом запуске
