@@ -45,6 +45,12 @@ import com.studykit.ui.theme.AppTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.studykit.ui.components.AppTextField
 
 /** 引用竖条宽度（书摘条目左侧那条） */
 private val QuoteBarWidth: Dp = 3.dp
@@ -196,9 +202,18 @@ fun BookDetailScreen(
             }
 
             Spacer(Modifier.height(AppTheme.space.md))
+            // 页码调整分两档：-10 / -1 / +1 / +10。
+            // 原来只有 ±10：把进度从 137 挪到 140 得点五次、再退七次 —— 而"今天读了几页"
+            // 本来就是一次几页的事（2026-09-26 使用者反馈）。粗调放外侧、细调放内侧：
+            // 连点 +1 时手指不必越过别的按钮。
             Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
                 StepButton(text = "-10", onClick = { viewModel.stepProgress(bookId, -10) }, modifier = Modifier.weight(1f))
+                StepButton(text = "-1", onClick = { viewModel.stepProgress(bookId, -1) }, modifier = Modifier.weight(1f))
+                StepButton(text = "+1", onClick = { viewModel.stepProgress(bookId, +1) }, modifier = Modifier.weight(1f))
                 StepButton(text = "+10", onClick = { viewModel.stepProgress(bookId, +10) }, modifier = Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
                 if (!ui.isFinished) {
                     // 完成态动作走 successSoft 柔底 + successInk 墨色（与书架 StatusTag 同一族颜色）：
                     // 旧写法是 success 实底压硬白字，浅色主题下白字只有 ≈2.2:1，夜间还会把深墨字压在
@@ -206,7 +221,7 @@ fun BookDetailScreen(
                     Box(
                         modifier = Modifier
                             .height(44.dp)
-                            .weight(1.4f)
+                            .weight(1f)
                             .clip(RoundedCornerShape(AppTheme.radius.md))
                             .background(colors.successSoft)
                             .clickable(onClick = { viewModel.markFinished(bookId) }),
@@ -221,6 +236,13 @@ fun BookDetailScreen(
                         )
                     }
                 }
+                // 自定义页码：一次跳到任意位置（读到第 137 页这种，按加减点不现实）
+                PageInputTrigger(
+                    current = ui.book.currentPage,
+                    totalPages = ui.book.totalPages,
+                    modifier = Modifier.weight(1f),
+                    onConfirm = { viewModel.setProgressTo(bookId, it) },
+                )
             }
         }
 
@@ -288,6 +310,109 @@ fun BookDetailScreen(
  * 竖条高度用 `matchParentSize()`（见 [BookShelfScreen] 书脊色带同一写法）：它盖在引用区之上、
  * 按整条书摘的实测高度拉到底，而不是被 [AppCard] 的版心截成一段。
  */
+/**
+ * 「自定义…」那一格 + 它自己的页码输入框。
+ *
+ * 对话框的开关状态收在这里，不进主 composable：它只服务于这一格，
+ * 提到上面去就得在 `BookDetailScreen` 里多挂一个与别的状态无关的 `var`。
+ */
+@Composable
+private fun PageInputTrigger(
+    current: Int,
+    totalPages: Int,
+    onConfirm: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    var open by remember { mutableStateOf(false) }
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(AppTheme.radius.md))
+            .background(colors.accentSoft)
+            .clickable { open = true },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "自定义…",
+            style = texts.aux.copy(
+                color = colors.accentInk,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+    }
+    if (open) {
+        PageInputDialog(
+            current = current,
+            totalPages = totalPages,
+            onConfirm = { open = false; onConfirm(it) },
+            onDismiss = { open = false },
+        )
+    }
+}
+
+/**
+ * 页码输入框。**当下就校验并显示原因**，不靠"保存"之后静默失败：
+ * 空、非数字、超出总页数三种情况各给一句提示，不合法时确认按钮变灰。
+ *
+ * `placeholder` 里带出「0 ~ N」，省得用户回上一屏去数总页数。
+ */
+@Composable
+private fun PageInputDialog(
+    current: Int,
+    totalPages: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    var raw by remember { mutableStateOf(current.toString()) }
+    val parsed = raw.trim().toIntOrNull()
+    val error = when {
+        raw.isBlank() -> "填一个页码"
+        parsed == null -> "只能填数字"
+        parsed !in 0..totalPages -> "这本书一共 $totalPages 页"
+        else -> null
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "读到第几页？", style = texts.cardTitle) },
+        text = {
+            Column {
+                AppTextField(
+                    value = raw,
+                    onValueChange = { input -> raw = input.filter { it.isDigit() }.take(6) },
+                    placeholder = "0 ~ $totalPages",
+                )
+                Spacer(Modifier.height(AppTheme.space.sm))
+                Text(
+                    text = error ?: "当前第 $current 页",
+                    style = texts.caption.copy(
+                        color = if (error != null) colors.warningInk else colors.secondaryText,
+                    ),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = error == null,
+                onClick = { parsed?.let(onConfirm) },
+            ) {
+                Text(
+                    text = "保存",
+                    color = if (error == null) colors.accentInk else colors.secondaryText,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消", color = colors.secondaryText)
+            }
+        },
+    )
+}
+
 @Composable
 private fun ExcerptItem(excerpt: Excerpt, onClick: () -> Unit) {
     val colors = AppTheme.colors

@@ -182,6 +182,19 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 跳到指定页码（「自定义」那一格用）。
+     *
+     * **转调 [stepProgress] 而不是自己写一遍**：夹取到 `0..totalPages`、
+     * 以及"到底即标记读完并 toast"这两条语义必须与加减按钮完全一致 ——
+     * 复制一份判断，两处迟早会分叉（例如自定义填了超出总页数的值却不触发读完）。
+     * 页码差就是 delta，于是这里只差一次减法。
+     */
+    fun setProgressTo(bookId: Long, page: Int) {
+        val book = detail.value?.book?.takeIf { it.id == bookId } ?: return
+        stepProgress(bookId, page - book.currentPage)
+    }
+
     /** 直接标记读完；同样只认 [bookId] 对应的那一行 */
     fun markFinished(bookId: Long) {
         val book = detail.value?.book?.takeIf { it.id == bookId } ?: return
