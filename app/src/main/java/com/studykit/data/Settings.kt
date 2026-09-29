@@ -25,7 +25,11 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * 保留项的消费点：[themeMode] → `StudyKitTheme`；[glass] → `ui/material/Glass.kt`；
  * [reduceMotion] → 彩带 / 错峰入场 / 按压缩放；[nickname] → `HabitExporter.buildShareText` 抬头；
  * [dailyWordGoal] → 学习首页今日进度；[reminderEveryHours] → `ReminderScheduler`；
- * [examEpochDay] → 学习首页倒计时行；[lastDictFailure] → 设置页诊断段（只是显示，不参与逻辑）。
+ * [examEpochDay] → 学习首页倒计时行；[lastDictFailure] → 设置页诊断段（只是显示，不参与逻辑）；
+ * [recallBeforeGrade] → `ui/study/RecallGate.kt` 的闸门判定（`CardStudyScreen` 读它，
+ * 关掉之后滑动与三档自评**完全**退回旧行为，不留半截拦截）；
+ * [recallGateHintSeen] → 同一条闸门的「第一次拦下你」说明（`CardStudyScreen` 读、
+ * 点「知道了」经 `StudyViewModel.markRecallGateHintSeen` 写，每次安装只出现一次）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
@@ -76,6 +80,20 @@ data class AppSettings(
     val restrictEndMin: Int = DEFAULT_RESTRICT_END_MIN,
     /** 上一次词库下载失败的原文，只为诊断展示，不做任何判断 */
     val lastDictFailure: String = "",
+    /**
+     * 检索优先闸门（v2.5 §3.1，默认**开**）：卡片没翻面（= 答案还没出现在屏幕上）时，
+     * 左右滑不结算、而是把这一滑变成一次翻面；卡下三档自评同步置灰。
+     *
+     * 关掉它 = 完全退回旧行为（不翻面也能直接评价，与墨墨一致），
+     * 这条承诺的全部内容就是"不留半截拦截"，所以判定只有一处（`RecallGate.kt`），
+     * 三个入口（滑动 / 两颗按钮 / 三档自评）都从它拿结论。
+     */
+    val recallBeforeGrade: Boolean = true,
+    /**
+     * 闸门第一次真正拦下一次滑动时那条说明，看过就没有（**每次安装一次**，
+     * 不是每天一次、也不是每次会话一次）。点「知道了」置真。
+     */
+    val recallGateHintSeen: Boolean = false,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -107,6 +125,8 @@ data class AppSettings(
         KEY_RESTRICT_START to restrictStartMin.toString(),
         KEY_RESTRICT_END to restrictEndMin.toString(),
         KEY_DICT_FAILURE to lastDictFailure,
+        KEY_RECALL_BEFORE_GRADE to recallBeforeGrade.toString(),
+        KEY_RECALL_GATE_HINT_SEEN to recallGateHintSeen.toString(),
     )
 
     companion object {
@@ -128,6 +148,8 @@ data class AppSettings(
         const val KEY_RESTRICT_START = "restrict_start_min"
         const val KEY_RESTRICT_END = "restrict_end_min"
         const val KEY_DICT_FAILURE = "last_dict_failure"
+        const val KEY_RECALL_BEFORE_GRADE = "recall_before_grade"
+        const val KEY_RECALL_GATE_HINT_SEEN = "recall_gate_hint_seen"
 
         const val DEFAULT_WORD_GOAL = 20
         const val DEFAULT_REMINDER_HOURS = 6
@@ -190,6 +212,12 @@ data class AppSettings(
                     ?.takeIf { it in 0..MINUTES_OF_DAY } ?: defaults.restrictEndMin,
                 // 诊断文本原样留着，包括空串；只在超长时掐掉，免得一次异常堆栈把设置页撑坏
                 lastDictFailure = map[KEY_DICT_FAILURE]?.take(400) ?: defaults.lastDictFailure,
+                // 闸门：默认**开**。垃圾值 / 缺键都退回默认，与其余每一项同一口径
+                // （这一条决定的是手势语义，宁可维持"设计里的默认"，不该因为库里存了个"也许"就静默关掉）
+                recallBeforeGrade = map[KEY_RECALL_BEFORE_GRADE]?.toBooleanStrictOrNull()
+                    ?: defaults.recallBeforeGrade,
+                recallGateHintSeen = map[KEY_RECALL_GATE_HINT_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.recallGateHintSeen,
             )
         }
     }

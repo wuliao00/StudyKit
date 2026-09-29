@@ -501,6 +501,27 @@ fun SettingsScreen(
             }
             HorizontalDivider(color = colors.divider)
             SettingBlock(
+                title = "先回忆再评分",
+                hint = "卡片的答案还没露出来时，左右滑只帮你翻面、不算评分，卡下那排评分按钮也一起灰掉；" +
+                    "翻过面之后就照旧直接滑。这样每次都先真的想一遍，比「看一眼就划走」牢固。" +
+                    "关掉它，不翻面也能评价（与之前的版本一致）。",
+                trailing = {
+                    Switch(
+                        checked = settings.recallBeforeGrade,
+                        onCheckedChange = { viewModel.setRecallBeforeGrade(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = colors.accentInk,
+                            checkedBorderColor = colors.accentInk,
+                            checkedThumbColor = colors.card,
+                            uncheckedTrackColor = colors.divider,
+                            uncheckedBorderColor = colors.divider,
+                            uncheckedThumbColor = colors.card,
+                        ),
+                    )
+                },
+            )
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
                 title = "打卡规则",
                 hint = "「一天」从几点开始：选 03 点，凌晨两点的打卡就记进前一天，熬夜不再断签。" +
                     "漏一天并不会毁掉习惯，所以补打卡也放开了（Lally 2010）。",

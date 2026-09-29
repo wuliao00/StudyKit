@@ -106,4 +106,23 @@ class WordRepository(private val wordDao: WordDao) {
 
     /** 复习间隔 + 结果（记忆看板：实测遗忘曲线） */
     fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>> = wordDao.observeReviewGapAndResult()
+
+    /**
+     * 新词预测试的干扰项池：同词库（`source_list_id` 相同）的其他释义，
+     * 词库为 null 时退回全表；按释义文本去重、排除正确项，随机取 [count] 条。
+     *
+     * 口径全在 `WordDao.getRecallPretestPool` 那条 SQL 里，这里只是转发 ——
+     * **只读**：这道题的作答结果不落库（见 `StudyViewModel.loadRecallPretest` 的注释）。
+     */
+    suspend fun recallPretestPool(
+        sourceListId: Long?,
+        wordId: Long,
+        excludeMeaning: String,
+        count: Int,
+    ): List<String> = wordDao.getRecallPretestPool(
+        sourceListId = sourceListId,
+        wordId = wordId,
+        excludeMeaning = excludeMeaning,
+        limit = count,
+    )
 }

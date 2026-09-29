@@ -107,6 +107,13 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
 
         /** 半衰期到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列） */
         private const val MASTERED_HALF_LIFE_DAYS = 7.0
+
+        /**
+         * 预测试干扰项池的条数：需要 2 条，多捞几条当余量 ——
+         * 纯函数那侧还会按文本再收一次（掐首尾空白、丢掉与正确项同文的），
+         * 刚好捞 2 条时任何一条脏数据都会把这道题判成"凑不满三条"而整轮跳过。
+         */
+        private const val PRETEST_POOL_SIZE = 5
     }
 
     /**
@@ -185,6 +192,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         // 不等这一步的话，重进页面会先渲染「上一轮已完成 + 彩带」（页面只在下一帧才拿到新队列），
         // 用户看到的是闪一下旧小结（终审 I5）。
         _session.value = null
+        // 上一轮的预测试题一起清零：新session 里同一个词会重新出题（词库可能已经变了），
+        // 留着旧题只会让页面先画一帧过期选项
+        _pretest.value = null
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val queue = wordRepository.getAll()
@@ -260,6 +270,62 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 vagueCount = state.vagueCount + if (grade == ReviewGrade.VAGUE) 1 else 0,
                 unknownCount = state.unknownCount + if (grade == ReviewGrade.FORGET) 1 else 0,
             )
+        }
+    }
+
+    // ── 新词预测试（v2.5 §3.3）─────────────────────────────────────────────
+    private val _pretest = MutableStateFlow<RecallPretest?>(null)
+
+    /**
+     * 当前这张卡的预测试题。null = 不做预测试，页面直接进原有的翻面+评分流程
+     * （闸门关着 / 不是新词 / 凑不出 3 条互不相同的释义，三种都算"整轮跳过"）。
+     *
+     * 题面自带 `wordId`：切卡很快时上一张的题必须挂不到这一张上，页面按那一列判命中。
+     */
+    val pretest: StateFlow<RecallPretest?> = _pretest
+
+    /**
+     * 该出题就出题，不该出就把这一格清零（清零也要做：上一张新词的题不能留在流里等下一张卡捡）。
+     *
+     * ## 猜的结果一律不落库
+     * 这里**只读**词库，不写 `word_reviews`、不写任何表。
+     * `word_reviews` 的 `gapDays / pAtReview / hBefore / hAfter` 是以后校准模型的样本，
+     * 而"猜三选一"不是对已存记忆的提取，混进去样本语义就脏了；
+     * 而且 [gradeCard] 走的 `applyReview` 会把 `last_review_at` 往前推，
+     * 新词第二次评分的 Δt 锚点会跟着错。[gradeCard] 里"先写状态、再写历史"那段注释
+     * 防的就是同一类污染，这条路径干脆一个字都不写。
+     */
+    fun loadRecallPretest(word: Word, gateEnabled: Boolean) {
+        if (!isPretestCandidate(word = word, gateEnabled = gateEnabled)) {
+            _pretest.value = null
+            return
+        }
+        viewModelScope.launch {
+            val pool = runCatching {
+                wordRepository.recallPretestPool(
+                    sourceListId = word.sourceListId,
+                    wordId = word.id,
+                    excludeMeaning = word.meaning,
+                    count = PRETEST_POOL_SIZE,
+                )
+            }.getOrDefault(emptyList())
+            // 只在这张卡还在当前位时发布：滑得很快时上一张的查询可能后到，
+            // 覆盖了这一张的题等于把这一张的预测试悄悄关掉。
+            if (_session.value?.current?.id == word.id) {
+                _pretest.value = buildRecallPretest(word = word, pool = pool)
+            }
+        }
+    }
+
+    /**
+     * 闸门那条一次性说明：点「知道了」时置真，此后每次安装都不再出现。
+     *
+     * 写失败不提示也不重投：后果只是"下次拦下时还会再说明一次"，
+     * 而这条路径是用户正打算继续学习的时候，弹一条 toast 只会打断他。
+     */
+    fun markRecallGateHintSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(recallGateHintSeen = true) } }
         }
     }
 

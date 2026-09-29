@@ -26,11 +26,43 @@ class AppSettingsTest {
         assertEquals(AppSettings.DEFAULT_WORD_GOAL, s.dailyWordGoal)
         assertEquals(AppSettings.DEFAULT_REMINDER_HOURS, s.reminderEveryHours)
         assertNull(s.examDate)
+        // v2.5 §3.1/§3.2 那两项：闸门默认**开**（设计里的默认行为，不是"用户已经选过"），
+        // 那条一次性说明默认**没看过**（每次安装只出现一次）
+        assertTrue(s.recallBeforeGrade)
+        assertFalse(s.recallGateHintSeen)
     }
 
     @Test
     fun `空表退回全默认`() {
         assertEquals(AppSettings(), AppSettings.fromMap(emptyMap()))
+    }
+
+    @Test
+    fun `闸门两项写下去再读回来一分不变`() {
+        // 键值行表加字段 = 加一行，不需要迁移：这一条钉的就是"两行都能原样回来"
+        val off = AppSettings(recallBeforeGrade = false, recallGateHintSeen = true)
+        assertEquals(off, AppSettings.fromMap(off.toMap()))
+        val on = AppSettings(recallBeforeGrade = true, recallGateHintSeen = false)
+        assertEquals(on, AppSettings.fromMap(on.toMap()))
+        // 缺键（首装一行都没写过）取默认：闸门开、说明没看过
+        val fresh = AppSettings.fromMap(mapOf(AppSettings.KEY_THEME to "LIGHT"))
+        assertTrue(fresh.recallBeforeGrade)
+        assertFalse(fresh.recallGateHintSeen)
+    }
+
+    @Test
+    fun `闸门两项的垃圾值只让那一项退回默认`() {
+        // 库里可能被手改过的备份恢复进来任何字符串；解释不通就退回默认，而不是整个 App 崩
+        val junk = mapOf(
+            AppSettings.KEY_RECALL_BEFORE_GRADE to "也许",
+            AppSettings.KEY_RECALL_GATE_HINT_SEEN to "1",
+        )
+        val s = AppSettings.fromMap(junk)
+        assertTrue(s.recallBeforeGrade)
+        assertFalse(s.recallGateHintSeen)
+        // "true"/"false" 这两个严格写法要收（Boolean.toString 的产物就是它们）
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_RECALL_BEFORE_GRADE to "false")).recallBeforeGrade)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_RECALL_GATE_HINT_SEEN to "true")).recallGateHintSeen)
     }
 
     @Test

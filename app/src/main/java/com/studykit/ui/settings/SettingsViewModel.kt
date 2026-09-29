@@ -155,6 +155,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** 减弱动效：关掉彩带、错峰入场与按压缩放 */
     fun setReduceMotion(on: Boolean) = write { it.copy(reduceMotion = on) }
 
+    /**
+     * 检索优先闸门（v2.5 §3.1/§3.2）：卡片的答案没露出来之前，滑动只是翻面、不结算。
+     *
+     * 消费点**不在这里** —— 是 `ui/study/RecallGate.kt` 那两个判定，由 `CardStudyScreen` 读设置传进去。
+     * 这一格关掉之后卡片页完全退回旧行为（不翻面也能直接评价）。
+     */
+    fun setRecallBeforeGrade(on: Boolean) = write { it.copy(recallBeforeGrade = on) }
+
     // ── 档案与目标 ──────────────────────────────────────────────
 
     /** 昵称：收边距、掐到 [AppSettings.NICKNAME_MAX]，与 [AppSettings.fromMap] 的收口口径一致 */

@@ -153,6 +153,44 @@ interface WordDao {
     /** 复习时的间隔与结果 —— 实测遗忘曲线的唯一原料 */
     @Query("SELECT gap_days AS gapDays, correct FROM word_reviews")
     fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>>
+
+    /**
+     * 新词预测试的干扰项池（v2.5 §3.3）：除了这个词、除了这句释义之外的**其他释义**，
+     * 按文本去重后随机取 [:limit] 条。
+     *
+     * ## 三条口径都收在这条 SQL 里，一条都不留给调用方
+     * - **同词库优先，`source_list_id` 为 null 时退回全表**：
+     *   `(:sourceListId IS NULL OR source_list_id = :sourceListId)` 一支写完，
+     *   手工/粘贴/导入词（那一列是 null，见 `entity/Word.kt:32`）不会被这道条件筛成空池。
+     *   为什么不写两条查询让调用方选：那会把"什么时候算同一本词库"这个决定摊到调用点上，
+     *   而它错了不会报错，只会让用户看到一本毫不相干的释义。
+     * - **按释义文本去重**（`GROUP BY meaning`）：同一个词库里有两词共用一句释义是常态，
+     *   不去重就会给出两个一模一样的选项 —— 用户选哪个都"对一半"，这道题就废了。
+     *   `RecallGate.buildRecallPretest` 那侧还会再按文本去一次（连空白一起掐掉），
+     *   两处都要：SQL 那侧管捞得多不多，纯函数那侧管"不足 3 条就整轮跳过"的判定不能被
+     *   一条脏数据绕过。
+     * - **排除正确项本身**（`meaning != :excludeMeaning`）：同词库里另一个词写着同一句释义时，
+     *   不排掉它就会有一项与正确项文字全等，于是这道题出现两个正确答案。
+     *   `id != :wordId` 理论上是它的子集，留着是为了让"别把这个词自己捞回来"这条意图写在 SQL 里。
+     *
+     * `ORDER BY RANDOM()`：每次进这张卡换一批干扰项，否则同一本词库的顺序固定，
+     * 用户背到第十个词就已经认识那三个选项了。
+     *
+     * 只取 `meaning` 一列、`LIMIT` 收住条数（调用方给的是个位数）：这一条每张新词卡都会走一次，
+     * 不该把整行（单词、释义、例句）拉过 Binder。
+     */
+    @Query(
+        "SELECT meaning FROM words " +
+            "WHERE (:sourceListId IS NULL OR source_list_id = :sourceListId) " +
+            "AND id != :wordId AND meaning != :excludeMeaning AND meaning != '' " +
+            "GROUP BY meaning ORDER BY RANDOM() LIMIT :limit",
+    )
+    suspend fun getRecallPretestPool(
+        sourceListId: Long?,
+        wordId: Long,
+        excludeMeaning: String,
+        limit: Int,
+    ): List<String>
 }
 
 /**
