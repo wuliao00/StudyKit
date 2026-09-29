@@ -18,7 +18,7 @@ StudyKit is an all-in-one learning assistant for students and self-learners, bui
 ## 📦 Four Core Modules
 
 ### 📚 Study Module (Vocabulary / Quizzes)
-- **Word cards**: A flashcard learning mode showing the word on the front and its definition on the back, with "know it / don't know it" markers and automatic tracking of mastery status
+- **Word cards**: A flashcard learning mode showing the word on the front and its definition on the back; once flipped, you self-grade on three levels — "got it / vague / forgotten" — and mastery status is tracked automatically. "Recall before grading" is on by default: while the answer is still hidden, a swipe only flips the card instead of grading it (can be turned off in Settings)
 - **Question bank practice**: A quiz mode with multiple-choice questions, instant scoring and answer explanations; wrong answers are automatically added to the mistake notebook
 - **Study home**: An overview of today's study progress and cumulative statistics
 
