@@ -62,10 +62,16 @@ X 的算法：对明天到期的那批词，逐条用
 取**平均**。`recallProbability` 在 `MemoryModel.kt:109-115`，全库均值的用法可参考
 `MemoryHealth.kt:156-160`。
 
-**"明天"必须复用现有 `tomorrowCount` 的口径**（含 `AppSettings.dayStartHour` 那个
-"一天从几点开始"的边界，见 `Settings.kt` 里 `dayStartHour` 的 KDoc）。
-理由：N 和 X% 是同一批词的两个说法，各自算一遍就会打架——出现"明天 12 词"却按另一批词算保留率，
-那是那种没人报错、但整行数字没意义的错法。**先读现有 `tomorrowCount` 怎么算的，用同一个边界。**
+**"明天"的口径 = 现有 `tomorrowCount` 的口径，即本地自然日 `[明天 0 点, 后天 0 点)`。**
+（本条原稿写着"含 `AppSettings.dayBoundaryHour` 边界"，**那是错的，施工时已纠正**：
+`dayBoundaryHour` 全仓唯一消费点在 `HabitViewModel`，管的是"凌晨打卡算前一天"，
+跟复习排期无关。往前推同一把边界会让"明天 0 点到边界点之间"到期的那批词
+**同时**掉出这一格和今日待办（那时它们还没到期，进不了 `dueCount`），
+变成首页上谁也看不见的一小批债——比按自然日切更糟。）
+
+真正要防的是**两个数各算一遍**：词数与保留率必须出自同一个窗口、同一批行。
+实现上把这两个数焊成一个 `TomorrowLoad` 而不是两个 `Int` 字段，就是为了让人没法
+在两处分别算。
 
 实现要点：`WordDao.kt:113` 现在只返回 `next_review_at`、`:122` 只返回 `half_life_days`，
 两者不 JOIN。**补一条投影查询**（同一批行里同时取 `next_review_at`、`half_life_days`、
