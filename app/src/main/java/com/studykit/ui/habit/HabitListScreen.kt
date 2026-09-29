@@ -81,6 +81,19 @@ private data class SheetTarget(
 )
 
 /**
+ * 习惯页空状态那句说明（v2.5 §2.1）。
+ *
+ * 这里**不许出现任何具体天数**。原先写的是「21 天养成一个习惯」，那个说法被原研究团队
+ * 公开辟谣过；换成 Lally 2010 的 66 天也不对 —— 66 是中位数、范围 18–254，
+ * 把它印在空状态上等于又立一个会被当成 KPI 的数字。这一屏真正要传达的是
+ * "漏一次不毁掉养成"（那才是降低早期流失的点），由 [HabitEmptyStateCopyTest] 钉着。
+ *
+ * 写成常量而不是内联字面量，是为了让这条事实守卫测得到界面上那一串字，
+ * 而不是测一份没人读的测试字符串。
+ */
+internal const val HABIT_EMPTY_STATE_CAPTION = "每天坚持一小步，漏一天不算断"
+
+/**
  * 圆形打卡按钮：未打卡为描边空心；打卡后铺一层 `successSoft`（勾走 `successInk`）+ `success` 描边，
  * 并伴随一次「弹跳」缩放动效（0.86 按压 → 1.18 回弹）。
  * 数量型/已打卡（改备注）点击交由调用方路由到打卡弹层。
@@ -351,7 +364,7 @@ fun HabitListScreen(
                         Spacer(Modifier.height(AppTheme.space.xl * 2))
                         EmptyState(
                             title = "还没有习惯",
-                            caption = "每天坚持一小步，21 天养成一个习惯",
+                            caption = HABIT_EMPTY_STATE_CAPTION,
                         )
                         Spacer(Modifier.height(AppTheme.space.lg))
                         AppButton(text = "创建第一个习惯", onClick = onAddClick)

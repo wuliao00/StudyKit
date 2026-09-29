@@ -1,6 +1,7 @@
 package com.studykit.data.repository
 
 import com.studykit.data.dao.ReviewGapRow
+import com.studykit.data.dao.ScheduledMemoryRow
 import com.studykit.data.dao.WordDao
 import com.studykit.data.entity.Word
 import com.studykit.data.entity.WordReview
@@ -91,6 +92,14 @@ class WordRepository(private val wordDao: WordDao) {
 
     /** 已排期的复习时刻，供首页/统计页算"未来 N 天要复习多少" */
     fun observeScheduledTimestamps(): Flow<List<Long>> = wordDao.observeScheduledTimestamps()
+
+    /**
+     * 已排期那批词的「到期时刻 + 半衰期 + 锚点」投影（学习首页的明日保留率用）。
+     *
+     * 一条 SQL 把这批词的字段拿全，不许由调用方拿 [observeScheduledTimestamps] 与
+     * [observeHalfLifeDays] 拼 —— 理由见 `WordDao.observeScheduledMemoryRows` 的 KDoc。
+     */
+    fun observeScheduledMemoryRows(): Flow<List<ScheduledMemoryRow>> = wordDao.observeScheduledMemoryRows()
 
     /** 全库半衰期（记忆看板：持久度分布与模型曲线） */
     fun observeHalfLifeDays(): Flow<List<Double>> = wordDao.observeHalfLifeDays()

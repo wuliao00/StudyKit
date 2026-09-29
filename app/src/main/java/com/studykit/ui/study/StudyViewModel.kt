@@ -41,9 +41,13 @@ fun parseOptions(optionsJson: String): List<String> = try {
 /**
  * 学习首页状态：今日待复习 / 单词总数 / 已掌握 / 未掌握错题数 / 连续学习天数 / 今日完成次数
  *
- * [tomorrowCount] 是"明天要复习多少"——把排期的未来摊到用户眼前。
+ * [tomorrow] 是"明天要复习多少 + 到时候大约还记得多少"——把排期的未来摊到用户眼前。
  * 墨墨的学习情况页直接把柱子画到未来 6 天，这是它整套调度能被信任的原因：
  * 用户看得见"今天少背两个，明天就少五个"，而不是一句"坚持下去"。
+ *
+ * 词数与保留率刻意合成**一个** [TomorrowLoad] 而不是两个 Int 字段：那一行上两个数是
+ * 同一批词的两个说法，分成两个字段就能被两处代码各自算一遍，算出"12 词 · 记得 87%"
+ * 却数的是两批词 —— 那种错不报错，只是整行数字没意义（v2.5 §2.3）。
  */
 data class StudyHomeUiState(
     val dueCount: Int = 0,
@@ -52,7 +56,7 @@ data class StudyHomeUiState(
     val mistakeCount: Int = 0,
     val streakDays: Int = 0,
     val todayDone: Int = 0,
-    val tomorrowCount: Int = 0,
+    val tomorrow: TomorrowLoad = TomorrowLoad(wordCount = 0, sampledCount = 0, predictedRecallPercent = 0),
 )
 
 /** 卡片学习会话状态：队列快照 + 当前下标 + 三档评分统计 */
@@ -128,12 +132,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ── 学习首页状态 ──────────────────────────────────────────────────────
+    // 明日那一格取的是 `observeScheduledMemoryRows()` 一条 SQL 里的四个字段：
+    // 词数与保留率必须出自同一批行，所以这里不能退回 `observeScheduledTimestamps()` +
+    // `observeHalfLifeDays()` 两次查询再配对（理由见那条投影查询的 KDoc）。
     val homeState: StateFlow<StudyHomeUiState> = combine(
         wordRepository.observeAll(),
         mistakeRepository.observeUnmasteredCount(),
         wordRepository.observeReviewTimestamps(),
         questionRepository.observePracticeTimestamps(),
-        wordRepository.observeScheduledTimestamps(),
+        wordRepository.observeScheduledMemoryRows(),
     ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, scheduled ->
         val now = System.currentTimeMillis()
         // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致
@@ -141,9 +148,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val today = LocalDate.now(zone)
         val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
         val all = reviewTimestamps + practiceTimestamps
-        // 「明天要复习多少」的区间：按本地日切，不用 SQL 的 date()（不吃时区）
-        val tomorrowStart = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val dayAfterStart = today.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
+        // 「明天」的区间按本地日切，不用 SQL 的 date()（不吃时区）；
+        // 这一格只算一次，词数和保留率都从它来
+        val tomorrow = TomorrowForecast.of(scheduled, TomorrowForecast.window(zone, today))
         StudyHomeUiState(
             // 判据从「未掌握且到期」改成「有排期且到期」：见 WordDao.getDueForReview 的注释
             dueCount = words.count { it.nextReviewAt in 1L..now },
@@ -152,7 +159,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             mistakeCount = unmasteredMistakes,
             streakDays = StudyStreak.streakDays(all, zone, today),
             todayDone = all.count { it in dayStart..now },
-            tomorrowCount = scheduled.count { it in tomorrowStart until dayAfterStart },
+            tomorrow = tomorrow,
         )
     }
         // Room 的 flowOn 只作用上游，combine 变换（全量时间戳拼接 + HashSet 重建）默认落在

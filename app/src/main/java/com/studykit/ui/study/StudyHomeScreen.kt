@@ -153,8 +153,10 @@ fun StudyHomeScreen(
             )
         }
 
-        // 「明天还要复习 N 个」同时兼任记忆看板的入口：这一行讲的就是"接下来要还多少债"，
-        // 点进去看详情是同一个心智动作，不必再摆一枚孤立的"统计"按钮。
+        // 「明天预计复习 N 词 · 到时候大约还记得 X%」这一行同时兼任记忆看板的入口：
+        // 它讲的就是"接下来要还多少债、到时候还剩多少"，点进去看详情是同一个心智动作，
+        // 不必再摆一枚孤立的"统计"按钮。
+        // N=0 时仍是「明天没有排期」——没排期却说"记得 0%"是废话（v2.5 §2.3）。
         Spacer(Modifier.height(AppTheme.space.sm))
         Row(
             modifier = Modifier
@@ -164,8 +166,11 @@ fun StudyHomeScreen(
                 .padding(horizontal = AppTheme.space.sm, vertical = AppTheme.space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 文案变长是刻意的：这一句要在窄屏上折成两行，而不是被省略号吃掉。
+            // 所以这里保持 `weight(1f)`（填满剩余宽度）+ 不设 maxLines/overflow ——
+            // 本仓有一次为救折行写 `weight(1f, fill = false)`，真机上把名字压成了省略号。
             Text(
-                text = if (state.tomorrowCount > 0) "明天还要复习 ${state.tomorrowCount} 个" else "明天没有排期",
+                text = tomorrowLine(state.tomorrow),
                 style = texts.caption,
                 color = colors.secondaryText,
                 modifier = Modifier.weight(1f),

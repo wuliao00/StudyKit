@@ -114,6 +114,34 @@ interface WordDao {
     fun observeScheduledTimestamps(): Flow<List<Long>>
 
     /**
+     * 已排期那批词的「到期时刻 + 半衰期 + 上次复习」投影，学习首页的
+     * 「明天预计复习 N 词 · 到时候大约还记得 X%」用（v2.5 §2.3）。
+     *
+     * ## 为什么必须是一条 SQL 拿全，而不是复用上面两条各取一半
+     * [observeScheduledTimestamps] 只有 `next_review_at`、[observeHalfLifeDays] 只有
+     * `half_life_days`，两者都不 JOIN、也不保证同一批行。分两次查再在内存里按下标配对，
+     * 拿到的是**两个不同快照**：两次挂起之间任何一次评分（复习页每答一张就写一次）都会让
+     * 第 k 行的时刻配上第 k 行"另一批词"的半衰期。本仓在逐条失效那件事上真踩过一次
+     * （`settleDue` 逐条 `await update()` ⇒ 观察者拿到半新半旧快照）。
+     * 最坏的是这种错位**不报错**：N 是对的，X% 静默地数了另一批词，整行数字没意义。
+     *
+     * ## 为什么带上 `created_at`
+     * `last_review_at` 可空是真实状态，不是脏数据：v4→v5 迁移给老库的 MASTERED 词统一
+     * 排到了 4 天后（见 `AppDatabase.MIGRATION_4_5`），而那一列是当场新加的、全是 NULL。
+     * 从没复习过的词拿加入那天当锚点，与 `StudyViewModel.gradeCard` 里
+     * `word.lastReviewAt ?: word.createdAt` 同一个口径 —— 所以四个字段一条 SQL 取齐。
+     *
+     * WHERE 条件与 [observeScheduledTimestamps] 同为 `next_review_at > 0`："哪些词算排过期"
+     * 两处必须一致，否则首页的 N 和记忆看板的未来柱又分叉成两套账。
+     */
+    @Query(
+        "SELECT next_review_at AS nextReviewAt, half_life_days AS halfLifeDays, " +
+            "last_review_at AS lastReviewAt, created_at AS createdAt " +
+            "FROM words WHERE next_review_at > 0",
+    )
+    fun observeScheduledMemoryRows(): Flow<List<ScheduledMemoryRow>>
+
+    /**
      * 全库半衰期（记忆看板用）。
      *
      * 只取一列而不是 `observeAll()`：看板每改一次评分就会重算，
@@ -134,3 +162,26 @@ interface WordDao {
  * 那种行参与不了曲线计算（算法层会过滤掉），但**不能假装它们是 0 天**。
  */
 data class ReviewGapRow(val gapDays: Double?, val correct: Boolean)
+
+/**
+ * [WordDao.observeScheduledMemoryRows] 的投影行：一条已排期的词，
+ * 到期时刻、这条记忆的半衰期、以及 Δt 的锚点**同行取回**。
+ *
+ * 四个字段必须来自同一行、同一次查询，理由见那条 SQL 的 KDoc。
+ * [anchorAt] 在这里（而不是 SQL 的 COALESCE 里）折算，是为了让"没复习过的词按加入那天算"
+ * 这条锚点口径留在 Kotlin 里、留在能被单测钉住的地方，与 `StudyViewModel.gradeCard` 一致。
+ */
+data class ScheduledMemoryRow(
+    /** 下一次到期的时刻（毫秒），恒 > 0 */
+    val nextReviewAt: Long,
+    /** 半衰期（天）。列本身 NOT NULL DEFAULT 0.5，所以拿不到 null；脏值由模型自己降级 */
+    val halfLifeDays: Double,
+    /** 上次复习的时刻；null = 从没复习过（迁移折算出来的老词就是这种） */
+    val lastReviewAt: Long?,
+    /** 加入学习的时刻，`lastReviewAt` 为 null 时的锚点 */
+    val createdAt: Long,
+) {
+    /** 算 Δt 用的锚点 */
+    val anchorAt: Long
+        get() = lastReviewAt ?: createdAt
+}

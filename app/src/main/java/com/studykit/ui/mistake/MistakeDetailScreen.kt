@@ -328,6 +328,16 @@ fun MistakeDetailScreen(
                 ReviewOption("三天后") { viewModel.setReviewAt(mistakeId, dayOffset(3)) }
                 ReviewOption("一周后") { viewModel.setReviewAt(mistakeId, dayOffset(7)) }
             }
+            // 诚实说明（v2.5 §2.4）：错题的复习时间是**手动**写进 `mistakes.review_at` 的
+            // （`MistakeViewModel.setReviewAt`），半衰期模型只管单词、不管错题 ——
+            // 那三颗快捷项只是三个常用值，点下去排到哪就是哪，没有算法在旁边替你算。
+            // 只加文案，不动任何逻辑。
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = "复习时间由你自己定，这里没有算法排期。",
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
 
             // ── 学科归类 ──────────────────────────────────────────────────
             Spacer(Modifier.height(AppTheme.space.lg))
