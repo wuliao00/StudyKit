@@ -108,11 +108,17 @@ fun BookShelfScreen(
                 modifier = Modifier.weight(1f),
             )
             StatTile(
-                value = "${state.excerptCount}",
-                label = "书摘总数",
+                value = "${state.recallCount}",
+                label = "检索练习次数",
                 modifier = Modifier.weight(1f),
             )
         }
+
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Text(
+            text = "进度百分比只反映读到哪一页，不等于理解程度；检索练习次数才更接近真实掌握。",
+            style = DesignTokens.Caption,
+        )
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
 

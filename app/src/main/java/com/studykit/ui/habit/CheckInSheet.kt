@@ -43,7 +43,12 @@ fun CheckInSheet(
     var note by rememberSaveable { mutableStateOf(existing?.note?.ifBlank { habit.defaultText } ?: habit.defaultText) }
     var amountText by rememberSaveable { mutableStateOf("") }
     val parsedAmount = amountText.trim().toDoubleOrNull() ?: 0.0
-    val confirmEnabled = if (isCountType) parsedAmount > 0 else true
+
+    // 补卡需消耗一张保护卡；卡用完（Blocked）时禁用确认并说明原因
+    val makeupDecision = if (isMakeUp) decideMakeup(habit, date, LocalDate.now()) else null
+    val makeupReason = (makeupDecision as? MakeupDecision.Blocked)?.reason
+    val cardsLeftAfter = (makeupDecision as? MakeupDecision.Allowed)?.cardsLeftAfter
+    val confirmEnabled = (if (isCountType) parsedAmount > 0 else true) && makeupReason == null
 
     val title = when {
         isMakeUp -> "补打卡"
@@ -73,6 +78,17 @@ fun CheckInSheet(
                 },
                 style = DesignTokens.Caption,
             )
+
+            if (isMakeUp) {
+                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                Text(
+                    text = makeupReason
+                        ?: "本次补卡将消耗 1 张保护卡，本月还剩 $cardsLeftAfter 张",
+                    style = DesignTokens.Caption.copy(
+                        color = if (makeupReason != null) DesignTokens.Warning else DesignTokens.Accent,
+                    ),
+                )
+            }
 
             if (isCountType) {
                 Spacer(Modifier.height(DesignTokens.SpacingLg))

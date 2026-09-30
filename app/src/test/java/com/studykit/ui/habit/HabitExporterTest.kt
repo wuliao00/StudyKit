@@ -23,7 +23,13 @@ class HabitExporterTest {
         val today = LocalDate.of(2026, 8, 28)
         val dates = (0 until checkDays).map { today.minusDays(it.toLong()) }.toSet()
         return HabitItemUi(
-            habit = Habit(uuid = "u1", name = name, icon = icon),
+            habit = Habit(
+                uuid = "u1",
+                name = name,
+                icon = icon,
+                // 目标天数跟研究走（66 天中位数），不依赖实体默认值写死在断言里
+                targetDays = HabitScience.DEFAULT_TARGET_DAYS,
+            ),
             checkedDates = dates,
             totalCheckDays = checkDays,
             totalAmount = 0.0,
@@ -58,7 +64,7 @@ class HabitExporterTest {
         assertTrue(text.contains("🏃 跑步"))
         assertTrue(text.contains("坚持了 3 天"))
         assertTrue(text.contains("连续 2 天"))
-        assertTrue(text.contains("进度 3/21 天"))
+        assertTrue(text.contains("进度 3/${HabitScience.DEFAULT_TARGET_DAYS} 天"))
     }
 
     @Test

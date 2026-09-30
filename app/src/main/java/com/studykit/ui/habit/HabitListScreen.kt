@@ -59,6 +59,7 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.theme.DesignTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -184,14 +185,7 @@ private fun CheckInButton(
     }
 }
 
-/** 倒计时/达成文案 */
-private fun countdownText(item: HabitItemUi): String = when {
-    item.achieved -> "目标已达成"
-    item.remainingDays >= 0 -> "剩 ${item.remainingDays} 天到目标"
-    else -> "已超额 ${-item.remainingDays} 天"
-}
-
-/** 习惯列表页：页标题 + 统计磁贴 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口 */
+/** 习惯列表页：页标题 + 统计磁贴 + 一次性科学提示 + 待打卡卡片 + 已打卡折叠区 + 导出分享入口 */
 @Composable
 fun HabitListScreen(
     viewModel: HabitViewModel,
@@ -274,11 +268,16 @@ fun HabitListScreen(
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
 
+        state.tip?.let { tip ->
+            TipCard(tip = tip, modifier = Modifier.fillMaxWidth(), showEvidence = true)
+            Spacer(Modifier.height(DesignTokens.SpacingMd))
+        }
+
         if (state.items.isEmpty()) {
             Spacer(Modifier.height(DesignTokens.SpacingXl * 2))
             EmptyState(
                 title = "还没有习惯",
-                caption = "每天坚持一小步，21 天养成一个习惯",
+                caption = "每天坚持一小步，习惯自动化中位数约 66 天，慢一点也没关系",
             )
             Spacer(Modifier.height(DesignTokens.SpacingLg))
             AppButton(text = "创建第一个习惯", onClick = onAddClick)
@@ -541,21 +540,39 @@ private fun HabitCard(
                     }
                 }
                 Spacer(Modifier.height(2.dp))
+                if (item.display.intentionText.isNotBlank()) {
+                    Text(
+                        text = item.display.intentionText,
+                        style = DesignTokens.Caption,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(1.dp))
+                }
                 Text(
                     text = if (item.isCountType) {
-                        "累计 ${item.progressText} · 连续 ${item.streak} 天"
+                        "累计 ${item.progressText} · ${item.display.dayCounterText}"
                     } else {
-                        "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
+                        item.display.dayCounterText
                     },
-                    style = DesignTokens.Caption,
+                    style = DesignTokens.Caption.copy(
+                        color = if (item.achieved) DesignTokens.Gold else DesignTokens.PrimaryText,
+                        fontWeight = if (item.achieved) FontWeight.Medium else FontWeight.Normal,
+                    ),
                 )
                 Spacer(Modifier.height(1.dp))
                 Text(
-                    text = countdownText(item),
+                    text = "${item.display.weeklyText} · ${item.display.streakText}",
                     style = DesignTokens.Caption.copy(
-                        color = if (item.achieved) DesignTokens.Gold else DesignTokens.SecondaryText,
-                        fontWeight = if (item.achieved) FontWeight.Medium else FontWeight.Normal,
+                        color = if (item.display.weeklyMet) DesignTokens.Success else DesignTokens.SecondaryText,
                     ),
+                )
+                Spacer(Modifier.height(1.dp))
+                Text(
+                    text = item.display.phaseHint,
+                    style = DesignTokens.Caption,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (item.latestNote.isNotBlank()) {
                     Spacer(Modifier.height(1.dp))

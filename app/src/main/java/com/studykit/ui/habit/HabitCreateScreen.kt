@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,29 +36,50 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
+import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.DesignTokens
 
 private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯", "🧘", "🌙", "💧", "🎹", "🖌️", "🥗")
-private val TargetOptions = listOf(7, 21, 30, 60, 100)
 
-/** 创建习惯页：名称 + 图标 + 类型（天数/数量）+ 目标 + 默认打卡文案 */
+/** 目标天数选项：默认落在研究中位数 66 天，保留更早/更晚的个人选择 */
+private val TargetOptions = listOf(7, 30, 66, 100)
+
+/**
+ * 创建习惯页：名称 + 图标 + 类型（天数/数量）+ 目标天数（默认 66）+
+ * 必填的执行意图（何时 + 何地）+ 可选的习惯叠加锚点。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HabitCreateScreen(
     viewModel: HabitViewModel,
     onBack: () -> Unit,
 ) {
+    val anchors by viewModel.anchors.collectAsStateWithLifecycle()
     var name by rememberSaveable { mutableStateOf("") }
     var icon by rememberSaveable { mutableStateOf("🎯") }
-    var targetDays by rememberSaveable { mutableStateOf(21) }
+    var targetDays by rememberSaveable { mutableStateOf(HabitScience.DEFAULT_TARGET_DAYS) }
     var isCountType by rememberSaveable { mutableStateOf(false) }
     var targetCountText by rememberSaveable { mutableStateOf("") }
     var unit by rememberSaveable { mutableStateOf("") }
     var defaultText by rememberSaveable { mutableStateOf("") }
+    var cueTime by rememberSaveable { mutableStateOf("") }
+    var cuePlace by rememberSaveable { mutableStateOf("") }
+    var stackAnchorIndex by rememberSaveable { mutableStateOf(-1) }
+
     val parsedCount = targetCountText.trim().toDoubleOrNull() ?: 0.0
-    val canSave = name.isNotBlank() && (!isCountType || parsedCount > 0)
+    val intentionError = intentionValidationError(cueTime, cuePlace, name)
+    val countReady = !isCountType || parsedCount > 0
+    val canSave = name.isNotBlank() && intentionError == null && countReady
+
+    // 执行意图预览句（不完整时 HabitScience 会降级成普通愿望句）
+    val intentionPreview = HabitScience.intention(cueTime, cuePlace, name.ifBlank { "开始行动" })
+    val selectedAnchor = anchors.getOrNull(stackAnchorIndex)
+    val stackPreview = selectedAnchor?.let {
+        HabitScience.stackWith(name.ifBlank { "把新习惯做一遍" }, it)
+    }
 
     Column(
         modifier = Modifier
@@ -195,6 +217,118 @@ fun HabitCreateScreen(
                 }
             }
         }
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Text(
+            text = HabitScience.GOAL_HINT,
+            style = DesignTokens.Caption,
+        )
+
+        // ── 执行意图（if-then）：何时 + 何地，必填 ────────────────────────
+        Spacer(Modifier.height(DesignTokens.SpacingLg))
+        Text(text = "执行意图（必填：何时 + 何地）", style = DesignTokens.Caption)
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd)) {
+            AppTextField(
+                value = cueTime,
+                onValueChange = { cueTime = it },
+                label = "何时",
+                placeholder = "例如：早上起床后",
+                modifier = Modifier.weight(1f),
+            )
+            AppTextField(
+                value = cuePlace,
+                onValueChange = { cuePlace = it },
+                label = "何地",
+                placeholder = "例如：书桌前",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Text(text = "一键带入模板", style = DesignTokens.Caption)
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+            verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+        ) {
+            HabitScience.INTENTION_TEMPLATES.forEach { tpl ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+                        .background(DesignTokens.Accent.copy(alpha = 0.10f))
+                        .border(1.dp, DesignTokens.Accent, shape = RoundedCornerShape(DesignTokens.CornerRadius))
+                        .clickable {
+                            cueTime = tpl.timeSlot
+                            cuePlace = tpl.place
+                            if (defaultText.isBlank()) defaultText = tpl.action
+                        }
+                        .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
+                ) {
+                    Text(
+                        text = tpl.label,
+                        style = DesignTokens.Auxiliary.copy(color = DesignTokens.Accent),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Text(
+            text = intentionPreview.text,
+            style = DesignTokens.Auxiliary.copy(
+                color = if (intentionPreview.isComplete) DesignTokens.Success else DesignTokens.SecondaryText,
+            ),
+        )
+        if (intentionError != null && name.isNotBlank()) {
+            Spacer(Modifier.height(DesignTokens.SpacingXs))
+            Text(
+                text = intentionError,
+                style = DesignTokens.Caption.copy(color = DesignTokens.Warning),
+            )
+        }
+
+        // ── 习惯叠加（可选）：接到已有习惯之后 ────────────────────────────
+        if (anchors.isNotEmpty()) {
+            Spacer(Modifier.height(DesignTokens.SpacingLg))
+            Text(text = "接到已有习惯之后（可选）", style = DesignTokens.Caption)
+            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+                verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+            ) {
+                anchors.forEachIndexed { index, anchor ->
+                    val selected = index == stackAnchorIndex
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(DesignTokens.CornerRadius))
+                            .background(
+                                if (selected) DesignTokens.Accent.copy(alpha = 0.12f) else DesignTokens.Card,
+                            )
+                            .border(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) DesignTokens.Accent else DesignTokens.Divider,
+                                shape = RoundedCornerShape(DesignTokens.CornerRadius),
+                            )
+                            .clickable { stackAnchorIndex = if (selected) -1 else index }
+                            .padding(horizontal = DesignTokens.SpacingMd, vertical = DesignTokens.SpacingSm),
+                    ) {
+                        Text(
+                            text = anchor.name,
+                            style = DesignTokens.Auxiliary.copy(
+                                color = if (selected) DesignTokens.Accent else DesignTokens.PrimaryText,
+                            ),
+                        )
+                    }
+                }
+            }
+            stackPreview?.let { plan ->
+                Spacer(Modifier.height(DesignTokens.SpacingSm))
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = plan.text,
+                        style = DesignTokens.Caption,
+                    )
+                }
+            }
+        }
 
         Spacer(Modifier.height(DesignTokens.SpacingLg))
         AppTextField(
@@ -216,6 +350,8 @@ fun HabitCreateScreen(
                     targetCount = if (isCountType) parsedCount else 0.0,
                     unit = if (isCountType) unit.ifBlank { "个" } else "",
                     defaultText = defaultText,
+                    cueTime = cueTime,
+                    cuePlace = cuePlace,
                 ) { onBack() }
             },
         )

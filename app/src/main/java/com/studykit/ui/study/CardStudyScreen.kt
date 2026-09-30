@@ -3,7 +3,6 @@ package com.studykit.ui.study
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,25 +27,29 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.data.entity.Word
+import com.studykit.srs.Confidence
+import com.studykit.srs.Rating
+import com.studykit.tips.Tip
+import com.studykit.tips.TipEvent
+import com.studykit.tips.StudyTips
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.theme.DesignTokens
 
 /**
- * 卡片学习页：队列逐张翻面学习，翻面后「认识 / 不认识」推进间隔重复状态机；
- * 一轮结束展示小结卡。
+ * 卡片学习页：检索优先的三阶段会话（预测试 → 强迫回忆 → 翻面评分），
+ * 评分走 FSRS 排期；一轮结束展示小结卡。
  */
 @Composable
 fun CardStudyScreen(
@@ -111,23 +114,39 @@ fun CardStudyScreen(
 
             else -> StudyCard(
                 word = state.current!!,
+                phase = state.phase,
+                confidence = state.confidence,
+                consecutiveAgain = state.consecutiveAgain,
                 progress = state.index.toFloat() / state.total,
-                onKnown = { viewModel.markKnown() },
-                onUnknown = { viewModel.markUnknown() },
+                onEndPretest = { skipped -> viewModel.endPretest(skipped) },
+                onSelectConfidence = { viewModel.selectConfidence(it) },
+                onRate = { viewModel.rate(it) },
             )
         }
     }
 }
 
-/** 当前卡片：点击翻面（正反面交叉淡入淡出，250ms），翻面后显示「不认识 / 认识」 */
+/** 按阶段与连错次数决定当前该挂的小贴士事件；无匹配返回 null */
+private fun tipEventFor(phase: CardPhase, consecutiveAgain: Int): TipEvent? = when {
+    consecutiveAgain >= 2 -> TipEvent.StrugglingReview
+    phase == CardPhase.PRETEST -> TipEvent.NewCardFirstLook
+    phase == CardPhase.RECALL -> TipEvent.AboutToFlip
+    else -> null
+}
+
+/** 单张卡片：按 PRETEST / RECALL / ANSWER 三阶段渲染，翻面用交叉淡入淡出（250ms） */
 @Composable
 private fun ColumnScope.StudyCard(
-    word: com.studykit.data.entity.Word,
+    word: Word,
+    phase: CardPhase,
+    confidence: Confidence?,
+    consecutiveAgain: Int,
     progress: Float,
-    onKnown: () -> Unit,
-    onUnknown: () -> Unit,
+    onEndPretest: (Boolean) -> Unit,
+    onSelectConfidence: (Confidence) -> Unit,
+    onRate: (Rating) -> Unit,
 ) {
-    var flipped by rememberSaveable(word.id) { mutableStateOf(false) }
+    val flipped = phase == CardPhase.ANSWER
     val flip by animateFloatAsState(
         targetValue = if (flipped) 1f else 0f,
         animationSpec = tween(DesignTokens.AnimDurationMs, easing = DesignTokens.AnimEasing),
@@ -139,8 +158,7 @@ private fun ColumnScope.StudyCard(
         progress = { progress },
         modifier = Modifier
             .fillMaxWidth()
-            .height(6.dp)
-            .alpha(1f),
+            .height(6.dp),
         color = DesignTokens.Accent,
         trackColor = DesignTokens.Divider,
         strokeCap = StrokeCap.Round,
@@ -153,18 +171,14 @@ private fun ColumnScope.StudyCard(
             .padding(vertical = DesignTokens.SpacingLg),
         contentAlignment = Alignment.Center,
     ) {
-        AppCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { flipped = !flipped },
-        ) {
+        AppCard(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = DesignTokens.SpacingXl),
                 contentAlignment = Alignment.Center,
             ) {
-                // 正面：单词大标题
+                // 正面：单词 + 阶段引导语
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -177,7 +191,7 @@ private fun ColumnScope.StudyCard(
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(DesignTokens.SpacingMd))
-                    Text(text = "点击卡片查看释义", style = DesignTokens.Caption)
+                    Text(text = frontCaption(phase), style = DesignTokens.Caption)
                 }
                 // 背面：释义 + 例句
                 Column(
@@ -204,36 +218,101 @@ private fun ColumnScope.StudyCard(
         }
     }
 
-    Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingMd)) {
-        OutlinedButton(
-            onClick = onUnknown,
-            enabled = flipped,
-            modifier = Modifier
-                .weight(1f)
-                .height(50.dp),
-            shape = RoundedCornerShape(DesignTokens.CornerRadius),
-            border = BorderStroke(1.dp, DesignTokens.Warning),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = DesignTokens.Warning),
-        ) {
-            Text("不认识", style = DesignTokens.Body)
+    tipEventFor(phase, consecutiveAgain)?.let { event ->
+        StudyTips.forEvent(event)?.let { tip: Tip ->
+            TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
         }
-        OutlinedButton(
-            onClick = onKnown,
-            enabled = flipped,
-            modifier = Modifier
-                .weight(1f)
-                .height(50.dp),
-            shape = RoundedCornerShape(DesignTokens.CornerRadius),
-            border = BorderStroke(1.dp, DesignTokens.Success),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = DesignTokens.Success),
-        ) {
-            Text("认识", style = DesignTokens.Body)
+    }
+
+    when (phase) {
+        CardPhase.PRETEST -> {
+            AppButton(text = "心里有答案了", onClick = { onEndPretest(false) })
+            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            AppButton(text = "跳过预测试", secondary = true, onClick = { onEndPretest(true) })
+        }
+
+        CardPhase.RECALL -> {
+            Text(
+                text = "回忆不起来也没关系，先给个把握度",
+                style = DesignTokens.Caption,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(DesignTokens.SpacingSm))
+            Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+                Confidence.entries.forEach { level ->
+                    ChoiceButton(
+                        text = confidenceLabel(level),
+                        color = DesignTokens.Accent,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onSelectConfidence(level) },
+                    )
+                }
+            }
+        }
+
+        CardPhase.ANSWER -> {
+            Row(horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm)) {
+                Rating.entries.forEach { rating ->
+                    ChoiceButton(
+                        text = ratingLabel(rating),
+                        color = ratingColor(rating),
+                        modifier = Modifier.weight(1f),
+                        onClick = { onRate(rating) },
+                    )
+                }
+            }
         }
     }
     Spacer(Modifier.height(DesignTokens.SpacingLg))
 }
 
-/** 一轮结束小结卡：认识数 / 不认识数 */
+/** 正面引导语：预测试鼓励先猜，回忆阶段提醒先提取再翻面 */
+private fun frontCaption(phase: CardPhase): String = when (phase) {
+    CardPhase.PRETEST -> "先凭印象猜一下释义"
+    CardPhase.RECALL -> "在脑子里回忆释义，再选把握度"
+    CardPhase.ANSWER -> ""
+}
+
+private fun confidenceLabel(confidence: Confidence): String = when (confidence) {
+    Confidence.GUESS -> "瞎猜"
+    Confidence.VAGUE -> "有点印象"
+    Confidence.SURE -> "非常确定"
+}
+
+private fun ratingLabel(rating: Rating): String = when (rating) {
+    Rating.AGAIN -> "忘了"
+    Rating.HARD -> "有点难"
+    Rating.GOOD -> "记住了"
+    Rating.EASY -> "很简单"
+}
+
+private fun ratingColor(rating: Rating): Color = when (rating) {
+    Rating.AGAIN -> DesignTokens.Warning
+    Rating.HARD -> DesignTokens.SecondaryText
+    Rating.GOOD -> DesignTokens.Success
+    Rating.EASY -> DesignTokens.Accent
+}
+
+/** 描边选择按钮：文案色即语义色，复用于信心三档与评分四档 */
+@Composable
+private fun ChoiceButton(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(50.dp),
+        shape = RoundedCornerShape(DesignTokens.CornerRadius),
+        border = BorderStroke(1.dp, color),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = color),
+    ) {
+        Text(text, style = DesignTokens.Caption)
+    }
+}
+
+/** 一轮结束小结卡：记住数 / 需重学数 */
 @Composable
 private fun SessionSummary(
     knownCount: Int,
@@ -264,7 +343,7 @@ private fun SessionSummary(
                         style = DesignTokens.LargeTitle.copy(color = DesignTokens.Success),
                     )
                     Spacer(Modifier.height(DesignTokens.SpacingXs))
-                    Text(text = "认识", style = DesignTokens.Caption)
+                    Text(text = "记住", style = DesignTokens.Caption)
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -272,7 +351,7 @@ private fun SessionSummary(
                         style = DesignTokens.LargeTitle.copy(color = DesignTokens.Warning),
                     )
                     Spacer(Modifier.height(DesignTokens.SpacingXs))
-                    Text(text = "不认识", style = DesignTokens.Caption)
+                    Text(text = "需重学", style = DesignTokens.Caption)
                 }
             }
         }

@@ -59,19 +59,32 @@ object DemoSeeder {
             Triple("thrive", "茁壮成长", "Plants thrive with enough sunlight."),
         )
         words.forEachIndexed { index, (word, meaning, example) ->
+            // 演示数据带上 FSRS 记忆状态：新词未调度，学习中/已掌握词有稳定性与到期时刻
+            val stability = when (index) {
+                2 -> 4.0
+                7 -> 6.0
+                5 -> 28.0
+                else -> 0.0
+            }
+            val scheduled = stability > 0.0
             val status = when {
                 index in listOf(2, 7) -> "LEARNING"
-                index in listOf(5) -> "MASTERED"
+                index == 5 -> "MASTERED"
                 else -> "NEW"
             }
-            val nextReviewAt = if (status == "MASTERED") now + DAY_MS * 3 else now
+            val lastReviewAt = if (scheduled) now - stability.toLong() * DAY_MS else 0L
+            val nextReviewAt = if (scheduled) lastReviewAt + stability.toLong() * DAY_MS else now
             db.execSQL(
                 """INSERT INTO words
-                   (id, uuid, syncStatus, word, meaning, example, status, next_review_at, created_at)
-                   VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)""",
+                   (id, uuid, syncStatus, word, meaning, example, status, next_review_at, created_at,
+                    stability, difficulty, reps, lapses, last_review_at, last_confidence)
+                   VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 arrayOf<Any>(
                     index + 1L, "seed-word-${index + 1}", word, meaning, example,
                     status, nextReviewAt, now - index * 3600L * 1000L,
+                    stability, if (scheduled) 5.5 else 5.0,
+                    if (scheduled) 3 else 0, if (index == 7) 1 else 0,
+                    lastReviewAt, if (scheduled) 1 else -1,
                 ),
             )
         }
@@ -107,7 +120,7 @@ object DemoSeeder {
     }
 
     private fun seedHabitsAndCheckIns(db: SupportSQLiteDatabase, now: Long) {
-        // Triple: id, name, icon；start_date 默认 7 天前，目标 21 天（天数型）
+        // Triple: id, name, icon；start_date 默认 7 天前，目标 66 天（习惯形成中位数）
         val habits = listOf(
             Triple(1L, "背单词", "book"),
             Triple(2L, "跑步", "run"),
@@ -115,12 +128,22 @@ object DemoSeeder {
         )
         habits.forEach { (id, name, icon) ->
             val defaultText = if (id == 1L) "今天也坚持背单词啦" else ""
+            // 执行意图线索（何时 + 何地），对应 if-then 计戈 d=0.65
+            val cue = when (id) {
+                1L -> "早上起床后" to "书桌前"
+                2L -> "下班回家后" to "楼下步道"
+                else -> "洗完澡以后" to "床边"
+            }
             db.execSQL(
                 """INSERT INTO habits
                    (id, uuid, syncStatus, name, icon, target_days, start_date, archived,
-                    target_count, unit, default_text)
-                   VALUES (?, ?, 0, ?, ?, 21, ?, 0, 0, '', ?)""",
-                arrayOf<Any>(id, "seed-habit-$id", name, icon, now - 7 * DAY_MS, defaultText),
+                    target_count, unit, default_text, cue_time, cue_place, weekly_target_days,
+                    protection_cards, protection_used)
+                   VALUES (?, ?, 0, ?, ?, 66, ?, 0, 0, '', ?, ?, ?, 5, 2, 0)""",
+                arrayOf<Any>(
+                    id, "seed-habit-$id", name, icon, now - 7 * DAY_MS,
+                    defaultText, cue.first, cue.second,
+                ),
             )
         }
         // 数量型习惯：每日喝水目标 500 ml（展示数量型打卡累加）
@@ -201,6 +224,22 @@ object DemoSeeder {
                (id, uuid, syncStatus, book_id, rating, content, at)
                VALUES (2, 'seed-review-2', 0, 2, 5, '直面苦难的生命力量，读后久久难忘。', ?)""",
             arrayOf<Any>(now - 14 * DAY_MS),
+        )
+
+        // 检索式笔记：读完先合书回忆再对照原文（书摘数量不等于理解）
+        db.execSQL(
+            """INSERT INTO book_recalls
+               (id, uuid, syncStatus, book_id, page_no, question, answer, self_score, created_at, next_review_at)
+               VALUES (1, 'seed-recall-1', 0, 1, 63,
+                       '作者为什么说真正重要的东西用眼睛看不见？',
+                       '因为重要的在于驯养与责任，只有用心才看得清。', 2, ?, ?)""",
+            arrayOf<Any>(now - 2 * DAY_MS, now + 4 * DAY_MS),
+        )
+        // 把第 1 条书摘拉进间隔复习队列，展示「书摘也可以被检索」
+        db.execSQL(
+            "UPDATE excerpts SET next_review_at = ?, recall_count = 1, stability = 3, " +
+                "difficulty = 5, reps = 1, last_review_at = ? WHERE id = 1",
+            arrayOf<Any>(now, now - 3 * DAY_MS),
         )
     }
 

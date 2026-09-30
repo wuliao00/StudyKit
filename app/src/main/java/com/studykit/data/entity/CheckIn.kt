@@ -28,4 +28,6 @@ data class CheckIn(
     @ColumnInfo(name = "note", defaultValue = "''") val note: String = "",
     /** 本次打卡数量（数量型习惯累加用；天数型固定为 1） */
     @ColumnInfo(name = "amount", defaultValue = "1") val amount: Double = 1.0,
+    /** 是否为补打卡（过往日期回补），参于周达标率但不计入自然连续 */
+    @ColumnInfo(name = "is_makeup", defaultValue = "0") val isMakeup: Boolean = false,
 )

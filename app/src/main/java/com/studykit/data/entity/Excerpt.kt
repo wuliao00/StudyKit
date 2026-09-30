@@ -26,4 +26,13 @@ data class Excerpt(
     val content: String,
     @ColumnInfo(name = "page_no") val pageNo: Int? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    /** 书摘进入间隔复习队列的时刻，0 表示尚未入队 */
+    @ColumnInfo(name = "next_review_at", defaultValue = "0") val nextReviewAt: Long = 0L,
+    /** 被合书回忆/自测过的次数，取代替「书摘总数」的展示指标 */
+    @ColumnInfo(name = "recall_count", defaultValue = "0") val recallCount: Int = 0,
+    @ColumnInfo(name = "stability", defaultValue = "0") val stability: Double = 0.0,
+    @ColumnInfo(name = "difficulty", defaultValue = "5") val difficulty: Double = 5.0,
+    @ColumnInfo(name = "reps", defaultValue = "0") val reps: Int = 0,
+    @ColumnInfo(name = "lapses", defaultValue = "0") val lapses: Int = 0,
+    @ColumnInfo(name = "last_review_at", defaultValue = "0") val lastReviewAt: Long = 0L,
 )

@@ -124,11 +124,13 @@ fun HabitCalendarScreen(
             // 日期网格（周一为首列）
             val checkedDates = detail?.checkedDates ?: emptySet()
             val today = LocalDate.now()
+            val weeklyTarget = detail?.habit?.weeklyTargetDays ?: HabitScience.WEEKLY_TARGET_DAYS
             val leadingBlanks = month.atDay(1).dayOfWeek.value - 1
             val cells = List(leadingBlanks) { null } +
                 (1..month.lengthOfMonth()).map { month.atDay(it) }
 
             cells.chunked(7).forEach { row ->
+                val weekMet = isCalendarWeekMet(row.filterNotNull(), checkedDates, weeklyTarget)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -153,12 +155,35 @@ fun HabitCalendarScreen(
                     // 补齐最后一行空位，保持等宽
                     repeat(7 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
+                if (weekMet) {
+                    Text(
+                        text = "本周已达标",
+                        style = DesignTokens.Caption.copy(
+                            color = DesignTokens.Success,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = DesignTokens.SpacingSm),
+                    )
+                }
             }
         }
 
         Spacer(Modifier.height(DesignTokens.SpacingSm))
+        val weeklyText = detail?.weeklyText.orEmpty()
+        val weeklyMet = detail?.weeklyMet == true
         Text(
-            text = "过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内漏打卡的日期（灰色圈）可点击补打卡",
+            text = "$weeklyText · " + if (weeklyMet) "本周已达标" else "本周还没达标",
+            style = DesignTokens.Caption.copy(
+                color = if (weeklyMet) DesignTokens.Success else DesignTokens.SecondaryText,
+                fontWeight = if (weeklyMet) FontWeight.Medium else FontWeight.Normal,
+            ),
+        )
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Text(
+            text = "过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内漏打卡的日期（灰色圈）可点击补打卡，每次消耗 1 张保护卡",
             style = DesignTokens.Caption,
         )
 
@@ -175,9 +200,15 @@ fun HabitCalendarScreen(
                 label = if (isCountType) "累计数量" else "累计打卡",
                 modifier = Modifier.weight(1f),
             )
+            val streakCards = detail?.streakCardsUsed ?: 0
             StatTile(
                 value = "${detail?.streak ?: 0} 天",
-                label = "连续打卡",
+                label = if (streakCards > 0) "连续（含保护 $streakCards）" else "连续打卡",
+                modifier = Modifier.weight(1f),
+            )
+            StatTile(
+                value = "${detail?.cardsLeft ?: 0} 张",
+                label = "保护卡余额",
                 modifier = Modifier.weight(1f),
             )
         }

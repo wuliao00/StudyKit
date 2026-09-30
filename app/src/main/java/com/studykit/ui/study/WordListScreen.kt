@@ -57,6 +57,15 @@ private fun WordStatusTag(status: String) {
     }
 }
 
+/** 一行保留率与欠账摘要：未排期显示引导文案，已排期显示百分比与欠账天数 */
+private fun retentionSummary(word: Word, now: Long): String {
+    val retention = CardSessionLogic.predictedRetention(word, now)
+        ?: return "尚未排期，学一次后自动进入遗忘曲线"
+    val percent = CardSessionLogic.retentionPercent(retention)
+    val overdue = CardSessionLogic.overdueDays(word, now)
+    return if (overdue > 0) "预测保留率 $percent% · 已拖 $overdue 天" else "预测保留率 $percent%"
+}
+
 /** 单词列表页：开始学习主按钮 + 全部单词（单词 + 释义一行 + 状态标签） */
 @Composable
 fun WordListScreen(
@@ -66,6 +75,7 @@ fun WordListScreen(
 ) {
     val words by viewModel.words.collectAsStateWithLifecycle()
     val home by viewModel.homeState.collectAsStateWithLifecycle()
+    val now = System.currentTimeMillis()
 
     Column(
         modifier = Modifier
@@ -125,6 +135,11 @@ fun WordListScreen(
                             )
                             WordStatusTag(word.status)
                         }
+                        Spacer(Modifier.height(DesignTokens.SpacingXs))
+                        Text(
+                            text = retentionSummary(word, now),
+                            style = DesignTokens.Caption,
+                        )
                     }
                 }
                 item { Spacer(Modifier.height(DesignTokens.SpacingMd)) }

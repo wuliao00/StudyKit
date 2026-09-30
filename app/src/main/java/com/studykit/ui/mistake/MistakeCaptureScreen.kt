@@ -46,7 +46,8 @@ import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.theme.DesignTokens
 
 /**
- * 拍照录入页：拍照返回后选择学科（已有学科 + 可输入新学科）+ 填写标题/备注 → 保存。
+ * 拍照录入页：拍照返回后选择学科（已有学科 + 可输入新学科）+ 填写标题/备注 + 可选错因归因 → 保存。
+ * 保存即进入自动排期（次日回到队列），无需手动设复习时间。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -61,6 +62,7 @@ fun MistakeCaptureScreen(
     var newSubject by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var cause by remember { mutableStateOf("") }
 
     val finalSubject = newSubject.ifBlank { selectedSubject }
 
@@ -153,6 +155,29 @@ fun MistakeCaptureScreen(
         )
 
         Spacer(Modifier.height(DesignTokens.SpacingXl))
+        SectionHeader(title = "错因归因（可跳过）")
+        Spacer(Modifier.height(DesignTokens.SpacingSm))
+        Text(
+            text = "当场能说出错在哪一步，比事后翻看解析更利于归因。",
+            style = DesignTokens.Caption,
+        )
+        Spacer(Modifier.height(DesignTokens.SpacingMd))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+            verticalArrangement = Arrangement.spacedBy(DesignTokens.SpacingSm),
+        ) {
+            MistakeMastery.CAUSES.forEach { item ->
+                SubjectOption(label = item.label, selected = cause == item.label) {
+                    cause = if (cause == item.label) "" else item.label
+                }
+            }
+        }
+        MistakeReviewLogic.selfExplainPrompt(cause)?.let { prompt ->
+            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Text(text = prompt, style = DesignTokens.Auxiliary)
+        }
+
+        Spacer(Modifier.height(DesignTokens.SpacingXl))
         AppButton(
             text = "保存错题",
             enabled = finalSubject.isNotBlank(),
@@ -161,6 +186,7 @@ fun MistakeCaptureScreen(
                     subject = finalSubject,
                     title = title,
                     note = note,
+                    cause = cause,
                     onSaved = onSaved,
                 )
             },

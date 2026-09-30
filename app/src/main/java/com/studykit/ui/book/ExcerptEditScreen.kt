@@ -1,5 +1,6 @@
 package com.studykit.ui.book
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -25,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppMultilineTextField
@@ -41,6 +44,7 @@ fun ExcerptEditScreen(
 ) {
     var content by rememberSaveable { mutableStateOf("") }
     var pageNo by rememberSaveable { mutableStateOf("") }
+    var enqueueReview by rememberSaveable { mutableStateOf(false) }
     var loaded by rememberSaveable { mutableStateOf(excerptId == null) }
     // 编辑模式下书籍 id 从书摘记录中取得
     var resolvedBookId by rememberSaveable { mutableStateOf(bookId ?: 0L) }
@@ -96,6 +100,27 @@ fun ExcerptEditScreen(
             placeholder = "例如：63",
         )
 
+        // 新建书摘时可选入队；划线不等于保留，入队后才会进入间隔复习
+        if (excerptId == null) {
+            Spacer(Modifier.height(DesignTokens.SpacingMd))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { enqueueReview = !enqueueReview },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = enqueueReview, onCheckedChange = { enqueueReview = it })
+                Column {
+                    Text(text = "加入复习队列", style = DesignTokens.Auxiliary)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "明天开始按遗忘曲线提醒你重新回忆这条书摘。",
+                        style = DesignTokens.Caption,
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(DesignTokens.SpacingXl))
         AppButton(
             text = "保存书摘",
@@ -106,6 +131,8 @@ fun ExcerptEditScreen(
                     bookId = resolvedBookId,
                     content = content,
                     pageNo = pageNo.toIntOrNull(),
+                    enqueue = excerptId == null &&
+                        BookRecallLogic.shouldEnqueueExcerpt(enqueueReview, content),
                 ) { onBack() }
             },
         )

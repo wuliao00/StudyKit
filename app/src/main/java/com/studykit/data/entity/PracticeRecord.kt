@@ -26,4 +26,8 @@ data class PracticeRecord(
     val selected: Int,
     val correct: Boolean,
     val at: Long = System.currentTimeMillis(),
+    /** 作答前自评信心 0..2（瞎猜/有点印象/非常确定），-1 未评级 */
+    @ColumnInfo(name = "confidence", defaultValue = "-1") val confidence: Int = -1,
+    /** 本次用到了几档提示（挤牙膏深度），0 表示直接作答 */
+    @ColumnInfo(name = "hint_level", defaultValue = "0") val hintLevel: Int = 0,
 )

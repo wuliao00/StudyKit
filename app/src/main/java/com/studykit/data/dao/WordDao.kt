@@ -43,6 +43,28 @@ interface WordDao {
     @Query("UPDATE words SET status = :status, next_review_at = :nextReviewAt WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String, nextReviewAt: Long = 0L)
 
+    /** FSRS 一次复习结果落库：记忆状态 + 展示档位 + 下次到期 + 自评信心 */
+    @Query(
+        "UPDATE words SET stability = :stability, difficulty = :difficulty, reps = :reps, " +
+            "lapses = :lapses, last_review_at = :lastReviewAt, last_confidence = :confidence, " +
+            "status = :status, next_review_at = :nextReviewAt WHERE id = :id",
+    )
+    suspend fun applyScheduling(
+        id: Long,
+        stability: Double,
+        difficulty: Double,
+        reps: Int,
+        lapses: Int,
+        lastReviewAt: Long,
+        confidence: Int,
+        status: String,
+        nextReviewAt: Long,
+    )
+
+    /** 已进入调度的单词（记忆看板与预测保留率用） */
+    @Query("SELECT * FROM words WHERE stability > 0 ORDER BY next_review_at ASC")
+    suspend fun getScheduled(): List<Word>
+
     @Insert
     suspend fun insertReview(review: WordReview): Long
 }

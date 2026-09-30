@@ -17,10 +17,51 @@ import androidx.work.WorkerParameters
 import com.studykit.MainActivity
 import com.studykit.R
 import com.studykit.StudyKitApp
+import com.studykit.srs.Fsrs
+import com.studykit.srs.MemoryState
+import kotlin.math.roundToInt
+
+/** 一条复习提醒通知的标题与正文 */
+data class ReminderContent(
+    val title: String,
+    val text: String,
+)
+
+/**
+ * 把三类到期数量与整体预测保留率格式化成通知文案（纯函数，便于单测）。
+ *
+ * 约定：
+ * - 三类全为 0 时返回 null，调用方据此不发通知；
+ * - 数量为 0 的类别不出现在文案里；
+ * - [averageRetention] 为到期集内已调度条目的平均预测保留率（0..1），按四舍五入显示为百分比；
+ * - 措辞保持非威胁性（不用「断签」「清零」「再不复习就忘了」等），不加 emoji。
+ */
+fun buildReminderContent(
+    wordDue: Int,
+    mistakeDue: Int,
+    excerptDue: Int,
+    averageRetention: Double,
+): ReminderContent? {
+    val word = wordDue.coerceAtLeast(0)
+    val mistake = mistakeDue.coerceAtLeast(0)
+    val excerpt = excerptDue.coerceAtLeast(0)
+    if (word + mistake + excerpt == 0) return null
+
+    val parts = buildList {
+        if (word > 0) add("单词 $word")
+        if (mistake > 0) add("错题 $mistake")
+        if (excerpt > 0) add("书摘 $excerpt")
+    }
+    val percent = (averageRetention.coerceIn(0.0, 1.0) * 100).roundToInt()
+    return ReminderContent(
+        title = "今日复习",
+        text = "今日复习：${parts.joinToString("、")}；预测保留率 $percent%。",
+    )
+}
 
 /**
  * 复习提醒 Worker（每 6 小时由 [ReminderScheduler] 周期触发）：
- * 查询「已到期待复习的错题」与「今日到期单词」，有则发通知，点击打开应用。
+ * 汇总单词/错题/书摘的到期数量与到期集的整体预测保留率，有到期内容才发通知，点击打开应用。
  */
 class ReminderWorker(
     private val context: Context,
@@ -41,7 +82,7 @@ class ReminderWorker(
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "到期错题与单词的复习提醒"
+                description = "单词、错题与书摘的到期复习提醒"
             }
             manager.createNotificationChannel(channel)
         }
@@ -49,13 +90,15 @@ class ReminderWorker(
 
     override suspend fun doWork(): Result {
         val container = (context.applicationContext as StudyKitApp).container
+        val db = container.database
         val now = System.currentTimeMillis()
 
         // 到期条件均由 SQL WHERE 过滤，避免全表载入内存
-        val dueMistakes = container.mistakeRepository.getDueForReview(now)
-        val dueWords = container.wordRepository.getDueForReview(now)
+        val dueWords = db.wordDao().getDueForReview(now)
+        val dueMistakes = db.mistakeDao().getDueSorted(now)
+        val dueExcerpts = db.bookDao().getExcerptsDue(now)
 
-        if (dueMistakes.isEmpty() && dueWords.isEmpty()) {
+        if (dueWords.isEmpty() && dueMistakes.isEmpty() && dueExcerpts.isEmpty()) {
             Log.i(TAG, "无到期复习内容，本次不发通知")
             return Result.success()
         }
@@ -73,11 +116,31 @@ class ReminderWorker(
             return Result.success()
         }
 
-        val parts = buildList {
-            if (dueMistakes.isNotEmpty()) add("${dueMistakes.size} 道错题到期")
-            if (dueWords.isNotEmpty()) add("${dueWords.size} 个单词待复习")
+        // 整体预测保留率：取本次到期条目中「已进入调度（stability>0）」部分的平均 retrievability；
+        // 新词/未入队条目没有 FSRS 记忆状态，不参与平均，避免把保留率虚低成威胁性数字。
+        val dueStates = buildList {
+            dueWords.filter { it.isScheduled }.forEach {
+                add(MemoryState(it.stability, it.difficulty, it.lastReviewAt, it.reps, it.lapses))
+            }
+            dueMistakes.filter { it.isScheduled }.forEach {
+                add(MemoryState(it.stability, it.difficulty, it.lastReviewAt, it.reps, it.lapses))
+            }
+            dueExcerpts.filter { it.stability > 0.0 }.forEach {
+                add(MemoryState(it.stability, it.difficulty, it.lastReviewAt, it.reps, it.lapses))
+            }
         }
-        val contentText = parts.joinToString("，") + "，打开 StudyKit 开始复习"
+        val averageRetention = if (dueStates.isEmpty()) {
+            Fsrs.DEFAULT_RETENTION
+        } else {
+            dueStates.sumOf { Fsrs.retrievability(it, now) } / dueStates.size
+        }
+
+        val content = buildReminderContent(
+            wordDue = dueWords.size,
+            mistakeDue = dueMistakes.size,
+            excerptDue = dueExcerpts.size,
+            averageRetention = averageRetention,
+        ) ?: return Result.success()
 
         val openIntent = PendingIntent.getActivity(
             context,
@@ -89,16 +152,16 @@ class ReminderWorker(
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("今日复习")
-            .setContentText(contentText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setContentTitle(content.title)
+            .setContentText(content.text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(openIntent)
             .build()
 
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-        Log.i(TAG, "复习提醒已发送：$contentText")
+        Log.i(TAG, "复习提醒已发送：${content.text}")
         return Result.success()
     }
 }

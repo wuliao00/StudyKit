@@ -25,4 +25,10 @@ data class WordReview(
     @ColumnInfo(name = "word_id") val wordId: Long,
     val correct: Boolean,
     @ColumnInfo(name = "reviewed_at") val reviewedAt: Long = System.currentTimeMillis(),
+    /** FSRS 评分 1..4（Again/Hard/Good/Easy），旧数据 3 表示 Good */
+    @ColumnInfo(name = "rating", defaultValue = "3") val rating: Int = 3,
+    /** 作答前自评信心 0..2（瞎猜/有点印象/非常确定），-1 表示未评级 */
+    @ColumnInfo(name = "confidence", defaultValue = "-1") val confidence: Int = -1,
+    /** 该次复习后的稳定性快照，用于画记忆曲线 */
+    @ColumnInfo(name = "stability_after", defaultValue = "0") val stabilityAfter: Double = 0.0,
 )
