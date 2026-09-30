@@ -189,11 +189,17 @@ private fun CheckInButton(
     }
 }
 
-/** 倒计时/达成文案 */
+/**
+ * 倒计时/达成文案：把**目标天数**也一并说出来（本轮 A 段）。
+ *
+ * 旧那句只说"剩 N 天到目标"，目标天数本身在卡上根本没地方出现 —— 而一个看不见的参照
+ * 不起任何作用（尤其它现在是 66 而不是旧那个数）。达成那一态也只说目标本身，
+ * 不说成"N 天养成成了"。分隔用" · "，与上面那行副标题同一套。
+ */
 private fun countdownText(item: HabitItemUi): String = when {
-    item.achieved -> "目标已达成"
-    item.remainingDays >= 0 -> "剩 ${item.remainingDays} 天到目标"
-    else -> "已超额 ${-item.remainingDays} 天"
+    item.achieved -> "目标 ${item.habit.targetDays} 天 · 已达成"
+    item.remainingDays >= 0 -> "目标 ${item.habit.targetDays} 天 · 剩 ${item.remainingDays} 天"
+    else -> "目标 ${item.habit.targetDays} 天 · 已超出 ${-item.remainingDays} 天"
 }
 
 /** 热力图窗口宽度：卡片文案「近 N 周坚持」与网格列数同源，改这里即同时改两处 */
@@ -748,6 +754,8 @@ private fun HabitCard(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     // 时段分类（v2.4 批次四）：副标题行追加时段名；ANY 是"没绑例程"，不显示
+                    // 双指标（本轮 A 段）：连续天数旁边并列一个"近 7 天 x/7"的弹性口径，
+                    // 前者说势头、后者说比例，漏一天不再只是一次可见的归零。
                     text = buildString {
                         append(
                             if (item.isCountType) {
@@ -756,6 +764,7 @@ private fun HabitCard(
                                 "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
                             },
                         )
+                        append(" · ${weekComplianceLabel(item.week)}")
                         if (item.habit.category != Habit.CATEGORY_ANY) {
                             append(" · ${categoryLabel(category = item.habit.category)}")
                         }

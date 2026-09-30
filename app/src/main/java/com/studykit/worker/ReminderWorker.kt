@@ -17,10 +17,64 @@ import androidx.work.WorkerParameters
 import com.studykit.MainActivity
 import com.studykit.R
 import com.studykit.StudyKitApp
+import com.studykit.data.entity.Word
+import com.studykit.data.memory.MemoryModel
+import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
+
+private val ONE_DAY_MS: Long = TimeUnit.DAYS.toMillis(1)
+
+/**
+ * 这批到期词「现在大约还记得多少」（纯函数，本轮 B 段）。
+ *
+ * **不另建一套曲线**：逐条走 [MemoryModel.recallProbability]，锚点 `lastReviewAt ?: createdAt`，
+ * 对整批取概率的算术平均 —— 与首页 `TomorrowForecast.of` 同一口径（同一个函数、同一个锚点约定、
+ * 同一个"脏 h 行留在分母"）。两处唯一实质差别是取值时刻：那一格拿的是"各自明天到期时"，
+ * 这里是"现在"（这批词已经到期了）。两个时刻平均出的百分比会差很多，但那是口径本身，不是算法分家。
+ *
+ * @return 0~100；**词集为空、或整批半衰期都不可信时返回 null**。
+ *   后者宁可整段不提也不能印 0%：`recallProbability` 对 h ≤ 0 回 0 是"当作全忘了"的降级，
+ *   而不是测出来的值；把它当成实测印到通知里，就是拿不存在的坏消息推动用户打开应用。
+ *
+ * 入参直接复用 `WordDao.getDueForReview` 那一条 `SELECT *`：同一行里就有
+ * `half_life_days` / `last_review_at` / `created_at`，所以结构上不存在"两次查询再内存配对"。
+ */
+internal fun dueRetentionPercent(words: List<Word>, now: Long): Int? {
+    if (words.isEmpty()) return null
+    // 至少得有一个可信的 h，否则算出来的数来路不明（全脏时逐条会是 0 ⇒ 平均 0%）
+    if (words.none { it.halfLifeDays.isFinite() && it.halfLifeDays > 0.0 }) return null
+    val probabilities = words.map { word ->
+        val anchor = word.lastReviewAt ?: word.createdAt
+        val gapDays = (now - anchor).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
+        MemoryModel.recallProbability(gapDays = gapDays, halfLifeDays = word.halfLifeDays)
+    }
+    return ((probabilities.sum() / probabilities.size) * 100).roundToInt()
+}
+
+/**
+ * 通知正文（纯函数）。零的那一类不出现在文案里；两类都为零 ⇒ null，调用方据此**不发通知**。
+ *
+ * 保留率拿不到（[retentionPercent] = null）时整段不提，也不拿 0% 顶上。
+ * 那半句主语是"这些单词"：错题没有半衰期字段（`Mistake` 只有 `reviewAt`），
+ * 把它们也算进一个"你还记得 X%"就是在说假话。
+ */
+internal fun reminderContentText(mistakeCount: Int, wordCount: Int, retentionPercent: Int?): String? {
+    if (mistakeCount <= 0 && wordCount <= 0) return null
+    val parts = buildList {
+        if (mistakeCount > 0) add("$mistakeCount 道错题到期")
+        if (wordCount > 0) add("$wordCount 个单词待复习")
+        // 单词为 0 时保留率没有归属对象，那一半句不能挂到错题身上
+        if (retentionPercent != null && wordCount > 0) add("这些单词现在大约还记得 $retentionPercent%")
+    }
+    return parts.joinToString("，") + "，打开 StudyKit 开始复习"
+}
 
 /**
  * 复习提醒 Worker（每 6 小时由 [ReminderScheduler] 周期触发）：
  * 查询「已到期待复习的错题」与「今日到期单词」，有则发通知，点击打开应用。
+ *
+ * 正文由 [reminderContentText] 拼：零的那一类不提，两类都为零就不发；单词那一档
+ * 本轮额外带上 [dueRetentionPercent] 算出的整体预测保留率（取不到就整段不提）。
  */
 class ReminderWorker(
     private val context: Context,
@@ -73,11 +127,12 @@ class ReminderWorker(
             return Result.success()
         }
 
-        val parts = buildList {
-            if (dueMistakes.isNotEmpty()) add("${dueMistakes.size} 道错题到期")
-            if (dueWords.isNotEmpty()) add("${dueWords.size} 个单词待复习")
-        }
-        val contentText = parts.joinToString("，") + "，打开 StudyKit 开始复习"
+        val contentText = reminderContentText(
+            mistakeCount = dueMistakes.size,
+            wordCount = dueWords.size,
+            // 与上面那批词同一个列表、同一个 now，不重查也不配对
+            retentionPercent = dueRetentionPercent(dueWords, now),
+        ) ?: return Result.success().also { Log.i(TAG, "到期量为 0，本次不发通知") }
 
         val openIntent = PendingIntent.getActivity(
             context,

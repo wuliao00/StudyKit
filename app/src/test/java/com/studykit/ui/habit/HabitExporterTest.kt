@@ -23,7 +23,9 @@ class HabitExporterTest {
         val today = LocalDate.of(2026, 8, 28)
         val dates = (0 until checkDays).map { today.minusDays(it.toLong()) }.toSet()
         return HabitItemUi(
-            habit = Habit(uuid = "u1", name = name, icon = icon),
+            // 显式传 targetDays：下面那句断言钉的是"进度文本怎么拼"，
+            // 不该跟着实体默认值一起漂（本轮把默认值 21 换成了 66）
+            habit = Habit(uuid = "u1", name = name, icon = icon, targetDays = 21),
             checkedDates = dates,
             totalCheckDays = checkDays,
             totalAmount = 0.0,

@@ -336,14 +336,51 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     /** 选择学科，开始一轮练习（该学科前 10 道题） */
     fun startQuiz(subject: String) {
         viewModelScope.launch {
+            // `AppSettings.interleavingEnabled` 的消费点（设置页「每条设置必须有消费点」的规矩）：
+            // 读一次、传进纯函数那一处判定。单科时 interleaveBySubject 原样退回（交错对单一材料无意义）。
+            val interleaving = settingsRepository.current().interleavingEnabled
             val questions = questionRepository.getBySubject(subject, QUIZ_SIZE, 0)
-            _quiz.value = QuizUiState(subject = subject, questions = questions)
+            _quiz.value = QuizUiState(
+                subject = subject,
+                questions = interleaveBySubject(questions, enabled = interleaving),
+            )
+        }
+    }
+
+    /**
+     * 综合练习：跨学科组一轮（每个已录入学科先取若干条，合并后按学科打散再截前 [QUIZ_SIZE] 道）。
+     *
+     * 这是交错真正生效的入口 —— 单科轮永远是原序，只有这一轮里多学科才谈得上「不连续多题同科」。
+     * 取数只用现有的 `getBySubject` / `observeSubjects`，**不新增仓库方法、不碰 Room schema**。
+     */
+    fun startMixedQuiz() {
+        viewModelScope.launch {
+            val interleaving = settingsRepository.current().interleavingEnabled
+            val subjects = questionRepository.observeSubjects().first()
+            // 各科给同样的余量再合并：交错要的是"轮流动"，先把每科各自的前若干条捞齐
+            val pool = subjects.flatMap { questionRepository.getBySubject(it, QUIZ_SIZE, 0) }
+            val ordered = interleaveBySubject(pool, enabled = interleaving)
+            _quiz.value = QuizUiState(
+                subject = MIXED_SUBJECT_LABEL,
+                questions = ordered.take(QUIZ_SIZE),
+            )
         }
     }
 
     /** 重置练习会话（返回学科选择） */
     fun resetQuiz() {
         _quiz.value = QuizUiState()
+    }
+
+    /**
+     * 写交错开关（[com.studykit.data.AppSettings.interleavingEnabled]）。
+     * 消费点在 [startQuiz] / [startMixedQuiz] 组轮次时读它，判定落在 `interleaveBySubject` 一处。
+     * 与 `markRecallGateHintSeen` 同一条纪律：写失败不打断学习，也不重投。
+     */
+    fun setInterleavingEnabled(on: Boolean) {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(interleavingEnabled = on) } }
+        }
     }
 
     /** 选择选项：即时判定，写入练习记录；答错幂等写入错题本 */

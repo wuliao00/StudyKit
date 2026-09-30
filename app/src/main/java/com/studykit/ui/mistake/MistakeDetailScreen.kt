@@ -68,7 +68,7 @@ private fun sourceLabel(source: String): String = when (source) {
 }
 
 /**
- * 错题详情页：大图查看（点击放大）+ 内容/备注 + 学科/来源/时间信息，
+ * 错题详情页：大图查看（点击放大）+ 题面与重做门（答案与解析默认遮住）+ 学科/来源/时间信息，
  * 操作：编辑学科、设置复习时间（快捷项）、标记已掌握、删除。
  *
  * **route 上的 `mistakeId` 是本页唯一的准绳**（终审 C1）：`openDetail` 由本页 `LaunchedEffect` 发起，
@@ -88,6 +88,19 @@ private fun sourceLabel(source: String): String = when (source) {
  * 免得「手动返回 + 弹跳到期」在 280ms popExit 窗口里叠成两次 pop。
  * 另：`markMastered` 之后该题从列表默认的「待复习」列里消失（spec 划线消失，由列表侧
  * `animateItem()` 播退场），已掌握清单改由列表页顶的「已掌握」chip 进入。
+ *
+ * ## 重做优先（v2.5 S3）
+ * 本页**默认不展示答案与解析**：进来只看得到题面（`splitForRedo` 从正文里按行首标记切出的那前半），
+ * 按过「我重做了一遍」才展开答案与解析段、备注段（若它被当作解析遮住）与一条固定的自我解释提问。
+ * 依据是检索练习优于再读解析（Roediger & Karpicke 2006；Karpicke & Blunt 2011, Science）：
+ * 答案在场时的「看懂」不算提取过。
+ * 判定与文案全在 `RedoFlow.kt`（纯函数，钉在 `RedoFlowTest`），页面只读 [RedoGate] 的字段。
+ *
+ * 阶段用 `rememberSaveable(mistakeId)` 存**阶段名串**：转屏/换屏不丢，换一道题（同一 entry 上
+ * `mistakeId` 变了）不会把上一道题的展开态带过来；存档里读到认不出的串时
+ * [decodeRedoPhase] 回到遮住那一侧，宁可让用户多点一次按钮。
+ * 阶段**不落库**：本轮没有 schema 变更，也就没有逐次重做历史，
+ * [redoHistoryBoundary] 那句就是防「应用已按你的重做记录排期」这种误读的。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -109,6 +122,15 @@ fun MistakeDetailScreen(
     LaunchedEffect(mistakeId) { viewModel.openDetail(mistakeId) }
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
     val render = renderMistakeDetail(state = detailState, mistakeId = mistakeId)
+    // 重做阶段声明在任何页相 return **之前**：加载态与就绪态走的是两条不同的组合路径，
+    // 状态排在 return 之后就会在重新进入就绪态那一次组合里回到初值 —— 用户刚按开的
+    // 展开态就这么抹掉了（其余三枚 saveable 状态同一口径）。
+    var redoPhaseRaw by rememberSaveable(mistakeId) {
+        mutableStateOf(encodeRedoPhase(RedoPhase.REDO))
+    }
+    val redoAction = { action: RedoAction ->
+        redoPhaseRaw = encodeRedoPhase(nextRedoPhase(decodeRedoPhase(redoPhaseRaw), action))
+    }
     var showFullImage by remember { mutableStateOf(false) }
     // 学科对话框带的是**用户输入**，故开合与文本一起 saveable（终审 C3 的同类站点）：
     // 转屏后对话框还在、已输入的学科还在。删除确认与看图浮层不留输入，仍按瞬时态处理。
@@ -192,6 +214,12 @@ fun MistakeDetailScreen(
     val current = (render as MistakeDetailReady).mistake
     // 到这里 `current.id == mistakeId` 是由 [renderMistakeDetail] 保证的：
     // 下面所有写动作一律喂 route 上的 [mistakeId]，不喂渲染出来的行。
+    // 重做门控只看这一行的正文与备注，算一次就够（纯函数，无 IO）。
+    val redoGate = buildRedoGate(
+        content = current.content,
+        note = current.note,
+        phase = decodeRedoPhase(redoPhaseRaw),
+    )
     val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }
     // 组合期不 stat 磁盘（终审 I8）：与 `MistakeCaptureScreen` 的照片预览同一写法 ——
     // 路径在组合期拼好，存在性由 IO 线程回填。初值乐观取「有路径就当有图」，
@@ -287,8 +315,8 @@ fun MistakeDetailScreen(
                 )
             }
 
-            // ── 内容 / 备注 ──────────────────────────────────────────────
-            if (current.content.isNotBlank()) {
+            // ── 题面 / 重做门 / 答案与解析 / 备注 ──────────────────────────
+            if (redoGate.stemText.isNotBlank()) {
                 Spacer(Modifier.height(AppTheme.space.md))
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -296,10 +324,31 @@ fun MistakeDetailScreen(
                         style = texts.caption.copy(fontWeight = FontWeight.Medium),
                     )
                     Spacer(Modifier.height(AppTheme.space.xs))
-                    Text(text = current.content, style = texts.body)
+                    // 重做阶段只给题面：整段正文以答案标记开头时 stemText 为空，这块就不出卡
+                    Text(text = redoGate.stemText, style = texts.body)
                 }
             }
-            if (current.note.isNotBlank()) {
+
+            // 重做门：先自己做一遍，才给对答案的机会
+            Spacer(Modifier.height(AppTheme.space.md))
+            RedoGateCard(gate = redoGate, onAction = redoAction)
+
+            // 答案与解析：对照阶段才出现，出现就是原文那一段（不重写、不重排）
+            if (redoGate.answerKey.isNotBlank() && redoGate.answerKeyVisible) {
+                Spacer(Modifier.height(AppTheme.space.md))
+                AppCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = answerSectionTitle(),
+                        style = texts.caption.copy(fontWeight = FontWeight.Medium),
+                    )
+                    Spacer(Modifier.height(AppTheme.space.xs))
+                    Text(text = redoGate.answerKey, style = texts.body)
+                }
+            }
+
+            // 备注：正文里认不出答案段时，它是本轮唯一可能被遮住的一段（见 `buildRedoGate`）；
+            // 刷题收录那行 `qid:` 标记不是解析，任何阶段都照常显示。
+            if (redoGate.noteText.isNotBlank() && redoGate.noteVisible) {
                 Spacer(Modifier.height(AppTheme.space.md))
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -307,7 +356,7 @@ fun MistakeDetailScreen(
                         style = texts.caption.copy(fontWeight = FontWeight.Medium),
                     )
                     Spacer(Modifier.height(AppTheme.space.xs))
-                    Text(text = current.note, style = texts.body)
+                    Text(text = redoGate.noteText, style = texts.body)
                 }
             }
 
@@ -383,6 +432,58 @@ fun MistakeDetailScreen(
             },
             onDismiss = { showDeleteDialog = false },
         )
+    }
+}
+
+/**
+ * 重做门：把「先自己做一遍」摆在「对答案」前面。
+ *
+ * 两相共用同一枚 [AppCard]（本仓卡片口径与 `ImportResultScreen` 的折叠区同一套），
+ * 只换内容：
+ * - [RedoPhase.REDO]：行为提示（[redoCoverHint]）+「少了什么」的一句（[coveredLabel]，
+ *   无可遮内容时它给 null，页面就不说「已遮住」）+ 唯一的主行动钮 [AppButton]。
+ * - [RedoPhase.CHECK]：自我解释提问（[selfExplainPrompt]，固定在解析卡上游）+
+ *   边界说明（[redoHistoryBoundary]）+ 次行动描边钮「重新遮住答案」（仅当真有东西可遮）。
+ *
+ * 主/次行动钮不新造视觉：实心走 `AppButton`、描边走 `secondary = true`；
+ * 三句文案全在 `RedoFlow.kt`，逐句钉在 `RedoFlowTest` 里。
+ */
+@Composable
+private fun RedoGateCard(gate: RedoGate, onAction: (RedoAction) -> Unit) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = redoGateTitle(), style = texts.cardTitle)
+        Spacer(Modifier.height(AppTheme.space.xs))
+        if (gate.phase == RedoPhase.REDO) {
+            Text(text = redoCoverHint(), style = texts.body)
+            // 「少了什么」只在**真少显示了**的时候说（[RedoGate.isCovered]）：
+            // 无可遮内容时 [coveredLabel] 本身给 null，两道门叠着，页面不会说「答案已遮住」而屏幕上它就在眼前
+            if (gate.isCovered) {
+                coveredLabel(gate.concealed)?.let { label ->
+                    Spacer(Modifier.height(AppTheme.space.xs))
+                    Text(text = label, style = texts.caption, color = colors.secondaryText)
+                }
+            }
+            Spacer(Modifier.height(AppTheme.space.sm))
+            AppButton(text = redoConfirmLabel(), onClick = { onAction(RedoAction.ConfirmedRedo) })
+        } else {
+            Text(text = selfExplainPrompt(), style = texts.body)
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = redoHistoryBoundary(),
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
+            if (gate.hasReveal) {
+                Spacer(Modifier.height(AppTheme.space.sm))
+                AppButton(
+                    text = redoCoverAgainLabel(),
+                    secondary = true,
+                    onClick = { onAction(RedoAction.CoverAnswer) },
+                )
+            }
+        }
     }
 }
 

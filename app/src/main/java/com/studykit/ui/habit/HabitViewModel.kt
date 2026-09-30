@@ -31,9 +31,46 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import kotlin.math.roundToInt
 
 /** 补打卡窗口：仅允许补录过去 7 天内未打卡的日期 */
 const val MAKEUP_WINDOW_DAYS = 7L
+
+/** 弹性达标窗口：看的是"含今天的近 7 个日历日"，与连续天数那套回溯无关 */
+const val WEEK_WINDOW_DAYS = 7
+
+/** 达标线：近 7 天做到 5 天就算跟上 —— 漏一两天不判负（Lally et al. 2010, EJSP） */
+const val WEEK_TARGET_DAYS = 5
+
+/**
+ * 创建页的目标天数档位（本轮 A 段）：以 66 天为中位数，两侧给个体差异留出空间。
+ *
+ * 旧档位是 7/21/30/60/100，中心那个 21 已被原研究团队辟谣；这里把中心换成
+ * [Habit.DEFAULT_TARGET_DAYS]（66），且**必须**让默认值落在档位里 ——
+ * 否则新建页进来时那一格选不中，用户看到的第一个数是"没选"。
+ * 上限 180：研究报的是 18–254 天，而超过半年仍未自动化的习惯，不是把
+ * 这个数字再调大能救的。
+ *
+ * 放在 ViewModel 而不是 `HabitCreateScreen`：常量要被纯 JVM 单测读到，而放
+ * Compose 文件里读一个非 const 顶层 val 会拖着整个 Compose 类加载进场。
+ */
+internal val HABIT_TARGET_DAY_OPTIONS = listOf(7, 30, 66, 100, 180)
+
+/**
+ * 创建页档位下面那句诚实说明。
+ *
+ * 数字全部从常量插值，免得改了默认值而文案还在讲旧数。但本轮**没有**"断签保护卡额度"
+ * 的落库位置（那要加列，超出范围），所以这一句不许提额度、也不许说漏掉的日子会被自动补上；
+ * [MAKEUP_WINDOW_DAYS] 的补录窗口只能照实说。
+ *
+ * 同一行在数量型习惯那里标的标签是"目标期限（天）"，所以这句**不许**写"它不是期限"
+ * —— 那对数量型是错的（过了那天就完不成了）。反 KPI 那一层靠"漏一天不算断"与 5/7 撑。
+ */
+internal val HABIT_TARGET_DAYS_HINT: String =
+    "研究里习惯成形约需中位数 ${Habit.DEFAULT_TARGET_DAYS} 天，个体差异很大（18–254 天），" +
+        "这一格按自己的情况选就行。漏一天不算断，" +
+        "近 $WEEK_WINDOW_DAYS 天做到 $WEEK_TARGET_DAYS 天就算跟上；" +
+        "漏掉的日子在 $MAKEUP_WINDOW_DAYS 天内还能补录（设置里可关），超出就补不了了。"
 
 /** 数量数值格式化：整数不带小数点，小数保留 1 位 */
 fun formatAmount(value: Double): String =
@@ -49,6 +86,13 @@ data class HabitItemUi(
     val streak: Int,
     val checkedInToday: Boolean,
     val latestNote: String,
+    /**
+     * 近 7 天弹性达标（本轮 A 段）：与 [streak] 并列的第二指标。
+     *
+     * 默认按满周算（方便测试与旁路构造），列表那边会按习惯实际年龄重算窗口：
+     * 新建三天的习惯拿 5/7 当达标线是凭空造坏消息。只读现有 `check_ins`，不加列。
+     */
+    val week: WeekCompliance = weekCompliance(checkedDates),
 ) {
     /** targetCount > 0 即数量型习惯 */
     val isCountType: Boolean get() = habit.targetCount > 0
@@ -73,7 +117,7 @@ data class HabitItemUi(
             return ChronoUnit.DAYS.between(LocalDate.now(), targetDate)
         }
 
-    /** 进度文案：数量型「300/500 ml」；天数型「5/21 天」 */
+    /** 进度文案：数量型「300/500 ml」；天数型「5/66 天」（分母就是习惯自己的 targetDays） */
     val progressText: String
         get() = if (isCountType) {
             "${formatAmount(totalAmount)}/${formatAmount(habit.targetCount)} ${habit.unit}".trim()
@@ -113,6 +157,81 @@ internal fun habitStreak(dates: Set<LocalDate>, today: LocalDate = LocalDate.now
     }
     return streak
 }
+
+/**
+ * 近 7 天（弹性）达标的结果：列表卡片上与「连续天数」并列的第二个指标。
+ *
+ * 为什么要第二个指标：[habitStreak] 那一套是"断了就回到 0"，而养成研究里恰好不是这样
+ * （漏一天不毁掉自动性）。只看连续天数会把"漏一天"这个完全正常的动作变成一次可见的失败。
+ * 两个数并排摆着，前者说势头、后者说比例，用户自己看得懂它们不矛盾。
+ *
+ * @param windowDays 窗口天数（含今天），新习惯还没满一周时小于 [WEEK_WINDOW_DAYS]
+ * @param checkedDays 窗口内打过卡的天数（同一天多条只算一天，集合语义）
+ * @param targetDays 本窗口的达标线，由 [weekTargetDays] 按窗口等比缩放
+ * @param ratePercent 达标率（四舍五入取整）：分母是窗口天数，不是目标天数
+ * @param achieved 跟上没跟上（[checkedDays] ≥ [targetDays]）
+ */
+data class WeekCompliance(
+    val windowDays: Int,
+    val checkedDays: Int,
+    val targetDays: Int,
+    val ratePercent: Int,
+    val achieved: Boolean,
+)
+
+/**
+ * 达标线（纯函数）：满窗口时就是 [WEEK_TARGET_DAYS]（7 天里 5 天）；
+ * 窗口短了就等比缩放，并且永远不高于窗口本身 —— 一个昨天的习惯不该被要求做到 5 天。
+ */
+internal fun weekTargetDays(windowDays: Int): Int {
+    val days = windowDays.coerceIn(1, WEEK_WINDOW_DAYS)
+    if (days == WEEK_WINDOW_DAYS) return WEEK_TARGET_DAYS
+    return (days * WEEK_TARGET_DAYS.toDouble() / WEEK_WINDOW_DAYS).roundToInt().coerceIn(1, days)
+}
+
+/**
+ * 窗口实际长度（纯函数）：习惯本身还不满一周时，分母先跟日子数走，
+ * 否则新建当天的习惯会被凭空判一次"未达标"。封顶 [WEEK_WINDOW_DAYS]；
+ * 建库时间在未来（时钟漂移）也不许算出 0 或负窗口。
+ */
+internal fun weeklyWindowDays(startDate: LocalDate, today: LocalDate = LocalDate.now()): Int =
+    (ChronoUnit.DAYS.between(startDate, today) + 1).coerceIn(1, WEEK_WINDOW_DAYS.toLong()).toInt()
+
+/**
+ * 近 [windowDays] 天达标情况（纯函数）：只看含今天向前数那几天，更早的打卡不进分子也不进分母。
+ *
+ * 与 [habitStreak] 共用同一个 `Set<LocalDate>`，但口径不同：这里不回溯、不在窗口中间
+ * "断开"，所以漏一天只是把两个数都拉低一点，不会像连续天数那样归零。
+ *
+ * 这里是**公开**而不是 internal：[HabitItemUi.week] 是公开属性，它的默认值就调这个函数，
+ * 可见性上不留任何需要推敲的地方（本轮不能跑编译，能避就避）。上面两个算式仍然 internal。
+ */
+fun weekCompliance(
+    dates: Set<LocalDate>,
+    today: LocalDate = LocalDate.now(),
+    windowDays: Int = WEEK_WINDOW_DAYS,
+): WeekCompliance {
+    val days = windowDays.coerceIn(1, WEEK_WINDOW_DAYS)
+    val from = today.minusDays((days - 1).toLong())
+    val checked = dates.count { !it.isBefore(from) && !it.isAfter(today) }
+    val target = weekTargetDays(days)
+    return WeekCompliance(
+        windowDays = days,
+        checkedDays = checked,
+        targetDays = target,
+        ratePercent = (checked * 100.0 / days).roundToInt(),
+        achieved = checked >= target,
+    )
+}
+
+/**
+ * 列表卡片那一行（纯函数，为的是能被单测钉住）：跟上时多两个字，没跟上时只报两个数。
+ *
+ * 两个约定：① 不判罪也不吓唬（"没跟上"/"断签"/"再不…就…"这类字一个都不写）；
+ * ② 不宣称本轮没有的东西（无额度、无自动补签 —— 那需要加列，超出范围）。
+ */
+internal fun weekComplianceLabel(week: WeekCompliance): String =
+    "近 ${week.windowDays} 天 ${week.checkedDays}/${week.windowDays}" + (if (week.achieved) " 达标" else "")
 
 /** 该日期是否可补打卡：过去 7 天内（不含今天与未来） */
 fun canMakeUp(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
@@ -209,6 +328,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
             val items = habits.map { habit ->
                 val checkIns = checkInsById[habit.id].orEmpty()
                 val dates = checkIns.toLocalDates()
+                // 窗口长度跟习惯实际年龄走（同一个 today、同一批 dates，与 streak 不会各说各话）
+                val startDay = Instant.ofEpochMilli(habit.startDate)
+                    .atZone(ZoneId.systemDefault()).toLocalDate()
                 HabitItemUi(
                     habit          = habit,
                     checkedDates   = dates,
@@ -221,6 +343,7 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                     checkedInToday = today in dates,
                     latestNote     = checkIns.maxByOrNull { it.date }
                         ?.takeIf { it.note.isNotBlank() }?.note.orEmpty(),
+                    week           = weekCompliance(dates, today, weeklyWindowDays(startDay, today)),
                 )
             }
             HabitListUiState(

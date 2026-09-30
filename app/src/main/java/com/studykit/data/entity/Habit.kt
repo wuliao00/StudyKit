@@ -11,7 +11,15 @@ data class Habit(
     @ColumnInfo(name = "syncStatus", defaultValue = "0") val syncStatus: Int = 0,
     val name: String,
     val icon: String,
-    @ColumnInfo(name = "target_days") val targetDays: Int = 21,
+    /**
+     * 目标天数（天数型习惯）。默认 66 —— 见 [DEFAULT_TARGET_DAYS]。
+     *
+     * 这里刻意**不写** `@ColumnInfo(defaultValue = ...)`：Room 只看注解，不看 Kotlin 属性默认值，
+     * 所以这个默认值是纯 Kotlin 侧的表单/构造初值，不进建表 SQL。
+     * 加一个 `defaultValue = "66"` 等于改 schema（建表语句 + identity hash + 迁移），本轮不付这个代价。
+     * 后来人请勿"顺手补上"它。
+     */
+    @ColumnInfo(name = "target_days") val targetDays: Int = DEFAULT_TARGET_DAYS,
     @ColumnInfo(name = "start_date") val startDate: Long = System.currentTimeMillis(),
     val archived: Boolean = false,
     /** 数量型目标总量（>0 即数量型习惯，如背 50 词；0 表示天数型） */
@@ -32,5 +40,17 @@ data class Habit(
     companion object {
         const val CATEGORY_ANY = "ANY"
         val CATEGORIES = listOf(CATEGORY_ANY, "MORNING", "FORENOON", "NOON", "AFTERNOON", "EVENING", "NIGHT")
+
+        /**
+         * 默认目标天数 = **66 天**（Lally et al. 2010, EJSP：习惯自动性中位数约 66 天，
+         * 个体差异 18–254 天）。
+         *
+         * 之前这里是 21：那个说法被原研究团队自己公开辟过谣，而 21 天没成形的用户会把它读成
+         * 自己的失败。同一个研究另一条同样重要的结论是**偶尔漏一天不毁掉养成**，
+         * 所以配套的口径是 5/7 弹性达标（见 `weekCompliance`），不是不断链。
+         *
+         * 默认值只有这一处：创建页初值、`HabitRepository.add` 形参、演示数据都引用它。
+         */
+        const val DEFAULT_TARGET_DAYS = 66
     }
 }

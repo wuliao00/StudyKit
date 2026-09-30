@@ -29,7 +29,9 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * [recallBeforeGrade] → `ui/study/RecallGate.kt` 的闸门判定（`CardStudyScreen` 读它，
  * 关掉之后滑动与三档自评**完全**退回旧行为，不留半截拦截）；
  * [recallGateHintSeen] → 同一条闸门的「第一次拦下你」说明（`CardStudyScreen` 读、
- * 点「知道了」经 `StudyViewModel.markRecallGateHintSeen` 写，每次安装只出现一次）。
+ * 点「知道了」经 `StudyViewModel.markRecallGateHintSeen` 写，每次安装只出现一次）；
+ * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
+ * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
@@ -94,6 +96,15 @@ data class AppSettings(
      * 不是每天一次、也不是每次会话一次）。点「知道了」置真。
      */
     val recallGateHintSeen: Boolean = false,
+    /**
+     * 交错练习（默认**开**）：多学科的一轮练习把同科连排打散；**只有一个学科时保持原序**
+     * （交错对单一材料无意义，不硬打散）。判定只有 `QuestionOrdering.interleaveBySubject` 一处，
+     * `StudyViewModel` 组轮次时读这一条把它传进去 —— 关掉即完全退回取数原序，不留半截打乱。
+     *
+     * 效果口径是诚实的：元分析（Brunmair & Richter 2019）给的是**中等、且非普适**的收益，
+     * 而它当下更费劲（Kornell & Bjork 2008）—— 主观感受与客观效果错位是这套方法的特征，不是玄学承诺。
+     */
+    val interleavingEnabled: Boolean = true,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -127,6 +138,7 @@ data class AppSettings(
         KEY_DICT_FAILURE to lastDictFailure,
         KEY_RECALL_BEFORE_GRADE to recallBeforeGrade.toString(),
         KEY_RECALL_GATE_HINT_SEEN to recallGateHintSeen.toString(),
+        KEY_INTERLEAVING to interleavingEnabled.toString(),
     )
 
     companion object {
@@ -150,6 +162,7 @@ data class AppSettings(
         const val KEY_DICT_FAILURE = "last_dict_failure"
         const val KEY_RECALL_BEFORE_GRADE = "recall_before_grade"
         const val KEY_RECALL_GATE_HINT_SEEN = "recall_gate_hint_seen"
+        const val KEY_INTERLEAVING = "interleaving_enabled"
 
         const val DEFAULT_WORD_GOAL = 20
         const val DEFAULT_REMINDER_HOURS = 6
@@ -218,6 +231,9 @@ data class AppSettings(
                     ?: defaults.recallBeforeGrade,
                 recallGateHintSeen = map[KEY_RECALL_GATE_HINT_SEEN]?.toBooleanStrictOrNull()
                     ?: defaults.recallGateHintSeen,
+                // 交错：默认**开**，与其余每一项同一口径（垃圾值 / 缺键只让本项退回默认）
+                interleavingEnabled = map[KEY_INTERLEAVING]?.toBooleanStrictOrNull()
+                    ?: defaults.interleavingEnabled,
             )
         }
     }

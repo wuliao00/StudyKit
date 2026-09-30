@@ -16,6 +16,16 @@ import java.time.format.DateTimeFormatter
 object DemoSeeder {
 
     private const val DAY_MS = 24L * 60L * 60L * 1000L
+
+    /**
+     * 演示习惯的目标天数，直接引用实体那一个默认值（= 66，Lally et al. 2010 中位数）。
+     *
+     * 原先这四条种子（背单词 / 跑步 / 阅读 / 喝水）硬编码 21：演示数据是新用户第一个看到的样本，
+     * 把 21 天摆在那里等于替一个已被辟谣的说法背书。写成常量而不是再一份字面量，
+     * 默认值只改一处就能带到这些 SQL 里。
+     * （例外：id=5「早起」故意留在 7 天，它是「已达成」那一态的示例，不是养成时长示例。）
+     */
+    const val DEMO_TARGET_DAYS: Int = com.studykit.data.entity.Habit.DEFAULT_TARGET_DAYS
     private val DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     fun seed(db: SupportSQLiteDatabase) {
@@ -112,7 +122,7 @@ object DemoSeeder {
     }
 
     private fun seedHabitsAndCheckIns(db: SupportSQLiteDatabase, now: Long) {
-        // Triple: id, name, icon；start_date 默认 7 天前，目标 21 天（天数型）
+        // Triple: id, name, icon；start_date 默认 7 天前，目标天数走 DEMO_TARGET_DAYS（天数型）
         val habits = listOf(
             Triple(1L, "背单词", "book"),
             Triple(2L, "跑步", "run"),
@@ -124,7 +134,7 @@ object DemoSeeder {
                 """INSERT INTO habits
                    (id, uuid, syncStatus, name, icon, target_days, start_date, archived,
                     target_count, unit, default_text)
-                   VALUES (?, ?, 0, ?, ?, 21, ?, 0, 0, '', ?)""",
+                   VALUES (?, ?, 0, ?, ?, $DEMO_TARGET_DAYS, ?, 0, 0, '', ?)""",
                 arrayOf<Any>(id, "seed-habit-$id", name, icon, now - 7 * DAY_MS, defaultText),
             )
         }
@@ -133,7 +143,7 @@ object DemoSeeder {
             """INSERT INTO habits
                (id, uuid, syncStatus, name, icon, target_days, start_date, archived,
                 target_count, unit, default_text)
-               VALUES (4, 'seed-habit-4', 0, '喝水', '💧', 21, ?, 0, 500, 'ml', '今天也喝足了水')""",
+               VALUES (4, 'seed-habit-4', 0, '喝水', '💧', $DEMO_TARGET_DAYS, ?, 0, 500, 'ml', '今天也喝足了水')""",
             arrayOf<Any>(now - 3 * DAY_MS),
         )
         // 已达成习惯：早起目标 7 天，10 天前开始且已连续打卡 7 天（进度 100%，金色达成态）

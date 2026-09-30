@@ -38,12 +38,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.studykit.data.entity.Habit
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
 
 private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯", "🧘", "🌙", "💧", "🎹", "🖌️", "🥗")
-private val TargetOptions = listOf(7, 21, 30, 60, 100)
+// 目标天数档位住在 `HabitViewModel.kt` 里的 HABIT_TARGET_DAY_OPTIONS：那边能被纯 JVM 单测读到，
+// 事实守卫测试不该为了读一个常量而拖着整个 Compose 类加载进场。
 
 /**
  * 创建习惯页：名称 + 图标 + 类型（天数/数量）+ 目标 + 默认打卡文案。
@@ -63,7 +65,8 @@ fun HabitCreateScreen(
     val texts = AppTheme.texts
     var name by rememberSaveable { mutableStateOf("") }
     var icon by rememberSaveable { mutableStateOf("🎯") }
-    var targetDays by rememberSaveable { mutableStateOf(21) }
+    // 初值 = 实体那一个默认值（66），它必须是档位之一，否则进来那一格选不中
+    var targetDays by rememberSaveable { mutableStateOf(Habit.DEFAULT_TARGET_DAYS) }
     var isCountType by rememberSaveable { mutableStateOf(false) }
     var targetCountText by rememberSaveable { mutableStateOf("") }
     var unit by rememberSaveable { mutableStateOf("") }
@@ -195,7 +198,7 @@ fun HabitCreateScreen(
             // 五选一的表单值 ⇒ 单选组（终审 I10 同类站点）
             modifier = Modifier.selectableGroup(),
         ) {
-            TargetOptions.forEach { option ->
+            HABIT_TARGET_DAY_OPTIONS.forEach { option ->
                 val selected = option == targetDays
                 Box(
                     modifier = Modifier
@@ -230,6 +233,11 @@ fun HabitCreateScreen(
                 }
             }
         }
+
+        Spacer(Modifier.height(AppTheme.space.sm))
+        // 只给档位不给口径，用户会把 66 当成另一个 KPI。那句里的数字全从
+        // `HabitViewModel.kt` 那几个常量生成，改了默认值不会漏改这句（HabitTargetDaysTest 钉着）。
+        Text(text = HABIT_TARGET_DAYS_HINT, style = texts.caption)
 
         Spacer(Modifier.height(AppTheme.space.lg))
         AppTextField(

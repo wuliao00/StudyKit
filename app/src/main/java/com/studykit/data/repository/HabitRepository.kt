@@ -19,7 +19,8 @@ class HabitRepository(private val habitDao: HabitDao) {
     suspend fun add(
         name: String,
         icon: String,
-        targetDays: Int = 21,
+        // 默认值只引用实体那一个常量（本轮 A 段：66 天中位数），免得两处各写一份字面量然后漂移
+        targetDays: Int = Habit.DEFAULT_TARGET_DAYS,
         targetCount: Double = 0.0,
         unit: String = "",
         defaultText: String = "",
