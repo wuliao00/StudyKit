@@ -125,14 +125,14 @@ const val FSRS_HALF_OVER_S = 243.0 / 19.0
  * ——要按活跃内核挑难度量纲的排期用法走 [kernelStateFor]。
  *
  * [KernelState.stability] 为 null 即"FSRS 未评过"（新词、或 `MIGRATION_6_7` 没回填的老行），
- * LEARNING 由 `fsrs_state` 列携带。`fsrs_difficulty` 为空时**直传** `words.difficulty`：
- * 那是"HALF_LIFE 行没被 FSRS 写过"的情形，量纲是半衰期口径，FSRS 内部的
- * sanitizeDifficulty 会把它夹进 [1,10] 再算，不会因此抛异常，
- * 但这条行第一次被 FSRS 评分时本来就会走 `firstTime` 原生支（A-T3 判据）。
+ * LEARNING 由 `fsrs_state` 列携带。`fsrs_difficulty` 为空时用 [fsrsDifficultyFromHalfLife]
+ * 把半衰期口径的 `words.difficulty` 折算过来（列量纲固定，见 [kernelStateFor]；FSRS 读到的
+ * 永远是 FSRS 口径）；这类行第一次被 FSRS 评分本来就走 `firstTime` 原生支（A-T3 判据），
+ * 这份难度只在预览/读数列里临时配对用。
  */
 fun kernelStateOf(word: Word): KernelState = KernelState(
     stability = word.fsrsStability,
-    difficulty = word.fsrsDifficulty ?: word.difficulty.coerceIn(1.0, 10.0),
+    difficulty = word.fsrsDifficulty ?: fsrsDifficultyFromHalfLife(word.difficulty).coerceIn(1.0, 10.0),
     cardState = CardState.entries.getOrElse(word.fsrsState - 1) { CardState.LEARNING },
     hDays = word.halfLifeDays,
 )
@@ -141,10 +141,10 @@ fun kernelStateOf(word: Word): KernelState = KernelState(
  * **活跃内核**视角的行状态：排期（[SchedulingKernel.review] / [SchedulingKernel.nextIntervalDays]）
  * 与按钮预览都必须用它，不许两处各造一份状态 —— 预览与实排分家是 `MemoryModel.preview` 的注释专门警告过的错。
  *
- * 与 [kernelStateOf] 只差一维：难度两个内核各自的量纲不同（spec §2.1：`words.difficulty`
- * 存的永远是**当前活跃内核自己**的那份，跨内核换算只在落库做一次），所以跑半衰期时
- * 必须读 `words.difficulty`，不能借 `fsrs_difficulty`：后者是 FSRS 口径
- * （迁移与落库都按 [fsrsDifficultyFromHalfLife] 折算过），喂进半衰期公式会把间隔排错。
+ * 与 [kernelStateOf] 只差一维：难度两个内核各自的量纲不同。**列量纲固定**（A-T9 终审修正）：
+ * `words.difficulty` 永远是半衰期口径那一份，`fsrs_difficulty` 永远是 FSRS 口径那一份，
+ * 镜像在落库双侧各折一次（[fsrsDifficultyFromHalfLife] / [halfDifficultyFromFsrs]），
+ * 所以切回 HALF_LIFE 时不会把 FSRS 的 1..10 当 halfD 喂进 [MemoryModel]。
  */
 fun kernelStateFor(kernel: SchedulingKernel, word: Word): KernelState {
     val state = kernelStateOf(word)
@@ -183,3 +183,11 @@ fun ReviewGrade.toKernelRating(): KernelRating = when (this) {
  * 式子与 `AppDatabase.MIGRATION_6_7` 回填 `fsrs_difficulty` 的那条 SQL 同式，两处必须一致。
  */
 fun fsrsDifficultyFromHalfLife(halfLifeDifficulty: Double): Double = 5.0 + (halfLifeDifficulty - 1.0) * 0.5
+
+/**
+ * [fsrsDifficultyFromHalfLife] 的逆：FSRS 口径难度 → 半衰期口径，与它同点对称
+ * （halfD∈[1,10] → fsrsD∈[5,9.5] → 回 halfD 在定义域内逐点还原，往返测试钉住）。
+ * FSRS 活跃时用它把原生难度镜像进 `words.difficulty`，保证那一列永远是半衰期口径（A-T9 终审）。
+ */
+fun halfDifficultyFromFsrs(fsrsDifficulty: Double): Double =
+    (1.0 + (fsrsDifficulty - 5.0) / 0.5).coerceIn(1.0, 10.0)

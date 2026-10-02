@@ -4,6 +4,7 @@ import com.studykit.data.entity.Word
 import com.studykit.data.memory.CardState
 import com.studykit.data.memory.FsrsKernel
 import com.studykit.data.memory.HalfLifeKernel
+import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.kernelStateOf
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -49,8 +50,12 @@ class KernelWiringTest {
         val ks = kernelStateOf(w)
         assertEquals(null, ks.stability)
         assertEquals(CardState.LEARNING, ks.cardState)
-        // FSRS 未评过的行：difficulty 借半衰期口径值进 FSRS（内部再 sanitize/夹取），hDays 原样
-        assertEquals(3.0, ks.difficulty, 1e-9)
+        // 列量纲固定（A-T9 终审）：fsrs_difficulty 缺失时，kernelStateOf 把半衰期口径的
+        // words.difficulty 折算成 FSRS 口径（5+(3−1)·0.5=6）；hDays 原样
+        assertEquals(6.0, ks.difficulty, 1e-9)
         assertEquals(4.0, ks.hDays!!, 1e-9)
+        // HALF_LIFE 视角读到的才是原生半衰期难度（不折算）：两内核各取各量纲
+        val half = kernelStateFor(KernelHub.forId("HALF_LIFE"), w)
+        assertEquals(3.0, half.difficulty, 1e-9)
     }
 }

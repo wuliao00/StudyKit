@@ -74,6 +74,8 @@ Run: `.\gradlew :app:testDebugUnitTest` → Expected: 全绿（实测 53 suites 
 
 ### Task 2: SchedulingKernel 类型层 + HalfLife 适配器
 
+> 实现与下文有四处已定调差异（以代码为准，详情见各节注释）：`FSRS_SEED_RATIO` 已按 A-T2 双审升为包级 `FSRS_HALF_OVER_S = 243.0/19.0`（commit 41120ba）；`review` 不再发明 `cardState`（D-B）；`difficulty` 列量纲在 A-T9 终审进一步定调为**两列各守各量纲**（见 `halfDifficultyFromFsrs`）；测试名/防呆断言以盘上为准。
+
 **Files:**
 - Create: `app/src/main/java/com/studykit/data/memory/SchedulingKernel.kt`
 - Test: `app/src/test/java/com/studykit/data/memory/SchedulingKernelTest.kt`

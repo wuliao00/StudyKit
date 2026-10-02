@@ -69,4 +69,17 @@ class SchedulingKernelTest {
             1e-12,
         )
     }
+
+    @Test fun `difficulty mirror roundtrips on the whole halfLife domain`() {
+        // 列量纲固定（A-T9 终审）的前提：正反两函数在 halfD∈[1,10] 上逐点互逆，
+        // words.difficulty 与 fsrs_difficulty 才能各守各的量纲互不污染
+        for (halfD in listOf(1.0, 2.0, 3.2, 7.0, 9.5, 10.0)) {
+            assertEquals("halfD=$halfD", halfD, halfDifficultyFromFsrs(fsrsDifficultyFromHalfLife(halfD)), 1e-9)
+        }
+        // 与 MIGRATION_6_7 回填 SQL 同式：fsrsD = 5 + (halfD−1)·0.5
+        assertEquals(5.5, fsrsDifficultyFromHalfLife(2.0), 1e-12)
+        // 手改库的脏值回退到地板/天花板，不产生 NaN
+        assertEquals(1.0, halfDifficultyFromFsrs(-7.0), 1e-12)
+        assertEquals(10.0, halfDifficultyFromFsrs(Double.POSITIVE_INFINITY), 1e-12)
+    }
 }

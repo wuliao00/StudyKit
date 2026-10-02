@@ -14,6 +14,7 @@ import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.data.memory.Scheduling
 import com.studykit.data.memory.fsrsDifficultyFromHalfLife
+import com.studykit.data.memory.halfDifficultyFromFsrs
 import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.recallForDisplay
 import com.studykit.data.memory.toKernelRating
@@ -297,7 +298,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 // 双写（spec §2.1）：活跃内核那一侧是原生值，另一侧是适配器算出的换算镜像；
                 // 两列都来自同一个 after，不留"半新半旧"的镜像
                 halfLifeDays = after.hDays ?: word.halfLifeDays,
-                difficulty = after.difficulty,
+                // 列量纲固定（A-T9 终审）：words.difficulty 永远存半衰期口径那一份——
+                // FSRS 活跃时 after.difficulty 是 FSRS 的 1..10，必须过逆映射再入库，
+                // 否则切回 HALF_LIFE 会拿 FSRS 数当 halfD 喂模型（kernelStateFor 无条件读它）
+                difficulty = if (kernel.id == "HALF_LIFE") after.difficulty else halfDifficultyFromFsrs(after.difficulty),
                 status = status,
                 nextReviewAt = nextReviewAt,
                 lastReviewAt = now,

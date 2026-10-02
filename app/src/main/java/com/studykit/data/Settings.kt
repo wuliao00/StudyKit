@@ -33,7 +33,7 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
  * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
  * [schedulingKernel] → `ui/study/StudyViewModel.gradeCard` 与 `CardStudyScreen` 的按钮预览（消费点落在 A-T9）；
- * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen`，消费点落在 A-T9 与计划 B Task 11-12）。
+ * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen`，采集 UI 在计划 B Task 11-12 落地；A-T9 只接通了 conf 传进来时的落库与侧信道，目前生产侧恒 null）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
@@ -115,7 +115,8 @@ data class AppSettings(
     val schedulingKernel: String = "FSRS",
     /**
      * 翻面/提交前的信心自评条（app.docx 模块1/2；默认**开**）。
-     * 关掉 = 完全退回 v2.6 交互（不采集、confidence 列恒 NULL），消费点 A-T9/计划 B Task 11-12。
+     * 关掉 = 完全退回 v2.6 交互（不采集、confidence 列恒 NULL）；采集 UI 在计划 B Task 11-12 接，
+     * 在此之前本开关无可见效果（gradeCard 的 conf 恒 null，口径同文件头）。
      */
     val confidenceEnabled: Boolean = true,
 ) {

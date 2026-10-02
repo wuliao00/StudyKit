@@ -350,7 +350,7 @@ class IfThenTemplateTest {
 - [ ] **3** 真机覆盖升级（**旧数据库**，含 v2.6 数据的机器）：`adb install -r app\build\outputs\apk\debug\app-debug.apk` → 打开无崩溃、词卡/错题/习惯/书数据全在、"明日预计复习"仍显示（迁移真机存活 + 内核切换冒烟）。装挂按既定流程先查锁屏/安全守护弹窗。
 - [ ] **4** 截图 6 张存 `docs/screenshots/`（命名 `v27_<场景>.png`，不删）：词卡信心条 / 模考交卷页 / 错题详情排期接管 / 习惯创建执行意图区 / 书摘复习页 / 延迟后测卡。
 - [ ] **5** README + CHANGELOG：新特性一节（含 D4 口径的 FSRS 表述与"20%~30% 为 py-fsrs 自测口径"括注、MistakeMastery 取 2 的取舍声明、参考应用来源声明沿用 reverse-ref §6.6）；CHANGELOG 顶部 v2.7.0 一节逐条对应计划 A/B 任务号；**并补计划 A 欠账 I1**：MigrationTestHelper 网只覆盖 6→7 及以后，1..5 无旧快照仍靠真机走查；MistakeMastery/HabitGuard 的"取舍待记入"两处也在本节落地。
-- [ ] **6** 向用户复述验收结果，请求确认是否 commit（全程未获 commit 指令前不动 git）。
+- [ ] **6** 向用户复述验收结果（逐任务 commit 已获用户授权，是本计划既定节奏；合并/推远端仍需单独点头）。
 
 ---
 
