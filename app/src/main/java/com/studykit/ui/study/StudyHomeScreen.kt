@@ -45,12 +45,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.components.StatTileTier
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
@@ -76,6 +79,19 @@ fun StudyHomeScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
+
+    // ── SIXTY_SIX 贴士（计划 B Task 17 / spec §8）：火焰徽章天数恰好走到 21 那天，
+    // 在 hero 下方挂一次「21 天不是终点、66 天才是中位数」——每次安装一次（sixtySixTipSeen）。
+    // 20/22 天都不弹（严格 == STREAK_MYTH_DAY）；showSixtySix 页面级、非按天键控：
+    // 本页停留期间只点亮一次，settings 置真后跨会话也不再现。
+    val sixtySixTipSeen = AppTheme.settings.sixtySixTipSeen
+    var showSixtySix by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.streakDays, sixtySixTipSeen) {
+        if (state.streakDays == StudyTips.STREAK_MYTH_DAY && !sixtySixTipSeen && !showSixtySix) {
+            showSixtySix = true
+            viewModel.markSixtySixTipSeen()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -124,6 +140,15 @@ fun StudyHomeScreen(
             streakDays = state.streakDays,
             onStart = onOpenWords,
         )
+
+        // 连续满 21 天那次的一次性提醒（hero 正下方，紧贴火焰徽章的语义落点）。
+        // 走现成的 TipCard，不新增颜色；文案与证据都由 StudyTips 单点维护。
+        if (showSixtySix) {
+            StudyTips.forEvent(TipEvent.StreakReached(state.streakDays))?.let { tip ->
+                Spacer(Modifier.height(AppTheme.space.sm))
+                TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+            }
+        }
 
         Spacer(Modifier.height(AppTheme.space.md))
         // 三块磁贴全部走 Reference 档：这屏的第一等重点已经在上面那块（今日待办 + 主行动），

@@ -411,6 +411,17 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 连续学习满 21 天那条 SIXTY_SIX 贴士（计划 B Task 17）：首页 hero 检测到火焰徽章天数
+     * 恰好 [StudyTips.STREAK_MYTH_DAY] 时置真，此后每次安装都不再出现。
+     * 与 [markFlipTipSeen]、[markRecallGateHintSeen] 同一条纪律：写失败不提示也不重投。
+     */
+    fun markSixtySixTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(sixtySixTipSeen = true) } }
+        }
+    }
+
     // ── 题库练习会话 ──────────────────────────────────────────────────────
     private val _quiz = MutableStateFlow(QuizUiState())
     val quiz: StateFlow<QuizUiState> = _quiz

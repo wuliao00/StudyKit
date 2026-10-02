@@ -133,6 +133,13 @@ data class AppSettings(
      * `ifThen` 的习惯时经 `HabitViewModel.markIfThenTipSeen` 置真。默认**没看过**（false）。
      */
     val ifThenTipSeen: Boolean = false,
+    /**
+     * 连续学习满 21 天（[com.studykit.tips.StudyTips.STREAK_MYTH_DAY]）那条 SIXTY_SIX 贴士
+     * （计划 B Task 17 / spec §8），“21 天不是终点，66 天才是中位数”，看过就没有
+     * （**每次安装一次**，与 [flipTipSeen]、[ifThenTipSeen] 同一条纪律）。首页 hero 检测到
+     * 连续天数恰好到 21 时经 `StudyViewModel.markSixtySixTipSeen` 置真。默认**没看过**（false）。
+     */
+    val sixtySixTipSeen: Boolean = false,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -171,6 +178,7 @@ data class AppSettings(
         KEY_CONFIDENCE_ENABLED to confidenceEnabled.toString(),
         KEY_FLIP_TIP_SEEN to flipTipSeen.toString(),
         KEY_IF_THEN_TIP_SEEN to ifThenTipSeen.toString(),
+        KEY_SIXTY_SIX_TIP_SEEN to sixtySixTipSeen.toString(),
     )
 
     companion object {
@@ -199,6 +207,7 @@ data class AppSettings(
         const val KEY_CONFIDENCE_ENABLED = "confidence_enabled"
         const val KEY_FLIP_TIP_SEEN = "flip_tip_seen"
         const val KEY_IF_THEN_TIP_SEEN = "if_then_tip_seen"
+        const val KEY_SIXTY_SIX_TIP_SEEN = "sixty_six_tip_seen"
 
         /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
         val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
@@ -285,6 +294,9 @@ data class AppSettings(
                 // 执行意图贴士：默认**没看过**，口径同 flipTipSeen（每次安装一次的说明）
                 ifThenTipSeen = map[KEY_IF_THEN_TIP_SEEN]?.toBooleanStrictOrNull()
                     ?: defaults.ifThenTipSeen,
+                // 六六贴士：默认**没看过**，口径同 flipTipSeen / ifThenTipSeen（每次安装一次的说明）
+                sixtySixTipSeen = map[KEY_SIXTY_SIX_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.sixtySixTipSeen,
             )
         }
     }

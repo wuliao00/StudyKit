@@ -72,12 +72,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-/** 打卡弹层目标：习惯 + 日期 + 既有记录 + 是否补卡 */
+/** 打卡弹层目标：习惯 + 日期 + 既有记录 + 是否补卡 + 今日打卡时是否挂断签保护宽恕贴士 */
 private data class SheetTarget(
     val habit: Habit,
     val date: LocalDate,
     val existing: CheckIn?,
     val isMakeUp: Boolean,
+    val showGapTip: Boolean = false,
 )
 
 /**
@@ -258,21 +259,27 @@ fun HabitListScreen(
         }
     }
 
-    /** 打开打卡弹层（先读取当日既有记录用于预填） */
-    fun openSheet(habit: Habit) {
+    /** 打开打卡弹层（先读取当日既有记录用于预填）；今日首次打卡且昨日为受保护缺卡时带 GapDay 贴士 */
+    fun openSheet(habit: Habit, checkedDates: Set<LocalDate>) {
         scope.launch {
             val today = LocalDate.now()
             val existing = viewModel.findCheckIn(habit.id, today)
-            sheetTarget = SheetTarget(habit, today, existing, isMakeUp = false)
+            sheetTarget = SheetTarget(
+                habit = habit,
+                date = today,
+                existing = existing,
+                isMakeUp = false,
+                showGapTip = gapDayHintEligible(dates = checkedDates, today = today),
+            )
         }
     }
 
     /** 打卡按钮路由：数量型进弹层；天数型未打卡一键打卡；已打卡可改备注 */
     fun onCheckInClick(item: HabitItemUi) {
         when {
-            item.isCountType -> openSheet(item.habit)
+            item.isCountType -> openSheet(item.habit, item.checkedDates)
             !item.checkedInToday -> viewModel.checkIn(item.habit)
-            else -> openSheet(item.habit)
+            else -> openSheet(item.habit, item.checkedDates)
         }
     }
 
@@ -432,6 +439,7 @@ fun HabitListScreen(
                 date = target.date,
                 existing = target.existing,
                 isMakeUp = target.isMakeUp,
+                showGapTip = target.showGapTip,
                 onDismiss = { sheetTarget = null },
                 onConfirm = { note, amount ->
                     viewModel.submitCheckIn(target.habit, target.date, note, amount)
