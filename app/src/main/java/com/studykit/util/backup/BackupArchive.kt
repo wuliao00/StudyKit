@@ -54,8 +54,9 @@ internal fun Throwable.rootCauseText(): String {
 /**
  * Room 已经打开的那个连接。
  *
- * 本模块只新增文件，不给 [AppDatabase] 加 DAO 方法，所以 PRAGMA 与计数 SQL 都直接对同一个连接发；
- * 另开一条连接会和 Room 的连接池抢 WAL 的读者位，检查点反而永远 busy。
+ * PRAGMA 与计数 SQL 直接对同一个连接发，不另开一条：另开会和 Room 的连接池抢 WAL 的读者位，
+ * 检查点反而永远 busy。（v2.7/B19 起本模块确实多读了一次 DAO —— 但那是 [BackupArchive] 里
+ * 导 CSV 用的**只读查询**，走的还是 Room 自己的连接池，与这里发裸 PRAGMA 不是一回事。）
  */
 internal fun writableDatabaseOf(context: Context): SupportSQLiteDatabase =
     try {
@@ -248,7 +249,7 @@ internal object BackupCodec {
 }
 
 /**
- * 学习数据的一键导出 / 恢复：zip = `manifest.json` + `studykit.db` + 整个 `mistake_images` 目录。
+ * 学习数据的一键导出 / 恢复：zip = `manifest.json` + `studykit.db` + `review_history.csv` + 整个 `mistake_images` 目录。
  *
  * ## 为什么非做不可
  *
@@ -260,6 +261,14 @@ internal object BackupCodec {
  * 1. 导出前先做 WAL 检查点（见 [checkpointWal]），否则拷走的库缺最近若干事务；
  * 2. 恢复先把整包读进内存、解到临时目录、验完大小/校验和/图片数**才**碰真数据；
  * 3. 阻塞 IO 全在 `Dispatchers.IO`，失败只以 [BackupException] 形式抛出并带根因。
+ *
+ * ## v2.7/B19 多出来的那个 CSV（spec §9 / 附录 A）
+ *
+ * `review_history.csv` 是**只增不改**的旁证：写侧多一份原始流水，读侧一行代码都不加 ——
+ * [BackupCodec.entryKindOf] 不为它开分支，于是它在恢复时落进 [ZipEntryKind.UNKNOWN] 被跳过
+ * （见 [unpack] 里那条注释）。这正是"新版本往包里加了东西，旧版本照样能恢复"的实例：
+ * 反过来若把它当已知条目认领，旧版本遇到它就会整体拒绝，等于让用户丢掉唯一的退路。
+ * 格式、可空口径与"为什么只出 word 行"都写在 [ReviewHistoryCsv]。
  */
 object BackupArchive {
 
@@ -285,8 +294,9 @@ object BackupArchive {
     /**
      * 导出 zip 到 SAF [target]，返回写出的字节数（界面拿去显示"已导出 18.4 MB"）。
      *
-     * 条目顺序是 `manifest.json` → `studykit.db` → `mistake_images` 目录内各文件：manifest 排第一，
-     * 用户把这个包丢给别的工具时，第一个条目就说清了后面是什么。
+     * 条目顺序是 `manifest.json` → `studykit.db` → `review_history.csv` → `mistake_images` 目录内各文件：
+     * manifest 排第一，用户把这个包丢给别的工具时，第一个条目就说清了后面是什么；
+     * CSV 紧跟库文件，是为了让它在几十上百张图片**之前**，人拿 `unzip -l` 看包时不必翻页才找到度量数据。
      *
      * 目标流以 `"w"` 模式打开而不是用无 mode 的重载：语义要**截断**。
      * 万一某个 DocumentsProvider 按追加处理，第二次导出会在同一个文件后面接出第二个 zip，
@@ -376,6 +386,9 @@ object BackupArchive {
             throw BackupException("读数据库文件失败：${error.rootCauseText()}", error)
         }
         val images = imageEntries(context)
+        // 复习流水是旁证，不是主数据：读失败就让这一条目缺席，绝不能让用户因为一份 CSV 拿不到唯一的退路
+        // （恢复端本来也不认它，少这一条只是少一个可复算的度量，库与照片照样完好）
+        val reviewHistory = reviewHistoryBytes(context)
         val manifest = BackupManifest(
             appVersion = BuildConfig.VERSION_NAME,
             createdAt = System.currentTimeMillis(),
@@ -389,6 +402,7 @@ object BackupArchive {
             ZipOutputStream(BufferedOutputStream(counting)).use { zip ->
                 putBytes(zip, BackupCodec.MANIFEST_ENTRY, manifestBytes)
                 putBytes(zip, BackupCodec.DB_ENTRY, dbBytes)
+                if (reviewHistory != null) putBytes(zip, ReviewHistoryCsv.ENTRY_NAME, reviewHistory)
                 for ((name, file) in images) putFile(zip, name, file)
             }
         } catch (error: Exception) {
@@ -439,6 +453,22 @@ object BackupArchive {
                     "还有未结束的读事务，此刻导出的库会缺最近的数据，已中止导出",
             )
         }
+    }
+
+    /**
+     * 取全部复习流水并编成 `review_history.csv` 的字节；**读不出来就返回 null**。
+     *
+     * 走 DAO 而不是裸 SQL 游标，是为了让列名被 Room 的编译期校验覆盖一次：这份 CSV 的列序
+     * 是 spec 附录 A 钉死的，而"SQL 里把 `p_at_review` 打错成 `p_review`"这种错，
+     * 裸游标要等到真机导出那一刻才会露馅，而且露的方式是静默少一列。
+     *
+     * 失败退化成"包里少这一条目"（[exportInternal] 的注释写了为什么不该为此中止整个导出）：
+     * 库文件与图片已经在这一步之前读好，导出主功能不受影响。
+     */
+    private suspend fun reviewHistoryBytes(context: Context): ByteArray? = try {
+        ReviewHistoryCsv.bytes(AppDatabase.getInstance(context).wordDao().getReviewHistoryRows())
+    } catch (error: Exception) {
+        null
     }
 
     /**
@@ -620,7 +650,9 @@ object BackupArchive {
                             copyOut(zip, File(filesTemp, name), MAX_IMAGE_ENTRY_BYTES, name)
                         }
                         // 前向兼容：新版本往包里加了东西，旧版本照样能恢复自己认领的那两样，
-                        // 为"看不懂的条目"整体拒绝，等于让用户丢掉唯一的退路
+                        // 为"看不懂的条目"整体拒绝，等于让用户丢掉唯一的退路。
+                        // `review_history.csv`（v2.7/B19）就是这条路现在每天都在走的一个实例：
+                        // 它故意不被任何版本认领，所以既不参与校验，也不会有"恢复时把 CSV 写回库"那种事。
                         ZipEntryKind.UNKNOWN -> Unit
                     }
                 }

@@ -1,6 +1,7 @@
 package com.studykit.data.repository
 
 import com.studykit.data.dao.ReviewGapRow
+import com.studykit.data.dao.RetentionRow
 import com.studykit.data.dao.ScheduledMemoryRow
 import com.studykit.data.dao.WordDao
 import com.studykit.data.entity.Word
@@ -133,6 +134,15 @@ class WordRepository(private val wordDao: WordDao) {
 
     /** 复习间隔 + 结果（记忆看板：实测遗忘曲线） */
     fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>> = wordDao.observeReviewGapAndResult()
+
+    /**
+     * 复习间隔 + 评分档位 + 当时预测（记忆看板：「延迟后测」卡，v2.7 spec §9）。
+     *
+     * 与 [observeReviewGapAndResult] 是两条独立查询，不是"一条加了两个字段"：
+     * 后者身后是 v2.3 起就钉死的遗忘曲线，动它的列等于动那张网的根。
+     * 怎么分桶、哪些行算"没记评分"，一律在 `ui/stats/RetentionBuckets`，这里只转发。
+     */
+    fun observeRetentionRows(): Flow<List<RetentionRow>> = wordDao.observeRetentionRows()
 
     /**
      * 新词预测试的干扰项池：同词库（`source_list_id` 相同）的其他释义，
