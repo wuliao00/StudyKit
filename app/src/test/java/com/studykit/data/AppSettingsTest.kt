@@ -141,4 +141,32 @@ class AppSettingsTest {
         val s = AppSettings.fromMap(mapOf(AppSettings.KEY_DICT_FAILURE to "x".repeat(5_000)))
         assertEquals(400, s.lastDictFailure.length)
     }
+
+    @Test
+    fun `排期内核默认 FSRS 且垃圾值退回默认`() {
+        assertEquals("FSRS", AppSettings.fromMap(emptyMap()).schedulingKernel)
+        assertEquals(
+            "FSRS",
+            AppSettings.fromMap(mapOf(AppSettings.KEY_SCHEDULING_KERNEL to "???")).schedulingKernel,
+        )
+        assertEquals(
+            "HALF_LIFE",
+            AppSettings.fromMap(mapOf(AppSettings.KEY_SCHEDULING_KERNEL to "HALF_LIFE")).schedulingKernel,
+        )
+    }
+
+    @Test
+    fun `信心开关默认开且经 toMap 往返一分不变`() {
+        val s = AppSettings(confidenceEnabled = false)
+        assertEquals(false, AppSettings.fromMap(s.toMap()).confidenceEnabled)
+        assertEquals(true, AppSettings.fromMap(emptyMap()).confidenceEnabled)
+    }
+
+    @Test
+    fun `新增两键的默认值也能原样往返`() {
+        val d = AppSettings()
+        val back = AppSettings.fromMap(d.toMap())
+        assertEquals(d.schedulingKernel, back.schedulingKernel)
+        assertEquals(d.confidenceEnabled, back.confidenceEnabled)
+    }
 }

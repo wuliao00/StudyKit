@@ -31,7 +31,9 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * [recallGateHintSeen] → 同一条闸门的「第一次拦下你」说明（`CardStudyScreen` 读、
  * 点「知道了」经 `StudyViewModel.markRecallGateHintSeen` 写，每次安装只出现一次）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
- * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）。
+ * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
+ * [schedulingKernel] → `ui/study/StudyViewModel.gradeCard` 与 `CardStudyScreen` 的按钮预览（消费点落在 A-T9）；
+ * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen`，消费点落在 A-T9 与计划 B Task 11-12）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
@@ -105,6 +107,17 @@ data class AppSettings(
      * 而它当下更费劲（Kornell & Bjork 2008）—— 主观感受与客观效果错位是这套方法的特征，不是玄学承诺。
      */
     val interleavingEnabled: Boolean = true,
+    /**
+     * 排期内核 id（"FSRS"|"HALF_LIFE"，值域 [KERNEL_IDS]，默认 FSRS）。
+     * 消费点：`ui/study/StudyViewModel.gradeCard` 与 `CardStudyScreen` 的按钮预览（计划 A-T9）。
+     * 切回 HALF_LIFE 不丢评分历史，但 fsrs_*→半衰期侧的读数是换算近似（spec §2.1），设置页要如实写这句。
+     */
+    val schedulingKernel: String = "FSRS",
+    /**
+     * 翻面/提交前的信心自评条（app.docx 模块1/2；默认**开**）。
+     * 关掉 = 完全退回 v2.6 交互（不采集、confidence 列恒 NULL），消费点 A-T9/计划 B Task 11-12。
+     */
+    val confidenceEnabled: Boolean = true,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -139,6 +152,8 @@ data class AppSettings(
         KEY_RECALL_BEFORE_GRADE to recallBeforeGrade.toString(),
         KEY_RECALL_GATE_HINT_SEEN to recallGateHintSeen.toString(),
         KEY_INTERLEAVING to interleavingEnabled.toString(),
+        KEY_SCHEDULING_KERNEL to schedulingKernel,
+        KEY_CONFIDENCE_ENABLED to confidenceEnabled.toString(),
     )
 
     companion object {
@@ -163,6 +178,11 @@ data class AppSettings(
         const val KEY_RECALL_BEFORE_GRADE = "recall_before_grade"
         const val KEY_RECALL_GATE_HINT_SEEN = "recall_gate_hint_seen"
         const val KEY_INTERLEAVING = "interleaving_enabled"
+        const val KEY_SCHEDULING_KERNEL = "scheduling_kernel"
+        const val KEY_CONFIDENCE_ENABLED = "confidence_enabled"
+
+        /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
+        val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
 
         const val DEFAULT_WORD_GOAL = 20
         const val DEFAULT_REMINDER_HOURS = 6
@@ -234,6 +254,12 @@ data class AppSettings(
                 // 交错：默认**开**，与其余每一项同一口径（垃圾值 / 缺键只让本项退回默认）
                 interleavingEnabled = map[KEY_INTERLEAVING]?.toBooleanStrictOrNull()
                     ?: defaults.interleavingEnabled,
+                // 内核：默认 FSRS；垃圾值 / 缺键同口径，只让本项退回默认
+                schedulingKernel = map[KEY_SCHEDULING_KERNEL]?.takeIf { it in KERNEL_IDS }
+                    ?: defaults.schedulingKernel,
+                // 信心条：默认**开**，关掉即完全退回 v2.6 交互
+                confidenceEnabled = map[KEY_CONFIDENCE_ENABLED]?.toBooleanStrictOrNull()
+                    ?: defaults.confidenceEnabled,
             )
         }
     }
