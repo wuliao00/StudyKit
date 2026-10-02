@@ -184,4 +184,19 @@ class AppSettingsTest {
         assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_FLIP_TIP_SEEN to "1")).flipTipSeen)
         assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_FLIP_TIP_SEEN to "true")).flipTipSeen)
     }
+
+    @Test
+    fun `执行意图贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen：每次安装一次的"看过没有"，默认 false（没看过）
+        assertFalse(AppSettings().ifThenTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).ifThenTipSeen)
+        val seen = AppSettings(ifThenTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).ifThenTipSeen)
+    }
+
+    @Test
+    fun `执行意图贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_IF_THEN_TIP_SEEN to "1")).ifThenTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_IF_THEN_TIP_SEEN to "true")).ifThenTipSeen)
+    }
 }

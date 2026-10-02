@@ -753,22 +753,9 @@ private fun HabitCard(
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    // 时段分类（v2.4 批次四）：副标题行追加时段名；ANY 是"没绑例程"，不显示
-                    // 双指标（本轮 A 段）：连续天数旁边并列一个"近 7 天 x/7"的弹性口径，
-                    // 前者说势头、后者说比例，漏一天不再只是一次可见的归零。
-                    text = buildString {
-                        append(
-                            if (item.isCountType) {
-                                "累计 ${item.progressText} · 连续 ${item.streak} 天"
-                            } else {
-                                "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
-                            },
-                        )
-                        append(" · ${weekComplianceLabel(item.week)}")
-                        if (item.habit.category != Habit.CATEGORY_ANY) {
-                            append(" · ${categoryLabel(category = item.habit.category)}")
-                        }
-                    },
+                    // 副标题优先展示执行意图整句（v2.7 B16），空则回退双指标；口径搬进纯函数
+                    // habitSubtitleLine，好让这条 UI 文案被 HabitSubtitleTest 钉住。
+                    text = habitSubtitleLine(item),
                     style = texts.caption,
                 )
                 Spacer(Modifier.height(1.dp))

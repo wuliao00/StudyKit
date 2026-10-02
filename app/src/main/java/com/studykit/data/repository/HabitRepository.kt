@@ -24,6 +24,10 @@ class HabitRepository(private val habitDao: HabitDao) {
         targetCount: Double = 0.0,
         unit: String = "",
         defaultText: String = "",
+        // v2.7 B16：执行意图整句 + 时段分类（when 维度复用 category）。都带默认值，
+        // 旧调用点（含演示数据、HabitTargetDaysTest）零改动即可编译，不新建列。
+        ifThen: String = "",
+        category: String = Habit.CATEGORY_ANY,
     ): Long =
         habitDao.insert(
             Habit(
@@ -34,6 +38,8 @@ class HabitRepository(private val habitDao: HabitDao) {
                 targetCount = targetCount,
                 unit = unit,
                 defaultText = defaultText,
+                category = category,
+                ifThen = ifThen,
             ),
         )
 

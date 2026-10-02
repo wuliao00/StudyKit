@@ -233,6 +233,29 @@ fun weekCompliance(
 internal fun weekComplianceLabel(week: WeekCompliance): String =
     "近 ${week.windowDays} 天 ${week.checkedDays}/${week.windowDays}" + (if (week.achieved) " 达标" else "")
 
+/**
+ * 列表副标题那一行文字（计划 B Task 16 / spec §7）：
+ * **优先展示执行意图整句** `habits.ifThen`（一旦用户把习惯写成"当…我就…"，这句比冷冰冰的
+ * "连续 N 天"更贴近他当初的承诺），空则回退到既有的双指标口径。抽成纯函数是为了让这条
+ * UI 文案的分支被 JVM 单测钉住（`HabitSubtitleTest`），页面只消费结果。
+ */
+internal fun habitSubtitleLine(item: HabitItemUi): String {
+    if (item.habit.ifThen.isNotBlank()) return item.habit.ifThen
+    return buildString {
+        append(
+            if (item.isCountType) {
+                "累计 ${item.progressText} · 连续 ${item.streak} 天"
+            } else {
+                "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
+            },
+        )
+        append(" · ${weekComplianceLabel(item.week)}")
+        if (item.habit.category != Habit.CATEGORY_ANY) {
+            append(" · ${categoryLabel(category = item.habit.category)}")
+        }
+    }
+}
+
 /** 该日期是否可补打卡：过去 7 天内（不含今天与未来） */
 fun canMakeUp(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
     date.isBefore(today) && !date.isBefore(today.minusDays(MAKEUP_WINDOW_DAYS))
@@ -519,6 +542,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         targetCount: Double,
         unit: String,
         defaultText: String,
+        // v2.7 B16：执行意图整句 + 时段分类（创建页「何时何地→做什么」三输入区的产物）。
+        ifThen: String = "",
+        category: String = Habit.CATEGORY_ANY,
         onSaved: () -> Unit,
     ) {
         if (!savingHabit.tryEnter()) return
@@ -531,11 +557,27 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                     targetCount,
                     unit.trim(),
                     defaultText.trim(),
+                    ifThen = ifThen,
+                    category = category,
                 )
+                // 触发点：首次成功保存一条带了 ifThen 的习惯（每次安装一次，口径同 flipTipSeen）。
+                // 写在 onSaved 之前，保证即使页面立刻 pop 也把"看过没有"落库。
+                if (ifThen.isNotBlank()) markIfThenTipSeen()
                 onSaved()
             } finally {
                 savingHabit.leave()
             }
+        }
+    }
+
+    /**
+     * 首次保存带执行意图的习惯时那条 IF_THEN 贴士：置真后每次安装不再出现。
+     * 与 [markFlipTipSeen]、[com.studykit.ui.study.StudyViewModel] 的同款纪律一致——写失败不提示
+     * 也不重投（后果只是下次保存还会再提一次），不在用户正要建习惯的路上弹 toast。
+     */
+    fun markIfThenTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(ifThenTipSeen = true) } }
         }
     }
 

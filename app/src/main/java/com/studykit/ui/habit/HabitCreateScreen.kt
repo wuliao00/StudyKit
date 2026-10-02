@@ -2,6 +2,7 @@ package com.studykit.ui.habit
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,8 +41,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.studykit.data.entity.Habit
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.theme.AppTheme
 
 private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯", "🧘", "🌙", "💧", "🎹", "🖌️", "🥗")
@@ -71,6 +76,15 @@ fun HabitCreateScreen(
     var targetCountText by rememberSaveable { mutableStateOf("") }
     var unit by rememberSaveable { mutableStateOf("") }
     var defaultText by rememberSaveable { mutableStateOf("") }
+    // 执行意图三输入（v2.7 B16）：when 复用时段分类（不新造第二个时间选择器），where/then 自由文本。
+    var category by rememberSaveable { mutableStateOf(Habit.CATEGORY_ANY) }
+    var where by rememberSaveable { mutableStateOf("") }
+    var then by rememberSaveable { mutableStateOf("") }
+    // ANY = "没绑例程"，不进整句的"何时"段（否则拼成"当任意·…"很怪），退化成只留地点。
+    val whenLabel = if (category == Habit.CATEGORY_ANY) "" else categoryLabel(category = category)
+    val ifThen = IfThenTemplate.compose(whenLabel = whenLabel, where = where, then = then)
+    // 那条 IF_THEN 贴士看过没有（每次安装一次，口径同 flipTipSeen）
+    val ifThenTipSeen = AppTheme.settings.ifThenTipSeen
     val parsedCount = targetCountText.trim().toDoubleOrNull() ?: 0.0
     val canSave = name.isNotBlank() && (!isCountType || parsedCount > 0)
 
@@ -247,6 +261,82 @@ fun HabitCreateScreen(
             placeholder = "一键打卡时自动带入备注",
         )
 
+        // ── 执行意图（v2.7 B16 · app.docx 模块4 P0）：把习惯写成"当【何时·何地】，我就【做什么】"。
+        // when 直接复用时段分类（Gardner 2021 绑例程的既有决定，不新造第二个时间选择器），
+        // where/then 走既有 AppTextField；三样只组装成一个字符串写进 habits.ifThen，不新增列。
+        Spacer(Modifier.height(AppTheme.space.xl))
+        Text(
+            text = "执行意图（可选）",
+            style = texts.caption.copy(fontWeight = FontWeight.Medium),
+        )
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(
+            text = "把它绑到具体的时段、地点和动作，更容易真的做成。",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+
+        Spacer(Modifier.height(AppTheme.space.md))
+        Text(text = "何时", style = texts.caption)
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.xs),
+            // 时段分类是二选一的表单值 ⇒ 整行标成单选组（与图标格 / 类型磁贴同一套 a11y 纪律）
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .selectableGroup(),
+        ) {
+            Habit.CATEGORIES.forEach { option ->
+                val selected = option == category
+                Box(
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(AppTheme.radius.md))
+                        .background(if (selected) colors.accentSoft else colors.card)
+                        .border(
+                            width = 1.dp,
+                            color = if (selected) colors.accent else colors.divider,
+                            shape = RoundedCornerShape(AppTheme.radius.md),
+                        )
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { category = option },
+                        )
+                        .padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.xs),
+                ) {
+                    Text(text = categoryLabel(category = option), style = texts.caption)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppTextField(
+            value = where,
+            onValueChange = { where = it },
+            label = "何地（可选）",
+            placeholder = "例如：书桌前",
+        )
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppTextField(
+            value = then,
+            onValueChange = { then = it },
+            label = "做什么",
+            placeholder = "例如：背 10 个单词",
+        )
+        // 只填了"做什么"才组装得出句子，实时把成品整句回显出来（预览为空就不占位）
+        if (ifThen.isNotBlank()) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            IfThenPreview(sentence = ifThen)
+        }
+        // 那条 IF_THEN 贴士（每次安装一次）：摆在用户正拼句子的这一块，教的是"怎么写"。
+        if (!ifThenTipSeen) {
+            StudyTips.forEvent(TipEvent.HabitFirstSave)?.let { tip ->
+                Spacer(Modifier.height(AppTheme.space.md))
+                TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+            }
+        }
+
         Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = "保存习惯",
@@ -259,6 +349,8 @@ fun HabitCreateScreen(
                     targetCount = if (isCountType) parsedCount else 0.0,
                     unit = if (isCountType) unit.ifBlank { "个" } else "",
                     defaultText = defaultText,
+                    ifThen = ifThen,
+                    category = category,
                 ) { onBack() }
             },
         )
@@ -306,5 +398,25 @@ private fun TypeChip(
         )
         Spacer(Modifier.height(2.dp))
         Text(text = subtitle, style = texts.caption)
+    }
+}
+
+/**
+ * 执行意图实时预览行：把 [IfThenTemplate] 组装好的整句原样回显。单独抽成一个无状态叶子
+ * （同 ConfidenceRow 的手法）是为了让它能被 [IfThenPreview] 的渲染守卫单独 setContent 钉住，
+ * 不必拖着整个要 viewModel 的创建页进场。只展示，不持有状态。
+ */
+@Composable
+internal fun IfThenPreview(sentence: String) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.radius.md))
+            .background(colors.accentSoft)
+            .padding(AppTheme.space.card),
+    ) {
+        Text(text = sentence, style = texts.aux.copy(color = colors.accentInk))
     }
 }
