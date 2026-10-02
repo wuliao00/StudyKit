@@ -224,7 +224,12 @@ internal fun selfExplainPrompt(): String =
 /**
  * 边界说明：本轮没有逐次重做历史，也没有 schema 去存它。
  * 这句存在的唯一目的是**不让人误读** —— 展开解析不等于应用记住了你重做过，
- * 更不会因此替你改动复习时间（时间的口径见详情页那句「复习时间由你自己定，这里没有算法排期。」）。
+ * 更不会因此替你改动复习时间。
+ *
+ * 后半句在 v2.7 B14 换了口径：排期交给内核（现行文案见 `MistakeScheduling.kt` 的 [systemSchedulingNote]），
+ * 但**这一句仍然成立**：真正改动 `review_at` 的是重做之后的那一次评分（`MistakeScheduling.grade`），
+ * 而展开/收起答案本身一次写都不写。T15 接上 `mistake_redos` 之后这句也不用改：
+ * 历史表记的是评分，不是“看过解析”。
  */
 internal fun redoHistoryBoundary(): String =
     "这里没有记录你每次重做的结果，展开解析也不会改动复习时间。"

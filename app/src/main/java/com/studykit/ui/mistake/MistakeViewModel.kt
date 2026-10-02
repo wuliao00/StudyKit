@@ -5,6 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
+import com.studykit.data.memory.Confidence
+import com.studykit.data.memory.MemoryScheduler
+import com.studykit.data.memory.ReviewGrade
+import com.studykit.ui.study.KernelHub
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
@@ -26,6 +30,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.LocalDate
 
 /** 学科分组条目 */
 data class SubjectGroup(val subject: String, val items: List<Mistake>)
@@ -84,6 +89,10 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
 
     private val container = (application as StudyKitApp).container
     private val repository = container.mistakeRepository
+
+    // 排期要读设置里的两项：活跃内核 id（[KernelHub.forId]）与严格度/考试日
+    // （`MemoryScheduler.forSettings`），与 `StudyViewModel.gradeCard` 同源同一个内核
+    private val settingsRepository = container.settingsRepository
 
     // ── 列表与筛选 ────────────────────────────────────────────────────────
     /**
@@ -281,12 +290,55 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // ── 详情操作 ──────────────────────────────────────────────────────────
-    /** 设置复习时间（时间戳毫秒） */
+    /**
+     * 手动**覆盖**排期（时间戳毫秒）：写的是与算法同一个列 [Mistake.reviewAt]（计划 B Task 14 的单列决策）。
+     *
+     * 三档手选从详情页主菜单降级到这里之后，它不再是"这道题什么时候复习"的唯一答案，
+     * 而是"用户这一次不让算法排"。所以顺手清掉连对计数（[MistakeScheduling.overrideSchedule] 的理由），
+     * 记忆状态本身一个字都不动 —— 覆盖一次时间不该把这条记忆有多硬抹掉。
+     */
     fun setReviewAt(id: Long, reviewAt: Long) {
         viewModelScope.launch {
             val mistake = repository.observeById(id).first() ?: return@launch
-            repository.update(mistake.copy(reviewAt = reviewAt))
-            toast("已设置复习时间")
+            repository.update(MistakeScheduling.overrideSchedule(mistake, reviewAt))
+            toast("已覆盖排期")
+        }
+    }
+
+    /**
+     * 重做后评一次分（v2.7 计划 B Task 14；spec §6 错题排期接管）。
+     *
+     * 结构照抄 `StudyViewModel.gradeCard` 的内核段：内核每轮现取（[KernelHub.forId]，与按钮预览同源），
+     * 调度参数与词侧同一份 `MemoryScheduler.forSettings`，算术全在 [MistakeScheduling.grade]（纯函数，
+     * 逐条钉在 `MistakeSchedulingTest`），这一层只负责"读行 → 算 → 写回"。算法写回的就是
+     * [Mistake.reviewAt] 那一列，与上面的手动覆盖同一个列，下游零特判。
+     *
+     * 顺序纪律同 `applyReview → recordGradedReview`：**先写状态、再写历史**。T15 的
+     * `insertRedo` 必须排在 [MistakeRepository.update] 之后 —— 反过来会留下"历史里有一次重做、
+     * 但排期没动"的行，那是在污染以后的校准样本。
+     *
+     * @param conf 重做前的自评信心（计划 B Task 15 的采集路径传入）；null = 没选，不参与超纠正。
+     */
+    fun gradeRedo(id: Long, grade: ReviewGrade, conf: Confidence?) {
+        viewModelScope.launch {
+            val mistake = repository.getById(id) ?: return@launch
+            val settings = settingsRepository.current()
+            val kernel = KernelHub.forId(settings.schedulingKernel)
+            val sched = MemoryScheduler.forSettings(
+                strictness = settings.reviewStrictness,
+                examEpochDay = settings.examEpochDay,
+                today = LocalDate.now(),
+            )
+            repository.update(
+                MistakeScheduling.grade(
+                    mistake = mistake,
+                    grade = grade,
+                    conf = conf,
+                    kernel = kernel,
+                    sched = sched,
+                    now = System.currentTimeMillis(),
+                ),
+            )
         }
     }
 
@@ -300,7 +352,12 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 标记已掌握 */
+    /**
+     * 标记已掌握（手动路径，spec §6：自动达成后用户仍可手动标记/取消）。
+     *
+     * 只改 `mastered` 一位：排期状态与连对计数留着不动 —— 手动划掉不该抹掉算法记的那份账，
+     * 而这一行从「待复习」退场后也不会再被评分，两者不会互相覆盖。
+     */
     fun markMastered(id: Long) {
         viewModelScope.launch {
             repository.markMastered(id)

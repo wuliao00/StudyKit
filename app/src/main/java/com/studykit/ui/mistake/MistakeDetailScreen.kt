@@ -69,11 +69,11 @@ private fun sourceLabel(source: String): String = when (source) {
 
 /**
  * 错题详情页：大图查看（点击放大）+ 题面与重做门（答案与解析默认遮住）+ 学科/来源/时间信息，
- * 操作：编辑学科、设置复习时间（快捷项）、标记已掌握、删除。
+ * 操作：编辑学科、**覆盖排期**（次级）、标记已掌握、删除。
  *
  * **route 上的 `mistakeId` 是本页唯一的准绳**（终审 C1）：`openDetail` 由本页 `LaunchedEffect` 发起，
  * VM 交出的行要与它比过才敢渲染（[renderMistakeDetail]），比对不过就是加载态 —— 加载态里整棵内容树
- * 不组合，故「标记掌握 / 设复习时间 / 删除 / 改学科」四条写路径没有一条能在数据还没答到这一道时按下；
+ * 不组合，故「标记掌握 / 覆盖排期 / 删除 / 改学科」四条写路径没有一条能在数据还没答到这一道时按下；
  * 四条写路径传的也都是 `mistakeId` 本身，而不是渲染出来的那一行的 id。
  *
  * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量；
@@ -99,8 +99,10 @@ private fun sourceLabel(source: String): String = when (source) {
  * 阶段用 `rememberSaveable(mistakeId)` 存**阶段名串**：转屏/换屏不丢，换一道题（同一 entry 上
  * `mistakeId` 变了）不会把上一道题的展开态带过来；存档里读到认不出的串时
  * [decodeRedoPhase] 回到遮住那一侧，宁可让用户多点一次按钮。
- * 阶段**不落库**：本轮没有 schema 变更，也就没有逐次重做历史，
+ * 阶段**不落库**：本轮没有逐次重做历史表（`mistake_redos` 的写入在计划 B Task 15），
  * [redoHistoryBoundary] 那句就是防「应用已按你的重做记录排期」这种误读的。
+ * 排期本体（v2.7 B14）：算法评一次分就把下次到期写进 `mistakes.review_at`，
+ * 页面上的三档手选因此从主菜单**降级**成次级「覆盖排期」（同一个列、两个人写）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -135,6 +137,8 @@ fun MistakeDetailScreen(
     // 学科对话框带的是**用户输入**，故开合与文本一起 saveable（终审 C3 的同类站点）：
     // 转屏后对话框还在、已输入的学科还在。删除确认与看图浮层不留输入，仍按瞬时态处理。
     var showSubjectDialog by rememberSaveable { mutableStateOf(false) }
+    // 覆盖排期对话框里只有选项没有输入，但它是「按错了还能退出」的那一步，开合仍留 saveable
+    var showOverrideDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     // 回弹进行中：true 之后按钮要继续留在屏幕上，否则动画第一帧就被 mastered 状态变更抹掉
     var masteredBounce by rememberSaveable { mutableStateOf(false) }
@@ -360,32 +364,30 @@ fun MistakeDetailScreen(
                 }
             }
 
-            // ── 复习时间 ──────────────────────────────────────────────────
+            // ── 复习排期 ──────────────────────────────────────────────────
             Spacer(Modifier.height(AppTheme.space.lg))
-            Text(text = "复习提醒", style = texts.cardTitle)
+            Text(text = reviewScheduleTitle(), style = texts.cardTitle)
             Spacer(Modifier.height(AppTheme.space.xs))
+            // 这一行读的就是算法写回来的那一列（`review_at`）；手动覆盖过也是它，不再分辨两本账
             Text(
-                text = current.reviewAt?.let { "已设置：${reviewFormat.format(it)}" } ?: "尚未设置复习时间",
+                text = nextReviewLine(current.reviewAt?.let { reviewFormat.format(it) }),
                 style = texts.caption,
             )
-            Spacer(Modifier.height(AppTheme.space.md))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
-                verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
-            ) {
-                ReviewOption("明天") { viewModel.setReviewAt(mistakeId, dayOffset(1)) }
-                ReviewOption("三天后") { viewModel.setReviewAt(mistakeId, dayOffset(3)) }
-                ReviewOption("一周后") { viewModel.setReviewAt(mistakeId, dayOffset(7)) }
-            }
-            // 诚实说明（v2.5 §2.4）：错题的复习时间是**手动**写进 `mistakes.review_at` 的
-            // （`MistakeViewModel.setReviewAt`），半衰期模型只管单词、不管错题 ——
-            // 那三颗快捷项只是三个常用值，点下去排到哪就是哪，没有算法在旁边替你算。
-            // 只加文案，不动任何逻辑。
+            // v2.7 B14（spec §6）：v2.5 §2.4 那句「复习时间由你自己定，这里没有算法排期。」已退役，
+            // 换成下面这句同一位置的实话：排期归系统，人只保留覆盖权。
+            // 文案全在 `MistakeScheduling.kt`，被改回旧承诺会被 `MistakeDetailRenderTest` 拦下。
             Spacer(Modifier.height(AppTheme.space.sm))
             Text(
-                text = "复习时间由你自己定，这里没有算法排期。",
+                text = systemSchedulingNote(),
                 style = texts.caption,
                 color = colors.secondaryText,
+            )
+            Spacer(Modifier.height(AppTheme.space.md))
+            // 三档手选不再占主位：收进次级入口（与「编辑学科归类」「删除错题」同档）
+            AppButton(
+                text = scheduleOverrideLabel(),
+                secondary = true,
+                onClick = { showOverrideDialog = true },
             )
 
             // ── 学科归类 ──────────────────────────────────────────────────
@@ -415,6 +417,17 @@ fun MistakeDetailScreen(
             onConfirm = { subject ->
                 viewModel.updateSubject(mistakeId, subject)
                 showSubjectDialog = false
+            },
+        )
+    }
+
+    // ── 覆盖排期对话框 ──────────────────────────────────────────
+    if (showOverrideDialog) {
+        OverrideScheduleDialog(
+            onDismiss = { showOverrideDialog = false },
+            onPick = { days ->
+                showOverrideDialog = false
+                viewModel.setReviewAt(mistakeId, dayOffset(days))
             },
         )
     }
@@ -525,6 +538,52 @@ private fun dayOffset(days: Int): Long {
         set(Calendar.MILLISECOND, 0)
     }
     return calendar.timeInMillis
+}
+
+/**
+ * 覆盖排期对话框：把原来的三档手选从主位搬进来。
+ *
+ * 三颗药丸仍是页面上原有的 [ReviewOption]（同一个视觉语言），只是不再一进来就摊在眼前：
+ * spec §6 的口径是"默认由内核排，手动降级为次级覆盖"。文案与档位全在
+ * `MistakeScheduling.kt` 的 [manualOverrideOptions]，逐档钉在 `MistakeDetailRenderTest`。
+ * 不加"确定"钮：选一档就是表达完毕，当场写库并收起（原来的三颗快捷项也是同一语义）。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OverrideScheduleDialog(
+    onDismiss: () -> Unit,
+    onPick: (Int) -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = scheduleOverrideLabel(), style = texts.cardTitle) },
+        text = {
+            Column {
+                Text(
+                    text = systemSchedulingNote(),
+                    style = texts.caption,
+                    color = colors.secondaryText,
+                )
+                Spacer(Modifier.height(AppTheme.space.md))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                ) {
+                    manualOverrideOptions().forEach { (label, days) ->
+                        ReviewOption(label) { onPick(days) }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消", color = colors.secondaryText)
+            }
+        },
+    )
 }
 
 /**

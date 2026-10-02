@@ -1,5 +1,6 @@
 package com.studykit.data.memory
 
+import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Word
 
 /** 用户翻面/提交前采集的信心三档；null = 跳过（不阻塞，也不参与超纠正判定）。spec §2.3 */
@@ -152,6 +153,39 @@ fun kernelStateOf(word: Word): KernelState = KernelState(
 fun kernelStateFor(kernel: SchedulingKernel, word: Word): KernelState {
     val state = kernelStateOf(word)
     return if (kernel.id == "HALF_LIFE") state.copy(difficulty = word.difficulty) else state
+}
+
+/**
+ * `mistakes` 行 → 内核状态（v2.7 计划 B Task 14，错题排期接管）。
+ *
+ * 与 [Word] 那一份的唯一差别：**错题表没有半衰期列**（schema 本轮冻结在 v7，不加列），
+ * 所以 [KernelState.hDays] 是从 `fsrs_stability` 按 spec §2.4 的同一比值
+ * （[FSRS_HALF_OVER_S]）反推回来的**镜像读数**，不是原生值。跑 FSRS 时读的是原生列，
+ * 切到 HALF_LIFE 时读的是换算近似 —— 与设置页「切回半衰期不丢历史，但读数是近似」同一口径。
+ *
+ * `fsrs_difficulty` 为 null 即这道错题还没被任何内核写过（新入本，`MIGRATION_6_7` 一类老行同理）：
+ * 难度取半衰期冷启动值 [MemoryState.NEW] 折算过来的那一份。FSRS 首评本来忽略它
+ * （firstTime 判据就是 stability==null，A-T3），它只在读数/预览里临时配对用。
+ */
+fun kernelStateOf(mistake: Mistake): KernelState = KernelState(
+    stability = mistake.fsrsStability,
+    difficulty = mistake.fsrsDifficulty ?: fsrsDifficultyFromHalfLife(MemoryState.NEW.difficulty),
+    cardState = CardState.entries.getOrElse(mistake.fsrsState - 1) { CardState.LEARNING },
+    hDays = mistake.fsrsStability?.let { it * FSRS_HALF_OVER_S },
+)
+
+/**
+ * 活跃内核视角的错题行状态，与 [kernelStateFor]（词）只差一处：错题没有半衰期口径的难度列，
+ * 所以跑 HALF_LIFE 时按 [halfDifficultyFromFsrs] 现折一次（词的列量纲固定为半衰期，直接读）。
+ * 排期与预览仍必须共用这一份 —— 两处各造状态就是 `MemoryModel.preview` 注释警告过的分家。
+ */
+fun kernelStateFor(kernel: SchedulingKernel, mistake: Mistake): KernelState {
+    val state = kernelStateOf(mistake)
+    return if (kernel.id == "HALF_LIFE") {
+        state.copy(difficulty = halfDifficultyFromFsrs(state.difficulty))
+    } else {
+        state
+    }
 }
 
 /**
