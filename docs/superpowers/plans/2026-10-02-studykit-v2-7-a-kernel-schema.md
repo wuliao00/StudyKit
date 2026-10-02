@@ -319,8 +319,11 @@ import kotlin.math.pow
  * 分支守卫取 **v5 口径**：失败支 `S' = clip(w11·D^-w12·((S+1)^w13−1)·e^{(1−R)·w14}, 1, S)`；
  * v6 的 `new_s_min = S/e^{w17·w18}` 同日短支守卫不使用（无优化器、无第四档，spec §2.2/D5）。
  *
- * 权重 w[0..15] 取 open-spaced-repetition/py-fsrs@9446cb0 README 的默认表前 16 项
+ * 权重 w[0..15] 取 open-spaced-repetition/py-fsrs@9446cb0 README 默认表前 16 项
  * （v5/v6 两表这 16 个值一致）。诚实声明：不声称与 Anki 结果相等，黄金轨迹钉的是本实现的定义。
+ *
+ * h/S 比值不在本类定义——用包级常量 `FSRS_HALF_OVER_S`（A-T2 双审后定调的单一归属，
+ * 定义在 `SchedulingKernel.kt` 末尾）。
  */
 class FsrsKernel : SchedulingKernel {
 
@@ -370,7 +373,7 @@ class FsrsKernel : SchedulingKernel {
                 KernelRating.AGAIN -> CardState.RELEARNING
                 else -> CardState.REVIEW
             },
-            hDays = nextS * HALF_OVER_S, // 镜像回填（近似，spec §2.1 双写口径）
+            hDays = nextS * FSRS_HALF_OVER_S, // 镜像回填（近似，spec §2.1 双写口径；包级常量，A-T2 定调）
         )
     }
 
@@ -387,7 +390,7 @@ class FsrsKernel : SchedulingKernel {
     override fun seedFromHalfLife(halfLifeDays: Double, difficulty: Double): KernelState {
         val h = if (halfLifeDays.isFinite() && halfLifeDays > 0.0) halfLifeDays else MemoryState.NEW.halfLifeDays
         return KernelState(
-            stability = (h / HALF_OVER_S).coerceAtLeast(MIN_STABILITY_FLOOR),
+            stability = (h / FSRS_HALF_OVER_S).coerceAtLeast(MIN_STABILITY_FLOOR),
             difficulty = difficulty.coerceIn(1.0, 10.0),
             cardState = CardState.REVIEW,
             hDays = h,
@@ -411,8 +414,7 @@ class FsrsKernel : SchedulingKernel {
         const val DECAY = -0.5
         /** 0.9^(1/DECAY) − 1 = 19/81，恰为有理数（写作时已独立验算） */
         const val FACTOR = 19.0 / 81.0
-        /** 幂律族 h/S = (0.5^(1/DECAY)−1)/(0.9^(1/DECAY)−1) = 12.789474…；只在此 decay 下成立 */
-        const val HALF_OVER_S = 12.789473684210526
+        // h/S 比值已按 A-T2 双审提到包级 FSRS_HALF_OVER_S（SchedulingKernel.kt），此处不再定义
         const val MIN_STABILITY_FLOOR = 0.01
         const val MAX_STABILITY = 36500.0
         const val TEN_MINUTES_IN_DAYS = 10.0 / 1440.0
@@ -940,7 +942,7 @@ object KernelHub {
             val days = kernel.nextIntervalDays(after, rating, sched.targetRecall, sched.maxIntervalDays)
             val status = when {
                 grade == ReviewGrade.FORGET -> Word.STATUS_LEARNING
-                (after.hDays ?: after.stability!! * HalfLifeKernel.FSRS_SEED_RATIO) >= MASTERED_HALF_LIFE_DAYS -> Word.STATUS_MASTERED
+                (after.hDays ?: after.stability!! * FSRS_HALF_OVER_S) >= MASTERED_HALF_LIFE_DAYS -> Word.STATUS_MASTERED
                 else -> Word.STATUS_LEARNING
             }
 ```
