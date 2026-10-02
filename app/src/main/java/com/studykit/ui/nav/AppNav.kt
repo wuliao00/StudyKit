@@ -41,6 +41,8 @@ import com.studykit.ui.book.BookEditScreen
 import com.studykit.ui.book.BookShelfScreen
 import com.studykit.ui.book.BookViewModel
 import com.studykit.ui.book.ExcerptEditScreen
+import com.studykit.ui.book.ExcerptReviewScreen
+import com.studykit.ui.book.ChapterTestScreen
 import com.studykit.ui.book.ReviewEditScreen
 import com.studykit.ui.bulkimport.BulkPasteScreen
 import com.studykit.ui.bulkimport.ImportKind
@@ -153,12 +155,18 @@ object BookRoutes {
     const val EXCERPT_EDIT = "excerpt/{excerptId}"
     const val REVIEW_CREATE = "book/{bookId}/review/create"
     const val REVIEW_EDIT = "review/{reviewId}"
+    /** 检索式书摘复习队列（v2.7 计划 B Task 18）：到期书摘的全局队列，从任意书详情进入 */
+    const val EXCERPT_REVIEW = "book/excerpt-review"
+    /** 章节自测（v2.7 计划 B Task 18）：绑定到某一本书 */
+    const val CHAPTER_TEST = "book/{bookId}/chapter-test"
     fun detail(bookId: Long) = "book/$bookId"
     fun edit(bookId: Long) = "book/$bookId/edit"
     fun excerptCreate(bookId: Long) = "book/$bookId/excerpt/create"
     fun excerptEdit(excerptId: Long) = "excerpt/$excerptId"
     fun reviewCreate(bookId: Long) = "book/$bookId/review/create"
     fun reviewEdit(reviewId: Long) = "review/$reviewId"
+    fun excerptReview() = "book/excerpt-review"
+    fun chapterTest(bookId: Long) = "book/$bookId/chapter-test"
 }
 
 object MistakeRoutes {
@@ -629,6 +637,12 @@ fun AppNav(
                     onEditReview = { reviewId ->
                         navController.navigate(BookRoutes.reviewEdit(reviewId)) { launchSingleTop = true }
                     },
+                    onReviewExcerpts = { _ ->
+                        navController.navigate(BookRoutes.excerptReview()) { launchSingleTop = true }
+                    },
+                    onChapterTest = { bookId ->
+                        navController.navigate(BookRoutes.chapterTest(bookId)) { launchSingleTop = true }
+                    },
                 )
             }
             composable(BookRoutes.CREATE) {
@@ -688,6 +702,26 @@ fun AppNav(
                 ReviewEditScreen(
                     reviewId = entry.arguments?.getLong("reviewId") ?: 0L,
                     bookId = null,
+                    viewModel = bookViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            // ── v2.7 计划 B Task 18：检索式书摘复习 + 章节自测（附在读书子路由末尾，最小附加）──
+            // 复习队列是全局的（到期书摘不分哪本书），所以 EXCERPT_REVIEW 不带参数；
+            // 章节自测绑定单书，走 {bookId}。
+            composable(BookRoutes.EXCERPT_REVIEW) {
+                ExcerptReviewScreen(
+                    viewModel = bookViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = BookRoutes.CHAPTER_TEST,
+                arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
+            ) { entry ->
+                ChapterTestScreen(
+                    bookId = entry.arguments?.getLong("bookId") ?: 0L,
                     viewModel = bookViewModel,
                     onBack = { navController.popBackStack() },
                 )

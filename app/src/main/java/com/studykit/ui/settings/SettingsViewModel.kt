@@ -163,6 +163,32 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      */
     fun setRecallBeforeGrade(on: Boolean) = write { it.copy(recallBeforeGrade = on) }
 
+    /**
+     * 排期内核（v2.7 计划 B Task 20，[AppSettings.schedulingKernel] 的**首个生产侧入口**）：
+     * FSRS（默认）或半衰期旧内核，二选一。
+     *
+     * 消费点不在这里 —— 是 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告，都经
+     * `KernelHub.forId` 现取。这一格只是把用户的选择写回库，让「按哪个内核排」第一次可被生产出来。
+     * 兜一道 [AppSettings.KERNEL_IDS] 白名单：UI 只画这两项，万一接到白名单外的 id 就原样留着不写坏，
+     * 与 [AppSettings.fromMap] 对同一份白名单的收口口径一致。
+     */
+    fun setSchedulingKernel(id: String) =
+        write { it.copy(schedulingKernel = if (id in AppSettings.KERNEL_IDS) id else it.schedulingKernel) }
+
+    /**
+     * 「先自评把握再评分」开关（[AppSettings.confidenceEnabled]）：翻面 / 提交前那条信心行开不开。
+     * 消费点在 `CardStudyScreen` / `QuizScreen` 的 `ConfidenceRow`（采集 UI 已在计划 B Task 11-12 落地）；
+     * 关掉 = 完全退回 v2.6 交互（不采集，conf 恒 null、confidence 列落 NULL）。
+     */
+    fun setConfidenceEnabled(on: Boolean) = write { it.copy(confidenceEnabled = on) }
+
+    /**
+     * 交错练习开关（[AppSettings.interleavingEnabled]）在设置页的**镜像**。真源与 QuizScreen 入口同一个：
+     * 都读同一份 [com.studykit.data.SettingsRepository] 的 StateFlow、写回同一张 `app_settings`。打不散的判定
+     * 只有 `QuestionOrdering.interleaveBySubject` 一处 —— 这一格不新增第二处判定，只是把同一个值也摆到设置页。
+     */
+    fun setInterleavingEnabled(on: Boolean) = write { it.copy(interleavingEnabled = on) }
+
     // ── 档案与目标 ──────────────────────────────────────────────
 
     /** 昵称：收边距、掐到 [AppSettings.NICKNAME_MAX]，与 [AppSettings.fromMap] 的收口口径一致 */

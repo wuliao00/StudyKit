@@ -6,9 +6,15 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
+import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.Excerpt
+import com.studykit.data.memory.Confidence
+import com.studykit.data.memory.ExcerptReview
+import com.studykit.data.memory.ReviewGrade
+import com.studykit.ui.study.KernelHub
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -43,6 +49,10 @@ data class BookShelfUiState(
     val readingCount: Int = 0,
     val finishedCount: Int = 0,
     val excerptCount: Int = 0,
+    /** 主指标：完成的检索动作总和（书摘 review_count(>0) 之和 + 章节自测行数） */
+    val retrievalCount: Int = 0,
+    /** 是否存在 7 天前建、却从没检索过的书摘（RECALL_NOTES 贴士的资格位，每次安装一次的开关在 UI 侧） */
+    val hasStaleExcerpt: Boolean = false,
 )
 
 /** 详情页展示模型：书籍 + 书摘 + 书评 */
@@ -66,16 +76,27 @@ data class BookDetailUi(
 class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as StudyKitApp).container.bookRepository
+    private val settingsRepository = (application as StudyKitApp).container.settingsRepository
 
-    // ── 书架页状态：书籍流 × 书摘总数流 ─────────────────────────────────
+    // ── 书架页状态：书籍流 × 书摘总数流 × 主指标检索数流 × 陈旧未检索流 ─────
+    /** 7 天前那道线：VM 构造时定一次即可，这条只驱动一条一次性贴士 */
+    private val staleExcerptCutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)
+
     val shelfState: StateFlow<BookShelfUiState> =
-        combine(repository.observeAll(), repository.observeExcerptCount()) { books, excerptCount ->
+        combine(
+            repository.observeAll(),
+            repository.observeExcerptCount(),
+            repository.observeRetrievalCount(),
+            repository.observeExcerptsStaleWithoutRecall(staleExcerptCutoff),
+        ) { books, excerptCount, retrievalCount, staleCount ->
             val items = books.map(::BookItemUi)
             BookShelfUiState(
-                items         = items,
-                readingCount  = items.count { !it.isFinished },
-                finishedCount = items.count { it.isFinished },
-                excerptCount  = excerptCount,
+                items           = items,
+                readingCount    = items.count { !it.isFinished },
+                finishedCount   = items.count { it.isFinished },
+                excerptCount    = excerptCount,
+                retrievalCount  = retrievalCount,
+                hasStaleExcerpt = staleCount > 0,
             )
         }
             // 整表 map + 两趟 count：进度每写一次都要重算，别落在主线（终审 I7）
@@ -258,6 +279,117 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 savingReview.leave()
             }
+        }
+    }
+
+    // ── 检索式书摘复习（v2.7 计划 B Task 18）────────────────────────────────
+    private val gradingExcerpt = OneShotGate()
+    private val savingChapterTest = OneShotGate()
+
+    /** 到期且已启用的书摘队列（供 ExcerptReviewScreen）。now 由调用方在订阅时给定 */
+    fun observeDueExcerpts(now: Long): Flow<List<Excerpt>> = repository.observeDueExcerpts(now)
+
+    /**
+     * 评一次书摘：走活跃内核重排 stability / reviewCount / nextReviewAt。
+     * 与 `StudyViewModel.gradeCard` 同一把尺子（KernelHub 现取内核），但只回写书摘那三列。
+     * 信心档（conf）只在 SURE×未忆起 时叠一条超纠正提前，其余一律不干预（见 [ExcerptReview]）。
+     */
+    fun gradeExcerptReview(excerptId: Long, grade: ReviewGrade, conf: Confidence?) {
+        if (!gradingExcerpt.tryEnter()) return
+        viewModelScope.launch {
+            try {
+                val excerpt = repository.getExcerpt(excerptId) ?: return@launch
+                val kernel = KernelHub.forId(settingsRepository.current().schedulingKernel)
+                val result = ExcerptReview.schedule(kernel, excerpt, grade, conf, System.currentTimeMillis())
+                repository.updateExcerpt(
+                    excerpt.copy(
+                        stability = result.stability,
+                        reviewCount = result.reviewCount,
+                        nextReviewAt = result.nextReviewAt,
+                    ),
+                )
+            } finally {
+                gradingExcerpt.leave()
+            }
+        }
+    }
+
+    /**
+     * 每摘 opt-in / opt-out。哨兵语义：`next_review_at=0` 就是关（不动 `review_count`）；
+     * 开 = 把它排到此刻（立刻到期、进队列）。无 schema 变更。
+     */
+    fun setExcerptEnrolled(excerptId: Long, enrolled: Boolean) {
+        viewModelScope.launch {
+            val excerpt = repository.getExcerpt(excerptId) ?: return@launch
+            val nextAt = if (enrolled) System.currentTimeMillis() else 0L
+            if (excerpt.nextReviewAt != nextAt) {
+                repository.updateExcerpt(excerpt.copy(nextReviewAt = nextAt))
+            }
+        }
+    }
+
+    // ── 章节自测（v2.7 计划 B Task 18）──────────────────────────────────────
+    fun observeChapterTests(bookId: Long): Flow<List<ChapterTest>> = repository.observeChapterTests(bookId)
+
+    /**
+     * 保存本书第一道章节自测后那条 EXPLAIN_WHY 的一次性待渲染标记。不落库（落库的是
+     * `chapterTipSeen`），进程死了自然消失——与 `HabitViewModel.ifThenTipPending` 同一口径：
+     * 创建页保存后不自动 pop，提示留到返回落点（详情页）渲染，离开详情页即 clear。
+     */
+    private val _explainWhyTipPending = MutableStateFlow(false)
+    val explainWhyTipPending: StateFlow<Boolean> = _explainWhyTipPending
+
+    /** 离开详情页时熄掉这次提示（下一次首次保存若还没落库 seen 会再亮一回，那一回由 chapterTipSeen 拦住） */
+    fun clearExplainWhyTipPending() {
+        _explainWhyTipPending.value = false
+    }
+
+    /**
+     * 保存一道章节自测。[onSaved] 带回「这是不是本书第一道」—— 首道才触发 EXPLAIN_WHY 贴士。
+     */
+    fun saveChapterTest(
+        bookId: Long,
+        chapterLabel: String,
+        question: String,
+        expectedAnswer: String,
+        onSaved: (wasFirst: Boolean) -> Unit,
+    ) {
+        if (!savingChapterTest.tryEnter()) return
+        viewModelScope.launch {
+            try {
+                val wasFirst = repository.countChapterTests(bookId) == 0
+                repository.addChapterTest(bookId, chapterLabel.trim(), question.trim(), expectedAnswer.trim())
+                // ChapterFinished→EXPLAIN_WHY：只在「本书第一道且这次安装没看过」时点亮；
+                // 写库交给 markChapterTipSeen（每次安装一次），pending 只是把提示带回详情页渲染。
+                if (wasFirst && !settingsRepository.current().chapterTipSeen) {
+                    _explainWhyTipPending.value = true
+                    markChapterTipSeen()
+                }
+                onSaved(wasFirst)
+            } finally {
+                savingChapterTest.leave()
+            }
+        }
+    }
+
+    /** 自评布尔（无 NLP）：回忆 → 展开对照 → 记得 / 没记得，写回 passed */
+    fun gradeChapterTest(chapterTestId: Long, passed: Boolean) {
+        viewModelScope.launch {
+            val test = repository.getChapterTest(chapterTestId) ?: return@launch
+            if (test.passed != passed) repository.updateChapterTest(test.copy(passed = passed))
+        }
+    }
+
+    // ── 两条一次性贴士的落库（每次安装一次，纪律同其余 *TipSeen）───────────
+    fun markChapterTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(chapterTipSeen = true) } }
+        }
+    }
+
+    fun markExcerptTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(excerptTipSeen = true) } }
         }
     }
 }

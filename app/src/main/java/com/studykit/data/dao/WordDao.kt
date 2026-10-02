@@ -168,6 +168,51 @@ interface WordDao {
     fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>>
 
     /**
+     * 「延迟后测」卡的原料（v2.7 spec §9 / D7）：间隔 + 评分档位 + 当时模型预测的回忆概率 + 对错。
+     *
+     * ## 为什么另开一条，而不给 [ReviewGapRow] 加两个字段
+     * 那条查询的 SQL 只有 `gap_days, correct` 两列；Room 要求投影类的每个字段都能对上列，
+     * 加字段就得改那条 SQL，而它身后是 v2.3 起就钉死的实测遗忘曲线（`MemoryHealthTest` 那一整张网）。
+     * 一张卡加一列窄查询，比动一条有人依赖的旧查询便宜得多，也更符合"只增不改"。
+     *
+     * ## 只投影四列
+     * 这张卡每改一次评分就要全库重算一遍（`observeHalfLifeDays` 那条 KDoc 写过的同一个理由）：
+     * 把 `h_before`/`reaction_ms` 那些列一起拉过 Binder 是纯浪费。
+     */
+    @Query(
+        "SELECT gap_days AS gapDays, grade, p_at_review AS pAtReview, correct FROM word_reviews",
+    )
+    fun observeRetentionRows(): Flow<List<RetentionRow>>
+
+    /**
+     * 导出 `review_history.csv` 用的复习流水（v2.7 spec 附录 A）。
+     *
+     * ## 为什么是 `suspend` 而不是 `Flow`
+     * 这是备份导出那一刻的一次性快照，不是给人盯着看的：做成 Flow 反而要在
+     * `BackupArchive` 里订阅、取一次、再取消，多一套生命周期却没多一个保证。
+     * 与 `getRecallPretestPool` 同类（一次性读）。
+     *
+     * ## 为什么 JOIN `words`
+     * `word_reviews` 只有 `word_id` 这一条线索（见 [deleteAllReviews] 的 KDoc：孤儿行会让
+     * 热力图这类统计虚高）。导出是给人拿去算保留率的，挂在不存在的词上的行**不该进包**。
+     *
+     * ## `0 AS priority`
+     * 优先级（超纠正置顶）是错题侧的列（`mistakes.priority`），词卡这一侧压根没有，
+     * 但附录 A 的列序里有它，于是在 SQL 里写死 0，让投影类与格式逐列对齐 ——
+     * 这条常量将来由错题侧那条查询真正填上（见 `ReviewHistoryCsv` 的 KDoc）。
+     *
+     * `ORDER BY reviewed_at, id`：同一份数据两次导出的字节一致，
+     * 比对包大小或查差异时不必先解释"为什么顺序变了"（与 `BackupArchive.imageEntries` 同理）。
+     */
+    @Query(
+        "SELECT r.word_id AS itemId, r.reviewed_at AS reviewedAt, r.gap_days AS gapDays, " +
+            "r.confidence AS confidence, r.grade AS grade, 0 AS priority " +
+            "FROM word_reviews r JOIN words w ON w.id = r.word_id " +
+            "ORDER BY r.reviewed_at ASC, r.id ASC",
+    )
+    suspend fun getReviewHistoryRows(): List<ReviewHistoryRow>
+
+    /**
      * 新词预测试的干扰项池（v2.5 §3.3）：除了这个词、除了这句释义之外的**其他释义**，
      * 按文本去重后随机取 [:limit] 条。
      *
@@ -213,6 +258,42 @@ interface WordDao {
  * 那种行参与不了曲线计算（算法层会过滤掉），但**不能假装它们是 0 天**。
  */
 data class ReviewGapRow(val gapDays: Double?, val correct: Boolean)
+
+/**
+ * [WordDao.observeRetentionRows] 的投影行 —— 「延迟后测」卡的一行原料。
+ *
+ * [gapDays] 与 [pAtReview] 都可空，都是真实状态而不是脏数据：`gap_days`/`p_at_review`
+ * 是 v4 才加上的列，更早的行压根没记过（见 `AppDatabase.MIGRATION_3_4`）。
+ * [grade] 取 [com.studykit.data.entity.WordReview] 的口径：0=认识 1=模糊 2=忘记，
+ * -1 = 迁移前回填的"没记评分"；分桶侧怎么处置这三种取值，全在 `RetentionBuckets` 里。
+ */
+data class RetentionRow(
+    val gapDays: Double?,
+    val grade: Int,
+    val pAtReview: Double?,
+    val correct: Boolean,
+)
+
+/**
+ * [WordDao.getReviewHistoryRows] 的投影行：spec 附录 A 除 `item_kind` 与 `elapsed_bucket`
+ * 之外的每一列（那两列由写入侧推导：kind 由来源表决定，桶由 `gap_days` 决定）。
+ *
+ * 放在 `data/dao` 而不是 `util/backup`：它得被 Room 的编译期列校验覆盖一次才谈得上
+ * "列名不会打错"，而备份模块刻意不建自己的 DAO。
+ */
+data class ReviewHistoryRow(
+    /** 来源条目的 id：词卡侧就是 `words.id`（附录 A 的 `item_id`） */
+    val itemId: Long,
+    val reviewedAt: Long,
+    /** 可空：v4 之前的行没记过"当时隔了多久" */
+    val gapDays: Double?,
+    /** 可空：作答前自评的落库编码（`Confidence.toStorageInt`），null = 当时跳过了这一步 */
+    val confidence: Int?,
+    /** -1 = 迁移前未记录评分 */
+    val grade: Int,
+    /** 错题侧的超纠正优先级；词卡侧恒 0（见那条 SQL 的 `0 AS priority`） */
+    val priority: Int,
+)
 
 /**
  * [WordDao.observeScheduledMemoryRows] 的投影行：一条已排期的词，
