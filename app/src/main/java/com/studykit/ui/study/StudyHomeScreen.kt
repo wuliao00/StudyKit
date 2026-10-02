@@ -45,12 +45,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.components.StatTileTier
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
@@ -77,6 +80,21 @@ fun StudyHomeScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
+
+    // ── SIXTY_SIX 贴士（计划 B Task 17 Step 2b / spec §8）：火焰徽章天数恰好走到 21 那天，
+    // 在 hero 下方挂一次「21 天不是终点、66 天才是中位数」——每次安装一次（sixtySixTipSeen）。
+    // 判定全部在 [SixtySixTip]（纯函数，SixtySixTipTest 钉住 20/21/22 三条口径）：
+    //  - 点亮只看 [SixtySixTip.shouldLatch]，点亮那一帧就把 sixtySixTipSeen 落库（只弹一次）；
+    //  - 画不画看 [SixtySixTip.shouldShow]：天数走过 21（明天再学一次就是 22）这一枚状态自动复位，
+    //    不把已经过去的 21 天一直留在 hero 下面。
+    val sixtySixTipSeen = AppTheme.settings.sixtySixTipSeen
+    var sixtySixLatched by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.streakDays, sixtySixTipSeen) {
+        if (SixtySixTip.shouldLatch(streakDays = state.streakDays, tipSeen = sixtySixTipSeen)) {
+            sixtySixLatched = true
+            viewModel.markSixtySixTipSeen()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -125,6 +143,15 @@ fun StudyHomeScreen(
             streakDays = state.streakDays,
             onStart = onOpenWords,
         )
+
+        // 连续满 21 天那次的一次性提醒（hero 正下方，紧贴火焰徽章的语义落点）。
+        // 走现成的 TipCard，不新增颜色；文案与证据都由 StudyTips 单点维护。
+        if (SixtySixTip.shouldShow(streakDays = state.streakDays, latched = sixtySixLatched)) {
+            StudyTips.forEvent(TipEvent.StreakReached(state.streakDays))?.let { tip ->
+                Spacer(Modifier.height(AppTheme.space.sm))
+                TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+            }
+        }
 
         Spacer(Modifier.height(AppTheme.space.md))
         // 三块磁贴全部走 Reference 档：这屏的第一等重点已经在上面那块（今日待办 + 主行动），

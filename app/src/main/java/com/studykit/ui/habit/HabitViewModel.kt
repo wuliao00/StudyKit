@@ -59,9 +59,10 @@ internal val HABIT_TARGET_DAY_OPTIONS = listOf(7, 30, 66, 100, 180)
 /**
  * 创建页档位下面那句诚实说明。
  *
- * 数字全部从常量插值，免得改了默认值而文案还在讲旧数。但本轮**没有**"断签保护卡额度"
- * 的落库位置（那要加列，超出范围），所以这一句不许提额度、也不许说漏掉的日子会被自动补上；
- * [MAKEUP_WINDOW_DAYS] 的补录窗口只能照实说。
+ * 数字全部从常量插值，免得改了默认值而文案还在讲旧数。断签保护是**纯推导、零落库**（spec D6，
+ * 见 `ui/habit/HabitGuard.kt` / `HabitGuardDisplay.kt`：按自然月取前 2 次缺卡为受保护，
+ * 不加列、不写库），所以这里既不提额度数字、也不承诺"漏掉的日子会被自动补上"——那是补录
+ * （[MAKEUP_WINDOW_DAYS]）那条独立机制，只能照实说；保护只影响"断不断"的展示口径。
  *
  * 同一行在数量型习惯那里标的标签是"目标期限（天）"，所以这句**不许**写"它不是期限"
  * —— 那对数量型是错的（过了那天就完不成了）。反 KPI 那一层靠"漏一天不算断"与 5/7 撑。
@@ -232,6 +233,29 @@ fun weekCompliance(
  */
 internal fun weekComplianceLabel(week: WeekCompliance): String =
     "近 ${week.windowDays} 天 ${week.checkedDays}/${week.windowDays}" + (if (week.achieved) " 达标" else "")
+
+/**
+ * 列表副标题那一行文字（计划 B Task 16 / spec §7）：
+ * **优先展示执行意图整句** `habits.ifThen`（一旦用户把习惯写成"当…我就…"，这句比冷冰冰的
+ * "连续 N 天"更贴近他当初的承诺），空则回退到既有的双指标口径。抽成纯函数是为了让这条
+ * UI 文案的分支被 JVM 单测钉住（`HabitSubtitleTest`），页面只消费结果。
+ */
+internal fun habitSubtitleLine(item: HabitItemUi): String {
+    if (item.habit.ifThen.isNotBlank()) return item.habit.ifThen
+    return buildString {
+        append(
+            if (item.isCountType) {
+                "累计 ${item.progressText} · 连续 ${item.streak} 天"
+            } else {
+                "连续 ${item.streak} 天 · 累计 ${item.totalCheckDays} 天"
+            },
+        )
+        append(" · ${weekComplianceLabel(item.week)}")
+        if (item.habit.category != Habit.CATEGORY_ANY) {
+            append(" · ${categoryLabel(category = item.habit.category)}")
+        }
+    }
+}
 
 /** 该日期是否可补打卡：过去 7 天内（不含今天与未来） */
 fun canMakeUp(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
@@ -519,6 +543,9 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         targetCount: Double,
         unit: String,
         defaultText: String,
+        // v2.7 B16：执行意图整句 + 时段分类（创建页「何时何地→做什么」三输入区的产物）。
+        ifThen: String = "",
+        category: String = Habit.CATEGORY_ANY,
         onSaved: () -> Unit,
     ) {
         if (!savingHabit.tryEnter()) return
@@ -531,11 +558,59 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                     targetCount,
                     unit.trim(),
                     defaultText.trim(),
+                    ifThen = ifThen,
+                    category = category,
                 )
+                // 触发点：首次成功保存一条带了 ifThen 的习惯（每次安装一次，口径同 flipTipSeen）。
+                // 写在 onSaved 之前，保证即使页面立刻 pop 也把"看过没有"落库；
+                // 而这一句只在那一次没看过时才点亮提示（B17 复审 ⚠2：创建页不再渲染它）。
+                if (ifThenTipShouldShow(justSavedWithIfThen = true, ifThenText = ifThen, tipSeen = settingsRepository.current().ifThenTipSeen)) {
+                    _ifThenTipPending.value = true
+                    markIfThenTipSeen()
+                }
                 onSaved()
             } finally {
                 savingHabit.leave()
             }
+        }
+    }
+
+    /**
+     * IF_THEN 贴士的**一次性标记**（B17 复审 ⚠2）：只在「首次成功保存一条写了 `ifThen` 的习惯」
+     * 那一瞬间置真，由返回落点（习惯列表）读它渲染那张卡。
+     *
+     * 为什么不在创建页渲染：创建页保存成功就 `onBack()` pop 了，而旧写法把贴士挂在输入区下面，
+     * 用户一个字都没保存就先看到了它——计划（Task 16 Step 4）钉的触发点是**首次成功保存**。
+     * 标记不落库（入库的是 [markIfThenTipSeen] 那一个 `ifThenTipSeen`），所以进程死了它自然消失，
+     * 不会变成一张长期长在列表顶上的卡。
+     */
+    private val _ifThenTipPending = MutableStateFlow(false)
+    val ifThenTipPending: StateFlow<Boolean> = _ifThenTipPending
+
+    /** 离开列表页时熄掉这次提示（下一次首次保存再亮一回，而那一回由 `ifThenTipSeen` 拦住） */
+    fun clearIfThenTipPending() {
+        _ifThenTipPending.value = false
+    }
+
+    /**
+     * 首次保存带执行意图的习惯时那条 IF_THEN 贴士：置真后每次安装不再出现。
+     * 与 [markFlipTipSeen]、[com.studykit.ui.study.StudyViewModel] 的同款纪律一致——写失败不提示
+     * 也不重投（后果只是下次保存还会再提一次），不在用户正要建习惯的路上弹 toast。
+     */
+    fun markIfThenTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(ifThenTipSeen = true) } }
+        }
+    }
+
+    /**
+     * 那条 MISS_ONE_DAY 宽恕贴士说过一次就够（B17 复审 ⚠3），口径同 [markIfThenTipSeen]。
+     * 两条入口（打卡弹层开起来 / 天数型一键打卡后的列表层卡片）共用
+     * [gapTipShouldShow] 这一个闸门，谁先亮谁把它落库。
+     */
+    fun markGapTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(gapTipSeen = true) } }
         }
     }
 

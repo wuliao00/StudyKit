@@ -127,4 +127,26 @@ class StudyTipsTest {
     fun `scientific tag is stable for the badge ui`() {
         assertEquals("[科学验证]", StudyTips.TAG_LABEL)
     }
+
+    @Test
+    fun `first habit saved with an if-then triggers the implementation-intention tip`() {
+        val tip = StudyTips.forEvent(TipEvent.HabitFirstSave)
+        assertEquals(TipId.IF_THEN, tip!!.id)
+        assertTrue(tip.evidence.contains("Gollwitzer"))
+        // spec D4 口径的原文（逐字钉住）
+        assertTrue(tip.text.contains("元分析效应量 d=0.65（中到大）"))
+    }
+
+    @Test
+    fun `no tip ever leaks the dishonest percent framing`() {
+        // D4：效应量按 d=0.65 讲，不得写成被否决的"成功率提升"百分比假口径。
+        // needle 拆写，免得这行本身成为被禁字符串的命中点（全仓 grep 应当一个都没有）。
+        val percent = "65" + "%"
+        val claim = "成功率提升 " + "65" + "%"
+        StudyTips.all.forEach { tip ->
+            assertFalse("${tip.id} 文案泄漏了百分比假口径", tip.text.contains(percent))
+            assertFalse("${tip.id} 证据泄漏了百分比假口径", tip.evidence.contains(percent))
+            assertFalse("${tip.id} 复活了成功率提升的说法", tip.text.contains(claim))
+        }
+    }
 }
