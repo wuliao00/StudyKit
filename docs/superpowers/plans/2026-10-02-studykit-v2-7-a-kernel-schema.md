@@ -359,7 +359,9 @@ class FsrsKernel : SchedulingKernel {
 
         val nextS = if (rating == KernelRating.AGAIN) {
             val raw = w[11] * d.pow(-w[12]) * ((s + 1.0).pow(w[13]) - 1.0) * exp((1.0 - rr) * w[14])
-            raw.coerceIn(1.0, s) // v5 守卫：lapse 不会涨稳定性，地板 1 天
+            // 链式夹取而非 coerceIn(1.0, s)：真新词首次 AGAIN 时 s=S0=w[0]=0.212<1，
+            // coerceIn 遇空区间直接抛（A-T3 实跑抓出）；s≥1 时两式逐比特相同
+            raw.coerceAtLeast(1.0).coerceAtMost(s) // v5 守卫：lapse 只降不升，地板 1 天
         } else {
             val hard = if (rating == KernelRating.HARD) w[15] else 1.0
             val inc = exp(w[8]) * (11.0 - d) * s.pow(-w[9]) * (exp((1.0 - rr) * w[10]) - 1.0) * hard
@@ -384,7 +386,8 @@ class FsrsKernel : SchedulingKernel {
         val s = sanitizeStability(state.stability)
         val dr = if (targetRecall.isFinite()) targetRecall.coerceIn(0.5, 0.99) else 0.9
         val raw = s / FACTOR * (dr.pow(1.0 / DECAY) - 1.0)
-        return raw.coerceIn(0.0, maxIntervalDays)
+        // maxIntervalDays 来自设置/考试日期推导，脏值可能 <0：同样链式夹取防空区间抛异常（A-T3 跟进项，Task 9 接线时必须保证传入前已夹正，两处双保险）
+        return raw.coerceAtLeast(0.0).coerceAtMost(maxIntervalDays.coerceAtLeast(0.0))
     }
 
     override fun seedFromHalfLife(halfLifeDays: Double, difficulty: Double): KernelState {
