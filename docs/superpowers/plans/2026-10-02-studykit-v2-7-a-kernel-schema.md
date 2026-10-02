@@ -512,6 +512,10 @@ class MistakeMasteryTest {
     @Test fun `wrong answer resets the chain`() {
         assertFalse(MistakeMastery.isMastered(listOf(true to 4.0, true to 4.0, false to 1.0, true to 0.5)))
     }
+    @Test fun `empty or single-entry history never masters`() {
+        assertFalse(MistakeMastery.isMastered(emptyList()))
+        assertFalse(MistakeMastery.isMastered(listOf(true to 9.0)))
+    }
 }
 ```
 
@@ -537,9 +541,13 @@ class HabitGuardTest {
         val month = listOf(false, false, false)
         assertEquals(listOf(0, 1), HabitGuard.guardedIndices(month))
         assertTrue(HabitGuard.breaksAt(month, index = 2))
+        org.junit.Assert.assertFalse(HabitGuard.breaksAt(month, index = 0))
     }
     @Test fun `no miss no guard`() {
         assertEquals(emptyList<Int>(), HabitGuard.guardedIndices(listOf(true, true)))
+    }
+    @Test fun `guard text is pinned for the day bubble`() {
+        assertEquals("未打卡（已用断签保护）", HabitGuard.MISSING_GUARD_TEXT)
     }
 }
 ```
@@ -560,8 +568,10 @@ object MistakeMastery {
 
     fun isMastered(history: List<Pair<Boolean, Double>>): Boolean {
         if (history.size < 2) return false
-        val (lastOk, _) = history.last()
-        val (prevOk, gap) = history[history.size - 2]
+        // 间隔存在**后一项**（"本次判对, 距上一次几天"）——首版草稿从倒数第二项取 gap，
+        // 会把"同日两连对"误判成掌握（A-T5 实跑抓出，用例 same day…钉死）
+        val (lastOk, gap) = history.last()
+        val (prevOk, _) = history[history.size - 2]
         return lastOk && prevOk && gap >= MIN_GAP_DAYS
     }
 }
@@ -577,6 +587,9 @@ package com.studykit.ui.habit
  */
 object HabitGuard {
     const val MONTHLY_ALLOWANCE = 2
+
+    /** 日详情气泡文案（钉死可测；措辞先共情后规则，不带刑罚味） */
+    const val MISSING_GUARD_TEXT = "未打卡（已用断签保护）"
 
     fun guardedIndices(missPattern: List<Boolean>): List<Int> =
         missPattern.indices.filter { !missPattern[it] }.take(MONTHLY_ALLOWANCE)
