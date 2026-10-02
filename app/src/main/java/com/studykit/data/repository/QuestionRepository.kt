@@ -24,6 +24,14 @@ class QuestionRepository(
 
     suspend fun countBySubject(subject: String): Int = questionDao.countBySubject(subject)
 
+    /**
+     * 同考点候选池（v2.7 计划 B Task 15）。[conceptTag] 为空串（未标注）时直接给空列表：
+     * 空标签不构成考点，下去会把所有未标注的题当成变式。非空时返回含目标自身的同标签题，
+     * 排除自身与选随机那两步交给纯函数 `VariantPicker`。
+     */
+    suspend fun getByConceptTag(conceptTag: String): List<Question> =
+        if (conceptTag.isBlank()) emptyList() else questionDao.getByConceptTag(conceptTag)
+
     suspend fun add(subject: String, stem: String, options: List<String>, answerIndex: Int, explanation: String): Long {
         val array = JSONArray()
         options.forEach { array.put(it) }

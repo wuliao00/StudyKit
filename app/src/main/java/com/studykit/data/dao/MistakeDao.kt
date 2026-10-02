@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.studykit.data.entity.Mistake
+import com.studykit.data.entity.MistakeRedo
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -60,6 +61,22 @@ interface MistakeDao {
 
     @Query("UPDATE mistakes SET mastered = 1 WHERE id = :id")
     suspend fun markMastered(id: Long)
+
+    // ── 逐次重做历史（v2.7 计划 B Task 15；表 + 索引自 v7 就在，schema 冻结在 v7，这里只补 DAO）──
+    // 一个 DAO 可以管多张实体的表：`mistake_redos` 与 mistakes 同库，读写放这儿最省事，
+    // 也让「先写 mistakes 状态、再写这条历史」在同一个 VM 协程里挨着发生（顺序纪律见 Repository.insertRedo 的 KDoc）。
+
+    /** 写一次重做轨迹。由 `MistakeRepository.insertRedo` 生成 uuid 后调用；返回自增 id。 */
+    @Insert
+    suspend fun insertRedo(redo: MistakeRedo): Long
+
+    /** 某道错题的重做历史，按发生时刻升序（图表/将来按真实上次评分时刻反哺排期时读这一份）。 */
+    @Query("SELECT * FROM mistake_redos WHERE mistake_id = :mistakeId ORDER BY redone_at ASC")
+    fun observeRedosByMistake(mistakeId: Long): Flow<List<MistakeRedo>>
+
+    /** 某道错题一共重做过几次（计数文案用）。 */
+    @Query("SELECT COUNT(*) FROM mistake_redos WHERE mistake_id = :mistakeId")
+    suspend fun countRedosByMistake(mistakeId: Long): Int
 
     /**
      * 清除学习数据用（设置页「数据管理」）。

@@ -46,11 +46,19 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.studykit.data.entity.Mistake
+import com.studykit.data.entity.Question
+import com.studykit.data.memory.ReviewGrade
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.ConfirmDialog
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
+import com.studykit.ui.study.HINT_TIER_COUNT
+import com.studykit.ui.study.nextHintLevel
+import com.studykit.ui.study.revealedHints
 import com.studykit.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -99,8 +107,9 @@ private fun sourceLabel(source: String): String = when (source) {
  * 阶段用 `rememberSaveable(mistakeId)` 存**阶段名串**：转屏/换屏不丢，换一道题（同一 entry 上
  * `mistakeId` 变了）不会把上一道题的展开态带过来；存档里读到认不出的串时
  * [decodeRedoPhase] 回到遮住那一侧，宁可让用户多点一次按钮。
- * 阶段**不落库**：本轮没有逐次重做历史表（`mistake_redos` 的写入在计划 B Task 15），
- * [redoHistoryBoundary] 那句就是防「应用已按你的重做记录排期」这种误读的。
+ * 阶段**不落库**：REDO/CHECK 这一位只是页面瞬时态；逐次重做历史（`mistake_redos`，表自 v7 就在）
+ * 由 v2.7 B15 的重做判定经 [MistakeViewModel.gradeRedo] 写入 —— 展开/收起这一步本身仍一次都不写，
+ * [redoHistoryBoundary] 那句就是把这条界线说清楚：看过解析不等于记过一次重做。
  * 排期本体（v2.7 B14）：算法评一次分就把下次到期写进 `mistakes.review_at`，
  * 页面上的三档手选因此从主菜单**降级**成次级「覆盖排期」（同一个列、两个人写）。
  */
@@ -123,6 +132,7 @@ fun MistakeDetailScreen(
     // 判定本身是纯函数，逐条钉在 `MistakeDetailRenderTest` 里。
     LaunchedEffect(mistakeId) { viewModel.openDetail(mistakeId) }
     val detailState by viewModel.detailState.collectAsStateWithLifecycle()
+    val redoCtx by viewModel.redoQuestionContext.collectAsStateWithLifecycle()
     val render = renderMistakeDetail(state = detailState, mistakeId = mistakeId)
     // 重做阶段声明在任何页相 return **之前**：加载态与就绪态走的是两条不同的组合路径，
     // 状态排在 return 之后就会在重新进入就绪态那一次组合里回到初值 —— 用户刚按开的
@@ -133,6 +143,16 @@ fun MistakeDetailScreen(
     val redoAction = { action: RedoAction ->
         redoPhaseRaw = encodeRedoPhase(nextRedoPhase(decodeRedoPhase(redoPhaseRaw), action))
     }
+    // v2.7 B15：重做区的四枚会话态，全键在 mistakeId 上（与 redoPhaseRaw 同一纪律——声明在任何
+    // 页相 return 之前，加载态→就绪态那一次组合才不会把刚点开的展开/提示抹掉）。
+    //  - hintLevel：挤到第几档提示（换一道同考点的即变题，点变式时归零）；
+    //  - sessionQuestionId：本次会话手动换到的变式题 id（null = 用回溯到的原题），**不落库**；
+    //  - restated：拍照题是否过了「我已重述」重述门（→ gradeRedo 的 hadNoteRebuild）；
+    //  - graded：这一次重做是否已判定入库（挡连点往 mistake_redos 写两条）。
+    var hintLevel by rememberSaveable(mistakeId) { mutableStateOf(0) }
+    var sessionQuestionId by rememberSaveable(mistakeId) { mutableStateOf<Long?>(null) }
+    var restated by rememberSaveable(mistakeId) { mutableStateOf(false) }
+    var graded by rememberSaveable(mistakeId) { mutableStateOf(false) }
     var showFullImage by remember { mutableStateOf(false) }
     // 学科对话框带的是**用户输入**，故开合与文本一起 saveable（终审 C3 的同类站点）：
     // 转屏后对话框还在、已输入的学科还在。删除确认与看图浮层不留输入，仍按瞬时态处理。
@@ -224,6 +244,17 @@ fun MistakeDetailScreen(
         note = current.note,
         phase = decodeRedoPhase(redoPhaseRaw),
     )
+    // 重做目标题目：默认是 note 里 qid 回溯到的那道题；点过「换一道同考点的」则换成会话选中的那道
+    // （只改这一个局部变量，错题行一个字不动）。拍照 / 无 qid 的错题拿不到题 → null，提示阶梯不出。
+    val variant = redoCtx.variantPool.firstOrNull { it.id == sessionQuestionId }
+    val redoQuestion: Question? = variant ?: redoCtx.linked
+    // 「换一道同考点的」可不可用：口径与纯函数 VariantPicker.pick 完全一致
+    // （目标存在、标签非空、池里除自己还有同标签的题）；按钮出现即代表 pick 会给非 null。
+    val variantAvailable = redoQuestion != null &&
+        redoQuestion.conceptTag.isNotBlank() &&
+        redoCtx.variantPool.any { it.conceptTag == redoQuestion.conceptTag && it.id != redoQuestion.id }
+    // 拍照题的重述门：未过之前，答案与解析段保持折叠（见 RedoFlow.restateGateRequired）。
+    val restateBlocking = restateGateRequired(current.source) && !restated
     val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }
     // 组合期不 stat 磁盘（终审 I8）：与 `MistakeCaptureScreen` 的照片预览同一写法 ——
     // 路径在组合期拼好，存在性由 IO 线程回填。初值乐观取「有路径就当有图」，
@@ -335,10 +366,42 @@ fun MistakeDetailScreen(
 
             // 重做门：先自己做一遍，才给对答案的机会
             Spacer(Modifier.height(AppTheme.space.md))
-            RedoGateCard(gate = redoGate, onAction = redoAction)
+            RedoGateCard(
+                gate = redoGate,
+                onAction = redoAction,
+                redoQuestion = redoQuestion,
+                hintLevel = hintLevel,
+                variantAvailable = variantAvailable,
+                needsRestate = restateGateRequired(current.source),
+                restated = restated,
+                graded = graded,
+                onHint = { hintLevel = nextHintLevel(hintLevel) },
+                onVariant = {
+                    // 只拿同考点池里非自身的一道换进来（会话内），不写库；换完把提示归零
+                    val from = redoQuestion?.id ?: return@RedoGateCard
+                    VariantPicker.pick(from, redoCtx.variantPool)?.let {
+                        sessionQuestionId = it.id
+                        hintLevel = 0
+                    }
+                },
+                onRestate = { restated = true },
+                onVerdict = { grade ->
+                    // 一次重做只判定一次：挡连点往 mistake_redos 写两条（先状态后历史已封在 VM.gradeRedo 里）
+                    if (!graded) {
+                        graded = true
+                        viewModel.gradeRedo(
+                            id = mistakeId,
+                            grade = grade,
+                            conf = null,
+                            hintsUsed = hintLevel,
+                            hadNoteRebuild = restated,
+                        )
+                    }
+                },
+            )
 
-            // 答案与解析：对照阶段才出现，出现就是原文那一段（不重写、不重排）
-            if (redoGate.answerKey.isNotBlank() && redoGate.answerKeyVisible) {
+            // 答案与解析：对照阶段才出现，出现就是原文那一段（不重写、不重排）；拍照题未过重述门前一直折着
+            if (redoGate.answerKey.isNotBlank() && redoGate.answerKeyVisible && !restateBlocking) {
                 Spacer(Modifier.height(AppTheme.space.md))
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -351,8 +414,8 @@ fun MistakeDetailScreen(
             }
 
             // 备注：正文里认不出答案段时，它是本轮唯一可能被遮住的一段（见 `buildRedoGate`）；
-            // 刷题收录那行 `qid:` 标记不是解析，任何阶段都照常显示。
-            if (redoGate.noteText.isNotBlank() && redoGate.noteVisible) {
+            // 刷题收录那行 `qid:` 标记不是解析，任何阶段都照常显示。拍照题同样受重述门约束。
+            if (redoGate.noteText.isNotBlank() && redoGate.noteVisible && !restateBlocking) {
                 Spacer(Modifier.height(AppTheme.space.md))
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -451,18 +514,32 @@ fun MistakeDetailScreen(
 /**
  * 重做门：把「先自己做一遍」摆在「对答案」前面。
  *
- * 两相共用同一枚 [AppCard]（本仓卡片口径与 `ImportResultScreen` 的折叠区同一套），
- * 只换内容：
- * - [RedoPhase.REDO]：行为提示（[redoCoverHint]）+「少了什么」的一句（[coveredLabel]，
- *   无可遮内容时它给 null，页面就不说「已遮住」）+ 唯一的主行动钮 [AppButton]。
- * - [RedoPhase.CHECK]：自我解释提问（[selfExplainPrompt]，固定在解析卡上游）+
- *   边界说明（[redoHistoryBoundary]）+ 次行动描边钮「重新遮住答案」（仅当真有东西可遮）。
+ * 三相共用同一枚 [AppCard]（本仓卡片口径与 `ImportResultScreen` 的折叠区同一套），只换内容：
+ * - [RedoPhase.REDO]：行为提示（[redoCoverHint]）+「少了什么」（[coveredLabel]）+
+ *   提示阶梯（[revealedHints]/[nextHintLevel]，仅当回溯到题目时出；首次点提示带出 PRODUCTIVE_STRUGGLE）+
+ *   同考点变式钮（[variantButtonLabel]，仅当 VariantPicker 会给非 null 时出）+ 主行动钮「我重做了一遍」。
+ * - [RedoPhase.CHECK] 且拍照题未过重述门：只出重述提示（[restatePrompt]）+「我已重述」（[restateConfirmLabel]），解析保持折叠。
+ * - [RedoPhase.CHECK] 其余：自我解释提问 + 边界说明 + 「重新遮住答案」（仅当真有东西可遮）+判定（[redoVerdictPrompt]）。
  *
- * 主/次行动钮不新造视觉：实心走 `AppButton`、描边走 `secondary = true`；
- * 三句文案全在 `RedoFlow.kt`，逐句钉在 `RedoFlowTest` 里。
+ * 判定一次只认一次（graded 挡连点）；「做出来了」→ RECALL、「没做出来」→ FORGET，均走 [MistakeViewModel.gradeRedo]
+ * （先写排期状态、再写 mistake_redos 历史，顺序纪律封在 VM里）。主/次行动钮不新造视觉；
+ * 文案全在 `RedoFlow.kt`，逐句钉在 `RedoFlowTest`。
  */
 @Composable
-private fun RedoGateCard(gate: RedoGate, onAction: (RedoAction) -> Unit) {
+private fun RedoGateCard(
+    gate: RedoGate,
+    onAction: (RedoAction) -> Unit,
+    redoQuestion: Question?,
+    hintLevel: Int,
+    variantAvailable: Boolean,
+    needsRestate: Boolean,
+    restated: Boolean,
+    graded: Boolean,
+    onHint: () -> Unit,
+    onVariant: () -> Unit,
+    onRestate: () -> Unit,
+    onVerdict: (ReviewGrade) -> Unit,
+) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -478,8 +555,43 @@ private fun RedoGateCard(gate: RedoGate, onAction: (RedoAction) -> Unit) {
                     Text(text = label, style = texts.caption, color = colors.secondaryText)
                 }
             }
+            // ── 挤牙膏提示阶梯（复用 QuizFeedback 三档，一次只往前挪一档）──
+            // 只有回溯到题目时才有提示（hintTiers 吃 subject）；拍照题拿不到题就整段不出。
+            if (redoQuestion != null) {
+                val hints = revealedHints(redoQuestion, hintLevel)
+                if (hints.isNotEmpty()) {
+                    Spacer(Modifier.height(AppTheme.space.sm))
+                    hints.forEachIndexed { tier, line ->
+                        Text(text = "${tier + 1}. $line", style = texts.aux)
+                        Spacer(Modifier.height(AppTheme.space.xs))
+                    }
+                    // 错题重做里点了提示，带出 PRODUCTIVE_STRUGGLE 那条 [科学验证]（逐字钉在 StudyTipsTest）
+                    StudyTips.forEvent(TipEvent.FirstHintOnRedo)?.let { tip ->
+                        Spacer(Modifier.height(AppTheme.space.xs))
+                        TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+                if (hintLevel < HINT_TIER_COUNT) {
+                    Spacer(Modifier.height(AppTheme.space.sm))
+                    AppButton(
+                        text = if (hintLevel == 0) redoHintLabel() else "再往前推一步（第 ${hintLevel + 1} / $HINT_TIER_COUNT 档）",
+                        secondary = true,
+                        onClick = onHint,
+                    )
+                }
+            }
+            // ── 同考点变式：换一道来重做（只在会话内替换目标，错题行一个字不动）──
+            if (variantAvailable) {
+                Spacer(Modifier.height(AppTheme.space.sm))
+                AppButton(text = variantButtonLabel(), secondary = true, onClick = onVariant)
+            }
             Spacer(Modifier.height(AppTheme.space.sm))
             AppButton(text = redoConfirmLabel(), onClick = { onAction(RedoAction.ConfirmedRedo) })
+        } else if (needsRestate && !restated) {
+            // 拍照题：按过「我重做了一遍」还不够，先照自己的话重述、点「我已重述」才给展开解析
+            Text(text = restatePrompt(), style = texts.body)
+            Spacer(Modifier.height(AppTheme.space.sm))
+            AppButton(text = restateConfirmLabel(), onClick = onRestate)
         } else {
             Text(text = selfExplainPrompt(), style = texts.body)
             Spacer(Modifier.height(AppTheme.space.sm))
@@ -494,6 +606,28 @@ private fun RedoGateCard(gate: RedoGate, onAction: (RedoAction) -> Unit) {
                     text = redoCoverAgainLabel(),
                     secondary = true,
                     onClick = { onAction(RedoAction.CoverAnswer) },
+                )
+            }
+            // ── 判定：采下「这次做出来了吗」→ gradeRedo（先状态后历史）──
+            Spacer(Modifier.height(AppTheme.space.md))
+            Text(text = redoVerdictPrompt(), style = texts.body)
+            Spacer(Modifier.height(AppTheme.space.sm))
+            if (graded) {
+                Text(
+                    text = "已记录这一次重做：排期与重做历史都更新了。",
+                    style = texts.caption,
+                    color = colors.successInk,
+                )
+            } else {
+                AppButton(
+                    text = redoVerdictCorrectLabel(),
+                    onClick = { onVerdict(ReviewGrade.RECALL) },
+                )
+                Spacer(Modifier.height(AppTheme.space.sm))
+                AppButton(
+                    text = redoVerdictWrongLabel(),
+                    secondary = true,
+                    onClick = { onVerdict(ReviewGrade.FORGET) },
                 )
             }
         }

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
+import com.studykit.data.entity.Question
 import com.studykit.data.memory.Confidence
 import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReviewGrade
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -47,6 +49,22 @@ data class MistakeDetailState(
     val id: Long? = null,
     val mistake: Mistake? = null,
     val answered: Boolean = false,
+)
+
+/**
+ * 重做区的「题目侧」上下文（v2.7 计划 B Task 15）。
+ *
+ * 错题行本身只带 `content` / `note`，而提示阶梯（`hintTiers` 吃 `subject`）与
+ * 「换一道同考点的」（吃 `concept_tag`）都只能对一道真正的 [Question] 才算得出来。
+ * 于是从 note 里的 `qid:` 标记回溯到它对应的那道题：
+ *  - [linked] 是回溯到的题（拍照 / 手写错题无 `qid:` → null，重做区就不出提示阶梯）；
+ *  - [variantPool] 是与它同考点的全部题（含自身，空标签 → 空），交给纯函数 [VariantPicker] 排除自身随机挑。
+ *
+ * 只是**读取**给 UI 派生用，写库不经过这里：变式钮替换的只是本次会话重做哪道题，错题行一个字不动。
+ */
+data class RedoQuestionContext(
+    val linked: Question? = null,
+    val variantPool: List<Question> = emptyList(),
 )
 
 /**
@@ -93,6 +111,10 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     // 排期要读设置里的两项：活跃内核 id（[KernelHub.forId]）与严格度/考试日
     // （`MemoryScheduler.forSettings`），与 `StudyViewModel.gradeCard` 同源同一个内核
     private val settingsRepository = container.settingsRepository
+
+    // 提示阶梯与同考点变式都只吃「题目」这一维数据（subject 驱提示、concept_tag 驱变式），
+    // 由刷题收录写进 note 的 `qid:` 标记回溯到它（见 RedoFlow.linkedQuestionId）。
+    private val questionRepository = container.questionRepository
 
     // ── 列表与筛选 ────────────────────────────────────────────────────────
     /**
@@ -194,6 +216,37 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     fun openDetail(id: Long) {
         _detailId.value = id
     }
+
+    /**
+     * 重做区的题目侧上下文：由 [detailState] 派生（同一道错题答完才去回溯题目）。
+     *
+     * 拿错题行 note 里的 `qid:` 标记（[linkedQuestionId]）定位到那道题，再按它的 `concept_tag`
+     * 取同考点候选池。两道查询（getById + getByConceptTag）都是只读，跑在 Default 线程；
+     * 拍照 / 手写题无 `qid:` 标记、或标记指向的题已被删 → 直接给空上下文，页面据此不提示阶梯也不变式。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val redoQuestionContext: StateFlow<RedoQuestionContext> = detailState
+        .flatMapLatest { state ->
+            val qid = state.mistake?.let { linkedQuestionId(it.note) }
+            if (qid == null) {
+                flowOf(RedoQuestionContext())
+            } else {
+                flow {
+                    val linked = questionRepository.getById(qid)
+                    if (linked == null) {
+                        emit(RedoQuestionContext())
+                    } else {
+                        emit(
+                            RedoQuestionContext(
+                                linked = linked,
+                                variantPool = questionRepository.getByConceptTag(linked.conceptTag),
+                            ),
+                        )
+                    }
+                }.flowOn(context = Dispatchers.Default)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RedoQuestionContext())
 
     // ── 拍照录入 ──────────────────────────────────────────────────────────
     /** 拍照返回后暂存的临时图片文件，录入页读取；保存或放弃时清理 */
@@ -318,8 +371,16 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
      * 但排期没动"的行，那是在污染以后的校准样本。
      *
      * @param conf 重做前的自评信心（计划 B Task 15 的采集路径传入）；null = 没选，不参与超纠正。
+     * @param hintsUsed 这一次重做挤到第几档提示（0..3，见 QuizFeedback 的提示阶梯），随重做轨迹一起入历史。
+     * @param hadNoteRebuild 拍照题是否过了「我已重述」重述门（非拍照题恒 false）。
      */
-    fun gradeRedo(id: Long, grade: ReviewGrade, conf: Confidence?) {
+    fun gradeRedo(
+        id: Long,
+        grade: ReviewGrade,
+        conf: Confidence?,
+        hintsUsed: Int = 0,
+        hadNoteRebuild: Boolean = false,
+    ) {
         viewModelScope.launch {
             val mistake = repository.getById(id) ?: return@launch
             val settings = settingsRepository.current()
@@ -329,6 +390,7 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
                 examEpochDay = settings.examEpochDay,
                 today = LocalDate.now(),
             )
+            // ① 先状态：内核评分写回 mistakes（review_at 与计数器）
             repository.update(
                 MistakeScheduling.grade(
                     mistake = mistake,
@@ -338,6 +400,14 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
                     sched = sched,
                     now = System.currentTimeMillis(),
                 ),
+            )
+            // ② 再历史：把这一次重做写进 mistake_redos。判对口径与 MistakeScheduling.grade 内部一致
+            // （`correct = grade != FORGET`：「模糊」走成功支、算答对），两处不许各写一套。
+            repository.insertRedo(
+                mistakeId = id,
+                correct = grade != ReviewGrade.FORGET,
+                hintsUsed = hintsUsed,
+                hadNoteRebuild = hadNoteRebuild,
             )
         }
     }

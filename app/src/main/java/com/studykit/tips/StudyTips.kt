@@ -12,6 +12,7 @@ enum class TipId {
     RECALL_NOTES,
     DESIRABLE_DIFFICULTY,
     IF_THEN,
+    PRODUCTIVE_STRUGGLE,
 }
 
 /** 一条带证据来源的提示 */
@@ -29,6 +30,7 @@ sealed class TipEvent {
     data object ExcerptOnlyNoRecall : TipEvent()
     data object StrugglingReview : TipEvent()
     data object HabitFirstSave : TipEvent()
+    data object FirstHintOnRedo : TipEvent()
     data object Idle : TipEvent()
 }
 
@@ -101,6 +103,11 @@ object StudyTips {
             text = "把它绑到具体时间地点：『当【何时·何地】，我就【做什么』。这类 if-then 计划元分析效应量 d=0.65（中到大）。",
             evidence = "Gollwitzer & Sheeran 2006 元分析（94 项独立检验）",
         ),
+        Tip(
+            id = TipId.PRODUCTIVE_STRUGGLE,
+            text = "先只拿提示，别急着看全解 —— 自己往前推出来那一步，才真的长脑子。",
+            evidence = "Productive struggle / constructive struggle（2024–2026 教育 AI 文献）",
+        ),
     ).associateBy { it.id }
 
     /** 全量文案，供测试与设置页展示 */
@@ -119,6 +126,7 @@ object StudyTips {
         TipEvent.ExcerptOnlyNoRecall -> byId[TipId.RECALL_NOTES]
         TipEvent.StrugglingReview -> byId[TipId.DESIRABLE_DIFFICULTY]
         TipEvent.HabitFirstSave -> byId[TipId.IF_THEN]
+        TipEvent.FirstHintOnRedo -> byId[TipId.PRODUCTIVE_STRUGGLE]
         TipEvent.Idle -> null
     }
 
