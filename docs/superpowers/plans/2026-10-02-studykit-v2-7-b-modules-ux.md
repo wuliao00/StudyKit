@@ -161,7 +161,7 @@ object GoalCue {
 - Test: `QuizConfidenceWiringTest`（纯逻辑：错误+SURE → mistakes.priority=1 的构造函数）
 
 - [ ] **Step 0 取证**：`QuizScreen.kt:120-250`（提交/反馈流）、错题自动入本的函数（grep `SOURCE_PRACTICE`）。
-- [ ] **Step 1: 先把"答错入库带优先级"抽成纯函数并测**：`MistakeIntake.fromWrongAnswer(question, selected, confidence): Mistake` —— 断言 `priority == 1` 当且仅当 `confidence == SURE`。
+- [ ] **Step 1: 先把"答错入库带优先级"抽成纯函数并测**：`MistakeIntake.priorityFor(confidence, correct)` ——内部调 `Hypercorrection.retestDelayMinutes(confidence, recalled = correct)`（**不是 !correct**：Hypercorrection 的 recalled 是"想起来了"，答错即 recalled=false；B-T12 实跑抓出本段首稿的符号错并已按测试语义钉死）；断言 `priority == 1` 当且仅当 `confidence == SURE` 且答错。
 - [ ] **Step 2: 红 → Step 3: 实现接线**（提交前信心条复用 `ConfidenceRow`；受 `confidenceEnabled` 控制；现有 HYPERCORRECTION Tip 触发点 `QuizScreen.kt:442-444` 的代理条件 `hintLevel == 0` 升级为真信心：`conf == Confidence.SURE && !right`，代理逻辑删掉并在注释写明"v2.7 起用真实置信度"）。
 - [ ] **Step 4: 列表置顶**：`MistakeDao.observeUnmastered` 排序改 `ORDER BY priority DESC, created_at DESC`（改动处注释说明；`observeMastered` 不动）。
 - [ ] **Step 5: 全量绿 + 真机走一遍"非常确定→答错"路径，错题本第一条是它。**
