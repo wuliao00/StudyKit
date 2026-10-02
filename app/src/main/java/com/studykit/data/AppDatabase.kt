@@ -47,7 +47,7 @@ import com.studykit.data.entity.WordReview
         Contract::class,
     ],
     version = 6,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
 

@@ -7,6 +7,17 @@ plugins {
 }
 
 /**
+ * Room schema 快照的输出目录。
+ *
+ * 光把 `exportSchema` 打开不够：不给 schemaLocation，Room 会退回默认的
+ * `<编译输出>/schemas`（在 app/build/ 下，既不入库也活不过 clean），快照取证无从谈起。
+ * 指到 `$projectDir/schemas` 才谈得上把每一版的 JSON 提交进仓。
+ */
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+/**
  * debug 签名必须**跨构建稳定**。
  *
  * 病根：AGP 在没配 signingConfig 时，用构建机上现生成的 `~/.android/debug.keystore`。
@@ -126,6 +137,11 @@ android {
             isIncludeAndroidResources = true
         }
     }
+    // Room schema 快照目录：MigrationTestHelper 从 test assets 读 `com.studykit.data.AppDatabase/<v>.json`
+    // 逐字校验迁移产物（没有它，"SQL 与实体一致"只能靠真机撞上去）。
+    sourceSets {
+        getByName("test").assets.srcDirs("$projectDir/schemas")
+    }
 }
 
 dependencies {
@@ -162,6 +178,7 @@ dependencies {
 
     // 单元测试
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.room.testing)
     // 仅测试期：android.jar 里的 org.json 是 `Stub!` 占位，JVM 单测一调就抛
     // （既有 `Question.parseOptions` 因此一直没被测过）。运行时仍用系统实现，APK 零影响。
     testImplementation(libs.json)
