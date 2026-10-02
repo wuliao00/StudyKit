@@ -18,6 +18,7 @@ import com.studykit.data.memory.halfDifficultyFromFsrs
 import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.recallForDisplay
 import com.studykit.data.memory.toKernelRating
+import com.studykit.data.memory.toStorageInt
 import com.studykit.ui.mistake.MistakeIntake
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
@@ -360,7 +361,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 hBefore = before.hDays ?: word.halfLifeDays,
                 hAfter = after.hDays ?: word.halfLifeDays,
                 reactionMs = reactionMs,
-                confidence = conf?.ordinal?.plus(1),
+                confidence = conf?.toStorageInt(),
                 fsrsRating = rating.ordinal + 1,
             )
             _session.value = state.copy(
@@ -505,7 +506,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val question = state.current ?: return
         if (state.selected != null) return
         viewModelScope.launch {
-            val correct = questionRepository.submitAnswer(question.id, selected, conf?.ordinal?.plus(1))
+            val correct = questionRepository.submitAnswer(question.id, selected, conf?.toStorageInt())
             if (!correct) {
                 addMistakeIfAbsent(question, conf)
             }

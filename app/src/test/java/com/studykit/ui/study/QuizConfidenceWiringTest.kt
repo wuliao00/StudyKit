@@ -1,6 +1,7 @@
 package com.studykit.ui.study
 
 import com.studykit.data.memory.Confidence
+import com.studykit.data.memory.Hypercorrection
 import com.studykit.ui.mistake.MistakeIntake
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -36,18 +37,26 @@ class QuizConfidenceWiringTest {
     }
 
     @Test fun `priority maps exactly one-to-one with hypercorrection trigger`() {
-        // 钉「映射而非再抄公式」：凡 Hypercorrection 会提前重测的组合，priority 必为 1，其余为 0。
-        Confidence.entries.forEach { conf ->
-            listOf(true, false).forEach { correct ->
-                val expected = if (com.studykit.data.memory.Hypercorrection
-                        .retestDelayMinutes(conf, recalled = correct) != null
-                ) 1 else 0
-                assertEquals(expected, MistakeIntake.priorityFor(conf, correct))
-            }
+        // 钉「映射而非再抄公式」：expected 是手写的 0/1 真值表，**独立于被测代码**——
+        // 不再拿 retestDelayMinutes 反算 expected（那是用被测公式验被测公式，永远绿）。
+        // 只有「SURE×答错」才是超纠正命中→置顶 1，其余一律 0。
+        val truthTable = mapOf(
+            (Confidence.GUESS to true) to 0,
+            (Confidence.GUESS to false) to 0,
+            (Confidence.FAIR to true) to 0,
+            (Confidence.FAIR to false) to 0,
+            (Confidence.SURE to true) to 0,
+            (Confidence.SURE to false) to 1,
+        )
+        truthTable.forEach { (key, want) ->
+            val (conf, correct) = key
+            assertEquals(want, MistakeIntake.priorityFor(conf, correct))
+            // 再拿手写的真值表与 Hypercorrection 的触发集交叉核对一次：置顶档 ≡ 超纠正命中
+            val triggeredByHyper = Hypercorrection.retestDelayMinutes(conf, recalled = correct) != null
+            assertEquals("超纠正触发应与置顶档一致(conf=$conf,correct=$correct)", want, if (triggeredByHyper) 1 else 0)
         }
-        val expectedNull = if (com.studykit.data.memory.Hypercorrection
-                .retestDelayMinutes(null, recalled = false) != null
-        ) 1 else 0
-        assertEquals(expectedNull, MistakeIntake.priorityFor(null, correct = false))
+        // null = 跳过信心采集（关掉开关或没选）：永远落普通档，也不触发超纠正
+        assertEquals(0, MistakeIntake.priorityFor(null, correct = false))
+        assertEquals(0, MistakeIntake.priorityFor(null, correct = true))
     }
 }

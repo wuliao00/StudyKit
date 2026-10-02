@@ -23,8 +23,10 @@ interface MistakeDao {
      * 未掌握错题（错题本默认列表）。
      *
      * v2.7 计划 B Task 12：先按 [Mistake.priority] 降序，把「高置信答错」的超纠正机会顶到最前，
-     * 同优先级内再按 `created_at DESC`（新→旧）。下游 MistakeViewModel 只做筛选/groupBy、不再本地重排，
-     * SQL 这一序会原样透到列表；[observeMastered] 一侧不置顶（已掌握无需再抢注意力），保持 `created_at DESC`。
+     * 同优先级内再按 `created_at DESC`（新→旧）。下游 MistakeViewModel 只做筛选 + 按学科 groupBy、
+     * 不再本地重排，故这份序**只在同一学科组内**原样透到列表：groupBy 会先把列表拆成学科分组
+     * （组顺序由该组首现行决定），priority 置顶并不跨组——全局最高优先的行只有在它所属学科恰好排在前
+     * 时才出现在列表顶端。[observeMastered] 一侧不置顶（已掌握无需再抢注意力），保持 `created_at DESC`。
      */
     @Query("SELECT * FROM mistakes WHERE mastered = 0 ORDER BY priority DESC, created_at DESC")
     fun observeUnmastered(): Flow<List<Mistake>>

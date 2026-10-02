@@ -46,7 +46,7 @@ class QuestionRepository(
     /**
      * 提交一次练习作答并写入练习记录，返回本次作答是否正确。
      *
-     * [confidence] 为作答前自评信心（1=瞎猜 2=有点印象 3=非常确定，见 [com.studykit.data.entity.PracticeRecord.confidence]）；
+     * [confidence] 为作答前自评信心的落库整数值（编码唯一归口 [com.studykit.data.memory.toStorageInt]，不在本处重抄字面量；列口径见 [com.studykit.data.entity.PracticeRecord.confidence]）；
      * null = 用户没选或关掉信心条，落 NULL，不冒充「瞎猜」（口径同 [com.studykit.ui.study.StudyViewModel.gradeCard]）。
      */
     suspend fun submitAnswer(questionId: Long, selected: Int, confidence: Int? = null): Boolean {

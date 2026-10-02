@@ -26,6 +26,6 @@ data class PracticeRecord(
     val selected: Int,
     val correct: Boolean,
     val at: Long = System.currentTimeMillis(),
-    /** v2.7：作答前信心 1=瞎猜 2=有点印象 3=非常确定；null=跳过（spec §2.3） */
+    /** v2.7：作答前信心，落库整数编码唯一归口 [com.studykit.data.memory.toStorageInt]（勿在此抄字面量）；null=跳过（spec §2.3） */
     @ColumnInfo(name = "confidence") val confidence: Int? = null,
 )

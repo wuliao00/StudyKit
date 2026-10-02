@@ -5,6 +5,9 @@ import com.studykit.data.entity.Word
 /** 用户翻面/提交前采集的信心三档；null = 跳过（不阻塞，也不参与超纠正判定）。spec §2.3 */
 enum class Confidence { GUESS, FAIR, SURE }
 
+/** 信心 → 落库整数（1=瞎猜 2=有点印象 3=非常确定）。列注释与 KDoc 引用本函数，不许再抄字面量 */
+fun Confidence.toStorageInt(): Int = ordinal + 1
+
 /** 内核视角的评分。AGAIN=忘记/HARD=模糊/GOOD=认识；EASY 存在但本 App 永不产生（spec D5） */
 enum class KernelRating { AGAIN, HARD, GOOD, EASY }
 
