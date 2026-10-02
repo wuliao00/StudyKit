@@ -1,27 +1,37 @@
+// 本文件只钉"HalfLifeKernel 适配器 ≡ 直接委托 MemoryModel"；MemoryModel 公式自身漂移由 MemoryModelTest 负责。
 package com.studykit.data.memory
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SchedulingKernelTest {
     @Test fun `halfLife adapter reproduces v2_6 update and schedule`() {
-        // 与 MemoryModelTest 黄金轨迹同源：h=30、d=2、拖 2 天评认识
+        // h=30、d=2 是本用例自选的"成熟词"输入，不是从 MemoryModelTest 引来的
         val kernel = HalfLifeKernel()
         val before = KernelState(stability = null, difficulty = 2.0, cardState = CardState.REVIEW, hDays = 30.0)
         val after = kernel.review(before, elapsedDays = 2.0, rating = KernelRating.GOOD, conf = null)
-        // 30 天半衰期、target 0.9 下"认识"一次应显著加固 h（对照 MemoryModelTest 黄金轨迹量级）
-        check((after.hDays ?: 0.0) > 30.0)
+        // 30 天半衰期、target 0.9 下"认识"一次应显著加固 h
+        assertTrue("成熟词评认识后 h 必须上涨，实际 ${after.hDays}", (after.hDays ?: 0.0) > 30.0)
         val days = kernel.nextIntervalDays(after, rating = KernelRating.GOOD, targetRecall = 0.9, maxIntervalDays = 365.0)
-        assertEquals(days, MemoryModel.schedule(
-            MemoryState(after.hDays!!, after.difficulty), ReviewGrade.RECALL, 0.9, 365.0,
-        ), 1e-9)
+        // 期望值在前：两条调用路径算的是同一个纯函数，浮点上本该逐比特相等；
+        // 这里留 1e-12 只当表达式求值顺序差异的兜底，不是允许漂移。
+        assertEquals(
+            MemoryModel.schedule(MemoryState(after.hDays!!, after.difficulty), ReviewGrade.RECALL, 0.9, 365.0),
+            days, 1e-12,
+        )
+        // AGAIN 映射到 FORGET，MemoryModel.schedule 的再见地板就是 ≤1 天（当天内再碰一次）
+        assertTrue("AGAIN 走当日再见地板", kernel.nextIntervalDays(after, KernelRating.AGAIN, 0.9, 365.0) <= 1.0)
     }
 
-    @Test fun `toKernelState roundtrip`() {
+    @Test fun `seedFromHalfLife keeps halfLife dims and mirrors stability via ratio`() {
         val s = MemoryState(halfLifeDays = 12.5, difficulty = 3.2)
         val k = HalfLifeKernel().seedFromHalfLife(s.halfLifeDays, s.difficulty)
         assertEquals(12.5, k.hDays!!, 1e-9)
         assertEquals(3.2, k.difficulty, 1e-9)
+        assertEquals(12.5 / FSRS_HALF_OVER_S, k.stability!!, 1e-12)
+        // 适配器契约：seed 出来的行按已复习状态给 REVIEW（只有 review 不发明 cardState）
+        assertEquals(CardState.REVIEW, k.cardState)
     }
 
     @Test fun `review mirrors MemoryModel update exactly, not just direction`() {
@@ -37,13 +47,12 @@ class SchedulingKernelTest {
                 MemoryState(halfLifeDays = 30.0, difficulty = 2.0), 2.0, expectedGrade, MemoryParams(),
             )
             val after = kernel.review(before, elapsedDays = 2.0, rating = rating, conf = null)
-            assertEquals(exp.halfLifeDays, after.hDays!!, 1e-12)
-            assertEquals(exp.difficulty, after.difficulty, 1e-12)
-            assertEquals(
-                exp.halfLifeDays / HalfLifeKernel.FSRS_SEED_RATIO, after.stability!!, 1e-12,
-            )
-            val expectedState = if (rating == KernelRating.AGAIN) CardState.RELEARNING else CardState.REVIEW
-            assertEquals(expectedState, after.cardState)
+            // 两侧调的是同一个纯函数、同样入参 ⇒ 期望逐比特相等，容差 0.0
+            assertEquals(exp.halfLifeDays, after.hDays!!, 0.0)
+            assertEquals(exp.difficulty, after.difficulty, 0.0)
+            assertEquals(exp.halfLifeDays / FSRS_HALF_OVER_S, after.stability!!, 0.0)
+            // 适配器不发明 cardState（生命周期属 FSRS），每次评分都原样带回
+            assertEquals(before.cardState, after.cardState)
         }
     }
 

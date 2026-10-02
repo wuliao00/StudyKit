@@ -13,9 +13,18 @@ enum class CardState { LEARNING, REVIEW, RELEARNING }
  * 一条记忆的内核状态。
  *
  * 一个类同时服务两个内核，字段谁用谁认：
- *  - FSRS 用 [stability]（天，null=还没首次评分）与 [difficulty]（1..10）；
+ *  - FSRS 用 [stability]（天）与 [difficulty]；
  *  - Half-Life 用 [hDays]（半衰期，天）与 [difficulty]。
- *  镜像语义见 spec §2.1：复习只原生更新活跃内核字段，另一字段按换算回填（近似值）。
+ *
+ * [difficulty] 量纲归属：**存的是当前活跃内核自己的难度**，不是某个统一量纲。
+ * 跑 FSRS 时它是 FSRS 难度（1..10），跑半衰期时它是 halfD（≥1）。跨内核换算
+ * （spec §2.4 的 `fsrsD = 5.0 + (halfD−1)·0.5`）只在落库时做一次（Task 9），
+ * 适配器内部绝不静默换算。
+ *
+ * [stability] 为 null 的含义是：活跃 FSRS 内核还没写过这份状态。[HalfLifeKernel]
+ * 的镜像写入只会把它碰过的那些行填成非 null（近似值），FSRS 侧的 null 仍然照常存在。
+ *
+ * 镜像语义见 spec §2.1：复习只原生更新活跃内核字段，另一字段按换算回填（近似值）。
  */
 data class KernelState(
     val stability: Double?,
@@ -51,7 +60,12 @@ interface SchedulingKernel {
     val id: String // "FSRS" | "HALF_LIFE"
 }
 
-/** v2.6 半衰期内核的适配器：行为必须与直接调 MemoryModel 逐比特一致（黄金轨迹测试守） */
+/**
+ * v2.6 半衰期内核的适配器：行为必须与直接调 MemoryModel 逐比特一致（黄金轨迹测试守）。
+ *
+ * 本文件钉住的是"适配器 ≡ 委托"这一层——HalfLifeKernel 每个方法都等于按 v2.6 口径直接调
+ * [MemoryModel]；[MemoryModel] 自身公式漂移由 MemoryModelTest 负责，不在这里守。
+ */
 class HalfLifeKernel : SchedulingKernel {
 
     override val id = "HALF_LIFE"
@@ -63,7 +77,7 @@ class HalfLifeKernel : SchedulingKernel {
     private fun grade(r: KernelRating): ReviewGrade = when (r) {
         KernelRating.AGAIN -> ReviewGrade.FORGET
         KernelRating.HARD -> ReviewGrade.VAGUE
-        KernelRating.GOOD, KernelRating.EASY -> ReviewGrade.RECALL
+        KernelRating.GOOD, KernelRating.EASY -> ReviewGrade.RECALL // EASY 折叠进认识是休眠支（D5），不是遗漏分支
     }
 
     override fun recall(state: KernelState, elapsedDays: Double): Double =
@@ -74,11 +88,11 @@ class HalfLifeKernel : SchedulingKernel {
     ): KernelState {
         val after = MemoryModel.update(toState(state), elapsedDays, grade(rating), params)
         // 镜像字段：FSRS 语义下的 stability 只是换算近似（spec §2.1 双写口径）
+        // cardState 原样带回：生命周期属于 FSRS 侧，半衰期适配器不发明它
         return state.copy(
             hDays = after.halfLifeDays,
             difficulty = after.difficulty,
-            stability = after.halfLifeDays / FSRS_SEED_RATIO,
-            cardState = if (rating == KernelRating.AGAIN) CardState.RELEARNING else CardState.REVIEW,
+            stability = after.halfLifeDays / FSRS_HALF_OVER_S,
         )
     }
 
@@ -89,11 +103,14 @@ class HalfLifeKernel : SchedulingKernel {
     )
 
     override fun seedFromHalfLife(halfLifeDays: Double, difficulty: Double): KernelState =
-        KernelState(stability = halfLifeDays / FSRS_SEED_RATIO, difficulty = difficulty,
+        KernelState(stability = halfLifeDays / FSRS_HALF_OVER_S, difficulty = difficulty,
             cardState = CardState.REVIEW, hDays = halfLifeDays)
-
-    companion object {
-        /** 幂律族 (decay=-0.5) 下 h/S 常数比值，spec §2.4 */
-        const val FSRS_SEED_RATIO = 12.789473684210526
-    }
 }
+
+/**
+ * 幂律族 (decay=-0.5) 下 h/S 的常数比值，本文件里这个换算系数的唯一归属。
+ *
+ * decay=−0.5 时 h/S = (0.5^(1/decay)−1)/(0.9^(1/decay)−1) = 3/(19/81) = 243/19
+ * ≈ 12.789473684210526（spec §2.4；reverse-ref 竞品02 台账同值）
+ */
+const val FSRS_HALF_OVER_S = 243.0 / 19.0
