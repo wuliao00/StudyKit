@@ -86,9 +86,10 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * v2 → v3：新增在线词库来源表，并给 `words` 挂上可空的来源列。
          *
-         * SQL 必须与 Room 依据实体生成的建表语句逐字一致（自 A-T7 起由 MigrationTestHelper 核对），
-         * 否则真机升级时抛 `IllegalStateException: Room cannot verify that the schema matches`，
-         * 且 A-T7 之前 CI 测不出来 —— 因此本迁移的真机存活验证是计划里的硬步骤。
+         * SQL 必须与 Room 依据实体生成的建表语句逐字一致，否则真机升级时抛
+         * `IllegalStateException: Room cannot verify that the schema matches`。
+         * 注意覆盖面：MigrationTestHelper 那张网（A-T7 起）目前只在 6→7 上跑通——1..5 没有
+         * 旧快照可造，本条 2→3 仍只能靠真机走查兜住。
          */
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {

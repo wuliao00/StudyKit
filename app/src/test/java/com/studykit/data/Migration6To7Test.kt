@@ -61,17 +61,21 @@ class Migration6To7Test {
         val c = db.query("SELECT COUNT(*) FROM words").also { it.moveToFirst() }
         assertEquals(4, c.getInt(0))
         val row = db.query(
-            "SELECT half_life_days, fsrs_stability, fsrs_state, kernel FROM words WHERE uuid='u1'",
+            "SELECT half_life_days, fsrs_stability, fsrs_state, kernel, fsrs_difficulty FROM words WHERE uuid='u1'",
         ).also { it.moveToFirst() }
         assertEquals(30.0, row.getDouble(0), 1e-9)
         assertEquals(30.0 / 12.789473684210526, row.getDouble(1), 1e-6) // S=h/比值
         assertEquals(2, row.getInt(2)) // REVIEW
         assertEquals("FSRS", row.getString(3))
+        // 线性映射 fsrsD = 5.0 + (halfD−1)·0.5：u1 的 halfD=2.0 → 5.5（A-T7 复审补钉：
+        // Room 的结构校验只看列形状，不看 UPDATE 算出来的值，写反系数它拦不住）
+        assertEquals(5.5, row.getDouble(4), 1e-9)
         val u2 = db.query(
-            "SELECT fsrs_stability, fsrs_state FROM words WHERE uuid='u2'",
+            "SELECT fsrs_stability, fsrs_state, fsrs_difficulty FROM words WHERE uuid='u2'",
         ).also { it.moveToFirst() }
         assertEquals(3.0 / 12.789473684210526, u2.getDouble(0), 1e-6)
         assertEquals(2, u2.getInt(1))
+        assertEquals(5.25, u2.getDouble(2), 1e-9) // halfD=1.5 → 5.25
         val fresh = db.query(
             "SELECT fsrs_stability, fsrs_state FROM words WHERE uuid='u3'",
         ).also { it.moveToFirst() }
