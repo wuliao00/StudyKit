@@ -43,8 +43,13 @@ class QuestionRepository(
     /** 批量入库，返回实际写入条数；判重与 `uuid` 填充由调用方负责 */
     suspend fun addAll(questions: List<Question>): Int = questionDao.insertAll(questions).size
 
-    /** 提交一次练习作答并写入练习记录，返回本次作答是否正确 */
-    suspend fun submitAnswer(questionId: Long, selected: Int): Boolean {
+    /**
+     * 提交一次练习作答并写入练习记录，返回本次作答是否正确。
+     *
+     * [confidence] 为作答前自评信心（1=瞎猜 2=有点印象 3=非常确定，见 [com.studykit.data.entity.PracticeRecord.confidence]）；
+     * null = 用户没选或关掉信心条，落 NULL，不冒充「瞎猜」（口径同 [com.studykit.ui.study.StudyViewModel.gradeCard]）。
+     */
+    suspend fun submitAnswer(questionId: Long, selected: Int, confidence: Int? = null): Boolean {
         val correct = questionDao.getById(questionId)?.answerIndex == selected
         practiceDao.insert(
             PracticeRecord(
@@ -52,6 +57,7 @@ class QuestionRepository(
                 questionId = questionId,
                 selected = selected,
                 correct = correct,
+                confidence = confidence,
             ),
         )
         return correct

@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,6 +43,7 @@ import com.studykit.tips.StudyTips
 import com.studykit.tips.TipEvent
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.data.entity.Question
+import com.studykit.data.memory.Confidence
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
@@ -77,6 +79,8 @@ fun QuizScreen(
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     // 与 CardStudyScreen 读 recallBeforeGrade 同一姿势：组合期读一枚布尔，喂给展示与开关
     val interleaving = AppTheme.settings.interleavingEnabled
+    // 信心条开关（v2.7 计划 B Task 12）：组合期读一枚布尔，喂给提交前的信心行；关掉 = 退回 v2.6 交互（不采集，conf 恒 null）
+    val confidenceEnabled = AppTheme.settings.confidenceEnabled
 
     Column(
         modifier = Modifier
@@ -121,7 +125,8 @@ fun QuizScreen(
             current != null -> QuestionView(
                 question = current,
                 selected = state.selected,
-                onSelect = { viewModel.selectOption(it) },
+                confidenceEnabled = confidenceEnabled,
+                onSelect = { index, conf -> viewModel.selectOption(index, conf) },
                 onNext = { viewModel.nextQuestion() },
                 isLast = state.index == state.total - 1,
             )
@@ -316,7 +321,8 @@ internal fun quizOptionState(
 private fun QuestionView(
     question: Question,
     selected: Int?,
-    onSelect: (Int) -> Unit,
+    confidenceEnabled: Boolean,
+    onSelect: (Int, Confidence?) -> Unit,
     onNext: () -> Unit,
     isLast: Boolean,
 ) {
@@ -328,6 +334,10 @@ private fun QuestionView(
     var advanced by rememberSaveable(question.id) { mutableStateOf(false) }
     // 已挤到第几档提示：以 question.id 为键，换题复位、转屏还原
     var hintLevel by rememberSaveable(question.id) { mutableIntStateOf(0) }
+    // 提交前自评信心（v2.7 计划 B Task 12）：以 question.id 为键，换题复位。
+    // 非 saveable：转屏丢了这次选择只是“这次没采集到”，落 NULL 比拿旧值冒充更诚实（口径同 CardStudyScreen）。
+    // 选择题是“选中即提交”，所以信心行①在选项之上、②点选项时把当前 conf 一起带走；答后仍读它驱动超纠正 Tip。
+    var conf by remember(question.id) { mutableStateOf<Confidence?>(null) }
 
     Column(
         modifier = Modifier
@@ -345,6 +355,17 @@ private fun QuestionView(
         }
 
         Spacer(Modifier.height(AppTheme.space.md))
+        // ── 信心行：提交前的自评把握（v2.7 计划 B Task 12；复用背词侧的 ConfidenceRow）──
+        // 选择题是「点击选项即提交」，所以信心条放在选项之上：先自评把握、再点选项作答；
+        // 点下去时把当前 conf 一起带走（onSelect）。
+        // 关掉 confidenceEnabled 时整行不出现，conf 恒 null，完全退回 v2.6 交互。
+        if (!answered && confidenceEnabled) {
+            ConfidenceRow(
+                selected = conf,
+                onPick = { conf = it },
+            )
+            Spacer(Modifier.height(AppTheme.space.sm))
+        }
         // 整列以 question.id 为键：换题即整列重建，砖块内的 saveable/Animatable
         // 不可能带着上一题的判定态或抖动残留进入下一题。
         key(question.id) {
@@ -364,7 +385,7 @@ private fun QuestionView(
                         // 判定前只认第一次点击：pending 一置，本题其余砖块即刻失效
                         if (!answered && pending < 0) {
                             pending = index
-                            onSelect(index)
+                            onSelect(index, conf)
                         }
                     },
                 )
@@ -438,8 +459,10 @@ private fun QuestionView(
                     style = texts.caption.copy(color = colors.secondaryText),
                 )
             }
-            // 高置信答错（一档提示都没要却答错）是矫枉机会：带出现成的 HYPERCORRECTION 条目
-            if (!right && hintLevel == 0) {
+            // 高置信答错（提交前自评「非常确定」却答错）是矫枉机会：带出现成的 HYPERCORRECTION 条目。
+            // v2.7 起用真实置信度：原来的代理条件 `hintLevel == 0`（“一档提示都没要”≈高置信）删掉，
+            // 改读提交前采集的 conf == SURE，与错题置顶（MistakeIntake）、背词侧信道（Hypercorrection）同一口径。
+            if (!right && conf == Confidence.SURE) {
                 Spacer(Modifier.height(AppTheme.space.sm))
                 StudyTips.forEvent(TipEvent.HighConfidenceMistake)?.let { tip ->
                     TipCard(tip = tip, modifier = Modifier.fillMaxWidth())

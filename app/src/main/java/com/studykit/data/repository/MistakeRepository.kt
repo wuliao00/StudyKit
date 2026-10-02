@@ -35,6 +35,7 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
         content: String,
         imagePath: String? = null,
         note: String = "",
+        priority: Int = 0,
     ): Long =
         mistakeDao.insert(
             Mistake(
@@ -45,6 +46,7 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
                 imagePath = imagePath,
                 content = content,
                 note = note,
+                priority = priority,
             ),
         )
 

@@ -19,7 +19,14 @@ interface MistakeDao {
     @Query("SELECT * FROM mistakes WHERE subject = :subject ORDER BY created_at DESC")
     fun observeBySubject(subject: String): Flow<List<Mistake>>
 
-    @Query("SELECT * FROM mistakes WHERE mastered = 0 ORDER BY created_at DESC")
+    /**
+     * 未掌握错题（错题本默认列表）。
+     *
+     * v2.7 计划 B Task 12：先按 [Mistake.priority] 降序，把「高置信答错」的超纠正机会顶到最前，
+     * 同优先级内再按 `created_at DESC`（新→旧）。下游 MistakeViewModel 只做筛选/groupBy、不再本地重排，
+     * SQL 这一序会原样透到列表；[observeMastered] 一侧不置顶（已掌握无需再抢注意力），保持 `created_at DESC`。
+     */
+    @Query("SELECT * FROM mistakes WHERE mastered = 0 ORDER BY priority DESC, created_at DESC")
     fun observeUnmastered(): Flow<List<Mistake>>
 
     /** 已掌握一侧（列表页「已掌握」chip 用），与 [observeUnmastered] 合成全量 */

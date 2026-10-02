@@ -18,6 +18,7 @@ import com.studykit.data.memory.halfDifficultyFromFsrs
 import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.recallForDisplay
 import com.studykit.data.memory.toKernelRating
+import com.studykit.ui.mistake.MistakeIntake
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
@@ -464,15 +465,20 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 选择选项：即时判定，写入练习记录；答错幂等写入错题本 */
-    fun selectOption(selected: Int) {
+    /**
+     * 选择选项：即时判定，写入练习记录；答错幂等写入错题本。
+     *
+     * [conf] 由答题页信心条在**提交前**采集（计划 B Task 12）；null = 没选或关掉开关。
+     * 它一次喂两处：`practice_records.confidence`（1..3/null）与答错入本的 `mistakes.priority`（经 [MistakeIntake]）。
+     */
+    fun selectOption(selected: Int, conf: Confidence? = null) {
         val state = _quiz.value
         val question = state.current ?: return
         if (state.selected != null) return
         viewModelScope.launch {
-            val correct = questionRepository.submitAnswer(question.id, selected)
+            val correct = questionRepository.submitAnswer(question.id, selected, conf?.ordinal?.plus(1))
             if (!correct) {
-                addMistakeIfAbsent(question)
+                addMistakeIfAbsent(question, conf)
             }
             _quiz.value = state.copy(
                 selected = selected,
@@ -481,8 +487,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 答错入错题本：同一 question_id 已存在（以 note 中的 qid 标记判断）则不重复插入 */
-    private suspend fun addMistakeIfAbsent(question: Question) {
+    /** 答错入错题本：同一 question_id 已存在（以 note 中的 qid 标记判断）则不重复插入；priority 取超纠正命中档 */
+    private suspend fun addMistakeIfAbsent(question: Question, conf: Confidence?) {
         val marker = "qid:${question.id}"
         val exists = mistakeRepository.observeAll().first().any {
             it.source == Mistake.SOURCE_PRACTICE && it.note == marker
@@ -503,6 +509,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             title = question.stem,
             content = content,
             note = marker,
+            // 高置信答错（SURE × 错）= 超纠正机会，置顶；其余普通档。判定只在 MistakeIntake 一处。
+            priority = MistakeIntake.priorityFor(conf, correct = false),
         )
     }
 
