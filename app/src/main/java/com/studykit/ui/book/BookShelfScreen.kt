@@ -23,7 +23,11 @@ import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,8 +41,11 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.HeroSummaryCard
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.components.StatTileTier
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
@@ -82,6 +89,19 @@ fun BookShelfScreen(
     val texts = AppTheme.texts
     val state by viewModel.shelfState.collectAsStateWithLifecycle()
 
+    // RECALL_NOTES「只有划线没有检索」贴士（v2.7 计划 B Task 18）：书架上存在 7 天前建、却从没检索过
+    // （review_count==0）的书摘时首屏提一次；每次安装一次（AppSettings.excerptTipSeen）。
+    // 局部 pending 保住「这次在本页看得见」，落库的 seen 只挡后续安装——纪律与习惯列表那条 GapDay
+    // （OneShotTipCard + markGapTipSeen）完全一致。
+    val excerptTipSeen = AppTheme.settings.excerptTipSeen
+    var excerptTipShown by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.hasStaleExcerpt, excerptTipSeen) {
+        if (!excerptTipShown && state.hasStaleExcerpt && !excerptTipSeen) {
+            excerptTipShown = true
+            viewModel.markExcerptTipSeen()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -120,23 +140,38 @@ fun BookShelfScreen(
                 onAction = onAddClick,
             )
 
+            if (excerptTipShown) {
+                val recallNotesTip = StudyTips.forEvent(TipEvent.ExcerptOnlyNoRecall)
+                if (recallNotesTip != null) {
+                    Spacer(Modifier.height(AppTheme.space.md))
+                    TipCard(tip = recallNotesTip, modifier = Modifier.fillMaxWidth())
+                }
+            }
+
             Spacer(Modifier.height(AppTheme.space.md))
-            // 参考档：hero 已经把「在读」摆到第一等，这两块退成「查得到」的数字
-            // （字号与墨色各降一档，描边也压淡一档）。磁贴里不再重复一块「在读」——
-            // 同一屏上下两块同样的数字，读起来像渲染了两遍。
+            // 主指标改数「检索练习次数」（v2.7 计划 B Task 18）：这一屏要强调的不再是「攒了多少条书摘」
+            // （被动划线），而是「做过多少次主动检索」——书摘自评次数（review_count>0）之和 + 章节自测行数，
+            // 由 BookDao 一条 UNION SQL 纯计数得到，不编造。它走 Primary 档，
+            // 「书摘总数」「已读完」退成「查得到」的参考档（字号墨色描边各降一档）。
             Row(
                 horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 modifier = Modifier.height(IntrinsicSize.Max),
             ) {
                 StatTile(
-                    value = "${state.finishedCount}",
-                    label = "已读完",
+                    value = "${state.retrievalCount}",
+                    label = "检索练习次数",
                     modifier = Modifier.weight(1f),
-                    tier = StatTileTier.Reference,
+                    tier = StatTileTier.Primary,
                 )
                 StatTile(
                     value = "${state.excerptCount}",
                     label = "书摘总数",
+                    modifier = Modifier.weight(1f),
+                    tier = StatTileTier.Reference,
+                )
+                StatTile(
+                    value = "${state.finishedCount}",
+                    label = "已读完",
                     modifier = Modifier.weight(1f),
                     tier = StatTileTier.Reference,
                 )

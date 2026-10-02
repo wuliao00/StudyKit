@@ -50,7 +50,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import com.studykit.ui.components.AppTextField
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
+import com.studykit.ui.components.TipCard
 
 /** 引用竖条宽度（书摘条目左侧那条） */
 private val QuoteBarWidth: Dp = 3.dp
@@ -110,11 +114,19 @@ fun BookDetailScreen(
     onEditExcerpt: (Long) -> Unit,
     onAddReview: (Long) -> Unit,
     onEditReview: (Long) -> Unit,
+    onReviewExcerpts: (Long) -> Unit,
+    onChapterTest: (Long) -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     LaunchedEffect(bookId) { viewModel.loadDetail(bookId) }
     val detail by viewModel.detail.collectAsStateWithLifecycle()
+    // ChapterFinished→EXPLAIN_WHY：保存本书第一道自测后点亮（pending 在 BookViewModel），渲染落回这里，
+    // 离开详情页即 clear——与习惯列表那条 IF_THEN 同口径，只是读书这边详情页就是返回落点。
+    val explainWhyPending by viewModel.explainWhyTipPending.collectAsStateWithLifecycle()
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearExplainWhyTipPending() }
+    }
     // 路由键守卫（终审 C1 的同类站点）：只认「答的就是本书」的那份应答。`loadDetail(bookId)`
     // 是异步的，换书进来的那一帧 VM 里留着的还是上一本书的 detail —— 不挡的话这里渲染的是上一本书。
     // 写库侧同样以 bookId 为准：`stepProgress(bookId, …)` / `markFinished(bookId)` 在「已加载的书
@@ -166,6 +178,14 @@ fun BookDetailScreen(
             text = ui.book.author.ifBlank { "佚名" },
             style = texts.aux.copy(color = colors.secondaryText),
         )
+
+        if (explainWhyPending) {
+            val explainTip = StudyTips.forEvent(TipEvent.ChapterFinished)
+            if (explainTip != null) {
+                Spacer(Modifier.height(AppTheme.space.md))
+                TipCard(tip = explainTip, modifier = Modifier.fillMaxWidth())
+            }
+        }
 
         // ── 进度卡 ────────────────────────────────────────────────────────
         Spacer(Modifier.height(AppTheme.space.lg))
@@ -272,6 +292,12 @@ fun BookDetailScreen(
         }
         Spacer(Modifier.height(AppTheme.space.md))
         AppButton(text = "添加书摘", secondary = true, onClick = { onAddExcerpt(bookId) })
+        // 两个检索入口（v2.7 计划 B Task 18）：把「划线」接成「主动回忆」——到期书摘进复习队列、
+        // 本章开一次自测。都带 launchSingleTop（见 AppNav 各入口同一约定）。
+        Spacer(Modifier.height(AppTheme.space.sm))
+        AppButton(text = "复习书摘", secondary = true, onClick = { onReviewExcerpts(bookId) })
+        Spacer(Modifier.height(AppTheme.space.sm))
+        AppButton(text = "本章自测", secondary = true, onClick = { onChapterTest(bookId) })
 
         // ── 书评区块 ──────────────────────────────────────────────────────
         Spacer(Modifier.height(AppTheme.space.lg))

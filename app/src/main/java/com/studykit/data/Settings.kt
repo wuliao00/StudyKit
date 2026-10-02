@@ -147,6 +147,18 @@ data class AppSettings(
      * 亮那次经 `HabitViewModel.markGapTipSeen` 置真。默认**没看过**（false）。
      */
     val gapTipSeen: Boolean = false,
+    /**
+     * 保存第一道章节自测后那条 EXPLAIN_WHY 贴士（计划 B Task 18），看过就没有
+     * （**每次安装一次**，与 [flipTipSeen] / [ifThenTipSeen] / [sixtySixTipSeen] / [gapTipSeen] 同一条纪律）。
+     * 章节自测页首次成功保存时经 `BookViewModel.markChapterTipSeen` 置真。默认**没看过**（false）。
+     */
+    val chapterTipSeen: Boolean = false,
+    /**
+     * 书架上「只有划线没有检索」那条 RECALL_NOTES 贴士（计划 B Task 18）：存在 7 天前建且
+     * review_count==0 的书摘时首屏出一次，看过就没有（**每次安装一次**，同上纪律）。
+     * 书架首次亮它时经 `BookViewModel.markExcerptTipSeen` 置真。默认**没看过**（false）。
+     */
+    val excerptTipSeen: Boolean = false,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -187,6 +199,8 @@ data class AppSettings(
         KEY_IF_THEN_TIP_SEEN to ifThenTipSeen.toString(),
         KEY_SIXTY_SIX_TIP_SEEN to sixtySixTipSeen.toString(),
         KEY_GAP_TIP_SEEN to gapTipSeen.toString(),
+        KEY_CHAPTER_TIP_SEEN to chapterTipSeen.toString(),
+        KEY_EXCERPT_TIP_SEEN to excerptTipSeen.toString(),
     )
 
     companion object {
@@ -217,6 +231,8 @@ data class AppSettings(
         const val KEY_IF_THEN_TIP_SEEN = "if_then_tip_seen"
         const val KEY_SIXTY_SIX_TIP_SEEN = "sixty_six_tip_seen"
         const val KEY_GAP_TIP_SEEN = "gap_tip_seen"
+        const val KEY_CHAPTER_TIP_SEEN = "chapter_tip_seen"
+        const val KEY_EXCERPT_TIP_SEEN = "excerpt_tip_seen"
 
         /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
         val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
@@ -309,6 +325,12 @@ data class AppSettings(
                 // 宽恕贴士：默认**没看过**，口径同 flipTipSeen / ifThenTipSeen / sixtySixTipSeen
                 gapTipSeen = map[KEY_GAP_TIP_SEEN]?.toBooleanStrictOrNull()
                     ?: defaults.gapTipSeen,
+                // 章节自测贴士：默认**没看过**，口径同其余 *TipSeen（每次安装一次的说明）
+                chapterTipSeen = map[KEY_CHAPTER_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.chapterTipSeen,
+                // 书摘检索贴士：默认**没看过**，与 chapterTipSeen 分开的两枚布尔（镜像纪律）
+                excerptTipSeen = map[KEY_EXCERPT_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.excerptTipSeen,
             )
         }
     }

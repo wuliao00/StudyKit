@@ -229,4 +229,34 @@ class AppSettingsTest {
         assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_GAP_TIP_SEEN to "1")).gapTipSeen)
         assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_GAP_TIP_SEEN to "true")).gapTipSeen)
     }
+
+    @Test
+    fun `章节自测贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen / ifThenTipSeen / sixtySixTipSeen / gapTipSeen：每次安装一次的“看过没有”，默认 false
+        assertFalse(AppSettings().chapterTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).chapterTipSeen)
+        val seen = AppSettings(chapterTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).chapterTipSeen)
+    }
+
+    @Test
+    fun `章节自测贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_CHAPTER_TIP_SEEN to "1")).chapterTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_CHAPTER_TIP_SEEN to "true")).chapterTipSeen)
+    }
+
+    @Test
+    fun `书摘检索贴士默认没看过且经 toMap 往返一分不变`() {
+        // 与 chapterTipSeen 分开两枚布尔（复审建议：以后可泛型成一个 seen-set，本次不重构）
+        assertFalse(AppSettings().excerptTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).excerptTipSeen)
+        val seen = AppSettings(excerptTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).excerptTipSeen)
+    }
+
+    @Test
+    fun `书摘检索贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_EXCERPT_TIP_SEEN to "1")).excerptTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_EXCERPT_TIP_SEEN to "true")).excerptTipSeen)
+    }
 }

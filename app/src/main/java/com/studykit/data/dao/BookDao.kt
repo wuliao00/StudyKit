@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
+import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.Excerpt
 import kotlinx.coroutines.flow.Flow
 
@@ -36,6 +37,56 @@ interface BookDao {
 
     @Query("SELECT COUNT(*) FROM excerpts")
     fun observeExcerptCount(): Flow<Int>
+
+    // ── 主指标「检索练习次数」（v2.7 计划 B Task 18）────────────────────────
+    // 一条 UNION ALL：完成的检索动作总和 = 书摘侧各条 review_count(>0) 之和 + 章节自测行数。
+    // 纯计数、不编造：只数已经真实发生过的自评与自测行；外层 COALESCE 兜住两表皆空时 SUM 返回 NULL。
+    @Query(
+        "SELECT COALESCE(SUM(n), 0) FROM (" +
+            "SELECT COALESCE(SUM(review_count), 0) AS n FROM excerpts WHERE review_count > 0 " +
+            "UNION ALL " +
+            "SELECT COUNT(*) AS n FROM chapter_tests"
+        + ")",
+    )
+    fun observeRetrievalCount(): Flow<Int>
+
+    @Query(
+        "SELECT COALESCE(SUM(n), 0) FROM (" +
+            "SELECT COALESCE(SUM(review_count), 0) AS n FROM excerpts WHERE review_count > 0 " +
+            "UNION ALL " +
+            "SELECT COUNT(*) AS n FROM chapter_tests"
+        + ")",
+    )
+    suspend fun countRetrievalActions(): Int
+
+    // ── 书摘复习队列（v2.7 spec §7.2）───────────────────────────────────────
+    // next_review_at=0 是「未启用」哨兵（每摘 opt-out：不动 review_count，只把 next_review_at 归 0）；
+    // 队列只收已启用且到期的那些。
+    @Query(
+        "SELECT * FROM excerpts WHERE next_review_at > 0 AND next_review_at <= :now " +
+            "ORDER BY next_review_at ASC",
+    )
+    fun observeDueExcerpts(now: Long): Flow<List<Excerpt>>
+
+    /** 「只有划线没有检索」那条 RECALL_NOTES 贴士的判据：:cutoff 之前建的摘且 review_count==0 的条数 */
+    @Query("SELECT COUNT(*) FROM excerpts WHERE created_at < :cutoff AND review_count = 0")
+    fun observeExcerptsStaleWithoutRecall(cutoff: Long): Flow<Int>
+
+    // ── 章节自测（v2.7 spec §3.2）───────────────────────────────────────────
+    @Insert
+    suspend fun insertChapterTest(chapterTest: ChapterTest): Long
+
+    @Update
+    suspend fun updateChapterTest(chapterTest: ChapterTest)
+
+    @Query("SELECT * FROM chapter_tests WHERE book_id = :bookId ORDER BY tested_at DESC")
+    fun observeChapterTests(bookId: Long): Flow<List<ChapterTest>>
+
+    @Query("SELECT * FROM chapter_tests WHERE id = :id")
+    suspend fun getChapterTest(id: Long): ChapterTest?
+
+    @Query("SELECT COUNT(*) FROM chapter_tests WHERE book_id = :bookId")
+    suspend fun countChapterTests(bookId: Long): Int
 
     @Query("SELECT * FROM excerpts WHERE book_id = :bookId ORDER BY created_at DESC")
     fun observeExcerpts(bookId: Long): Flow<List<Excerpt>>
