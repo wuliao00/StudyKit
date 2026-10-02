@@ -34,3 +34,6 @@ _*.bin
 
 # Kotlin 分析插件的本地缓存（gradle 一跑就生成，8KB，不该入库）
 .kotlin/
+
+# superpowers ����ִ��ͨ����lane worktrees��
+.worktrees/
