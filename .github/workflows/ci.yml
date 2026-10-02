@@ -42,6 +42,12 @@ jobs:
           echo "REQUIRE_DEBUG_KEYSTORE=true" >> "${GITHUB_ENV}"
           echo "keystore bytes: $(wc -c < "${ks}")"
 
+      # 6→7 迁移的 CREATE SQL 抄自 7.json，基线被静默改写时该测试会"自证清白"地继续绿，所以先钉快照。
+      - name: Room schema 快照不许漂移（改实体必须升 version 并出新版快照）
+        run: |
+          ./gradlew :app:kspDebugKotlin
+          git diff --exit-code -- app/schemas
+
       - name: Lint, unit tests and debug build
         run: ./gradlew lint testDebugUnitTest assembleDebug
 
