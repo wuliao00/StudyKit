@@ -81,10 +81,18 @@ interface WordDao {
      * 合成一条 UPDATE 而不是"先 updateStatus 再 updateMemory"：两次写之间如果进程被杀，
      * 会出现"状态推进了但半衰期没涨"的撕裂行，而这条行的表现是"这个词突然变得很笨"，
      * 事后从数据里几乎查不出来。
+     *
+     * **v2.7 双内核双写**（spec §2.1）：`half_life_days` / `difficulty` 与 `fsrs_*` 四列
+     * 在同一条 UPDATE 里落齐，活跃内核那一侧是原生值，另一侧是换算镜像（近似值）；
+     * `kernel` 记这一次是**谁原生写的**（审计戳，不参与将来挑内核，见 `KernelHub`）。
+     * 四个新形参默认 null 只为让既有调用点不必改就能编过：**排期路径必须逐条传齐**，
+     * 不传等于把那一行的 FSRS 账清成 NULL。
      */
     @Query(
         "UPDATE words SET half_life_days = :halfLifeDays, difficulty = :difficulty, " +
             "status = :status, next_review_at = :nextReviewAt, last_review_at = :lastReviewAt, " +
+            "fsrs_stability = :fsrsStability, fsrs_difficulty = :fsrsDifficulty, " +
+            "fsrs_state = :fsrsState, kernel = :kernel, " +
             "total_reviews = total_reviews + 1, lapses = lapses + :lapseInc WHERE id = :id",
     )
     suspend fun applyReview(
@@ -95,6 +103,10 @@ interface WordDao {
         nextReviewAt: Long,
         lastReviewAt: Long,
         lapseInc: Int,
+        fsrsStability: Double? = null,
+        fsrsDifficulty: Double? = null,
+        fsrsState: Int? = null,
+        kernel: String? = null,
     )
 
     @Insert
@@ -114,7 +126,7 @@ interface WordDao {
     fun observeScheduledTimestamps(): Flow<List<Long>>
 
     /**
-     * 已排期那批词的「到期时刻 + 半衰期 + 上次复习」投影，学习首页的
+     * 已排期那批词的「到期时刻 + 半衰期 + 上次复习 + FSRS 稳定性」投影，学习首页的
      * 「明天预计复习 N 词 · 到时候大约还记得 X%」用（v2.5 §2.3）。
      *
      * ## 为什么必须是一条 SQL 拿全，而不是复用上面两条各取一半
@@ -129,14 +141,15 @@ interface WordDao {
      * `last_review_at` 可空是真实状态，不是脏数据：v4→v5 迁移给老库的 MASTERED 词统一
      * 排到了 4 天后（见 `AppDatabase.MIGRATION_4_5`），而那一列是当场新加的、全是 NULL。
      * 从没复习过的词拿加入那天当锚点，与 `StudyViewModel.gradeCard` 里
-     * `word.lastReviewAt ?: word.createdAt` 同一个口径 —— 所以四个字段一条 SQL 取齐。
+     * `word.lastReviewAt ?: word.createdAt` 同一个口径 —— 所以这些字段一条 SQL 取齐。
      *
      * WHERE 条件与 [observeScheduledTimestamps] 同为 `next_review_at > 0`："哪些词算排过期"
      * 两处必须一致，否则首页的 N 和记忆看板的未来柱又分叉成两套账。
      */
     @Query(
         "SELECT next_review_at AS nextReviewAt, half_life_days AS halfLifeDays, " +
-            "last_review_at AS lastReviewAt, created_at AS createdAt " +
+            "last_review_at AS lastReviewAt, created_at AS createdAt, " +
+            "fsrs_stability AS fsrsStability " +
             "FROM words WHERE next_review_at > 0",
     )
     fun observeScheduledMemoryRows(): Flow<List<ScheduledMemoryRow>>
@@ -205,9 +218,14 @@ data class ReviewGapRow(val gapDays: Double?, val correct: Boolean)
  * [WordDao.observeScheduledMemoryRows] 的投影行：一条已排期的词，
  * 到期时刻、这条记忆的半衰期、以及 Δt 的锚点**同行取回**。
  *
- * 四个字段必须来自同一行、同一次查询，理由见那条 SQL 的 KDoc。
+ * 这些字段必须来自同一行、同一次查询，理由见那条 SQL 的 KDoc。
  * [anchorAt] 在这里（而不是 SQL 的 COALESCE 里）折算，是为了让"没复习过的词按加入那天算"
  * 这条锚点口径留在 Kotlin 里、留在能被单测钉住的地方，与 `StudyViewModel.gradeCard` 一致。
+ *
+ * [fsrsStability]（v2.7 双内核）是"这一行被 FSRS 原生写过吗"的唯一证据，所以同样
+ * 得在那一条 SQL 里取齐：分两次查就会让保留率数的是另一批词（上面那段理由）。
+ * null 时读数退回 [halfLifeDays] 那条镜像曲线，不许拿空状态算出一个假的低分
+ * （见 `memory.recallForDisplay`）。
  */
 data class ScheduledMemoryRow(
     /** 下一次到期的时刻（毫秒），恒 > 0 */
@@ -216,8 +234,10 @@ data class ScheduledMemoryRow(
     val halfLifeDays: Double,
     /** 上次复习的时刻；null = 从没复习过（迁移折算出来的老词就是这种） */
     val lastReviewAt: Long?,
-    /** 加入学习的时刻，`lastReviewAt` 为 null 时的锚点 */
+    /** 加入学习的时刻，`lastReviewAt` 为 null 时的锢点 */
     val createdAt: Long,
+    /** FSRS 稳定性（天）；null = FSRS 还没写过这一行（新词 / 迁移未回填的老行） */
+    val fsrsStability: Double? = null,
 ) {
     /** 算 Δt 用的锚点 */
     val anchorAt: Long

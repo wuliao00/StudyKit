@@ -7,13 +7,16 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
-import com.studykit.data.memory.MemoryModel
-import com.studykit.data.memory.MemoryParams
+import com.studykit.data.memory.Confidence
+import com.studykit.data.memory.Hypercorrection
 import com.studykit.data.memory.MemoryScheduler
-import com.studykit.data.memory.MemoryState
 import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.data.memory.Scheduling
+import com.studykit.data.memory.fsrsDifficultyFromHalfLife
+import com.studykit.data.memory.kernelStateFor
+import com.studykit.data.memory.recallForDisplay
+import com.studykit.data.memory.toKernelRating
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
@@ -24,11 +27,13 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.zip
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
+import kotlin.math.min
 
 /** 解析题目的 options_json（JSONArray 字符串）为选项列表 */
 fun parseOptions(optionsJson: String): List<String> = try {
@@ -105,7 +110,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         private const val SESSION_SIZE = 10
         private const val QUIZ_SIZE = 10
 
-        /** 半衰期到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列） */
+        /**
+         * 到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列）。
+         *
+         * v2.7 双内核之后这个名字只有一半字面是真的：
+         *  - 跑半衰期时它量的仍是**半衰期天数**；
+         *  - 跑 FSRS 时它量的是**实际排出的下次间隔天数**（那一侧 `hDays` 是 ×12.79 的镜像读数，
+         *    直接喂这个阈值会“一次评分即已掌握”，A-T3 复审遗留决定，消费点见 [gradeCard]）。
+         * 不改名是为了不把 diff 扩到所有读数点上。
+         */
         private const val MASTERED_HALF_LIFE_DAYS = 7.0
 
         /**
@@ -139,16 +152,19 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ── 学习首页状态 ──────────────────────────────────────────────────────
-    // 明日那一格取的是 `observeScheduledMemoryRows()` 一条 SQL 里的四个字段：
+    // 明日那一格取的是 `observeScheduledMemoryRows()` 一条 SQL 里的那几个字段：
     // 词数与保留率必须出自同一批行，所以这里不能退回 `observeScheduledTimestamps()` +
     // `observeHalfLifeDays()` 两次查询再配对（理由见那条投影查询的 KDoc）。
+    // 活跃内核 id 也进 combine：设置页切了内核，这一格必须**当场**按新内核重算，
+    // 不能等下一次数据变化才跟上 —— 切内核不会写 words 表，只挂数据的流根本不会重发。
     val homeState: StateFlow<StudyHomeUiState> = combine(
         wordRepository.observeAll(),
         mistakeRepository.observeUnmasteredCount(),
         wordRepository.observeReviewTimestamps(),
         questionRepository.observePracticeTimestamps(),
-        wordRepository.observeScheduledMemoryRows(),
-    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, scheduled ->
+        wordRepository.observeScheduledMemoryRows()
+            .zip(settingsRepository.settings) { rows, settings -> rows to settings.schedulingKernel },
+    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, (scheduled, kernelId) ->
         val now = System.currentTimeMillis()
         // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致
         val zone = ZoneId.systemDefault()
@@ -157,7 +173,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val all = reviewTimestamps + practiceTimestamps
         // 「明天」的区间按本地日切，不用 SQL 的 date()（不吃时区）；
         // 这一格只算一次，词数和保留率都从它来
-        val tomorrow = TomorrowForecast.of(scheduled, TomorrowForecast.window(zone, today))
+        val tomorrow = TomorrowForecast.of(
+            scheduled, TomorrowForecast.window(zone, today), KernelHub.forId(kernelId),
+        )
         StudyHomeUiState(
             // 判据从「未掌握且到期」改成「有排期且到期」：见 WordDao.getDueForReview 的注释
             dueCount = words.count { it.nextReviewAt in 1L..now },
@@ -213,46 +231,82 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun markUnknown() = gradeCard(ReviewGrade.FORGET)
 
     /**
-     * 评一次分：把半衰期模型走一遍并落库。
+     * 评一次分：把**当前活跃内核**走一遍并落库。
      *
      * 取代原来的"答对 +1 天 / +3 天、答错 +10 分钟"写死阶梯 ——
      * 那套阶梯与历史答对次数无关，背到第 20 次仍然只隔 3 天。
      *
      * @param reactionMs 从翻面到按下按钮的毫秒数。只入库供以后校准参考，**不进模型**：
      *                   自我评分的犹豫时长和真实提取时长不是一回事。
+     * @param conf 用户自评信心，计划 B 的信心行传入；null = 没采集。
+     *             超纠正侧信道只在 `SURE × 未忆起` 触发，所以 null 一律不干预；
+     *             落库的 `confidence` 也就留 null —— 拿 0 冒充「瞎猜」是假数据。
      */
-    fun gradeCard(grade: ReviewGrade, reactionMs: Long? = null) {
+    fun gradeCard(grade: ReviewGrade, reactionMs: Long? = null, conf: Confidence? = null) {
         val state = _session.value ?: return
         val word = state.current ?: return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val sched = _scheduling.value
-            val params = MemoryParams()
-            val before = MemoryState(word.halfLifeDays, word.difficulty)
+            // 内核每轮会话现取，且与评分按钮预览同一个来源（AppTheme.settings.schedulingKernel）：
+            // 按钮上印的间隔与点下去真排出的间隔不能分家（KernelHub 的 KDoc）
+            val kernel = KernelHub.forId(settingsRepository.current().schedulingKernel)
+            val before = kernelStateFor(kernel, word)
             // 从没复习过的词拿"加入学习"那天当锚点：Δt=0 会让第一次评分的加固量归零
             // （成功支里 (1−p)^0.970 在 p=1 时被夹到 1e-3，间隔效应直接消失）
             val anchor = word.lastReviewAt ?: word.createdAt
             val gapDays = (now - anchor).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
 
-            val predicted = MemoryModel.recallProbability(gapDays, before.halfLifeDays)
-            val after = MemoryModel.update(before, gapDays, grade, params)
-            val days = MemoryModel.schedule(after, grade, sched.targetRecall, sched.maxIntervalDays, params)
+            val rating = grade.toKernelRating()
+            val predicted = recallForDisplay(kernel, before, gapDays)
+            val after = kernel.review(before, gapDays, rating, conf)
+            val days = kernel.nextIntervalDays(after, rating, sched.targetRecall, sched.maxIntervalDays)
+            // 「已掌握」的读数按活跃内核分岔（A-T3 复审遗留决定）：FSRS 那侧 after.hDays 是
+            // ×12.79 的镜像读数，喂进 7 天阈值会"一次评分即已掌握"，所以看**真排出去的间隔**；
+            // 半衰期那侧继续看半衰期，与 v2.6 逐比特一致
             val status = when {
                 grade == ReviewGrade.FORGET -> Word.STATUS_LEARNING
-                after.halfLifeDays >= MASTERED_HALF_LIFE_DAYS -> Word.STATUS_MASTERED
-                else -> Word.STATUS_LEARNING
+                kernel.id == "HALF_LIFE" ->
+                    if ((after.hDays ?: word.halfLifeDays) >= MASTERED_HALF_LIFE_DAYS) {
+                        Word.STATUS_MASTERED
+                    } else {
+                        Word.STATUS_LEARNING
+                    }
+                else ->
+                    if (days >= MASTERED_HALF_LIFE_DAYS) Word.STATUS_MASTERED else Word.STATUS_LEARNING
+            }
+            // 排期先算完，再问侧信道要不要提前：min 只允许把时刻往前拉，
+            // 侧信道无权把用户已经排好的间隔推后
+            val scheduledAt = now + (days * ONE_DAY_MS).toLong().coerceAtLeast(TimeUnit.MINUTES.toMillis(5))
+            val retestMinutes = Hypercorrection.retestDelayMinutes(conf, recalled = grade != ReviewGrade.FORGET)
+            val nextReviewAt = if (retestMinutes == null) {
+                scheduledAt
+            } else {
+                min(scheduledAt, now + TimeUnit.MINUTES.toMillis(retestMinutes))
             }
 
             // 顺序不能反：先写状态、再写历史。中间被杀进程只丢一条历史记录（下次复习时刻仍对）；
             // 反过来会留下"历史里有一次评分、但半衰期没涨"的行，那是在污染以后的校准样本。
             wordRepository.applyReview(
                 wordId = word.id,
-                halfLifeDays = after.halfLifeDays,
+                // 双写（spec §2.1）：活跃内核那一侧是原生值，另一侧是适配器算出的换算镜像；
+                // 两列都来自同一个 after，不留"半新半旧"的镜像
+                halfLifeDays = after.hDays ?: word.halfLifeDays,
                 difficulty = after.difficulty,
                 status = status,
-                nextReviewAt = now + (days * ONE_DAY_MS).toLong().coerceAtLeast(TimeUnit.MINUTES.toMillis(5)),
+                nextReviewAt = nextReviewAt,
                 lastReviewAt = now,
                 lapseInc = if (grade == ReviewGrade.FORGET) 1 else 0,
+                fsrsStability = after.stability,
+                // words.difficulty 存的永远是活跃内核自己那份（量纲归属见 KernelState KDoc），
+                // fsrs_difficulty 必须是 FSRS 口径：跑半衰期时在这里折算一次（与 MIGRATION_6_7 同式）
+                fsrsDifficulty = if (kernel.id == "HALF_LIFE") {
+                    fsrsDifficultyFromHalfLife(after.difficulty)
+                } else {
+                    after.difficulty
+                },
+                fsrsState = after.cardState.ordinal + 1,
+                kernel = kernel.id,
             )
             wordRepository.recordGradedReview(
                 wordId = word.id,
@@ -260,9 +314,11 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 correct = grade != ReviewGrade.FORGET,
                 gapDays = gapDays,
                 pAtReview = predicted,
-                hBefore = before.halfLifeDays,
-                hAfter = after.halfLifeDays,
+                hBefore = before.hDays ?: word.halfLifeDays,
+                hAfter = after.hDays ?: word.halfLifeDays,
                 reactionMs = reactionMs,
+                confidence = conf?.ordinal?.plus(1),
+                fsrsRating = rating.ordinal + 1,
             )
             _session.value = state.copy(
                 index = state.index + 1,

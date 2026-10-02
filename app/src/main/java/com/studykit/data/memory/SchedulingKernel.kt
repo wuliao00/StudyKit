@@ -1,5 +1,7 @@
 package com.studykit.data.memory
 
+import com.studykit.data.entity.Word
+
 /** 用户翻面/提交前采集的信心三档；null = 跳过（不阻塞，也不参与超纠正判定）。spec §2.3 */
 enum class Confidence { GUESS, FAIR, SURE }
 
@@ -114,3 +116,70 @@ class HalfLifeKernel : SchedulingKernel {
  * ≈ 12.789473684210526（spec §2.4；reverse-ref 竞品02 台账同值）
  */
 const val FSRS_HALF_OVER_S = 243.0 / 19.0
+
+/**
+ * DB 行 → 内核状态（Task 9 接线层唯一的取入口）。
+ *
+ * 谁用谁认：FSRS 读 [KernelState.stability]，半衰期读 [KernelState.hDays]，两个内核各自
+ * 都能从同一行拿到自己要的那份，互不冒领（spec §2.1）。所以这一份映射**不含内核偏好**
+ * ——要按活跃内核挑难度量纲的排期用法走 [kernelStateFor]。
+ *
+ * [KernelState.stability] 为 null 即"FSRS 未评过"（新词、或 `MIGRATION_6_7` 没回填的老行），
+ * LEARNING 由 `fsrs_state` 列携带。`fsrs_difficulty` 为空时**直传** `words.difficulty`：
+ * 那是"HALF_LIFE 行没被 FSRS 写过"的情形，量纲是半衰期口径，FSRS 内部的
+ * sanitizeDifficulty 会把它夹进 [1,10] 再算，不会因此抛异常，
+ * 但这条行第一次被 FSRS 评分时本来就会走 `firstTime` 原生支（A-T3 判据）。
+ */
+fun kernelStateOf(word: Word): KernelState = KernelState(
+    stability = word.fsrsStability,
+    difficulty = word.fsrsDifficulty ?: word.difficulty.coerceIn(1.0, 10.0),
+    cardState = CardState.entries.getOrElse(word.fsrsState - 1) { CardState.LEARNING },
+    hDays = word.halfLifeDays,
+)
+
+/**
+ * **活跃内核**视角的行状态：排期（[SchedulingKernel.review] / [SchedulingKernel.nextIntervalDays]）
+ * 与按钮预览都必须用它，不许两处各造一份状态 —— 预览与实排分家是 `MemoryModel.preview` 的注释专门警告过的错。
+ *
+ * 与 [kernelStateOf] 只差一维：难度两个内核各自的量纲不同（spec §2.1：`words.difficulty`
+ * 存的永远是**当前活跃内核自己**的那份，跨内核换算只在落库做一次），所以跑半衰期时
+ * 必须读 `words.difficulty`，不能借 `fsrs_difficulty`：后者是 FSRS 口径
+ * （迁移与落库都按 [fsrsDifficultyFromHalfLife] 折算过），喂进半衰期公式会把间隔排错。
+ */
+fun kernelStateFor(kernel: SchedulingKernel, word: Word): KernelState {
+    val state = kernelStateOf(word)
+    return if (kernel.id == "HALF_LIFE") state.copy(difficulty = word.difficulty) else state
+}
+
+/**
+ * 读数用的可提取性：活跃内核**原生写过**这条才用它自己的曲线。
+ *
+ * FSRS 还没写过（[KernelState.stability] 为 null：新词、或 `MIGRATION_6_7` 只给有历史的行
+ * 回填过）时不许拿空状态去算——`sanitizeStability` 会把 null 当 0.01 天稳定度，于是
+ * "没记过 FSRS 账"被读成"只记得 14%"，那是凭空造出来的坏消息（同 [HalfLifeKernel] 的镜像
+ * 只碰过它自己写过的那些行）。这种行退回半衰期镜像列：`half_life_days` 才是这条记忆在
+ * v2.6 口径下的真身，也正是 FSRS 未写时唯一可信的那份读数。
+ *
+ * 只用于**展示与提醒**（明日预告、通知正文、评分按钮上那行"还记得 X%"、`p_at_review`）。
+ * 评分路径不能这么退：`stability == null` 在 FSRS 里就是"从 S0 起步"的正确语义（A-T3）。
+ */
+fun recallForDisplay(kernel: SchedulingKernel, state: KernelState, elapsedDays: Double): Double =
+    if (kernel.id == "FSRS" && state.stability == null) {
+        MemoryModel.recallProbability(elapsedDays, state.hDays ?: MemoryState.NEW.halfLifeDays)
+    } else {
+        kernel.recall(state, elapsedDays)
+    }
+
+/** 页面上的三档 → 内核的四档（EASY 本 App 永不产生，spec D5）。与 [HalfLifeKernel] 内部的折叠口径一致 */
+fun ReviewGrade.toKernelRating(): KernelRating = when (this) {
+    ReviewGrade.FORGET -> KernelRating.AGAIN
+    ReviewGrade.VAGUE -> KernelRating.HARD
+    ReviewGrade.RECALL -> KernelRating.GOOD
+}
+
+/**
+ * 半衰期口径难度 → FSRS 口径（spec §2.4 的线性映射），**只在落库时做一次**：
+ * 内核内部绝不静默换算（见 [KernelState] 的 [KernelState.difficulty] 量纲说明），
+ * 式子与 `AppDatabase.MIGRATION_6_7` 回填 `fsrs_difficulty` 的那条 SQL 同式，两处必须一致。
+ */
+fun fsrsDifficultyFromHalfLife(halfLifeDifficulty: Double): Double = 5.0 + (halfLifeDifficulty - 1.0) * 0.5

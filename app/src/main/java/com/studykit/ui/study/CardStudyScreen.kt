@@ -69,10 +69,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
-import com.studykit.data.memory.MemoryModel
-import com.studykit.data.memory.MemoryState
 import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.Scheduling
+import com.studykit.data.memory.kernelStateFor
+import com.studykit.data.memory.recallForDisplay
+import com.studykit.data.memory.toKernelRating
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
@@ -968,6 +969,13 @@ private const val ONE_DAY_MS = 86400000L
  * （否则看一眼卡面就顺手按"认识"，闸门就白做了）；预测试从摆出选项到用户确认之间同样灰着。
  * 灰的方式沿用 [AppButton] 那副禁用态 —— 文字退到 `secondaryText`，不另造一档颜色、
  * 不加 alpha，`clickable(enabled = false)` 本身就不吃事件也不画 ripple。
+ *
+ * 预览走的是**活跃内核**（设置里那一个，经 [KernelHub.forId]）：与 `StudyViewModel.gradeCard`
+ * 同一条 `review → nextIntervalDays` 通路、同一个 `kernelStateFor` 取状态。这不是优化，是
+ * 必须的：印在按钮上的数字与点下去真排出的间隔只要有一处各算一套，用户当场就会看见它骗人
+ * （v2.6 时这一行直接叫 `MemoryModel.preview`，那一头只有一个内核所以不会分家）。
+ * 读设置用 [AppTheme.settings] 而不加形参：页面早就在同一份 CompositionLocal 上读闸门那两项，
+ * 为这一个数字新开一条参数链会把"设置从哪来"再拆成两套。
  */
 @Composable
 private fun GradeRow(
@@ -978,18 +986,27 @@ private fun GradeRow(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    // 预览必须用这个词**真实已拖的时间**：拿理想排期算， overdue 的词会印出比实际短得多的间隔
+    val previewKernel = KernelHub.forId(AppTheme.settings.schedulingKernel)
+    // 预览必须用这个词**真实已拖的时间**：拿理想排期算，overdue 的词会印出比实际短得多的间隔
     val gapDays = (System.currentTimeMillis() - (word.lastReviewAt ?: word.createdAt))
         .coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
-    val preview = MemoryModel.preview(
-        state = MemoryState(word.halfLifeDays, word.difficulty),
-        gapDays = gapDays,
-        targetRecall = scheduling.targetRecall,
-        maxIntervalDays = scheduling.maxIntervalDays,
-    )
+    val before = kernelStateFor(previewKernel, word)
+    // 三档各跑一遍"评一次 → 该排几天"，与 gradeCard 逐字同序；
+    // conf 现在恒为 null（采集信心是计划 B 的 ConfidencePill），侧信道不改这里的间隔，
+    // 只可能在事后把时刻往前拉，所以按钮上印的仍是内核排出来的那个间隔
+    val days = ReviewGrade.entries.associateWith { grade ->
+        val rating = grade.toKernelRating()
+        previewKernel.nextIntervalDays(
+            previewKernel.review(before, gapDays, rating, conf = null),
+            rating,
+            scheduling.targetRecall,
+            scheduling.maxIntervalDays,
+        )
+    }
+    val predictedRecall = recallForDisplay(previewKernel, before, gapDays)
     Spacer(Modifier.height(AppTheme.space.sm))
     Text(
-        text = "现在按下去，预计还记得 ${(preview.predictedRecall * 100).roundToInt()}%",
+        text = "现在按下去，预计还记得 ${(predictedRecall * 100).roundToInt()}%",
         style = texts.caption,
         color = colors.secondaryText,
     )
@@ -997,7 +1014,7 @@ private fun GradeRow(
     Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
         GradeButton(
             label = "认识",
-            interval = formatIntervalLabel(preview.recallDays),
+            interval = formatIntervalLabel(days.getValue(ReviewGrade.RECALL)),
             background = colors.successSoft,
             ink = colors.successInk,
             enabled = enabled,
@@ -1006,7 +1023,7 @@ private fun GradeRow(
         )
         GradeButton(
             label = "模糊",
-            interval = formatIntervalLabel(preview.vagueDays),
+            interval = formatIntervalLabel(days.getValue(ReviewGrade.VAGUE)),
             background = colors.goldSoft,
             ink = colors.goldInk,
             enabled = enabled,
@@ -1015,7 +1032,7 @@ private fun GradeRow(
         )
         GradeButton(
             label = "忘记",
-            interval = formatIntervalLabel(preview.forgetDays),
+            interval = formatIntervalLabel(days.getValue(ReviewGrade.FORGET)),
             background = colors.warningSoft,
             ink = colors.warningInk,
             enabled = enabled,

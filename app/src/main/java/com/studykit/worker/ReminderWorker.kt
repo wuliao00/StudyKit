@@ -18,7 +18,10 @@ import com.studykit.MainActivity
 import com.studykit.R
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Word
-import com.studykit.data.memory.MemoryModel
+import com.studykit.data.memory.SchedulingKernel
+import com.studykit.data.memory.kernelStateFor
+import com.studykit.data.memory.recallForDisplay
+import com.studykit.ui.study.KernelHub
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
@@ -27,26 +30,36 @@ private val ONE_DAY_MS: Long = TimeUnit.DAYS.toMillis(1)
 /**
  * 这批到期词「现在大约还记得多少」（纯函数，本轮 B 段）。
  *
- * **不另建一套曲线**：逐条走 [MemoryModel.recallProbability]，锚点 `lastReviewAt ?: createdAt`，
+ * **不另建一套曲线**：逐条走 [recallForDisplay]（它按活跃内核取那条曲线），锚点 `lastReviewAt ?: createdAt`，
  * 对整批取概率的算术平均 —— 与首页 `TomorrowForecast.of` 同一口径（同一个函数、同一个锚点约定、
  * 同一个"脏 h 行留在分母"）。两处唯一实质差别是取值时刻：那一格拿的是"各自明天到期时"，
  * 这里是"现在"（这批词已经到期了）。两个时刻平均出的百分比会差很多，但那是口径本身，不是算法分家。
  *
+ * @param kernel **活跃内核**，由调用方从设置里取（[KernelHub.forId]）；默认回 FSRS 只为保住既有调用点。
+ *   不许拿行上的 `words.kernel` 列逐行挑内核：那一列是"上一次谁原生写了这行"的审计戳，
+ *   用户切了内核之后，它会把一批词拆成两条曲线去读，而通知里那句"还记得 X%"必须与
+ *   评分按钮上那行同源（spec §2.1；`KernelHub` 的 KDoc）。
+ *
  * @return 0~100；**词集为空、或整批半衰期都不可信时返回 null**。
- *   后者宁可整段不提也不能印 0%：`recallProbability` 对 h ≤ 0 回 0 是"当作全忘了"的降级，
+ *   后者宁可整段不提也不能印 0%：半衰期那条曲线对 h ≤ 0 回 0 是"当作全忘了"的降级，
  *   而不是测出来的值；把它当成实测印到通知里，就是拿不存在的坏消息推动用户打开应用。
+ *   （双写之后 FSRS 写的行也会把镜像列填成可信正值，所以这道闸在两个内核下都成立。）
  *
  * 入参直接复用 `WordDao.getDueForReview` 那一条 `SELECT *`：同一行里就有
- * `half_life_days` / `last_review_at` / `created_at`，所以结构上不存在"两次查询再内存配对"。
+ * `half_life_days` / `last_review_at` / `created_at` / `fsrs_stability`，所以结构上不存在"两次查询再内存配对"。
  */
-internal fun dueRetentionPercent(words: List<Word>, now: Long): Int? {
+internal fun dueRetentionPercent(
+    words: List<Word>,
+    now: Long,
+    kernel: SchedulingKernel = KernelHub.forId(null),
+): Int? {
     if (words.isEmpty()) return null
     // 至少得有一个可信的 h，否则算出来的数来路不明（全脏时逐条会是 0 ⇒ 平均 0%）
     if (words.none { it.halfLifeDays.isFinite() && it.halfLifeDays > 0.0 }) return null
     val probabilities = words.map { word ->
         val anchor = word.lastReviewAt ?: word.createdAt
         val gapDays = (now - anchor).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
-        MemoryModel.recallProbability(gapDays = gapDays, halfLifeDays = word.halfLifeDays)
+        recallForDisplay(kernel, kernelStateFor(kernel, word), gapDays)
     }
     return ((probabilities.sum() / probabilities.size) * 100).roundToInt()
 }
@@ -130,8 +143,13 @@ class ReminderWorker(
         val contentText = reminderContentText(
             mistakeCount = dueMistakes.size,
             wordCount = dueWords.size,
-            // 与上面那批词同一个列表、同一个 now，不重查也不配对
-            retentionPercent = dueRetentionPercent(dueWords, now),
+            // 与上面那批词同一个列表、同一个 now，不重查也不配对。
+            // 内核从设置取：worker 手上就有 container.settingsRepository，不需要拿 rows.kernel 做例外
+            retentionPercent = dueRetentionPercent(
+                dueWords,
+                now,
+                KernelHub.forId(container.settingsRepository.current().schedulingKernel),
+            ),
         ) ?: return Result.success().also { Log.i(TAG, "到期量为 0，本次不发通知") }
 
         val openIntent = PendingIntent.getActivity(

@@ -1,7 +1,10 @@
 package com.studykit.ui.study
 
 import com.studykit.data.dao.ScheduledMemoryRow
-import com.studykit.data.memory.MemoryModel
+import com.studykit.data.memory.CardState
+import com.studykit.data.memory.KernelState
+import com.studykit.data.memory.SchedulingKernel
+import com.studykit.data.memory.recallForDisplay
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -66,16 +69,38 @@ object TomorrowForecast {
      * 平均的是概率而不是半衰期，因为要给用户看的正是"平均有多少把握"。
      *
      * 两点口径说明：
-     * - 分母是这批词的**全部**词数，不挑掉 h 不可信的行。`MemoryModel.recallProbability`
-     *   对 h ≤ 0 / NaN 已经回 0（"当作全忘了"），把它踢出分母反而会让 X% 与 N 数的不是同一批。
+     * - 分母是这批词的**全部**词数，不挑掉 h 不可信的行。两条曲线对脏值都是**降级不抛**
+     *   （半衰期那侧 h ≤ 0 / NaN 回 0，即"当作全忘了"），把它踢出分母反而会让 X% 与 N 数的不是同一批。
      * - 锚点用 [ScheduledMemoryRow.anchorAt]（`lastReviewAt ?: createdAt`），
      *   与 `StudyViewModel.gradeCard` 同一个口径，别让从没复习过的词算出 Δt=0 ⇒ 100%。
+     *
+     * @param kernel **活跃内核**（设置里那一个，经 [KernelHub.forId] 取），默认回 FSRS ——
+     *              这一格是读数，不是排期，但读的是哪条曲线必须和用户刚切的内核一致。
+     *              不许从行上的 `kernel` 列挑（那是审计戳，见 [KernelHub]）。
+     *              投影里 `fsrsStability` 为 null（新词、`MIGRATION_6_7` 没回填的老行）时，
+     *              [recallForDisplay] 会退回 `half_life_days` 那条镜像曲线而不是拿空状态
+     *              算出 14% 的坏消息，所以没被 FSRS 写过的行与 v2.6 逐比特一致。
      */
-    fun of(rows: List<ScheduledMemoryRow>, range: LongRange): TomorrowLoad {
+    fun of(
+        rows: List<ScheduledMemoryRow>,
+        range: LongRange,
+        kernel: SchedulingKernel = KernelHub.forId(null),
+    ): TomorrowLoad {
         val tomorrow = rows.filter { it.nextReviewAt in range }
         val probabilities = tomorrow.map { row ->
             val gapDays = (row.nextReviewAt - row.anchorAt).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
-            MemoryModel.recallProbability(gapDays = gapDays, halfLifeDays = row.halfLifeDays)
+            // 这一格只需要曲线，不需要难度；difficulty 两个内核的 recall 都不读它，
+            // 半衰期那侧的 recall 只读 hDays，所以给个中性值 1.0 就够
+            recallForDisplay(
+                kernel,
+                KernelState(
+                    stability = row.fsrsStability,
+                    difficulty = 1.0,
+                    cardState = CardState.REVIEW,
+                    hDays = row.halfLifeDays,
+                ),
+                gapDays,
+            )
         }
         val average = if (probabilities.isEmpty()) 0.0 else probabilities.sum() / probabilities.size
         return TomorrowLoad(
