@@ -169,4 +169,19 @@ class AppSettingsTest {
         assertEquals(d.schedulingKernel, back.schedulingKernel)
         assertEquals(d.confidenceEnabled, back.confidenceEnabled)
     }
+
+    @Test
+    fun `翻面贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 recallGateHintSeen：每次安装一次的"看过没有"，默认 false（没看过）
+        assertFalse(AppSettings().flipTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).flipTipSeen)
+        val seen = AppSettings(flipTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).flipTipSeen)
+    }
+
+    @Test
+    fun `翻面贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_FLIP_TIP_SEEN to "1")).flipTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_FLIP_TIP_SEEN to "true")).flipTipSeen)
+    }
 }

@@ -30,6 +30,8 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * 关掉之后滑动与三档自评**完全**退回旧行为，不留半截拦截）；
  * [recallGateHintSeen] → 同一条闸门的「第一次拦下你」说明（`CardStudyScreen` 读、
  * 点「知道了」经 `StudyViewModel.markRecallGateHintSeen` 写，每次安装只出现一次）；
+ * [flipTipSeen] → 翻面时那条 RECALL_FIRST 贴士（`CardStudyScreen` 读、首次翻面经
+ * `StudyViewModel.markFlipTipSeen` 写，每次安装只出现一次；口径与 recallGateHintSeen 一致）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
  * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
  * [schedulingKernel] → `ui/study/StudyViewModel.gradeCard` 与 `CardStudyScreen` 的按钮预览（消费点落在 A-T9）；
@@ -119,6 +121,12 @@ data class AppSettings(
      * 在此之前本开关无可见效果（gradeCard 的 conf 恒 null，口径同文件头）。
      */
     val confidenceEnabled: Boolean = true,
+    /**
+     * 翻面时那条 RECALL_FIRST 贴士（"先在脑子里把答案挤一遍，再翻这一面"），看过就没有
+     * （**每次安装一次**，与 [recallGateHintSeen] 同一条纪律）。首次翻面出现时经
+     * `StudyViewModel.markFlipTipSeen` 置真。默认**没看过**（false）。
+     */
+    val flipTipSeen: Boolean = false,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -155,6 +163,7 @@ data class AppSettings(
         KEY_INTERLEAVING to interleavingEnabled.toString(),
         KEY_SCHEDULING_KERNEL to schedulingKernel,
         KEY_CONFIDENCE_ENABLED to confidenceEnabled.toString(),
+        KEY_FLIP_TIP_SEEN to flipTipSeen.toString(),
     )
 
     companion object {
@@ -181,6 +190,7 @@ data class AppSettings(
         const val KEY_INTERLEAVING = "interleaving_enabled"
         const val KEY_SCHEDULING_KERNEL = "scheduling_kernel"
         const val KEY_CONFIDENCE_ENABLED = "confidence_enabled"
+        const val KEY_FLIP_TIP_SEEN = "flip_tip_seen"
 
         /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
         val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
@@ -261,6 +271,9 @@ data class AppSettings(
                 // 信心条：默认**开**，关掉即完全退回 v2.6 交互
                 confidenceEnabled = map[KEY_CONFIDENCE_ENABLED]?.toBooleanStrictOrNull()
                     ?: defaults.confidenceEnabled,
+                // 翻面贴士：默认**没看过**，口径同 recallGateHintSeen（每次安装一次的说明）
+                flipTipSeen = map[KEY_FLIP_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.flipTipSeen,
             )
         }
     }

@@ -132,19 +132,7 @@ fun ConfidenceRow(
 （`texts.caption` 字段名已被仓内多处使用（如 GradeRow 的"预计还记得"行），`radius/space` 同 AppPill 现有引用；若 Step 0 发现字段名不同，以存量为准。）
 
 - [ ] **Step 4: 页面接线**：`CardStudyScreen` 增加 `remember { mutableStateOf<Confidence?>(null) }`，在 `GradeRow` 上方按 `settings.confidenceEnabled && revealed && !pretestActive` 渲染 `ConfidenceRow`；`onGrade` 调用改成 `viewModel.gradeCard(grade, reactionMs, conf)`；换卡时把 conf 状态清零（与 `revealed` 同生命周期，写在同一个 `LaunchedEffect(word.id)` 里）。
-- [ ] **Step 5: ViewModel/落库**：`gradeCard(grade: ReviewGrade, reactionMs: Long? = null, conf: Confidence? = null)`；`recordGradedReview(..., confidence = conf?.ordinal?.plus(1))`；评完正常排期后：
-
-```kotlin
-            Hypercorrection.retestDelayMinutes(conf, recalled = grade != ReviewGrade.FORGET)?.let { minutes ->
-                // 当日再见一次：不动 nextReviewAt（那是内核的正常排期），
-                // 而是把 priority=1 写进 words（计划 A 未建列 —— 这里补一条 v7 内的说明：
-                // priority 列在 mistakes 上；words 侧用 nextReviewAt 取 min(next, now+minutes) 实现，
-                // 只提前不推后，FSRS/HalfLife 同一规则）
-                wordRepository.pullForward(word.id, now + minutes * 60_000L)
-            }
-```
-
-`WordDao`：`@Query("UPDATE words SET next_review_at = MIN(next_review_at, :at) WHERE id = :id")  suspend fun pullForward(id: Long, at: Long)`（经 `WordRepository.pullForward` 转发；"只提前不推后"写进函数注释）。
+- [ ] **Step 5: ViewModel/落库（A-T9 终审后已简化）**：`gradeCard` 早已带 `conf: Confidence? = null` 形参，且**当日再见已在同一条 applyReview 内用 min 实现**（只提前不推后，无 `pullForward` 第二条写——A-T9 偏差 D5 定案，本任务不再新增 WordDao/Repository 方法）。本任务要做的是：`CardStudyScreen` 把用户选的 conf 真传进去，并断言 `WordReview.confidence` 落库路径（现成 `conf?.ordinal?.plus(1)` 已接，Step 0 核实后如需只补渲染守卫测试）。
 - [ ] **Step 6: Tips 两点接线**：闸门首次拦下滑动处（既有 hint 展示点旁）`tipFor(TipEvent.NewCardFirstLook)`；翻面动作完成处 `TipEvent.AboutToFlip`（用 `OneShotGate`/`recallGateHintSeen` 同款"每次安装一次"纪律给 AboutToFlip 记 `KEY_FLIP_TIP_SEEN`，`AppSettings` 补一个布尔键，fromMap 口径同 Task 8）。
 - [ ] **Step 7: 首页目标梯度提示行（app.docx 模块1 P1，spec §4 补录项）**：纯函数先行——
 

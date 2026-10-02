@@ -229,12 +229,16 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun markKnown() = gradeCard(ReviewGrade.RECALL)
+    /**
+     * 滑动/两颗按钮那两档快判（右=认识、左=忘记）。
+     * [conf] 由计划 B 的信心行带入（翻面后、评分前采集）；null = 用户没选，走原口径（不触发超纠正、confidence 落 NULL）。
+     */
+    fun markKnown(conf: Confidence? = null) = gradeCard(ReviewGrade.RECALL, conf = conf)
 
     /** 「模糊」：想起来了但犹豫过。加固照算，难度照涨 —— 不是"半个错" */
-    fun markVague() = gradeCard(ReviewGrade.VAGUE)
+    fun markVague(conf: Confidence? = null) = gradeCard(ReviewGrade.VAGUE, conf = conf)
 
-    fun markUnknown() = gradeCard(ReviewGrade.FORGET)
+    fun markUnknown(conf: Confidence? = null) = gradeCard(ReviewGrade.FORGET, conf = conf)
 
     /**
      * 评一次分：把**当前活跃内核**走一遍并落库。
@@ -391,6 +395,18 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun markRecallGateHintSeen() {
         viewModelScope.launch {
             runCatching { settingsRepository.update { it.copy(recallGateHintSeen = true) } }
+        }
+    }
+
+    /**
+     * 翻面时那条 RECALL_FIRST 贴士：首次翻面出现时置真，此后每次安装都不再出现。
+     *
+     * 与 [markRecallGateHintSeen] 同一条纪律：写失败不提示也不重投 —— 后果只是"下次翻面还会
+     * 再提一次"，而这条路径是用户正打算继续学习的时候，弹一条 toast 只会打断他。
+     */
+    fun markFlipTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(flipTipSeen = true) } }
         }
     }
 

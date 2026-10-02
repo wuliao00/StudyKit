@@ -262,11 +262,10 @@ private fun TodayHeroCard(
     HeroSummaryCard(
         label = "今日待办",
         value = "$todayDone / $total",
-        caption = if (todayDone >= goal) {
-            "今日目标 $goal 词，已完成"
-        } else {
-            "今日目标 $goal 词，还差 ${goal - todayDone}"
-        },
+        // 目标梯度提示（GoalCue 纯函数，GoalCueTest 钉着）：未完成时陈述"还差几词"，
+        // 达成退回原来那句"已完成"（GoalCue 对达成/非法目标返回 null = 梯度那句不出现）。
+        // 走现成的 caption 槽，不新增颜色、不再加第二行重复的"还差"。
+        caption = GoalCue.text(done = todayDone, goal = goal) ?: "今日目标 $goal 词，已完成",
         actionLabel = "去背单词",
         onAction = onStart,
         modifier = modifier,
