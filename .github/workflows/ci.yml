@@ -47,6 +47,12 @@ jobs:
         run: |
           ./gradlew :app:kspDebugKotlin
           git diff --exit-code -- app/schemas
+          # 另一半缺口：升到 v8 却忘 git add 时，8.json 是 untracked，diff 门抓不到——显式补上
+          if [ -n "$(git ls-files --others --exclude-standard -- app/schemas)" ]; then
+            echo "::error::app/schemas 里有未入库的快照文件——升 version 必须把新 json 一起提交"
+            git ls-files --others --exclude-standard -- app/schemas
+            exit 1
+          fi
 
       - name: Lint, unit tests and debug build
         run: ./gradlew lint testDebugUnitTest assembleDebug
