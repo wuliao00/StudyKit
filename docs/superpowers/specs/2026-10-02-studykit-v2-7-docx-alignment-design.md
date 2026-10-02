@@ -159,7 +159,7 @@ AI 生成变体题、在线参数拟合/优化器、云同步、第四评分按�
 
 ## 11. 测试与验收
 
-1. **TDD**：本文件每一节对应的测试先写、先跑红、再实现转绿；FSRS 用 py-fsrs 的公式手算 3 条黄金轨迹（Good/Good/Again 与 Hard 支各一）钉死；`seedFromHalfLife` 用 §2.4 系数断言；HalfLife 回归 = 既有 41 个 JVM 测试零修改通过（除新增列默认值）。
+1. **TDD**：本文件每一节对应的测试先写、先跑红、再实现转绿；FSRS 用 py-fsrs 的公式手算 3 条黄金轨迹（Good/Good/Again 与 Hard 支各一）钉死；`seedFromHalfLife` 用 §2.4 系数断言；HalfLife 回归 = 既有测试（实测 53 suites / 519 用例，T1 盘点）零修改通过（除新增列默认值）。
 2. **迁移测试**（§3.1 第 3 步）含：空库、纯旧行、含中文、`h=0.5` 新词、脏 `h≤0` 行（必须降级不崩）。
 3. 全量：`gradlew test` + `gradlew assembleDebug` 绿；真机（vivo 35152127910030J）`adb install -r` 覆盖升级**旧数据库**实测迁移，再截图 6 处新界面（词卡信心条、模考交卷页、错题排期接管、执行意图创建页、书摘复习页、延迟后测卡），截图存 `docs/screenshots/` 并更新 README 与 CHANGELOG（发版记录含"参考应用来源声明"沿用 reverse-ref §6.6 口径）。
 4. 回滚预案：内核切回 Half-Life 即回到 v2.6 行为面；数据层不回滚（迁移只增不删，可前向兼容）。

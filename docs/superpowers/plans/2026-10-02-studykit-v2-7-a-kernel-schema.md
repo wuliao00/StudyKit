@@ -64,11 +64,11 @@ ksp {
 
 Run: `.\gradlew :app:kspDebugKotlin`
 Expected: BUILD SUCCESSFUL，且 `app/schemas/com.studykit.data.AppDatabase/6.json` 存在。
-打开 6.json 抽 `words` 表，确认列与 `Word.kt` 实体一致（13 列，`half_life_days REAL NOT NULL DEFAULT 0.5` 等）。**这一步是快照取证，改任何东西前先把它 commit（或至少备份）**。
+打开 6.json 抽 `words` 表，确认列与 `Word.kt` 实体一致（**15 列**（列序=实体字段序；13 是 entities 个数，别和列数混），含 `half_life_days REAL NOT NULL DEFAULT 0.5` 等）。**这一步是快照取证，改任何东西前先把它 commit（或至少备份）**。
 
 - [ ] **Step 4: 全量测试仍绿 + Commit（提交需用户同意）**
 
-Run: `.\gradlew :app:testDebugUnitTest` → Expected: 全绿（41 个既有测试类）。
+Run: `.\gradlew :app:testDebugUnitTest` → Expected: 全绿（实测 53 suites / 519 用例；既有测试类一个不许改）。
 
 ---
 
@@ -693,9 +693,7 @@ Run: `.\gradlew :app:kspDebugKotlin` → 绿；确认生成 `app/schemas/com.stu
 ```kotlin
 package com.studykit.data
 
-import android.content.Context
 import androidx.room.testing.MigrationTestHelper
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -706,10 +704,11 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class Migration6To7Test {
 
+    // 注意：room 2.6.1 的构造器是 (Instrumentation, Class<out RoomDatabase>)，
+    // 不是 2.7 那个带 Context/arguments 的重载（T1 质量审查已反查 jar 证实，照 2.7 写会编译红）。
     @get:Rule
     val helper = MigrationTestHelper(
-        InstrumentationRegistry.getArguments(),
-        ApplicationProvider.getApplicationContext<Context>(),
+        InstrumentationRegistry.getInstrumentation(),
         AppDatabase::class.java,
     )
 
@@ -803,6 +802,10 @@ Run: `.\gradlew :app:testDebugUnitTest --tests "*Migration6To7Test*"` → 预期
 ```
 
 并在 `getInstance` 的 `addMigrations(...)`（`AppDatabase.kt:231`）末尾追加 `MIGRATION_6_7`。**其余表的 ALTER 与索引 SQL 不许省略——实现者须按 7.json 补全后整块提交。**
+
+另外两步 T1 质量审查挂账，在本任务一并清掉（都在同一个文件里）：
+- `MIGRATION_4_5` KDoc（现 :129-138）里 `exportSchema = false` 那句已成真话作废，改写为当前事实；`MIGRATION_2_3` KDoc 的条件句（"exportSchema=false 时无人替你核对"）同步改成"自 A-T7 起由 MigrationTestHelper 核对"；其下"CI 全绿也测不出来"改为"A-T7 之前测不出来"。
+- `app/build.gradle.kts` 顶部 ksp 注释里"不给 schemaLocation 会退回默认编译输出/schemas"是错的（room 2.6.1 实际是**不导出并报警**），顺手改成准确表述。
 
 - [ ] **Step 3: 迁移测试绿 + 全量绿 + assembleDebug 绿**（三条命令依次跑，贴输出进提交说明）。
 
@@ -954,7 +957,9 @@ object KernelHub {
 
 ### Task 10: 计划 A 收尾核对
 
+- [ ] **新增（T1 质量审查 I2）：CI 防快照漂移门**——`.github/workflows/ci.yml` 构建 job 里、跑单测之前加一步：`./gradlew :app:kspDebugKotlin` 后 `git diff --exit-code -- app/schemas`（改实体忘升 version 时静默污染 6.json 基线，这是唯一机械保证）；本地验收同步跑一次该命令序列。
+- [ ] **覆盖面边界写进 CHANGELOG/README（I1）**：MigrationTestHelper 网只覆盖 6→7 及以后；1..5 无旧快照，那五条既有迁移仍只能靠真机走查。
 - [ ] `.\gradlew :app:testDebugUnitTest :app:assembleDebug` 全绿。
 - [ ] `git status`：只有预期文件变更（entities、AppDatabase、Settings、StudyViewModel、GradeRow 所在屏、Forecast/Worker、WordDao/Repository、schemas/6.json+7.json、新测试）；无 StudyKit 之外文件被碰。
 - [ ] 用户界面**没有**新增可见交互（信心条等全部留给计划 B）——设 `scheduling_kernel` 默认 FSRS 后词卡按钮数字会变（预期行为），CHANGELOG 未写之前先不合并到主线宣称。
-- [ ] 向用户复述状态 + 请求"是否现在提交这 10 个任务的 commit"。
+- [ ] 向用户复述状态。**提交已获用户授权（逐任务 commit 是本计划既定节奏）**，不再另问。
