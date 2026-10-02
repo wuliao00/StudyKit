@@ -26,6 +26,6 @@ data class MistakeRedo(
     @ColumnInfo(name = "mistake_id") val mistakeId: Long,
     @ColumnInfo(name = "redone_at") val redoneAt: Long = System.currentTimeMillis(),
     val correct: Boolean,
-    @ColumnInfo(name = "hints_used") val hintsUsed: Int = 0,
-    @ColumnInfo(name = "had_note_rebuild") val hadNoteRebuild: Boolean = false,
+    @ColumnInfo(name = "hints_used", defaultValue = "0") val hintsUsed: Int = 0,
+    @ColumnInfo(name = "had_note_rebuild", defaultValue = "0") val hadNoteRebuild: Boolean = false,
 )
