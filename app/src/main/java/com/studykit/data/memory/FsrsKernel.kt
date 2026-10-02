@@ -45,7 +45,7 @@ class FsrsKernel : SchedulingKernel {
         }
         val s0 = w[rating.ordinal.coerceIn(0, 3)] // AGAIN/HARD/GOOD/EASY → w[0..3]
         val s = if (firstTime) s0 else sanitizeStability(state.stability)
-        val d = if (firstTime) initDifficulty(r) else state.difficulty.coerceIn(1.0, 10.0)
+        val d = if (firstTime) initDifficulty(r) else sanitizeDifficulty(state.difficulty)
         val t = if (elapsedDays.isFinite()) elapsedDays.coerceAtLeast(0.0) else 0.0
         val rr = recall(KernelState(s, d, state.cardState), t)
 
@@ -69,6 +69,7 @@ class FsrsKernel : SchedulingKernel {
                 else -> CardState.REVIEW
             },
             hDays = nextS * FSRS_HALF_OVER_S, // 镜像回填（近似，spec §2.1 双写口径）
+            // 仅供切内核读数与展示换算；**禁止**直接喂半衰期标定的阈值（如 MASTERED_HALF_LIFE_DAYS），status 判据见 Task 9 按活跃间隔天数重写
         )
     }
 
@@ -80,9 +81,9 @@ class FsrsKernel : SchedulingKernel {
         val dr = if (targetRecall.isFinite()) targetRecall.coerceIn(0.5, 0.99) else 0.9
         val raw = s / FACTOR * (dr.pow(1.0 / DECAY) - 1.0)
         // 上限本身可能来自脏配置（负数/NaN）——coerceIn 遇空区间会抛，这里按本仓
-        // "脏值降级不异常"的口径夹：非有限→不设上限（封顶 MAX_STABILITY），负/零→退到 10 分钟地板
+        // "脏值降级不异常"的口径夹：非有限→回在位者保险丝 MAX_INTERVAL_FALLBACK（365d，"排太远≈永久消失"），负/零→退到 10 分钟地板
         val cap = when {
-            !maxIntervalDays.isFinite() -> MAX_STABILITY
+            !maxIntervalDays.isFinite() -> MAX_INTERVAL_FALLBACK
             else -> maxIntervalDays.coerceAtLeast(TEN_MINUTES_IN_DAYS)
         }
         return raw.coerceIn(0.0, cap)
@@ -92,7 +93,8 @@ class FsrsKernel : SchedulingKernel {
         val h = if (halfLifeDays.isFinite() && halfLifeDays > 0.0) halfLifeDays else MemoryState.NEW.halfLifeDays
         return KernelState(
             stability = (h / FSRS_HALF_OVER_S).coerceAtLeast(MIN_STABILITY_FLOOR),
-            difficulty = difficulty.coerceIn(1.0, 10.0),
+            // 入参是半衰期口径难度，此处只做脏值防线，不换算（换算在落库，spec §2.4）
+            difficulty = sanitizeDifficulty(difficulty),
             cardState = CardState.REVIEW,
             hDays = h,
         )
@@ -111,12 +113,18 @@ class FsrsKernel : SchedulingKernel {
     private fun sanitizeStability(raw: Double?): Double =
         if (raw == null || !raw.isFinite() || raw <= 0.0) MIN_STABILITY_FLOOR else raw.coerceAtMost(MAX_STABILITY)
 
+    /** 与 MemoryModel.clampDifficulty 同口径：脏值（含 NaN）回 1.0，不会把 NaN 带进公式 */
+    private fun sanitizeDifficulty(raw: Double): Double =
+        if (!raw.isFinite() || raw < 1.0) 1.0 else raw.coerceAtMost(10.0)
+
     companion object {
         const val DECAY = -0.5
         /** 0.9^(1/DECAY) − 1 = 19/81，恰为有理数 */
         const val FACTOR = 19.0 / 81.0
         const val MIN_STABILITY_FLOOR = 0.01
         const val MAX_STABILITY = 36500.0
+        /** 非有限上限的兜底：与 MemoryParams.absoluteMaxIntervalDays 同值——"排太远≈永久消失"是在位者解释过的保险丝 */
+        const val MAX_INTERVAL_FALLBACK = 365.0
         const val TEN_MINUTES_IN_DAYS = 10.0 / 1440.0
     }
 }

@@ -24,6 +24,8 @@ class FsrsKernelTest {
         assertEquals(10.757465, after.stability!!, 1e-4)
         assertEquals(2.116986, after.difficulty, 1e-4)
         assertEquals(13.360266, k.nextIntervalDays(after, KernelRating.GOOD, 0.88, 36500.0), 1e-4)
+        // 钉住镜像契约：hDays 恒等于 stability × FSRS_HALF_OVER_S（spec §2.1 双写口径）
+        assertEquals(after.stability!! * FSRS_HALF_OVER_S, after.hDays!!, 1e-9)
     }
 
     @Test fun `golden trace HARD after 2 days`() {
@@ -55,6 +57,14 @@ class FsrsKernelTest {
         val fresh = KernelState(stability = null, difficulty = 1.0, cardState = CardState.LEARNING)
         val a2 = k.review(fresh, elapsedDays = 0.0, rating = KernelRating.AGAIN, conf = null)
         assertEquals(0.212, a2.stability!!, 1e-9)
+        // 可达的毒行形态：HALF_LIFE 镜像回填过 stability，但 fsrs_state 列还是默认 1=LEARNING。
+        // 旧判据 cardState==LEARNING 会把它当首次评分，S 被顶成 S0=0.212（首周复习量翻倍）
+        val mirroredLearning = KernelState(
+            stability = 30.0 / FSRS_HALF_OVER_S, difficulty = 3.0,
+            cardState = CardState.LEARNING, hDays = 30.0,
+        )
+        val m = k.review(mirroredLearning, elapsedDays = 2.0, rating = KernelRating.AGAIN, conf = null)
+        check(m.stability!! > 0.3) { "LEARNING+stability≠null 被误判首次，S 被 S0 顶掉：${m.stability}" }
     }
 
     @Test fun `seed from half life divides by power law ratio`() {
@@ -72,6 +82,10 @@ class FsrsKernelTest {
         val after = k.review(s, elapsedDays = -2.0, rating = KernelRating.GOOD, conf = null)
         check(after.stability!!.isFinite() && after.stability!! > 0.0)
         check(after.difficulty in 1.0..10.0)
+        // 脏难度（NaN）穿过 coerceIn 会同时毒化 D→S→h 三元组，全部得是有限值
+        val s2 = KernelState(stability = 10.0, difficulty = Double.NaN, cardState = CardState.REVIEW)
+        val after2 = k.review(s2, elapsedDays = 2.0, rating = KernelRating.GOOD, conf = null)
+        check(after2.stability!!.isFinite() && after2.difficulty.isFinite() && after2.hDays!!.isFinite())
     }
 
     @Test fun `dirty maxIntervalDays degrades without throwing`() {
