@@ -79,7 +79,13 @@ class FsrsKernel : SchedulingKernel {
         val s = sanitizeStability(state.stability)
         val dr = if (targetRecall.isFinite()) targetRecall.coerceIn(0.5, 0.99) else 0.9
         val raw = s / FACTOR * (dr.pow(1.0 / DECAY) - 1.0)
-        return raw.coerceIn(0.0, maxIntervalDays)
+        // 上限本身可能来自脏配置（负数/NaN）——coerceIn 遇空区间会抛，这里按本仓
+        // "脏值降级不异常"的口径夹：非有限→不设上限（封顶 MAX_STABILITY），负/零→退到 10 分钟地板
+        val cap = when {
+            !maxIntervalDays.isFinite() -> MAX_STABILITY
+            else -> maxIntervalDays.coerceAtLeast(TEN_MINUTES_IN_DAYS)
+        }
+        return raw.coerceIn(0.0, cap)
     }
 
     override fun seedFromHalfLife(halfLifeDays: Double, difficulty: Double): KernelState {

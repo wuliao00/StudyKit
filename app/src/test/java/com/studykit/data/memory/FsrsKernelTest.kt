@@ -73,4 +73,15 @@ class FsrsKernelTest {
         check(after.stability!!.isFinite() && after.stability!! > 0.0)
         check(after.difficulty in 1.0..10.0)
     }
+
+    @Test fun `dirty maxIntervalDays degrades without throwing`() {
+        val s = KernelState(stability = 10.0, difficulty = 3.0, cardState = CardState.REVIEW)
+        // 负上限 → 10 分钟地板（当日再见），不抛
+        val neg = k.nextIntervalDays(s, KernelRating.GOOD, 0.9, -5.0)
+        assertEquals(10.0 / 1440.0, neg, 1e-12)
+        // NaN 上限 → 不设上限，回正常间隔
+        val nan = k.nextIntervalDays(s, KernelRating.GOOD, 0.9, Double.NaN)
+        assertEquals(10.0, nan, 1e-9)
+        check(neg.isFinite() && nan.isFinite())
+    }
 }
