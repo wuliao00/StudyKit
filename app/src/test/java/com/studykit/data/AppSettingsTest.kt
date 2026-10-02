@@ -214,4 +214,19 @@ class AppSettingsTest {
         assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_SIXTY_SIX_TIP_SEEN to "1")).sixtySixTipSeen)
         assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_SIXTY_SIX_TIP_SEEN to "true")).sixtySixTipSeen)
     }
+
+    @Test
+    fun `宽恕贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen / ifThenTipSeen / sixtySixTipSeen：每次安装一次的“看过没有”，默认 false
+        assertFalse(AppSettings().gapTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).gapTipSeen)
+        val seen = AppSettings(gapTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).gapTipSeen)
+    }
+
+    @Test
+    fun `宽恕贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_GAP_TIP_SEEN to "1")).gapTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_GAP_TIP_SEEN to "true")).gapTipSeen)
+    }
 }

@@ -80,15 +80,17 @@ fun StudyHomeScreen(
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
 
-    // ── SIXTY_SIX 贴士（计划 B Task 17 / spec §8）：火焰徽章天数恰好走到 21 那天，
+    // ── SIXTY_SIX 贴士（计划 B Task 17 Step 2b / spec §8）：火焰徽章天数恰好走到 21 那天，
     // 在 hero 下方挂一次「21 天不是终点、66 天才是中位数」——每次安装一次（sixtySixTipSeen）。
-    // 20/22 天都不弹（严格 == STREAK_MYTH_DAY）；showSixtySix 页面级、非按天键控：
-    // 本页停留期间只点亮一次，settings 置真后跨会话也不再现。
+    // 判定全部在 [SixtySixTip]（纯函数，SixtySixTipTest 钉住 20/21/22 三条口径）：
+    //  - 点亮只看 [SixtySixTip.shouldLatch]，点亮那一帧就把 sixtySixTipSeen 落库（只弹一次）；
+    //  - 画不画看 [SixtySixTip.shouldShow]：天数走过 21（明天再学一次就是 22）这一枚状态自动复位，
+    //    不把已经过去的 21 天一直留在 hero 下面。
     val sixtySixTipSeen = AppTheme.settings.sixtySixTipSeen
-    var showSixtySix by rememberSaveable { mutableStateOf(false) }
+    var sixtySixLatched by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.streakDays, sixtySixTipSeen) {
-        if (state.streakDays == StudyTips.STREAK_MYTH_DAY && !sixtySixTipSeen && !showSixtySix) {
-            showSixtySix = true
+        if (SixtySixTip.shouldLatch(streakDays = state.streakDays, tipSeen = sixtySixTipSeen)) {
+            sixtySixLatched = true
             viewModel.markSixtySixTipSeen()
         }
     }
@@ -143,7 +145,7 @@ fun StudyHomeScreen(
 
         // 连续满 21 天那次的一次性提醒（hero 正下方，紧贴火焰徽章的语义落点）。
         // 走现成的 TipCard，不新增颜色；文案与证据都由 StudyTips 单点维护。
-        if (showSixtySix) {
+        if (SixtySixTip.shouldShow(streakDays = state.streakDays, latched = sixtySixLatched)) {
             StudyTips.forEvent(TipEvent.StreakReached(state.streakDays))?.let { tip ->
                 Spacer(Modifier.height(AppTheme.space.sm))
                 TipCard(tip = tip, modifier = Modifier.fillMaxWidth())

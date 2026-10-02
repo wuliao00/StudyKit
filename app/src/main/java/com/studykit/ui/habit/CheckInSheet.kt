@@ -23,11 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
-import com.studykit.tips.StudyTips
-import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
-import com.studykit.ui.components.TipCard
 import com.studykit.ui.material.glassSurface
 import com.studykit.ui.material.rememberGlassStyle
 import com.studykit.ui.motion.MotionSpec
@@ -52,7 +49,6 @@ fun CheckInSheet(
     isMakeUp: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (note: String, amount: Double) -> Unit,
-    showGapTip: Boolean = false,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -121,15 +117,9 @@ fun CheckInSheet(
                 style = texts.caption,
             )
 
-            // 断签保护·宽恕提示（计划 B Task 17）：调用侧（今日打卡）用 gapDayHintEligible 判定后
-            // 把这一位置真，这里只负责在打卡当口挂一条 MISS_ONE_DAY（GapDay）贴士。
-            // 不新增颜色、不改弹层结构；补卡(existing/isMakeUp) 场景不置真，故只在今日漏打卡后重现。
-            if (showGapTip) {
-                Spacer(Modifier.height(AppTheme.space.md))
-                StudyTips.forEvent(TipEvent.GapDay)?.let { tip ->
-                    TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
-                }
-            }
+            // 那条 MISS_ONE_DAY 宽恕贴士**不在弹层里画了**（B17 复审 ⚠3）：天数型一键打卡根本没有
+            // 弹层，挂在这里等于那条路径永远碰不到它。判定与渲染都收上到列表层那一张
+            // [OneShotTipCard]，两路共用 [gapTipShouldShow] 这一个闸门，只说一次。
 
             if (isCountType) {
                 Spacer(Modifier.height(AppTheme.space.lg))

@@ -41,11 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.studykit.data.entity.Habit
-import com.studykit.tips.StudyTips
-import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
-import com.studykit.ui.components.TipCard
 import com.studykit.ui.theme.AppTheme
 
 private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯", "🧘", "🌙", "💧", "🎹", "🖌️", "🥗")
@@ -83,8 +80,9 @@ fun HabitCreateScreen(
     // ANY = "没绑例程"，不进整句的"何时"段（否则拼成"当任意·…"很怪），退化成只留地点。
     val whenLabel = if (category == Habit.CATEGORY_ANY) "" else categoryLabel(category = category)
     val ifThen = IfThenTemplate.compose(whenLabel = whenLabel, where = where, then = then)
-    // 那条 IF_THEN 贴士看过没有（每次安装一次，口径同 flipTipSeen）
-    val ifThenTipSeen = AppTheme.settings.ifThenTipSeen
+    // 那条 IF_THEN 贴士**不在本页渲染**（B17 复审 ⚠2）：计划钉的触发点是「首次成功保存」，
+    // 而本页保存成功就 pop，挂在输入区下面等于用户还没保存就先被教了一遍。
+    // 触发与渲染都在 ViewModel（一次性标记）+ 习惯列表页那一边。
     val parsedCount = targetCountText.trim().toDoubleOrNull() ?: 0.0
     val canSave = name.isNotBlank() && (!isCountType || parsedCount > 0)
 
@@ -328,13 +326,6 @@ fun HabitCreateScreen(
         if (ifThen.isNotBlank()) {
             Spacer(Modifier.height(AppTheme.space.sm))
             IfThenPreview(sentence = ifThen)
-        }
-        // 那条 IF_THEN 贴士（每次安装一次）：摆在用户正拼句子的这一块，教的是"怎么写"。
-        if (!ifThenTipSeen) {
-            StudyTips.forEvent(TipEvent.HabitFirstSave)?.let { tip ->
-                Spacer(Modifier.height(AppTheme.space.md))
-                TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
-            }
         }
 
         Spacer(Modifier.height(AppTheme.space.xl))

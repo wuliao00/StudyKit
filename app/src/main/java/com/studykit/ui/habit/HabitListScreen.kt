@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Habit
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
@@ -66,19 +69,19 @@ import com.studykit.ui.components.HabitSnake
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.SnakeTrackHeight
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-/** 打卡弹层目标：习惯 + 日期 + 既有记录 + 是否补卡 + 今日打卡时是否挂断签保护宽恕贴士 */
+/** 打卡弹层目标：习惯 + 日期 + 既有记录 + 是否补卡 */
 private data class SheetTarget(
     val habit: Habit,
     val date: LocalDate,
     val existing: CheckIn?,
     val isMakeUp: Boolean,
-    val showGapTip: Boolean = false,
 )
 
 /**
@@ -239,6 +242,18 @@ fun HabitListScreen(
     var expandedDone by remember { mutableStateOf(false) }
     var sheetTarget by remember { mutableStateOf<SheetTarget?>(null) }
 
+    // ── 一次性贴士（B17 复审 ⚠2 / ⚠3）───────────────────────────────
+    // IF_THEN：创建页保存成功就 pop，那张卡由 ViewModel 的一次性标记带回到这里渲染（离开本页即熄）。
+    val ifThenTipPending by viewModel.ifThenTipPending.collectAsStateWithLifecycle()
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearIfThenTipPending() }
+    }
+    // GapDay：数量型弹层与天数型一键都只置这一枚页面级标记，渲染就在下面那个 item。
+    // 用 `remember` 而不是 `rememberSaveable`：“这一页说过一次”是本页的事，离页即清零，
+    // 下次真的昨日缺卡时由 gapTipSeen 拦（每次安装一次）。
+    var gapTipPending by remember { mutableStateOf(false) }
+    val gapTipSeen = AppTheme.settings.gapTipSeen
+
     // 庆祝事件 = (刚打上卡的习惯 id, 事件序号)；序号保证同一习惯二次触发也会重播粒子
     var celebration by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var celebrationCount by remember { mutableStateOf(0) }
@@ -259,17 +274,35 @@ fun HabitListScreen(
         }
     }
 
-    /** 打开打卡弹层（先读取当日既有记录用于预填）；今日首次打卡且昨日为受保护缺卡时带 GapDay 贴士 */
+    /**
+     * 这一次宽恕贴士到底该不该由本页面亮：该亮就当场把「说过一次」落库。
+     * 抽出来是因为弹层与一键两条路径都需要同一套动作，写两遍必有一个漏改。
+     * declared 在两个调用侧之前：Kotlin 的局部函数也按声明顺序解析，后置就是 unresolved。
+     */
+    fun claimGapTip(eligible: Boolean): Boolean {
+        if (!gapTipShouldShow(eligible = eligible, gapTipSeen = gapTipSeen)) return false
+        viewModel.markGapTipSeen()
+        return true
+    }
+
+    /**
+     * 打开打卡弹层（先读取当日既有记录用于预填）。
+     *
+     * 宽恕贴士的**判定**也在这里（B17 复审 ⚠3）：数量型走弹层、天数型走一键，两路都只看
+     * [gapTipShouldShow] 这一个闸门，渲染统一交给下面的列表层 [OneShotTipCard]。
+     */
     fun openSheet(habit: Habit, checkedDates: Set<LocalDate>) {
         scope.launch {
             val today = LocalDate.now()
             val existing = viewModel.findCheckIn(habit.id, today)
+            if (claimGapTip(eligible = gapDayHintEligible(dates = checkedDates, today = today))) {
+                gapTipPending = true
+            }
             sheetTarget = SheetTarget(
                 habit = habit,
                 date = today,
                 existing = existing,
                 isMakeUp = false,
-                showGapTip = gapDayHintEligible(dates = checkedDates, today = today),
             )
         }
     }
@@ -278,7 +311,14 @@ fun HabitListScreen(
     fun onCheckInClick(item: HabitItemUi) {
         when {
             item.isCountType -> openSheet(item.habit, item.checkedDates)
-            !item.checkedInToday -> viewModel.checkIn(item.habit)
+            !item.checkedInToday -> {
+                // 天数型一键打卡没有弹层，那一句宽恕贴士只能在**列表层**兜底（B17 复审 ⚠3）。
+                // 判定必须在 `checkIn` 之前取：打完今天，“今天还没打卡”这一条就不再成立了。
+                if (claimGapTip(eligible = gapDayHintEligible(dates = item.checkedDates, today = LocalDate.now()))) {
+                    gapTipPending = true
+                }
+                viewModel.checkIn(item.habit)
+            }
             else -> openSheet(item.habit, item.checkedDates)
         }
     }
@@ -368,6 +408,17 @@ fun HabitListScreen(
                     )
                 }
             }
+            // 一次性贴士的两个挂载点（B17 复审 ⚠2 / ⚠3）：统计磁贴与习惯卡片之间 ——
+            // 用户刚保存 / 刚打完卡，抬眼就是这一句。两个都不亮时连这一格都不存在：
+            // LazyColumn 的空 item 也会吃到 verticalArrangement 的间距，留成一段白。
+            if (ifThenTipPending || gapTipPending) {
+                item(key = "one_shot_tips") {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        OneShotTipCard(event = TipEvent.HabitFirstSave, visible = ifThenTipPending)
+                        OneShotTipCard(event = TipEvent.GapDay, visible = gapTipPending)
+                    }
+                }
+            }
             if (state.items.isEmpty()) {
                 item(key = "empty") {
                     Column(
@@ -439,7 +490,6 @@ fun HabitListScreen(
                 date = target.date,
                 existing = target.existing,
                 isMakeUp = target.isMakeUp,
-                showGapTip = target.showGapTip,
                 onDismiss = { sheetTarget = null },
                 onConfirm = { note, amount ->
                     viewModel.submitCheckIn(target.habit, target.date, note, amount)
@@ -447,6 +497,28 @@ fun HabitListScreen(
                 },
             )
         }
+    }
+}
+
+/**
+ * 一次性贴士在**列表层**的挂载点（B17 复审 ⚠2 / ⚠3）：[visible] 为假时什么都不画。
+ *
+ * 为什么要把这一层抽出来：IF_THEN 与 GapDay 两条都不属于哪一张卡片（前者是刚保存完、
+ * 后者是刚打卡完），而它们各自都只有一个布尔说该不该亮。[visible] 由调用侧的纯闸门
+ * （[ifThenTipShouldShow] / [gapTipShouldShow]）给，这里不补任何条件，免得两处各写一套。
+ * 卡片本身走现成的 [TipCard]，不新增颜色与组件。
+ */
+@Composable
+internal fun OneShotTipCard(
+    event: TipEvent,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (!visible) return
+    val tip = StudyTips.forEvent(event) ?: return
+    Column(modifier = modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
     }
 }
 

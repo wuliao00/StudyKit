@@ -1,6 +1,7 @@
 package com.studykit.ui.habit
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -25,7 +26,7 @@ import org.robolectric.annotation.GraphicsMode
  *
  * 钉三处真正进语义树的 UI 文案（一个方法一次 setContent，多段靠自定义消息区分，同 CheckInSheetRenderTest 纪律）：
  *  1. 日历日详情气泡 —— `MISSING_GUARD_TEXT` 那句「未打卡（已用断签保护）」（[GuardDayBubble]）；
- *  2. 打卡界面检测到昨日缺卡时挂的 MISS_ONE_DAY 贴士（[TipEvent.GapDay]）；
+ *  2. 打卡当日检测到昨日缺卡时挂的 MISS_ONE_DAY 贴士（[TipEvent.GapDay]）；
  *  3. 首页 hero 连续 21 天挂的 SIXTY_SIX 贴士（[TipEvent.StreakReached]）。
  * 后两条把「死码变活」这件事从映射层（StudyTipsTest 已钉）延伸到渲染层：文案改一个字、卡片不进树都会红。
  */
@@ -62,5 +63,51 @@ class HabitGuardBubbleRenderTest {
             .assertExists("MISS_ONE_DAY（GapDay）贴士文案没进语义树")
         composeRule.onNodeWithText(sixTip.text)
             .assertExists("SIXTY_SIX（StreakReached 21）贴士文案没进语义树")
+    }
+
+    /**
+     * ⚠3 一次性口径：宽恕贴士现在只住在一个地方——列表层那一张 [OneShotTipCard]
+     * （天数型一键打卡根本没有弹层，挂在弹层里等于那条路径永远碰不到它）。
+     * `gapTipSeen` 置真之后同一个文案不许再进树，闸门就是 [gapTipShouldShow]。
+     */
+    @Test
+    fun `宽恕贴士看过一次后不再进列表层的语义树`() {
+        val gapTip = StudyTips.forEvent(TipEvent.GapDay)!!
+        composeRule.setContent {
+            ProvideTheme {
+                OneShotTipCard(
+                    event = TipEvent.GapDay,
+                    visible = gapTipShouldShow(eligible = true, gapTipSeen = true),
+                )
+            }
+        }
+        composeRule.onNodeWithText(gapTip.text).assertDoesNotExist()
+    }
+
+    @Test
+    fun `宽恕贴士首次仍然进语义树`() {
+        val gapTip = StudyTips.forEvent(TipEvent.GapDay)!!
+        composeRule.setContent {
+            ProvideTheme {
+                OneShotTipCard(
+                    event = TipEvent.GapDay,
+                    visible = gapTipShouldShow(eligible = true, gapTipSeen = false),
+                )
+            }
+        }
+        composeRule.onNodeWithText(gapTip.text).assertExists()
+    }
+
+    /** provider 块与上面那个测试逐字同一份（同 [IfThenRenderTest] 的纪律） */
+    @Composable
+    private fun ProvideTheme(content: @Composable () -> Unit) {
+        CompositionLocalProvider(
+            LocalAppTheme provides AppThemeVals(
+                colors = LightColors,
+                texts = buildAppTexts(LightColors),
+                settings = AppSettings(glass = GlassLevel.OFF, reduceMotion = true),
+            ),
+            content = content,
+        )
     }
 }

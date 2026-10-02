@@ -562,13 +562,34 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
                     category = category,
                 )
                 // 触发点：首次成功保存一条带了 ifThen 的习惯（每次安装一次，口径同 flipTipSeen）。
-                // 写在 onSaved 之前，保证即使页面立刻 pop 也把"看过没有"落库。
-                if (ifThen.isNotBlank()) markIfThenTipSeen()
+                // 写在 onSaved 之前，保证即使页面立刻 pop 也把"看过没有"落库；
+                // 而这一句只在那一次没看过时才点亮提示（B17 复审 ⚠2：创建页不再渲染它）。
+                if (ifThenTipShouldShow(justSavedWithIfThen = true, ifThenText = ifThen, tipSeen = settingsRepository.current().ifThenTipSeen)) {
+                    _ifThenTipPending.value = true
+                    markIfThenTipSeen()
+                }
                 onSaved()
             } finally {
                 savingHabit.leave()
             }
         }
+    }
+
+    /**
+     * IF_THEN 贴士的**一次性标记**（B17 复审 ⚠2）：只在「首次成功保存一条写了 `ifThen` 的习惯」
+     * 那一瞬间置真，由返回落点（习惯列表）读它渲染那张卡。
+     *
+     * 为什么不在创建页渲染：创建页保存成功就 `onBack()` pop 了，而旧写法把贴士挂在输入区下面，
+     * 用户一个字都没保存就先看到了它——计划（Task 16 Step 4）钉的触发点是**首次成功保存**。
+     * 标记不落库（入库的是 [markIfThenTipSeen] 那一个 `ifThenTipSeen`），所以进程死了它自然消失，
+     * 不会变成一张长期长在列表顶上的卡。
+     */
+    private val _ifThenTipPending = MutableStateFlow(false)
+    val ifThenTipPending: StateFlow<Boolean> = _ifThenTipPending
+
+    /** 离开列表页时熄掉这次提示（下一次首次保存再亮一回，而那一回由 `ifThenTipSeen` 拦住） */
+    fun clearIfThenTipPending() {
+        _ifThenTipPending.value = false
     }
 
     /**
@@ -579,6 +600,17 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
     fun markIfThenTipSeen() {
         viewModelScope.launch {
             runCatching { settingsRepository.update { it.copy(ifThenTipSeen = true) } }
+        }
+    }
+
+    /**
+     * 那条 MISS_ONE_DAY 宽恕贴士说过一次就够（B17 复审 ⚠3），口径同 [markIfThenTipSeen]。
+     * 两条入口（打卡弹层开起来 / 天数型一键打卡后的列表层卡片）共用
+     * [gapTipShouldShow] 这一个闸门，谁先亮谁把它落库。
+     */
+    fun markGapTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(gapTipSeen = true) } }
         }
     }
 

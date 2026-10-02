@@ -200,10 +200,12 @@ fun HabitCalendarScreen(
                     val today = LocalDate.now()
                     // 断签保护展示层（Task 17 / spec D6）：本月逐日布尔串派生出「受保护的缺卡日」（灰圈）
                     // 与「跨保护日的本月连续数」；口径全部来自 ui/habit/HabitGuardDisplay.kt 那组纯函数。
-                    val monthPattern = monthMissPattern(checkedDates = checkedDates, month = shownMonth)
+                    // 串把 today 注入进去（B17 复审 🔴1）：进行中的月份只画到今天，未来日不算缺卡，
+                    // 否则灰圈会爬到还没来的格子上、「本月连续」中旬就被未来那串破链缺卡打成 0。
+                    val monthPattern = monthMissPattern(checkedDates = checkedDates, month = shownMonth, today = today)
                     val guardedIdx = HabitGuard.guardedIndices(monthPattern)
                     val guardedMissDates = guardedIdx.map { shownMonth.atDay(it + 1) }.toSet()
-                    val guardedStreak = streakThrough(monthPattern)
+                    val guardedStreak = monthStreakThrough(monthPattern)
                     val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
                     val days = List(leadingBlanks) { null } +
                         (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
@@ -268,7 +270,7 @@ fun HabitCalendarScreen(
                         Spacer(Modifier.height(AppTheme.space.sm))
                         GuardDayBubble(text = HabitGuard.MISSING_GUARD_TEXT)
                     }
-                    // streakThrough 的消费点：本月真用上了保护时，多说一句跨保护日的连续数
+                    // monthStreakThrough 的消费点：本月真用上了保护时，多说一句跨保护日的连续数
                     if (guardedIdx.isNotEmpty()) {
                         Spacer(Modifier.height(AppTheme.space.sm))
                         Text(
