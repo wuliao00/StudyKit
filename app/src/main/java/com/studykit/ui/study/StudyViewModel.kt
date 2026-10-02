@@ -24,8 +24,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.zip
 import kotlinx.coroutines.launch
@@ -163,7 +165,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         wordRepository.observeReviewTimestamps(),
         questionRepository.observePracticeTimestamps(),
         wordRepository.observeScheduledMemoryRows()
-            .zip(settingsRepository.settings) { rows, settings -> rows to settings.schedulingKernel },
+            // 只跟踪内核 id 这一件事：换主题/改玻璃都不该重算整页首页（A-T9 双审 Minor）
+            .zip(settingsRepository.settings.map { it.schedulingKernel }.distinctUntilChanged()) { rows, kernelId ->
+                rows to kernelId
+            },
     ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, (scheduled, kernelId) ->
         val now = System.currentTimeMillis()
         // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致

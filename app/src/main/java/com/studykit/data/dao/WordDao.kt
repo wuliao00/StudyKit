@@ -234,7 +234,7 @@ data class ScheduledMemoryRow(
     val halfLifeDays: Double,
     /** 上次复习的时刻；null = 从没复习过（迁移折算出来的老词就是这种） */
     val lastReviewAt: Long?,
-    /** 加入学习的时刻，`lastReviewAt` 为 null 时的锢点 */
+    /** 加入学习的时刻，`lastReviewAt` 为 null 时的锚点 */
     val createdAt: Long,
     /** FSRS 稳定性（天）；null = FSRS 还没写过这一行（新词 / 迁移未回填的老行） */
     val fsrsStability: Double? = null,
