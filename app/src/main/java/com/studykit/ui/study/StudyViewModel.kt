@@ -98,6 +98,32 @@ data class QuizUiState(
 }
 
 /**
+ * 模考会话状态（v2.7 计划 B Task 13）：一次性持有整卷题、逐题只记所选、交卷前不产出对错。
+ *
+ * 与 [QuizUiState] 的关键差别：练习模式每题答完就地判定（`selected` / `correctCount` 边答边涨），
+ * 这里 `answers` 只是"第几题选了哪个"，对错与反馈全部压到 [submitMockExam] 那一刻，
+ * 算完才填进 [results]（[MockExamState] 的产物）。交卷前 `results` 为空、`correctCount` 恒 0，
+ * 页面也就无从泄露判词。
+ */
+data class MockExamUiState(
+    val subject: String = "",
+    val questions: List<Question> = emptyList(),
+    val answers: Map<Long, Int> = emptyMap(),
+    val index: Int = 0,
+    val submitted: Boolean = false,
+    val results: Map<Long, MockExamState.Answer> = emptyMap(),
+) {
+    val started: Boolean get() = questions.isNotEmpty()
+    val total: Int get() = questions.size
+    val current: Question? get() = questions.getOrNull(index)
+    val answeredCount: Int get() = answers.size
+    val correctCount: Int
+        get() = if (submitted) questions.count { results[it.id]?.correct == true } else 0
+    val accuracyPercent: Int
+        get() = if (total == 0) 0 else correctCount * 100 / total
+}
+
+/**
  * 学习模块 ViewModel：学习首页统计、单词列表、卡片学习会话、
  * 题库练习会话、单词/题目录入，全部 StateFlow 驱动。
  */
@@ -113,6 +139,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         private val ONE_DAY_MS = TimeUnit.DAYS.toMillis(1)
         private const val SESSION_SIZE = 10
         private const val QUIZ_SIZE = 10
+
+        /** 模考整卷题量：比一轮练习更长一点，取数仍走现有 `getBySubject`（库里没有就有多少出多少） */
+        private const val MOCK_EXAM_SIZE = 20
 
         /**
          * 到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列）。
@@ -519,6 +548,81 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val state = _quiz.value
         if (state.selected == null) return
         _quiz.value = state.copy(index = state.index + 1, selected = null)
+    }
+
+    // ── 模考会话（v2.7 计划 B Task 13）──────────────────────────────────────
+    private val _mockExam = MutableStateFlow(MockExamUiState())
+    val mockExam: StateFlow<MockExamUiState> = _mockExam
+
+    /**
+     * 组一卷模拟卷：与 [startQuiz] 同一取数口径（该学科前 [MOCK_EXAM_SIZE] 题、读一次交错开关
+     * 交给 [interleaveBySubject] 判定），差别只在这一卷**一次性拿全**、作答期间不再回源分页读库。
+     */
+    fun startMockExam(subject: String) {
+        viewModelScope.launch {
+            val interleaving = settingsRepository.current().interleavingEnabled
+            val questions = questionRepository.getBySubject(subject, MOCK_EXAM_SIZE, 0)
+            _mockExam.value = MockExamUiState(
+                subject = subject,
+                questions = interleaveBySubject(questions, enabled = interleaving),
+            )
+        }
+    }
+
+    /** 重置模考会话（返回学科选择 / 退出模考） */
+    fun resetMockExam() {
+        _mockExam.value = MockExamUiState()
+    }
+
+    /**
+     * 记一次作答：只把"这题选了哪个"写进会话，**不判对错、不落库、不产反馈**。
+     * 交卷前允许改答案（后写覆盖前写）；已交卷或整卷已跳走则忽略（终态锁死）。
+     */
+    fun answerMockExam(questionId: Long, selected: Int) {
+        val state = _mockExam.value
+        if (state.submitted) return
+        if (state.questions.none { it.id == questionId }) return
+        _mockExam.value = state.copy(answers = state.answers + (questionId to selected))
+    }
+
+    /** 在卷内前后翻题（交卷前自由导航）；越界夹到首 / 末题，不会崩 */
+    fun gotoMockExam(index: Int) {
+        val state = _mockExam.value
+        if (state.submitted || state.total == 0) return
+        _mockExam.value = state.copy(index = index.coerceIn(0, state.total - 1))
+    }
+
+    /**
+     * 交卷：先用 [MockExamState] 把整卷一次性算成每题 (selected, correct) 并同步翻起 submitted
+     *（页面当场跳成绩页），再把已作答的题走**与练习同一条落库路径**写练习记录（conf=null），
+     * 答错的题走现成 [addMistakeIfAbsent] 幂等入错题本（priority 取 [MistakeIntake]，conf=null → 普通档 0）。
+     *
+     * 双写只发生一次：模考作答从不碰 [selectOption]，本方法又有 `if (submitted) return` 终态锁，
+     * 未作答的题压根不进落库循环，因此不会出现记录或错题的二次入库。
+     */
+    fun submitMockExam() {
+        val state = _mockExam.value
+        if (!state.started || state.submitted) return
+        val answerKey = state.questions.associate { it.id to it.answerIndex }
+        val answerCount = state.questions.firstOrNull()?.let { parseOptions(it.optionsJson).size } ?: 0
+        val machine = MockExamState(
+            questionIds = state.questions.map { it.id },
+            answerCount = answerCount,
+            answerKey = answerKey,
+        )
+        state.answers.forEach { (questionId, selected) -> machine.answer(questionId, selected) }
+        val results = machine.submit()
+        // 先冻结 UI 终态（同步），成绩页立刻能读 results；落库在下面的协程里异步补
+        _mockExam.value = state.copy(submitted = true, results = results)
+        val answered = state.questions.filter { state.answers.containsKey(it.id) }
+        viewModelScope.launch {
+            answered.forEach { question ->
+                val selected = state.answers.getValue(question.id)
+                // 与练习同一 submitAnswer，只是 conf 传 null（模考不采集信心 → confidence 落 NULL）
+                val correct = questionRepository.submitAnswer(question.id, selected)
+                if (!correct) addMistakeIfAbsent(question, conf = null)
+            }
+        }
     }
 
     // ── 录入 ──────────────────────────────────────────────────────────────

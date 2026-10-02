@@ -66,6 +66,7 @@ fun StudyHomeScreen(
     viewModel: StudyViewModel,
     onOpenWords: () -> Unit,
     onStartQuiz: () -> Unit,
+    onOpenMockExam: () -> Unit,
     onOpenMistakes: () -> Unit,
     onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
@@ -213,6 +214,17 @@ fun StudyHomeScreen(
         }
         Spacer(Modifier.height(AppTheme.space.md))
         StaggeredIn(index = 1) {
+            EntryCard(
+                icon = Icons.Outlined.CheckCircle,
+                iconColor = colors.accent,
+                iconContainerColor = colors.accentSoft,
+                title = "模考",
+                caption = "一次作答整卷 · 交卷后才逐题看反馈",
+                onClick = onOpenMockExam,
+            )
+        }
+        Spacer(Modifier.height(AppTheme.space.md))
+        StaggeredIn(index = 2) {
             EntryCard(
                 icon = Icons.Outlined.Close,
                 iconColor = colors.warning,

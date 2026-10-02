@@ -73,6 +73,8 @@ import com.studykit.ui.stats.StatsViewModel
 import com.studykit.ui.study.CardStudyScreen
 import com.studykit.ui.study.DictStoreScreen
 import com.studykit.ui.study.DictStoreViewModel
+import com.studykit.ui.study.ExamResultScreen
+import com.studykit.ui.study.MockExamScreen
 import com.studykit.ui.study.QuestionCreateScreen
 import com.studykit.ui.study.QuizScreen
 import com.studykit.ui.study.StudyHomeScreen
@@ -124,6 +126,10 @@ object StudyRoutes {
     const val QUIZ = "study/quiz"
     const val WORD_CREATE = "study/word/create"
     const val QUESTION_CREATE = "study/question/create"
+
+    /** 模考（v2.7 计划 B Task 13）：组卷作答 + 交卷后的成绩页两条路由 */
+    const val MOCK_EXAM = "study/exam"
+    const val EXAM_RESULT = "study/exam/result"
 
     /** 记忆看板：半衰期模型的三块图（未来量 / 持久度分布 / 遗忘曲线） */
     const val STATS = "study/stats"
@@ -310,6 +316,10 @@ fun AppNav(
                         studyViewModel.resetQuiz()
                         navController.navigate(StudyRoutes.QUIZ) { launchSingleTop = true }
                     },
+                    onOpenMockExam = {
+                        studyViewModel.resetMockExam()
+                        navController.navigate(StudyRoutes.MOCK_EXAM) { launchSingleTop = true }
+                    },
                     onOpenMistakes = {
                         navController.navigate(Tab.Mistake.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -463,6 +473,25 @@ fun AppNav(
                 QuizScreen(
                     viewModel = studyViewModel,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable(StudyRoutes.MOCK_EXAM) {
+                MockExamScreen(
+                    viewModel = studyViewModel,
+                    onBack = { navController.popBackStack() },
+                    // 交卷之后才跳成绩页：submitMockExam 已在 VM 里同步置好 submitted/results
+                    onSubmitted = {
+                        navController.navigate(StudyRoutes.EXAM_RESULT) { launchSingleTop = true }
+                    },
+                )
+            }
+            composable(StudyRoutes.EXAM_RESULT) {
+                ExamResultScreen(
+                    viewModel = studyViewModel,
+                    onBack = {
+                        studyViewModel.resetMockExam()
+                        navController.popBackStack()
+                    },
                 )
             }
             composable(StudyRoutes.WORD_CREATE) {
