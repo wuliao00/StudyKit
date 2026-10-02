@@ -9,9 +9,10 @@ plugins {
 /**
  * Room schema 快照的输出目录。
  *
- * 光把 `exportSchema` 打开不够：不给 schemaLocation，Room 会退回默认的
- * `<编译输出>/schemas`（在 app/build/ 下，既不入库也活不过 clean），快照取证无从谈起。
- * 指到 `$projectDir/schemas` 才谈得上把每一版的 JSON 提交进仓。
+ * 光把 `exportSchema` 打开不够：room 2.6.1 拿不到 schemaLocation 时**不导出任何快照**，
+ * 只打一条 warning（`ProcessorErrors` 原文：“Schema export directory was not provided to
+ * the annotation processor so Room cannot export the schema …”），也不会退回某个默认目录。
+ * 快照取证无从谈起 —— 指到 `$projectDir/schemas` 才谈得上把每一版的 JSON 提交进仓。
  */
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
@@ -137,10 +138,13 @@ android {
             isIncludeAndroidResources = true
         }
     }
-    // Room schema 快照目录：MigrationTestHelper 从 test assets 读 `com.studykit.data.AppDatabase/<v>.json`
-    // 逐字校验迁移产物（没有它，"SQL 与实体一致"只能靠真机撞上去）。
+    // Room schema 快照目录。MigrationTestHelper 逐字校验迁移产物时要从**它能读到的 assets**取
+    // `com.studykit.data.AppDatabase/<v>.json`。
+    // A-T7 实跑证伪：AGP 不把 test 源集 assets 并进变体 merge，Robolectric 只见
+    // mergeDebugAssets ⇒ MigrationTestHelper 读不到快照。改挂 debug 变体：debug 包多发
+    // 两份 JSON（~80KB）换 CI 里真实有效的迁移校验网；test 源集那行是死管，删。
     sourceSets {
-        getByName("test").assets.srcDirs("$projectDir/schemas")
+        getByName("debug").assets.srcDirs("$projectDir/schemas")
     }
 }
 
