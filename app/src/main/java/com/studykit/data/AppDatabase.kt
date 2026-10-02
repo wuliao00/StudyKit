@@ -19,11 +19,13 @@ import com.studykit.data.dao.WordListDao
 import com.studykit.data.entity.AppSetting
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
+import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Contract
 import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Habit
 import com.studykit.data.entity.Mistake
+import com.studykit.data.entity.MistakeRedo
 import com.studykit.data.entity.PracticeRecord
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
@@ -45,8 +47,11 @@ import com.studykit.data.entity.WordReview
         WordList::class,
         AppSetting::class,
         Contract::class,
+        MistakeRedo::class,
+        ChapterTest::class,
     ],
-    version = 6,
+    // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

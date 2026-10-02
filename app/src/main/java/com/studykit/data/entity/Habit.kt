@@ -36,6 +36,8 @@ data class Habit(
     @ColumnInfo(name = "category", defaultValue = "'ANY'") val category: String = CATEGORY_ANY,
     /** 手动排序（长按拖动）；小值在前 */
     @ColumnInfo(name = "sort_order", defaultValue = "0") val sortOrder: Int = 0,
+    /** v2.7 执行意图整句（app.docx 模块4 P0；when 维度复用 category，Gollwitzer & Sheeran 2006） */
+    @ColumnInfo(name = "if_then", defaultValue = "''") val ifThen: String = "",
 ) {
     companion object {
         const val CATEGORY_ANY = "ANY"

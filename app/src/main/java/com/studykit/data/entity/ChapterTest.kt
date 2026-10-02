@@ -6,8 +6,9 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/** 章节过关小测的一道题及其结果（spec §3.2） */
 @Entity(
-    tableName = "excerpts",
+    tableName = "chapter_tests",
     foreignKeys = [
         ForeignKey(
             entity = Book::class,
@@ -18,16 +19,14 @@ import androidx.room.PrimaryKey
     ],
     indices = [Index("book_id")],
 )
-data class Excerpt(
+data class ChapterTest(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val uuid: String,
     @ColumnInfo(name = "syncStatus", defaultValue = "0") val syncStatus: Int = 0,
     @ColumnInfo(name = "book_id") val bookId: Long,
-    val content: String,
-    @ColumnInfo(name = "page_no") val pageNo: Int? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
-    /** v2.7（spec §7.2）：书摘入复习队列。next_review_at=0 表示未启用 */
-    @ColumnInfo(name = "next_review_at", defaultValue = "0") val nextReviewAt: Long = 0L,
-    @ColumnInfo(name = "review_count", defaultValue = "0") val reviewCount: Int = 0,
-    @ColumnInfo(name = "stability") val stability: Double? = null,
+    @ColumnInfo(name = "chapter_label") val chapterLabel: String,
+    val question: String,
+    @ColumnInfo(name = "expected_answer") val expectedAnswer: String,
+    val passed: Boolean,
+    @ColumnInfo(name = "tested_at") val testedAt: Long = System.currentTimeMillis(),
 )

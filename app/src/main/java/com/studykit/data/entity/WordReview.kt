@@ -40,6 +40,10 @@ data class WordReview(
     @ColumnInfo(name = "h_after") val hAfter: Double? = null,
     /** 从看到词条到按下评分的毫秒数；只作参考，不进模型（自我评分的时长不等于提取时长） */
     @ColumnInfo(name = "reaction_ms") val reactionMs: Long? = null,
+    /** v2.7：作答前信心 1=瞎猜 2=有点印象 3=非常确定；null=跳过（spec §2.3） */
+    @ColumnInfo(name = "confidence") val confidence: Int? = null,
+    /** v2.7：FSRS 口径评分 1..4；-1/NULL=旧行未记录 */
+    @ColumnInfo(name = "fsrs_rating") val fsrsRating: Int? = null,
 ) {
     companion object {
         const val GRADE_RECALL = 0
