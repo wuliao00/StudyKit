@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -133,6 +134,20 @@ private fun currentWindowPreset(s: AppSettings): Int = when {
 
 /** 提醒周期的常用档。WorkManager 的周期任务按小时粗粒度，1..72 的自由值靠备份恢复才会出现 */
 private val ReminderPresets = listOf(2, 4, 6, 12, 24)
+
+/**
+ * 排期内核二选一。id 即 [AppSettings.KERNEL_IDS] 白名单里的两项，UI 只画这两项 ——
+ * 白名单外的值既进不了这一排磁贴，也过不了 [AppSettings.fromMap] 的收口（口径同一处）。
+ * 公开是为了渲染守卫能断言「画的就是白名单这一组」（见 SettingsBehaviorRenderTest）。
+ */
+val KernelChoices = listOf(
+    "FSRS" to "FSRS 新内核",
+    "HALF_LIFE" to "半衰期旧内核",
+)
+
+/** 两颗新开关的测试标签：渲染守卫靠它精确命中开关本体（标题不是点击目标，磁贴是单选不是开关） */
+const val SwitchConfidenceTag = "settings_switch_confidence"
+const val SwitchInterleavingTag = "settings_switch_interleaving"
 
 /**
  * 设置页（v2.2 T7）：三段同页滚动 —— 外观与动效 / 档案与目标 / 数据管理。
@@ -580,6 +595,17 @@ fun SettingsScreen(
             }
         }
 
+        // ── 排期与练习：三件学习行为开关（内核二选一 / 先自评把握 / 交错），沿用既有分区插到档案节末尾 ──
+        Spacer(modifier = Modifier.height(AppTheme.space.md))
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            SchedulePracticeSettings(
+                settings = settings,
+                onKernel = viewModel::setSchedulingKernel,
+                onConfidence = viewModel::setConfidenceEnabled,
+                onInterleaving = viewModel::setInterleavingEnabled,
+            )
+        }
+
         // ── 三、数据管理 ──────────────────────────────────────────
         SectionHeader(title = "数据管理", modifier = Modifier.padding(top = AppTheme.space.lg))
         Spacer(modifier = Modifier.height(AppTheme.space.md))
@@ -764,6 +790,17 @@ fun SettingsScreen(
             },
         )
 
+        SettingBlock(
+            title = "排期算法来源",
+            hint = "「排期内核」里的 FSRS 公式思想有开源实现 py-fsrs（open-spaced-repetition/py-fsrs，MIT 许可）。" +
+                "本应用按自己的口径重写，不声称与 Anki 结果相等。",
+        )
+
+        SettingBlock(
+            title = "参考应用",
+            hint = "部分功能的交互形态参考了「小计划」「作业帮」，只借功能形态，未使用它们的任何代码。",
+        )
+
         Spacer(modifier = Modifier.height(AppTheme.space.xl))
     }
 
@@ -869,6 +906,88 @@ private fun MessageBanner(text: String, onDismiss: () -> Unit) {
     ) {
         Text(text = text, style = texts.caption.copy(color = colors.accentInk))
     }
+}
+
+/**
+ * 设置页「排期与练习」这一簇：①排期内核二选一、②先自评把握再评分、③交错练习。
+ *
+ * 抽成独立可组合，是为了渲染守卫能在 JVM 里把它真组合一次（同 [com.studykit.ui.habit.CheckInSheetRenderTest]
+ * / [com.studykit.ui.study.RecallGateRenderTest] 先例：整页要 [SettingsViewModel]，背后是 Room，起不来）。
+ * 主页面把它塞进「档案与目标」那一节的新卡片里；三行沿用既有 [SettingBlock] / [ChoiceTile] / Switch 写法，
+ * 与文件里其余开关同一姿势。
+ *
+ * 三件的写回都只走各条既有开关的 [SettingsViewModel] 方法（整表 upsert），**不新增任何判定**：
+ * 交错这里只是 [AppSettings.interleavingEnabled] 的镜像，真打散的判定仍只有 `QuestionOrdering.interleaveBySubject` 一处。
+ */
+@Composable
+fun SchedulePracticeSettings(
+    settings: AppSettings,
+    onKernel: (String) -> Unit,
+    onConfidence: (Boolean) -> Unit,
+    onInterleaving: (Boolean) -> Unit,
+) {
+    val colors = AppTheme.colors
+    SettingBlock(
+        title = "排期内核",
+        hint = "背新词、评一次分之后，下一次复习由哪个遗忘模型排出来。默认 FSRS（间隔拟合更贴人）；" +
+            "切回旧内核后，评分历史不丢，但记忆强度读数是换算近似。",
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            modifier = Modifier.selectableGroup(),
+        ) {
+            KernelChoices.forEach { (id, label) ->
+                ChoiceTile(
+                    label = label,
+                    selected = settings.schedulingKernel == id,
+                    onClick = { onKernel(id) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+    HorizontalDivider(color = colors.divider)
+    SettingBlock(
+        title = "先自评把握再评分",
+        hint = "翻面或提交前，先让你点一下「有多大把握」，再打分。把自评和实际记得程度对上，" +
+            "高把握却答错会被提前送回复习。关掉就退回评完不留自评的老样子。",
+        trailing = {
+            Switch(
+                checked = settings.confidenceEnabled,
+                onCheckedChange = onConfidence,
+                modifier = Modifier.testTag(SwitchConfidenceTag),
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = colors.accentInk,
+                    checkedBorderColor = colors.accentInk,
+                    checkedThumbColor = colors.card,
+                    uncheckedTrackColor = colors.divider,
+                    uncheckedBorderColor = colors.divider,
+                    uncheckedThumbColor = colors.card,
+                ),
+            )
+        },
+    )
+    HorizontalDivider(color = colors.divider)
+    SettingBlock(
+        title = "交错练习",
+        hint = "多学科的一轮刷题把同科的题打散着出，而不是同科连着来。混着练当下更容易卡壳，" +
+            "但卡壳本身就是在费力提取，往往记起来更稳；只有一个学科时本就不打散。关掉即按取数原序出。",
+        trailing = {
+            Switch(
+                checked = settings.interleavingEnabled,
+                onCheckedChange = onInterleaving,
+                modifier = Modifier.testTag(SwitchInterleavingTag),
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = colors.accentInk,
+                    checkedBorderColor = colors.accentInk,
+                    checkedThumbColor = colors.card,
+                    uncheckedTrackColor = colors.divider,
+                    uncheckedBorderColor = colors.divider,
+                    uncheckedThumbColor = colors.card,
+                ),
+            )
+        },
+    )
 }
 
 /**

@@ -34,8 +34,8 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * `StudyViewModel.markFlipTipSeen` 写，每次安装只出现一次；口径与 recallGateHintSeen 一致）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
  * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
- * [schedulingKernel] → `ui/study/StudyViewModel.gradeCard` 与 `CardStudyScreen` 的按钮预览（消费点落在 A-T9）；
- * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen`，采集 UI 在计划 B Task 11-12 落地；A-T9 只接通了 conf 传进来时的落库与侧信道，目前生产侧恒 null）。
+ * [schedulingKernel] → 排期算哪个内核，消费点在 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（均经 `KernelHub.forId`，A-T9）；写侧是设置页「排期与练习」的二选一（计划 B Task 20，首个可切换的生产入口）；
+ * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen` 的 `ConfidenceRow`，采集 UI 已在计划 B Task 11-12 落地、设置页也能关（计划 B Task 20）；关掉即 conf 恒 null、confidence 列落 NULL（这一句说的是"关掉"那一侧的落库口径，不代表开关还没生效）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
@@ -111,14 +111,15 @@ data class AppSettings(
     val interleavingEnabled: Boolean = true,
     /**
      * 排期内核 id（"FSRS"|"HALF_LIFE"，值域 [KERNEL_IDS]，默认 FSRS）。
-     * 消费点：`ui/study/StudyViewModel.gradeCard` 与 `CardStudyScreen` 的按钮预览（计划 A-T9）。
-     * 切回 HALF_LIFE 不丢评分历史，但 fsrs_*→半衰期侧的读数是换算近似（spec §2.1），设置页要如实写这句。
+     * 消费点：`ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（计划 A-T9，都经 `KernelHub.forId`）。
+     * 写侧：设置页「排期与练习」的二选一（计划 B Task 20，首个生产入口），副标题逐字含诚实口径——
+     * 切回 HALF_LIFE 不丢评分历史，但 fsrs_*→半衰期侧的读数是换算近似（spec §2.1）。
      */
     val schedulingKernel: String = "FSRS",
     /**
      * 翻面/提交前的信心自评条（app.docx 模块1/2；默认**开**）。
-     * 关掉 = 完全退回 v2.6 交互（不采集、confidence 列恒 NULL）；采集 UI 在计划 B Task 11-12 接，
-     * 在此之前本开关无可见效果（gradeCard 的 conf 恒 null，口径同文件头）。
+     * 关掉 = 完全退回 v2.6 交互（不采集、confidence 列恒 NULL）；采集 UI 已在计划 B Task 11-12 落地，
+     * 设置页（计划 B Task 20）也能关。这里的"恒 null"只指关掉那一侧的落库口径，开关本身已经生效。
      */
     val confidenceEnabled: Boolean = true,
     /**
