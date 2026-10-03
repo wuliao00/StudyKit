@@ -72,10 +72,10 @@ android {
         targetSdk = 35
         versionCode = 17
         versionName = "2.7.0.1"
-        // ML Kit 的 bundled OCR 给四个 ABI 各带一份 libmlkit_google_ocr_pipeline.so
-        // （x86_64 11.6MB + x86 11.6MB + arm64 11.1MB + armeabi 6.8MB = 41MB），
-        // 而本仓是**直接发 APK**（GitHub Release / 网盘），不是走应用商店的 per-device split，
-        // 四个 ABI 会原样进包。x86 系只有模拟器用得到，砍掉后 APK 从 56.9MB 回到 33.7MB。
+        // 端侧 OCR 走 PP-OCRv6（ONNX Runtime Android），每个 ABI 各带一份 libonnxruntime.so
+        // （arm64-v8a 约 32MB + armeabi-v7a 约 22.7MB，stored 不压缩）。本仓是**直接发 APK**
+        // （GitHub Release / 网盘），不是走应用商店的 per-device split，故只留两个 arm ABI：
+        // x86 系只有模拟器用得到，砍掉能省一大截而不影响任何真机用户。
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -175,8 +175,9 @@ dependencies {
     // 安装期写入 ART baseline profile（见 src/main/baseline-prof.txt）
     implementation(libs.androidx.profileinstaller)
 
-    // 截图取词：bundled 中文模型进 APK，全离线、不需要 GMS（spec §5.4）
-    implementation(libs.mlkit.text.recognition.chinese)
+    // 截图取词 / 拍照录题：PP-OCRv6（det+rec+dict）离线打进 assets，全离线、不需要 GMS（spec §5.4）。
+    // v2.8 起 ML Kit 已下线，onnxruntime 是唯一端侧 OCR 引擎的运行时。
+    implementation(libs.onnxruntime.android)
 
     implementation(libs.androidx.core.ktx)
 
