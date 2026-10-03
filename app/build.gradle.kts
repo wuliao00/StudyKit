@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "2.7.0.1"
+        versionCode = 18
+        versionName = "2.8.0"
         // 端侧 OCR 走 PP-OCRv6（ONNX Runtime Android），每个 ABI 各带一份 libonnxruntime.so
         // （arm64-v8a 约 32MB + armeabi-v7a 约 22.7MB，stored 不压缩）。本仓是**直接发 APK**
         // （GitHub Release / 网盘），不是走应用商店的 per-device split，故只留两个 arm ABI：

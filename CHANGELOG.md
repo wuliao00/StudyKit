@@ -2,7 +2,47 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [2.7.0.1] - 2026-10-03
+## [2.8.0] - 2026-10-04
+
+换代版：两条主线各自落地——**排期内核从简化 FSRS-5 升到真 FSRS v6（21 参数）**、
+**端侧 OCR 下线停更的 ML Kit、把 PP-OCRv6 转正为唯一引擎**。`versionCode` 17→18。
+
+### 变更（排期内核：FSRS-5 → FSRS v6）
+- 原先的 `FsrsKernel` 是取 py-fsrs README 默认表前 16 项的**简化 FSRS-5**（固定 `decay=−0.5`、`FACTOR=19/81`）。
+  本版升到真 **FSRS v6（21 参数）**：`decay` 改为**可学习**参数（`= −w[20] ≈ −0.1542`）、`FACTOR` 由 `decay` 反推、
+  新增 easy bonus（w[16]）、intra-day 短期稳定度（w[17]/w[18]/w[19]，含 `S^{−w[19]}` 指数项）、
+  lapse 支改为 `min(长期项, S/e^{w[17]·w[18]})`、均值回归目标取未夹取的 `D0(Easy)`。
+- **预言机**：`docs/evidence/2026-10-04-fsrs6-oracle.md` + `fsrs6-golden.json`，逐值取自 **py-fsrs 6.3.2 自身的私有原语**
+  （`_initial_stability/_initial_difficulty/_next_difficulty/_next_stability/_short_term_stability`），
+  生成脚本 `fsrs6_oracle.py` 可复跑；补审用 temp 复跑到 **SHA256 逐字节一致**。
+- **诚实边界**：本机无 Anki 桌面端，只声称「= 官方 py-fsrs 结果」，**不声称 = Anki 逐比特结果**。
+  公共签名（`recall/nextIntervalDays/seedFromHalfLife`）不变，`gradeCard`、错题、书摘接线零改动。
+  `FSRS_HALF_OVER_S=243/19` 是半衰期↔FSRS 稳定度的**展示镜像**换算系数，双向同系数、不进 v6 增长数学，
+  有意保留（改动会让存量 `half_life_days↔fsrs_stability` 读数错位），注释已如实说明其历史来源与 v6 下不再精确。
+- 全量 **89 套件 / 753 测试**（v2.7.0.1 基线 749 +4，黄金值随 v6 公式合法更新，逐值挂预言机）。
+
+### 变更（端侧 OCR：下线 ML Kit，PP-OCRv6 转正为唯一引擎）
+- **ML Kit 归零**：`com.google.mlkit:text-recognition-chinese:16.0.1`（2024-08 起停更）从代码、
+  构建、`libs.versions.toml` 全移除；反编译 17 个 dex 扫 `mlkit` 字符串=0、真机运行时 `logcat` grep mlkit=0。
+- **PP-OCRv6_small（det 9.9MB + rec 21.2MB + dict，Apache-2.0）经 ONNX Runtime（`onnxruntime-android:1.29.0`，MIT）转正为唯一引擎**；
+  `OcrTextExtractor` 作门面委托 `PpOcrOnnxEngine`，`suspend File→OcrResult` 契约、取消语义、单例复用不变，
+  **4 个调用点（拍照录题/错题拍照/截图取词）零改动**。
+- **A/B 依据**（研究分支真机对拍 17 图）：PP-OCRv6 平均 CER **0.106** vs ML Kit **0.210**（约 2× 精度），
+  代价是约 **10× 慢**（2.2s vs 0.2s/图）与包体增大（debug APK 34.7→**90.4MB**，双 ABI onnxruntime .so ~54.7MB + 模型 ~29.8MB）。
+- **单点故障已兜**：无 ML Kit 回退后，`OcrTextExtractor` 把 `ensureLoaded`+`recognize` 包在 `try/catch(Throwable)` 里，
+  缺 `.so`/OOM/模型加载抛异常都降级为 `OcrResult.Failed("识别失败…")`，**不是全应用崩溃**（4 个调用点本就分支处理 `Failed`）。
+- **保留 `arm64-v8a` + `armeabi-v7a` 双 ABI**（未获授权砍 v7a，实测两 ABI 都打进 libonnxruntime.so）。
+- **诚实边界**：本版端到端验证以「屏上渲染文字截图」作真实图片输入（真机识别成功入库、crash=0），
+  **未覆盖相机拍摄的真实畸变/透视/光照纸质照片**；精度结论沿用研究阶段 A/B，本版只复现功能通路。
+  v2.7.0.1 的小字预放大 `ocrScaleFactor` 随预处理移除（PP det 自带 min-side-736 归一，预放大反而更早撞到内存闸门），
+  其 14 条 `OcrPreprocessTest` 一并删除（被测函数已不存在，非洗覆盖率）。
+- 全量 **90 套件 / 746 测试**（−14 旧预处理 +8 引擎纯函数 +4 门面契约，按实测为准）。
+
+### 已知边界（记账，未在本版修）
+- 迁移测试网仍只兜 `6→7`（I1：1..5 的真机存活面未覆盖，v2.7 遗留）。
+- `PpOcrOnnxEngine.ensureLoaded` 无半加载回滚（rec 加载失败后重试会重造 det session）；`recognize` 的
+  det→rec 循环缺中途 `ensureActive()` 取消检查点（取消语义仍成立，粒度偏粗）——补审列为 NICE-TO-FIX，未阻断发布。
+
 
 2.7.0 真机验收之后收的一小批：先记账覆盖升级撞出来的**两处真机回归**（代码修复在 e224415，随本版发），
 再把「录入」这条路修便宜 —— OCR 输入预处理 + 题库一键录入。**不碰 Room schema、不加迁移**，

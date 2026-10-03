@@ -60,9 +60,7 @@ v2.7.0.1 起，学习首页与题库屏右上角那颗「＋录入」扩成了�
 
 这几条来源共用同一套「预览 → 导入 → 结果」：预览页逐行可勾选剔除，坏行进「待修正」区并说明原因，
 **不会静默丢行**；结果页给出成功 / 重复跳过 / 待修正，后两类都能展开看逐条明细。
-OCR 用 ML Kit 的 bundled 中文模型，**全离线、不需要 Google 服务**（vivo 等无 GMS 机型可直接用）。
-v2.7.0.1 起识别前会先估一次字高：小于 16px 就等比放大到建议的 24px（封顶 4×、**不二值化**），
-判不出字高或放大没收益时原样回退，行为与改之前一致。
+OCR 自 v2.8.0 起用 **PP-OCRv6**（经 ONNX Runtime Android 推理，模型 Apache-2.0），**全离线、不需要 Google 服务**（vivo 等无 GMS 机型可直接用）；此前用的 ML Kit bundled 中文模型（2024-08 后停更）已下线。真机对拍显示 PP-OCRv6 字级错误率约为 ML Kit 的一半（CER 0.106 vs 0.210），代价是更慢与包体增大（双 ABI 约 +56MB）。识别失败（缺库/内存不足/模型异常）会降级为一条错误提示而非崩溃。
 
 词表数据来自开源仓库 [kajweb/dict](https://github.com/kajweb/dict)，仅用于个人学习；导入后完全离线，本应用不上传任何数据。
 
@@ -76,7 +74,7 @@ v2.7.0.1 起识别前会先估一次字高：小于 16px 就等比放大到建�
 | Navigation Compose | 底部导航与页面路由 |
 | WorkManager | 定时打卡提醒任务 |
 | Coil | 封面图片加载 |
-| ML Kit text-recognition（Chinese, bundled） | 截图 / 拍照离线 OCR；原生库只保留 ARM 两个 ABI，APK 约 33.7MB |
+| ONNX Runtime Android + PP-OCRv6 | 截图 / 拍照离线 OCR（v2.8.0 起取代 ML Kit）；保留 ARM 两个 ABI，debug APK 约 90MB |
 | androidx.profileinstaller + 手写 baseline profile | 安装期预编译启动链与首帧热路径（规则见 `app/src/main/baseline-prof.txt`，CI 的 release job 断言其已编入 APK 的 `assets/dexopt/baseline.prof*`） |
 | Kotlin Coroutines + StateFlow | 协程异步与响应式状态管理（应用无偏好设置存储，全部 UI 状态由 StateFlow 驱动） |
 
@@ -169,7 +167,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ## 📸 运行截图
 
 > 这一组是 **v2.7.0 在一台 vivo 真机上实测拍下的**（对 2.5.0 覆盖升级之后拍的，不是模拟器、不是摆拍）。
-> v2.7 把排期内核换成 FSRS，并加上信心自评、模考、错题排期接管、执行意图与延迟后测卡——
+> v2.7 把排期内核换成 FSRS（**v2.8.0 升到真 FSRS v6**），并加上信心自评、模考、错题排期接管、执行意图与延迟后测卡——
 > 前五张逐个对应这些新面。第六张（检索式书摘）本轮验收时因 opt-in 缺陷没能拍到，已在 **v2.7.0.1** 修复并补拍（末尾如实记下）。
 
 **信心评级 + 超纠正**：翻面后、评分前三档自评（瞎猜 / 有点印象 / 非常确定），背词、题库练习、书摘共用这一行。
@@ -205,6 +203,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 > 诚实缺口：`now+1d` 使复习卡在验收当天不可拍（要明天才到期），设备时钟不可改，
 > 故拍到的是「入队证据 + 空态正确文案」而非复习卡本体。
+
+### v2.8.0：排期内核升 FSRS v6 + OCR 下线 ML Kit
+
+**FSRS v6**（无新截图，内核数学升级）：`FsrsKernel` 从简化 FSRS-5（固定 `decay=−0.5`）升到真 v6（21 参数、`decay` 可学习、新增 easy bonus 与 intra-day 短期稳定度）。黄金值逐值取自官方 py-fsrs 6.3.2（见 `docs/evidence/`，可复跑）。不声称与 Anki 逐比特一致。
+
+**OCR 下线 ML Kit、PP-OCRv6 转正**：下图为那台 vivo 真机上，拍屏文字经 PP-OCRv6 识别后自动回填到「拍照录入」页的实拍（无 ML Kit）。纸面畸变照片未覆盖（本版无真实纸质样本），精度结论沿用研究阶段真机 A/B。
 
 **录入菜单（v2.7.0.1）**：学习首页右上角的「＋录入」——一个菜单里给齐拍照录题、批量录入题目、从词库导入。
 以下三张同样是那台 vivo 真机拍的（对 2.7.0 覆盖升级成 2.7.0.1，升级后单词总数仍是 1162，一条没丢）。
