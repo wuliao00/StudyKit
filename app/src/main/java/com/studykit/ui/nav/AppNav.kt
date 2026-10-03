@@ -44,11 +44,13 @@ import com.studykit.ui.book.ExcerptEditScreen
 import com.studykit.ui.book.ExcerptReviewScreen
 import com.studykit.ui.book.ChapterTestScreen
 import com.studykit.ui.book.ReviewEditScreen
+import com.studykit.ui.bulkimport.BulkAction
 import com.studykit.ui.bulkimport.BulkPasteScreen
 import com.studykit.ui.bulkimport.ImportKind
 import com.studykit.ui.bulkimport.ImportPreviewScreen
 import com.studykit.ui.bulkimport.ImportResultScreen
 import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.bulkimport.routeOrNull
 import com.studykit.ui.habit.ContractsScreen
 import com.studykit.ui.habit.ContractsViewModel
 import com.studykit.ui.habit.FocusScreen
@@ -316,6 +318,7 @@ fun AppNav(
             composable(Tab.Study.route) {
                 StudyHomeScreen(
                     viewModel = studyViewModel,
+                    importViewModel = importViewModel,
                     onOpenWords = {
                         navController.navigate(StudyRoutes.WORDS) { launchSingleTop = true }
                     },
@@ -336,9 +339,6 @@ fun AppNav(
                             restoreState = true
                         }
                     },
-                    onAddWord = {
-                        navController.navigate(StudyRoutes.WORD_CREATE) { launchSingleTop = true }
-                    },
                     onAddQuestion = {
                         navController.navigate(StudyRoutes.QUESTION_CREATE) { launchSingleTop = true }
                     },
@@ -350,6 +350,14 @@ fun AppNav(
                     },
                     onOpenSettings = {
                         navController.navigate(SettingsRoutes.SETTINGS) { launchSingleTop = true }
+                    },
+                    // 录入菜单：路由项都由决策表给出既有目的地（`BulkEntryTest` 钉着），这里只负责 navigate
+                    onNavigate = { path ->
+                        navController.navigate(path) { launchSingleTop = true }
+                    },
+                    // 拍照录题跳过粘贴页：OCR 出来的文本已在 plan 里，直接进预览（口径同截图取词）
+                    onPreviewImport = {
+                        navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
                 )
             }
@@ -456,7 +464,10 @@ fun AppNav(
                         navController.navigate(StudyRoutes.CARDS) { launchSingleTop = true }
                     },
                     onBulkImport = {
-                        navController.navigate(ImportRoutes.paste(ImportKind.WORD)) { launchSingleTop = true }
+                        // 目的地上收到决策表：与录入菜单里那一项同一个串，两边不会各走各的路
+                        BulkAction.WORD_BULK.routeOrNull()?.let {
+                            navController.navigate(it) { launchSingleTop = true }
+                        }
                     },
                     // 截图取词跳过粘贴页：OCR 出来的文本已经在 plan 里，直接进预览
                     onPreviewImport = {
@@ -479,7 +490,14 @@ fun AppNav(
             composable(StudyRoutes.QUIZ) {
                 QuizScreen(
                     viewModel = studyViewModel,
+                    importViewModel = importViewModel,
                     onBack = { navController.popBackStack() },
+                    onNavigate = { path ->
+                        navController.navigate(path) { launchSingleTop = true }
+                    },
+                    onPreviewImport = {
+                        navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
+                    },
                 )
             }
             composable(StudyRoutes.MOCK_EXAM) {

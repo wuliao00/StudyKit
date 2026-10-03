@@ -41,6 +41,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.tips.StudyTips
 import com.studykit.tips.TipEvent
+import com.studykit.ui.bulkimport.BulkEntries
+import com.studykit.ui.bulkimport.BulkScreen
+import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.bulkimport.QuestionPhotoRationale
+import com.studykit.ui.bulkimport.dispatchEntryAction
+import com.studykit.ui.bulkimport.rememberQuestionPhotoImport
+import com.studykit.ui.components.EntryMenuButton
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.data.entity.Question
 import com.studykit.data.memory.Confidence
@@ -67,16 +74,24 @@ import com.studykit.ui.theme.AppTheme
  *   这一页只负责按队列渲染；`AppTheme.settings.interleavingEnabled` 在这里**只被读来做展示与开关呈现**，
  *   打不打散的判定只有 `interleaveBySubject` 一处。
  *  - **提示与分层反馈**：三档提示逐条揭示、都不给最终答案；答后按任务级 / 过程级 / 自我调节级三层给出。
+ *
+ * v2.7.0.1 右上角多了「录入」菜单（[BulkScreen.QUESTION_BANK] 那三项）：这屏就是题库，
+ * 拍一道题就地 OCR 进预览屏，批量那项直达既有的粘贴/选文件页 —— 都不开新通道。
  */
 @Composable
 fun QuizScreen(
     viewModel: StudyViewModel,
+    importViewModel: ImportViewModel,
     onBack: () -> Unit,
+    onNavigate: (String) -> Unit,
+    onPreviewImport: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.quiz.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    // 拍照录题：相机 → OCR → 既有预览屏（与单词库「截图取词」同一条管线）
+    val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport)
     // 与 CardStudyScreen 读 recallBeforeGrade 同一姿势：组合期读一枚布尔，喂给展示与开关
     val interleaving = AppTheme.settings.interleavingEnabled
     // 信心条开关（v2.7 计划 B Task 12）：组合期读一枚布尔，喂给提交前的信心行；关掉 = 退回 v2.6 交互（不采集，conf 恒 null）
@@ -104,13 +119,28 @@ fun QuizScreen(
             Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "题库练习", style = texts.pageTitle)
             Spacer(Modifier.weight(1f))
+            if (photoImport.isBusy()) {
+                Text(text = "识别中…", style = texts.caption, color = colors.secondaryText)
+            }
             if (state.started && !state.finished) {
                 Text(
                     text = "第 ${state.index + 1} / ${state.total} 题",
                     style = texts.caption,
                 )
             }
+            EntryMenuButton(
+                items = BulkEntries.menuFor(BulkScreen.QUESTION_BANK),
+                onSelect = { action ->
+                    dispatchEntryAction(
+                        action,
+                        navigate = onNavigate,
+                        openCamera = photoImport.start,
+                    )
+                },
+            )
         }
+
+        if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
 
         val current = state.current
         when {

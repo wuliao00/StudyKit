@@ -3,6 +3,8 @@ package com.studykit.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -108,4 +110,17 @@ object MistakeImageStore {
     /** 供外部使用的相机临时目录（与 file_paths.xml 的 external-files-path camera/ 对应） */
     fun cameraTempDir(context: Context): File =
         File(context.getExternalFilesDir(null), "camera").apply { mkdirs() }
+
+    /**
+     * 创建相机落点：临时文件 + 能共享给相机进程的 FileProvider Uri（Android 11 必须经 FileProvider）。
+     *
+     * 唯一的两份拍照录入（错题拍照、v2.7.0.1 的拍照录题）都从这里取，**不许各写一份**：
+     * 授权口径（`file_paths.xml`）一改两处就得同步，那是最容易漏的那种复制。
+     * 造不出 Uri（授权没配、目录被清）时返回 null，由调用方告诉用户相机打不开，而不是抛在拍照那一下。
+     */
+    fun createCameraTarget(context: Context): Pair<File, Uri>? = runCatching {
+        val file = File(cameraTempDir(context), "capture_${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(context, "com.studykit.fileprovider", file)
+        file to uri
+    }.getOrNull()
 }

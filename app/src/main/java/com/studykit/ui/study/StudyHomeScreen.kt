@@ -27,7 +27,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,13 +41,19 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.tips.StudyTips
 import com.studykit.tips.TipEvent
+import com.studykit.ui.bulkimport.BulkEntries
+import com.studykit.ui.bulkimport.BulkScreen
+import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.bulkimport.QuestionPhotoRationale
+import com.studykit.ui.bulkimport.dispatchEntryAction
+import com.studykit.ui.bulkimport.rememberQuestionPhotoImport
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
+import com.studykit.ui.components.EntryMenuButton
 import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
@@ -63,23 +68,30 @@ import java.time.temporal.ChronoUnit
 /**
  * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
  * 颜色与文字样式统一取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
+ *
+ * v2.7.0.1：右上角那颗「＋录入」从「只能录一个单词」扩成一张小菜单（决策表在 [BulkEntries]），
+ * 其中「拍照录入题目」就地拉起相机、OCR 后直接进既有的预览屏 —— 其余项都只是往 [onNavigate] 递一条既有路由。
  */
 @Composable
 fun StudyHomeScreen(
     viewModel: StudyViewModel,
+    importViewModel: ImportViewModel,
     onOpenWords: () -> Unit,
     onStartQuiz: () -> Unit,
     onOpenMockExam: () -> Unit,
     onOpenMistakes: () -> Unit,
-    onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
     onBulkImportQuestions: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit,
+    onNavigate: (String) -> Unit,
+    onPreviewImport: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
+    // 拍照录题就地完成（相机 → OCR → 预览屏），不另开一屏；菜单里其余项走路由
+    val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport)
 
     // ── SIXTY_SIX 贴士（计划 B Task 17 Step 2b / spec §8）：火焰徽章天数恰好走到 21 那天，
     // 在 hero 下方挂一次「21 天不是终点、66 天才是中位数」——每次安装一次（sixtySixTipSeen）。
@@ -109,21 +121,19 @@ fun StudyHomeScreen(
         ) {
             Text(text = "学习", style = texts.largeTitle)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onAddWord) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = colors.accentInk,
-                )
-                Spacer(Modifier.width(AppTheme.space.xs))
-                Text(
-                    text = "录入",
-                    style = texts.aux.copy(
-                        color = colors.accentInk,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
+            if (photoImport.isBusy()) {
+                Text(text = "识别中…", style = texts.caption, color = colors.secondaryText)
             }
+            EntryMenuButton(
+                items = BulkEntries.menuFor(BulkScreen.STUDY_HOME),
+                onSelect = { action ->
+                    dispatchEntryAction(
+                        action,
+                        navigate = onNavigate,
+                        openCamera = photoImport.start,
+                    )
+                },
+            )
             // 设置入口。这枚图标旁边**没有**等价文字（与底栏"图标 + label 同一语义节点"那种相反），
             // 所以必须给 contentDescription，否则读屏只会念出一个 unnamed 按钮。
             // 触摸目标由 IconButton 自身保证 48dp，不再叠 minimumInteractiveComponentSize。
@@ -135,6 +145,8 @@ fun StudyHomeScreen(
                 )
             }
         }
+
+        if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
 
         Spacer(Modifier.height(AppTheme.space.md))
         TodayHeroCard(
