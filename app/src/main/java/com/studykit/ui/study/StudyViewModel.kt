@@ -241,7 +241,13 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val _session = MutableStateFlow<CardSessionUi?>(null)
     val session: StateFlow<CardSessionUi?> = _session
 
-    /** 组一轮学习队列：有排期且已到期的单词，按到期时刻升序取前 10 个 */
+    /**
+     * 组一轮学习队列：到期优先，新词按每日目标补位（口径全在 [CardSessionQueue.compose]）。
+     *
+     * `todayReviewed` 走 word 侧复习时间戳（`word_reviews.reviewed_at`）落在今天那几条，
+     * 与首页进度环的 `todayDone` 同一把尺子的词卡分支；它只用来把新词补位卡在剩余目标内，
+     * 不改到期复习那一侧的取数。
+     */
     fun startCardSession() {
         // 入口先同步清空：`_session` 是 VM 里的常驻状态，上一轮跑完后它是 `finished` 的小结态。
         // 不等这一步的话，重进页面会先渲染「上一轮已完成 + 彩带」（页面只在下一帧才拿到新队列），
@@ -252,11 +258,19 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         _pretest.value = null
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            val queue = wordRepository.getAll()
-                .filter { it.nextReviewAt in 1L..now }
-                .sortedBy { it.nextReviewAt }
-                .take(SESSION_SIZE)
-            _session.value = CardSessionUi(queue = queue)
+            val zone = ZoneId.systemDefault()
+            val dayStart = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
+            val todayReviewed = wordRepository.observeReviewTimestamps().first().count { it in dayStart..now }
+            val words = wordRepository.getAll()
+            _session.value = CardSessionUi(
+                queue = CardSessionQueue.compose(
+                    words = words,
+                    now = now,
+                    dailyWordGoal = settingsRepository.current().dailyWordGoal,
+                    todayReviewed = todayReviewed,
+                    dueCap = SESSION_SIZE,
+                ),
+            )
         }
     }
 
