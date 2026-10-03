@@ -5,6 +5,7 @@ import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.Excerpt
+import com.studykit.data.memory.Enrollment
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -47,9 +48,20 @@ class BookRepository(private val bookDao: BookDao) {
 
     suspend fun getExcerpt(id: Long): Excerpt? = bookDao.getExcerpt(id)
 
+    /**
+     * 新建书摘。v2.7.0.1 修复 / spec §7.2：建摘即默认入复习队列——`nextReviewAt` 填
+     * [Enrollment.initialNextReviewAt] 给的 `now + 1d`（明天第一次到期），不再是实体默认的 0 未启用哨兵。
+     * 每摘的 opt-out 仍走复习页「把这条移出复习队列」（`setExcerptEnrolled(false)` → 归 0），零 schema 变更。
+     */
     suspend fun addExcerpt(bookId: Long, content: String, pageNo: Int?): Long =
         bookDao.insertExcerpt(
-            Excerpt(uuid = UUID.randomUUID().toString(), bookId = bookId, content = content, pageNo = pageNo),
+            Excerpt(
+                uuid = UUID.randomUUID().toString(),
+                bookId = bookId,
+                content = content,
+                pageNo = pageNo,
+                nextReviewAt = Enrollment.initialNextReviewAt(System.currentTimeMillis()),
+            ),
         )
 
     suspend fun updateExcerpt(excerpt: Excerpt) = bookDao.updateExcerpt(excerpt)
