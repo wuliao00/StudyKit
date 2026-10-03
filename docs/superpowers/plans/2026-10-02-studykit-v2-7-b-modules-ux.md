@@ -295,7 +295,7 @@ class IfThenTemplateTest {
 - Create: `ui/book/ExcerptReviewScreen.kt`（出摘：只显前半 → 回忆 → 展开全文自评三档 → `KernelHub` 重排 `stability/next_review_at`）
 - Create: `ui/book/ChapterTestScreen.kt`（出题/作答/对照，写 `chapter_tests`）
 - Modify: `ui/book/BookDetailScreen.kt`（两入口：「复习书摘」「本章自测」）
-- Modify: `ui/book/BookShelfScreen.kt:138-139`（hero 主 tile 改「检索练习次数」= word_reviews+practice_records+mistake_redos+chapter_tests+excerpt 自评 的完成总数；`excerptCount` 降为次级 tile，Step 0 取证 ViewModel 提供聚合数）
+- Modify: `ui/book/BookShelfScreen.kt:138-139`（hero 主 tile 改「检索练习次数」；口径对齐 spec §7.2：本轮为**书模块 only** —— 书摘自评次数 SUM（`review_count>0`）+ 章节自测行数，word/practice 侧计数由 B-19 后补；`excerptCount` 降为次级 tile，Step 0 取证 ViewModel 提供聚合数）
 - Modify: `BookDao`/新查询（`countRetrievalActions()` 一条 UNION SQL，数字来源注释逐表列明）
 - Test: `RetrievalCountTest`（SQL 聚合纯查询 + Robolectric in-memory DB 计数）+ `ExcerptReviewRenderTest`（"合书回忆"提示、EXPLAIN_WHY/RECALL_NOTES Tip 挂载断言）
 
