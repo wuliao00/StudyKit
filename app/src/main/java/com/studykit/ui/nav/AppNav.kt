@@ -84,7 +84,6 @@ import com.studykit.ui.study.StudyViewModel
 import com.studykit.ui.study.WordCreateScreen
 import com.studykit.ui.study.WordListScreen
 import com.studykit.ui.theme.AppTheme
-import com.studykit.util.importer.ImportOutcome
 import java.io.File
 import kotlinx.coroutines.flow.StateFlow
 
@@ -565,19 +564,19 @@ fun AppNav(
             }
             composable(ImportRoutes.RESULT) {
                 val importState by importViewModel.state.collectAsStateWithLifecycle()
-                ImportResultScreen(
-                    outcome = importState.outcome ?: ImportOutcome(0, emptyList(), emptyList()),
-                    onDone = {
-                        importViewModel.reset()
-                        // 传的是路由模板而不是填好的路径：hasRoute 比的就是 destination.route 本身
-                        navController.popBackStack(ImportRoutes.PASTE, inclusive = true)
-                    },
-                    onReviewRejected = {
-                        importViewModel.reset()
-                        // inclusive = false ⇒ 停在粘贴页，`raw` 由 rememberSaveable 留着，用户就地改那几行
-                        navController.popBackStack(ImportRoutes.PASTE, inclusive = false)
-                    },
-                )
+                // Bug A（显示源）：只取本次成功的 outcome，绝不为 null 伪造 ImportOutcome(0)——见 importResultOutcomeFor。
+                // Bug B（导航落点）：退出交给 popBackOutOfImportFlow。在线词库 / 截图取词那条返回栈里没有 paste，
+                //   原先写死 popBackStack(PASTE) 是空操作、把人困在结果页；现在无论哪条入口都能落到进入导入流之前那一屏。
+                // 退出不再调 importViewModel.reset()：它会清空这条共享 StateFlow 的 outcome，结果页仍挂在组合里时就渲染成
+                //   「成功导入 0」；而下次进导入流本来就会 loadPlan 重置，这里重置既冗余又是 Bug A 的成因。
+                when (val outcome = importResultOutcomeFor(importState)) {
+                    null -> LaunchedEffect(Unit) { popBackOutOfImportFlow(navController, inclusive = true) }
+                    else -> ImportResultScreen(
+                        outcome = outcome,
+                        onDone = { popBackOutOfImportFlow(navController, inclusive = true) },
+                        onReviewRejected = { popBackOutOfImportFlow(navController, inclusive = false) },
+                    )
+                }
             }
 
             // ── 错题模块子路由 ──────────────────────────────────
