@@ -18,12 +18,13 @@ class FsrsKernelTest {
         assertEquals(10.757465, k.nextIntervalDays(s, KernelRating.GOOD, 0.9, 36500.0), 1e-6)
     }
 
+    // 逐值钉死 docs/evidence/fsrs6-golden.json（py-fsrs 6.3.2 直算）；v5→v6 黄金值变化见预言机 §5.5
     @Test fun `golden trace GOOD after 2 days from S0=w2 D0=2_118`() {
         val before = KernelState(stability = 2.3065, difficulty = 2.118104, cardState = CardState.REVIEW)
         val after = k.review(before, elapsedDays = 2.0, rating = KernelRating.GOOD, conf = null)
-        assertEquals(10.757465, after.stability!!, 1e-4)
-        assertEquals(2.116986, after.difficulty, 1e-4)
-        assertEquals(13.360266, k.nextIntervalDays(after, KernelRating.GOOD, 0.88, 36500.0), 1e-4)
+        assertEquals(10.964332335820698, after.stability!!, 1e-4)
+        assertEquals(2.111214235785395, after.difficulty, 1e-4)
+        assertEquals(14.439282874696593, k.nextIntervalDays(after, KernelRating.GOOD, 0.88, 36500.0), 1e-4)
         // 钉住镜像契约：hDays 恒等于 stability × FSRS_HALF_OVER_S（spec §2.1 双写口径）
         assertEquals(after.stability!! * FSRS_HALF_OVER_S, after.hDays!!, 1e-9)
     }
@@ -31,15 +32,16 @@ class FsrsKernelTest {
     @Test fun `golden trace HARD after 2 days`() {
         val before = KernelState(stability = 2.3065, difficulty = 2.118104, cardState = CardState.REVIEW)
         val after = k.review(before, elapsedDays = 2.0, rating = KernelRating.HARD, conf = null)
-        assertEquals(7.388910, after.stability!!, 1e-4)
-        assertEquals(4.758630, after.difficulty, 1e-4)
+        assertEquals(7.513320366762569, after.stability!!, 1e-4)   // hard_penalty = w[15]
+        assertEquals(4.752858488532557, after.difficulty, 1e-4)
     }
 
-    @Test fun `golden trace AGAIN clamps stability to 1 and marks relearning`() {
+    @Test fun `golden trace AGAIN applies v6 lapse min long short cap`() {
         val before = KernelState(stability = 2.3065, difficulty = 2.118104, cardState = CardState.REVIEW)
         val after = k.review(before, elapsedDays = 2.0, rating = KernelRating.AGAIN, conf = null)
-        assertEquals(1.0, after.stability!!, 1e-4)          // v5 支：clip 下限 1 触发
-        assertEquals(7.400274, after.difficulty, 1e-4)
+        // v6 lapse：S'_f = min(w11·D^-w12·((S+1)^w13−1)·e^((1−R)w14), S/e^(w17·w18))——不再是 v5 的地板 1 天
+        assertEquals(0.6075801062519337, after.stability!!, 1e-4)
+        assertEquals(7.394502741279718, after.difficulty, 1e-4)
         assertEquals(CardState.RELEARNING, after.cardState)
         // "当日再见"地板 = 10 分钟（与旧 intervalDaysAfterForget 同一语义）
         assertEquals(10.0 / 1440.0, k.nextIntervalDays(after, KernelRating.AGAIN, 0.9, 36500.0), 1e-9)
@@ -76,7 +78,7 @@ class FsrsKernelTest {
     @Test fun `non finite inputs degrade to safe defaults`() {
         val s = KernelState(stability = Double.NaN, difficulty = -3.0, cardState = CardState.REVIEW)
         assertEquals(
-            (1.0 + FsrsKernel.FACTOR * 5.0 / FsrsKernel.MIN_STABILITY_FLOOR).pow(-0.5),
+            (1.0 + FsrsKernel.FACTOR * 5.0 / FsrsKernel.MIN_STABILITY_FLOOR).pow(FsrsKernel.DECAY),
             k.recall(s, elapsedDays = 5.0), 1e-9,
         )
         val after = k.review(s, elapsedDays = -2.0, rating = KernelRating.GOOD, conf = null)
@@ -97,5 +99,53 @@ class FsrsKernelTest {
         val nan = k.nextIntervalDays(s, KernelRating.GOOD, 0.9, Double.NaN)
         assertEquals(10.0, nan, 1e-9)
         check(neg.isFinite() && nan.isFinite())
+    }
+
+    // ==== 以下用例逐值钉死 docs/evidence/fsrs6-golden.json（py-fsrs 6.3.2 直算），容差 1e-4 ====
+
+    @Test fun `v6 first review stores initial stability and difficulty per rating`() {
+        // py-fsrs：首次评分落 S0=w[G-1] 与 D0(G)（夹 [1,10]），不套增长公式
+        fun first(r: KernelRating) = k.review(
+            KernelState(stability = null, difficulty = 1.0, cardState = CardState.LEARNING),
+            elapsedDays = 0.0, rating = r, conf = null,
+        )
+        assertEquals(0.212, first(KernelRating.AGAIN).stability!!, 1e-6)   // w[0]
+        assertEquals(6.4133, first(KernelRating.AGAIN).difficulty, 1e-6)   // D0(Again)=w[4]-e^0+1
+        assertEquals(1.2931, first(KernelRating.HARD).stability!!, 1e-6)   // w[1]
+        assertEquals(5.112170705601056, first(KernelRating.HARD).difficulty, 1e-6)
+        assertEquals(2.3065, first(KernelRating.GOOD).stability!!, 1e-6)   // w[2]
+        assertEquals(2.118103970459016, first(KernelRating.GOOD).difficulty, 1e-6)
+        assertEquals(8.2956, first(KernelRating.EASY).stability!!, 1e-6)   // w[3]
+        assertEquals(1.0, first(KernelRating.EASY).difficulty, 1e-6)       // D0(Easy) 未夹 -4.7716 → 夹到 1
+    }
+
+    @Test fun `v6 golden EASY long term applies easy bonus w16`() {
+        val before = KernelState(stability = 2.3065, difficulty = 2.118104, cardState = CardState.REVIEW)
+        val after = k.review(before, elapsedDays = 2.0, rating = KernelRating.EASY, conf = null)
+        assertEquals(18.52175418175859, after.stability!!, 1e-4)   // easy_bonus = w[16]
+        assertEquals(1.0, after.difficulty, 1e-4)                  // next_difficulty(Easy) → 夹到地板 1
+    }
+
+    @Test fun `v6 golden next difficulty mean reversion w7 to unclamped D0 Easy`() {
+        // 均值回归 arg1 = D0(Easy) 未夹取（-4.7716…）；从 D=5 出发的四档见 fsrs6-golden.json
+        fun dAfter(r: KernelRating) = k.review(
+            KernelState(stability = 10.0, difficulty = 5.0, cardState = CardState.REVIEW),
+            elapsedDays = 2.0, rating = r, conf = null,
+        ).difficulty
+        assertEquals(8.341762369296838, dAfter(KernelRating.AGAIN), 1e-6)
+        assertEquals(6.665995369296838, dAfter(KernelRating.HARD), 1e-6)
+        assertEquals(4.9902283692968386, dAfter(KernelRating.GOOD), 1e-6)
+        assertEquals(3.3144613692968385, dAfter(KernelRating.EASY), 1e-6)
+    }
+
+    @Test fun `v6 golden short term stability intra day path w17 w18 w19`() {
+        val before = KernelState(stability = 2.3065, difficulty = 2.118104, cardState = CardState.REVIEW)
+        // elapsedDays<1 走 intra-day 支：Good/Hard increase<1 被抬到 1 → S 不变；Easy 涨；Again 不抬地板 → S 降
+        assertEquals(2.3065, k.review(before, 0.5, KernelRating.GOOD, null).stability!!, 1e-6)
+        assertEquals(2.3065, k.review(before, 0.5, KernelRating.HARD, null).stability!!, 1e-6)
+        assertEquals(3.946054067969477, k.review(before, 0.5, KernelRating.EASY, null).stability!!, 1e-4)
+        assertEquals(0.7750839828558984, k.review(before, 0.5, KernelRating.AGAIN, null).stability!!, 1e-4)
+        // intra-day 难度仍走 next_difficulty
+        assertEquals(2.111214235785395, k.review(before, 0.5, KernelRating.GOOD, null).difficulty, 1e-6)
     }
 }
