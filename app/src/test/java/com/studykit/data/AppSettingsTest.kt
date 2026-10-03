@@ -141,4 +141,122 @@ class AppSettingsTest {
         val s = AppSettings.fromMap(mapOf(AppSettings.KEY_DICT_FAILURE to "x".repeat(5_000)))
         assertEquals(400, s.lastDictFailure.length)
     }
+
+    @Test
+    fun `排期内核默认 FSRS 且垃圾值退回默认`() {
+        assertEquals("FSRS", AppSettings.fromMap(emptyMap()).schedulingKernel)
+        assertEquals(
+            "FSRS",
+            AppSettings.fromMap(mapOf(AppSettings.KEY_SCHEDULING_KERNEL to "???")).schedulingKernel,
+        )
+        assertEquals(
+            "HALF_LIFE",
+            AppSettings.fromMap(mapOf(AppSettings.KEY_SCHEDULING_KERNEL to "HALF_LIFE")).schedulingKernel,
+        )
+    }
+
+    @Test
+    fun `信心开关默认开且经 toMap 往返一分不变`() {
+        val s = AppSettings(confidenceEnabled = false)
+        assertEquals(false, AppSettings.fromMap(s.toMap()).confidenceEnabled)
+        assertEquals(true, AppSettings.fromMap(emptyMap()).confidenceEnabled)
+    }
+
+    @Test
+    fun `新增两键的默认值也能原样往返`() {
+        val d = AppSettings()
+        val back = AppSettings.fromMap(d.toMap())
+        assertEquals(d.schedulingKernel, back.schedulingKernel)
+        assertEquals(d.confidenceEnabled, back.confidenceEnabled)
+    }
+
+    @Test
+    fun `翻面贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 recallGateHintSeen：每次安装一次的"看过没有"，默认 false（没看过）
+        assertFalse(AppSettings().flipTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).flipTipSeen)
+        val seen = AppSettings(flipTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).flipTipSeen)
+    }
+
+    @Test
+    fun `翻面贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_FLIP_TIP_SEEN to "1")).flipTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_FLIP_TIP_SEEN to "true")).flipTipSeen)
+    }
+
+    @Test
+    fun `执行意图贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen：每次安装一次的"看过没有"，默认 false（没看过）
+        assertFalse(AppSettings().ifThenTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).ifThenTipSeen)
+        val seen = AppSettings(ifThenTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).ifThenTipSeen)
+    }
+
+    @Test
+    fun `执行意图贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_IF_THEN_TIP_SEEN to "1")).ifThenTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_IF_THEN_TIP_SEEN to "true")).ifThenTipSeen)
+    }
+
+    @Test
+    fun `六六贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen / ifThenTipSeen：每次安装一次的"看过没有"，默认 false（没看过）
+        assertFalse(AppSettings().sixtySixTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).sixtySixTipSeen)
+        val seen = AppSettings(sixtySixTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).sixtySixTipSeen)
+    }
+
+    @Test
+    fun `六六贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_SIXTY_SIX_TIP_SEEN to "1")).sixtySixTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_SIXTY_SIX_TIP_SEEN to "true")).sixtySixTipSeen)
+    }
+
+    @Test
+    fun `宽恕贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen / ifThenTipSeen / sixtySixTipSeen：每次安装一次的“看过没有”，默认 false
+        assertFalse(AppSettings().gapTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).gapTipSeen)
+        val seen = AppSettings(gapTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).gapTipSeen)
+    }
+
+    @Test
+    fun `宽恕贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_GAP_TIP_SEEN to "1")).gapTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_GAP_TIP_SEEN to "true")).gapTipSeen)
+    }
+
+    @Test
+    fun `章节自测贴士默认没看过且经 toMap 往返一分不变`() {
+        // 口径同 flipTipSeen / ifThenTipSeen / sixtySixTipSeen / gapTipSeen：每次安装一次的“看过没有”，默认 false
+        assertFalse(AppSettings().chapterTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).chapterTipSeen)
+        val seen = AppSettings(chapterTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).chapterTipSeen)
+    }
+
+    @Test
+    fun `章节自测贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_CHAPTER_TIP_SEEN to "1")).chapterTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_CHAPTER_TIP_SEEN to "true")).chapterTipSeen)
+    }
+
+    @Test
+    fun `书摘检索贴士默认没看过且经 toMap 往返一分不变`() {
+        // 与 chapterTipSeen 分开两枚布尔（复审建议：以后可泛型成一个 seen-set，本次不重构）
+        assertFalse(AppSettings().excerptTipSeen)
+        assertFalse(AppSettings.fromMap(emptyMap()).excerptTipSeen)
+        val seen = AppSettings(excerptTipSeen = true)
+        assertEquals(true, AppSettings.fromMap(seen.toMap()).excerptTipSeen)
+    }
+
+    @Test
+    fun `书摘检索贴士的垃圾值只让那一项退回默认`() {
+        assertFalse(AppSettings.fromMap(mapOf(AppSettings.KEY_EXCERPT_TIP_SEEN to "1")).excerptTipSeen)
+        assertTrue(AppSettings.fromMap(mapOf(AppSettings.KEY_EXCERPT_TIP_SEEN to "true")).excerptTipSeen)
+    }
 }

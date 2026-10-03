@@ -7,6 +7,18 @@ plugins {
 }
 
 /**
+ * Room schema 快照的输出目录。
+ *
+ * 光把 `exportSchema` 打开不够：room 2.6.1 拿不到 schemaLocation 时**不导出任何快照**，
+ * 只打一条 warning（`ProcessorErrors` 原文：“Schema export directory was not provided to
+ * the annotation processor so Room cannot export the schema …”），也不会退回某个默认目录。
+ * 快照取证无从谈起 —— 指到 `$projectDir/schemas` 才谈得上把每一版的 JSON 提交进仓。
+ */
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+/**
  * debug 签名必须**跨构建稳定**。
  *
  * 病根：AGP 在没配 signingConfig 时，用构建机上现生成的 `~/.android/debug.keystore`。
@@ -58,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "2.6.0"
+        versionCode = 17
+        versionName = "2.7.0.1"
         // ML Kit 的 bundled OCR 给四个 ABI 各带一份 libmlkit_google_ocr_pipeline.so
         // （x86_64 11.6MB + x86 11.6MB + arm64 11.1MB + armeabi 6.8MB = 41MB），
         // 而本仓是**直接发 APK**（GitHub Release / 网盘），不是走应用商店的 per-device split，
@@ -126,6 +138,14 @@ android {
             isIncludeAndroidResources = true
         }
     }
+    // Room schema 快照目录。MigrationTestHelper 逐字校验迁移产物时要从**它能读到的 assets**取
+    // `com.studykit.data.AppDatabase/<v>.json`。
+    // A-T7 实跑证伪：AGP 不把 test 源集 assets 并进变体 merge，Robolectric 只见
+    // mergeDebugAssets ⇒ MigrationTestHelper 读不到快照。改挂 debug 变体：debug 包多发
+    // 两份 JSON（~80KB）换 CI 里真实有效的迁移校验网；test 源集那行是死管，删。
+    sourceSets {
+        getByName("debug").assets.srcDirs("$projectDir/schemas")
+    }
 }
 
 dependencies {
@@ -162,6 +182,7 @@ dependencies {
 
     // 单元测试
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.room.testing)
     // 仅测试期：android.jar 里的 org.json 是 `Stub!` 占位，JVM 单测一调就抛
     // （既有 `Question.parseOptions` 因此一直没被测过）。运行时仍用系统实现，APK 零影响。
     testImplementation(libs.json)

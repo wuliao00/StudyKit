@@ -1,6 +1,7 @@
 package com.studykit.data.repository
 
 import com.studykit.data.dao.ReviewGapRow
+import com.studykit.data.dao.RetentionRow
 import com.studykit.data.dao.ScheduledMemoryRow
 import com.studykit.data.dao.WordDao
 import com.studykit.data.entity.Word
@@ -47,6 +48,9 @@ class WordRepository(private val wordDao: WordDao) {
      * 后果是"这次复习没进历史"，下次复习时刻仍然正确，用户无感；
      * 反过来则会出现"历史里有一次复习，但词的半衰期没涨"，
      * 那条记录会在以后的校准里被当成一次真实评分去拟合，属于污染数据。
+     *
+     * 后四个形参是 v2.7 双内核的双写（spec §2.1，列口径见 `WordDao.applyReview`）：
+     * 默认 null 只为让既有调用点不必改就能编过，排期路径逐条传齐。
      */
     suspend fun applyReview(
         wordId: Long,
@@ -56,13 +60,33 @@ class WordRepository(private val wordDao: WordDao) {
         nextReviewAt: Long,
         lastReviewAt: Long,
         lapseInc: Int,
-    ) = wordDao.applyReview(wordId, halfLifeDays, difficulty, status, nextReviewAt, lastReviewAt, lapseInc)
+        fsrsStability: Double? = null,
+        fsrsDifficulty: Double? = null,
+        fsrsState: Int? = null,
+        kernel: String? = null,
+    ) = wordDao.applyReview(
+        wordId,
+        halfLifeDays,
+        difficulty,
+        status,
+        nextReviewAt,
+        lastReviewAt,
+        lapseInc,
+        fsrsStability,
+        fsrsDifficulty,
+        fsrsState,
+        kernel,
+    )
 
     /**
      * 写入一次带档位的复习记录。
      *
      * `gapDays / pAtReview / hBefore / hAfter` 是校准的原料：没有它们，
      * 事后无法回答"模型给这个人的估计准不准"，只能继续猜参数。
+     *
+     * `confidence`（1=瞎猜 2=有点印象 3=非常确定）与 `fsrsRating`（FSRS 口径 1..4）是 v2.7 新列：
+     * 前者是超纠正的判据（spec §2.3），后者让这一行以后能喂给 FSRS 参数优化器。
+     * 默认 null —— UI 那侧开始采集信心之前（计划 B）就该是 null，拿 0 冒充"答『肯定不记得』"是假数据。
      */
     suspend fun recordGradedReview(
         wordId: Long,
@@ -73,6 +97,8 @@ class WordRepository(private val wordDao: WordDao) {
         hBefore: Double,
         hAfter: Double,
         reactionMs: Long?,
+        confidence: Int? = null,
+        fsrsRating: Int? = null,
     ): Long = wordDao.insertReview(
         WordReview(
             uuid = UUID.randomUUID().toString(),
@@ -84,6 +110,8 @@ class WordRepository(private val wordDao: WordDao) {
             hBefore = hBefore,
             hAfter = hAfter,
             reactionMs = reactionMs,
+            confidence = confidence,
+            fsrsRating = fsrsRating,
         ),
     )
 
@@ -106,6 +134,15 @@ class WordRepository(private val wordDao: WordDao) {
 
     /** 复习间隔 + 结果（记忆看板：实测遗忘曲线） */
     fun observeReviewGapAndResult(): Flow<List<ReviewGapRow>> = wordDao.observeReviewGapAndResult()
+
+    /**
+     * 复习间隔 + 评分档位 + 当时预测（记忆看板：「延迟后测」卡，v2.7 spec §9）。
+     *
+     * 与 [observeReviewGapAndResult] 是两条独立查询，不是"一条加了两个字段"：
+     * 后者身后是 v2.3 起就钉死的遗忘曲线，动它的列等于动那张网的根。
+     * 怎么分桶、哪些行算"没记评分"，一律在 `ui/stats/RetentionBuckets`，这里只转发。
+     */
+    fun observeRetentionRows(): Flow<List<RetentionRow>> = wordDao.observeRetentionRows()
 
     /**
      * 新词预测试的干扰项池：同词库（`source_list_id` 相同）的其他释义，

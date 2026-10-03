@@ -31,6 +31,12 @@ data class Word(
     /** 来自哪本在线词库（`word_lists.id`）；手工/粘贴/文件导入为 null，不参与整表删除 */
     @ColumnInfo(name = "source_list_id") val sourceListId: Long? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    /** v2.7 双内核（spec §3.2）：FSRS 稳定性/难度/状态与归属内核；null=该内核未写过此条 */
+    @ColumnInfo(name = "fsrs_stability") val fsrsStability: Double? = null,
+    @ColumnInfo(name = "fsrs_difficulty") val fsrsDifficulty: Double? = null,
+    /** 1=LEARNING 2=REVIEW 3=RELEARNING（对齐 memory.CardState 序号+1） */
+    @ColumnInfo(name = "fsrs_state", defaultValue = "1") val fsrsState: Int = 1,
+    @ColumnInfo(name = "kernel", defaultValue = "'FSRS'") val kernel: String = "FSRS",
 ) {
     companion object {
         const val STATUS_NEW = "NEW"

@@ -26,4 +26,8 @@ data class Excerpt(
     val content: String,
     @ColumnInfo(name = "page_no") val pageNo: Int? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    /** v2.7（spec §7.2）：书摘入复习队列。next_review_at=0 表示未启用 */
+    @ColumnInfo(name = "next_review_at", defaultValue = "0") val nextReviewAt: Long = 0L,
+    @ColumnInfo(name = "review_count", defaultValue = "0") val reviewCount: Int = 0,
+    @ColumnInfo(name = "stability") val stability: Double? = null,
 )

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.studykit.data.entity.Mistake
+import com.studykit.data.entity.MistakeRedo
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -19,7 +20,16 @@ interface MistakeDao {
     @Query("SELECT * FROM mistakes WHERE subject = :subject ORDER BY created_at DESC")
     fun observeBySubject(subject: String): Flow<List<Mistake>>
 
-    @Query("SELECT * FROM mistakes WHERE mastered = 0 ORDER BY created_at DESC")
+    /**
+     * 未掌握错题（错题本默认列表）。
+     *
+     * v2.7 计划 B Task 12：先按 [Mistake.priority] 降序，把「高置信答错」的超纠正机会顶到最前，
+     * 同优先级内再按 `created_at DESC`（新→旧）。下游 MistakeViewModel 只做筛选 + 按学科 groupBy、
+     * 不再本地重排，故这份序**只在同一学科组内**原样透到列表：groupBy 会先把列表拆成学科分组
+     * （组顺序由该组首现行决定），priority 置顶并不跨组——全局最高优先的行只有在它所属学科恰好排在前
+     * 时才出现在列表顶端。[observeMastered] 一侧不置顶（已掌握无需再抢注意力），保持 `created_at DESC`。
+     */
+    @Query("SELECT * FROM mistakes WHERE mastered = 0 ORDER BY priority DESC, created_at DESC")
     fun observeUnmastered(): Flow<List<Mistake>>
 
     /** 已掌握一侧（列表页「已掌握」chip 用），与 [observeUnmastered] 合成全量 */
@@ -51,6 +61,22 @@ interface MistakeDao {
 
     @Query("UPDATE mistakes SET mastered = 1 WHERE id = :id")
     suspend fun markMastered(id: Long)
+
+    // ── 逐次重做历史（v2.7 计划 B Task 15；表 + 索引自 v7 就在，schema 冻结在 v7，这里只补 DAO）──
+    // 一个 DAO 可以管多张实体的表：`mistake_redos` 与 mistakes 同库，读写放这儿最省事，
+    // 也让「先写 mistakes 状态、再写这条历史」在同一个 VM 协程里挨着发生（顺序纪律见 Repository.insertRedo 的 KDoc）。
+
+    /** 写一次重做轨迹。由 `MistakeRepository.insertRedo` 生成 uuid 后调用；返回自增 id。 */
+    @Insert
+    suspend fun insertRedo(redo: MistakeRedo): Long
+
+    /** 某道错题的重做历史，按发生时刻升序（图表/将来按真实上次评分时刻反哺排期时读这一份）。 */
+    @Query("SELECT * FROM mistake_redos WHERE mistake_id = :mistakeId ORDER BY redone_at ASC")
+    fun observeRedosByMistake(mistakeId: Long): Flow<List<MistakeRedo>>
+
+    /** 某道错题一共重做过几次（计数文案用）。 */
+    @Query("SELECT COUNT(*) FROM mistake_redos WHERE mistake_id = :mistakeId")
+    suspend fun countRedosByMistake(mistakeId: Long): Int
 
     /**
      * 清除学习数据用（设置页「数据管理」）。

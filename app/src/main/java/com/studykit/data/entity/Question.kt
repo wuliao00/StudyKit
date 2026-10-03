@@ -18,4 +18,6 @@ data class Question(
     @ColumnInfo(name = "options_json") val optionsJson: String,
     @ColumnInfo(name = "answer_index") val answerIndex: Int,
     val explanation: String,
+    /** v2.7：考点标签（spec §3.2/G7）。'' = 未标注；变式候选按它匹配，不做知识点树 */
+    @ColumnInfo(name = "concept_tag", defaultValue = "''") val conceptTag: String = "",
 )

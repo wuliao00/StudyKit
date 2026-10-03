@@ -41,12 +41,16 @@ import com.studykit.ui.book.BookEditScreen
 import com.studykit.ui.book.BookShelfScreen
 import com.studykit.ui.book.BookViewModel
 import com.studykit.ui.book.ExcerptEditScreen
+import com.studykit.ui.book.ExcerptReviewScreen
+import com.studykit.ui.book.ChapterTestScreen
 import com.studykit.ui.book.ReviewEditScreen
+import com.studykit.ui.bulkimport.BulkAction
 import com.studykit.ui.bulkimport.BulkPasteScreen
 import com.studykit.ui.bulkimport.ImportKind
 import com.studykit.ui.bulkimport.ImportPreviewScreen
 import com.studykit.ui.bulkimport.ImportResultScreen
 import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.bulkimport.routeOrNull
 import com.studykit.ui.habit.ContractsScreen
 import com.studykit.ui.habit.ContractsViewModel
 import com.studykit.ui.habit.FocusScreen
@@ -73,6 +77,8 @@ import com.studykit.ui.stats.StatsViewModel
 import com.studykit.ui.study.CardStudyScreen
 import com.studykit.ui.study.DictStoreScreen
 import com.studykit.ui.study.DictStoreViewModel
+import com.studykit.ui.study.ExamResultScreen
+import com.studykit.ui.study.MockExamScreen
 import com.studykit.ui.study.QuestionCreateScreen
 import com.studykit.ui.study.QuizScreen
 import com.studykit.ui.study.StudyHomeScreen
@@ -80,7 +86,6 @@ import com.studykit.ui.study.StudyViewModel
 import com.studykit.ui.study.WordCreateScreen
 import com.studykit.ui.study.WordListScreen
 import com.studykit.ui.theme.AppTheme
-import com.studykit.util.importer.ImportOutcome
 import java.io.File
 import kotlinx.coroutines.flow.StateFlow
 
@@ -125,6 +130,10 @@ object StudyRoutes {
     const val WORD_CREATE = "study/word/create"
     const val QUESTION_CREATE = "study/question/create"
 
+    /** 模考（v2.7 计划 B Task 13）：组卷作答 + 交卷后的成绩页两条路由 */
+    const val MOCK_EXAM = "study/exam"
+    const val EXAM_RESULT = "study/exam/result"
+
     /** 记忆看板：半衰期模型的三块图（未来量 / 持久度分布 / 遗忘曲线） */
     const val STATS = "study/stats"
 }
@@ -147,12 +156,18 @@ object BookRoutes {
     const val EXCERPT_EDIT = "excerpt/{excerptId}"
     const val REVIEW_CREATE = "book/{bookId}/review/create"
     const val REVIEW_EDIT = "review/{reviewId}"
+    /** 检索式书摘复习队列（v2.7 计划 B Task 18）：到期书摘的全局队列，从任意书详情进入 */
+    const val EXCERPT_REVIEW = "book/excerpt-review"
+    /** 章节自测（v2.7 计划 B Task 18）：绑定到某一本书 */
+    const val CHAPTER_TEST = "book/{bookId}/chapter-test"
     fun detail(bookId: Long) = "book/$bookId"
     fun edit(bookId: Long) = "book/$bookId/edit"
     fun excerptCreate(bookId: Long) = "book/$bookId/excerpt/create"
     fun excerptEdit(excerptId: Long) = "excerpt/$excerptId"
     fun reviewCreate(bookId: Long) = "book/$bookId/review/create"
     fun reviewEdit(reviewId: Long) = "review/$reviewId"
+    fun excerptReview() = "book/excerpt-review"
+    fun chapterTest(bookId: Long) = "book/$bookId/chapter-test"
 }
 
 object MistakeRoutes {
@@ -303,12 +318,17 @@ fun AppNav(
             composable(Tab.Study.route) {
                 StudyHomeScreen(
                     viewModel = studyViewModel,
+                    importViewModel = importViewModel,
                     onOpenWords = {
                         navController.navigate(StudyRoutes.WORDS) { launchSingleTop = true }
                     },
                     onStartQuiz = {
                         studyViewModel.resetQuiz()
                         navController.navigate(StudyRoutes.QUIZ) { launchSingleTop = true }
+                    },
+                    onOpenMockExam = {
+                        studyViewModel.resetMockExam()
+                        navController.navigate(StudyRoutes.MOCK_EXAM) { launchSingleTop = true }
                     },
                     onOpenMistakes = {
                         navController.navigate(Tab.Mistake.route) {
@@ -318,9 +338,6 @@ fun AppNav(
                             launchSingleTop = true
                             restoreState = true
                         }
-                    },
-                    onAddWord = {
-                        navController.navigate(StudyRoutes.WORD_CREATE) { launchSingleTop = true }
                     },
                     onAddQuestion = {
                         navController.navigate(StudyRoutes.QUESTION_CREATE) { launchSingleTop = true }
@@ -333,6 +350,14 @@ fun AppNav(
                     },
                     onOpenSettings = {
                         navController.navigate(SettingsRoutes.SETTINGS) { launchSingleTop = true }
+                    },
+                    // 录入菜单：路由项都由决策表给出既有目的地（`BulkEntryTest` 钉着），这里只负责 navigate
+                    onNavigate = { path ->
+                        navController.navigate(path) { launchSingleTop = true }
+                    },
+                    // 拍照录题跳过粘贴页：OCR 出来的文本已在 plan 里，直接进预览（口径同截图取词）
+                    onPreviewImport = {
+                        navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
                 )
             }
@@ -439,7 +464,10 @@ fun AppNav(
                         navController.navigate(StudyRoutes.CARDS) { launchSingleTop = true }
                     },
                     onBulkImport = {
-                        navController.navigate(ImportRoutes.paste(ImportKind.WORD)) { launchSingleTop = true }
+                        // 目的地上收到决策表：与录入菜单里那一项同一个串，两边不会各走各的路
+                        BulkAction.WORD_BULK.routeOrNull()?.let {
+                            navController.navigate(it) { launchSingleTop = true }
+                        }
                     },
                     // 截图取词跳过粘贴页：OCR 出来的文本已经在 plan 里，直接进预览
                     onPreviewImport = {
@@ -462,7 +490,33 @@ fun AppNav(
             composable(StudyRoutes.QUIZ) {
                 QuizScreen(
                     viewModel = studyViewModel,
+                    importViewModel = importViewModel,
                     onBack = { navController.popBackStack() },
+                    onNavigate = { path ->
+                        navController.navigate(path) { launchSingleTop = true }
+                    },
+                    onPreviewImport = {
+                        navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
+                    },
+                )
+            }
+            composable(StudyRoutes.MOCK_EXAM) {
+                MockExamScreen(
+                    viewModel = studyViewModel,
+                    onBack = { navController.popBackStack() },
+                    // 交卷之后才跳成绩页：submitMockExam 已在 VM 里同步置好 submitted/results
+                    onSubmitted = {
+                        navController.navigate(StudyRoutes.EXAM_RESULT) { launchSingleTop = true }
+                    },
+                )
+            }
+            composable(StudyRoutes.EXAM_RESULT) {
+                ExamResultScreen(
+                    viewModel = studyViewModel,
+                    onBack = {
+                        studyViewModel.resetMockExam()
+                        navController.popBackStack()
+                    },
                 )
             }
             composable(StudyRoutes.WORD_CREATE) {
@@ -528,19 +582,19 @@ fun AppNav(
             }
             composable(ImportRoutes.RESULT) {
                 val importState by importViewModel.state.collectAsStateWithLifecycle()
-                ImportResultScreen(
-                    outcome = importState.outcome ?: ImportOutcome(0, emptyList(), emptyList()),
-                    onDone = {
-                        importViewModel.reset()
-                        // 传的是路由模板而不是填好的路径：hasRoute 比的就是 destination.route 本身
-                        navController.popBackStack(ImportRoutes.PASTE, inclusive = true)
-                    },
-                    onReviewRejected = {
-                        importViewModel.reset()
-                        // inclusive = false ⇒ 停在粘贴页，`raw` 由 rememberSaveable 留着，用户就地改那几行
-                        navController.popBackStack(ImportRoutes.PASTE, inclusive = false)
-                    },
-                )
+                // Bug A（显示源）：只取本次成功的 outcome，绝不为 null 伪造 ImportOutcome(0)——见 importResultOutcomeFor。
+                // Bug B（导航落点）：退出交给 popBackOutOfImportFlow。在线词库 / 截图取词那条返回栈里没有 paste，
+                //   原先写死 popBackStack(PASTE) 是空操作、把人困在结果页；现在无论哪条入口都能落到进入导入流之前那一屏。
+                // 退出不再调 importViewModel.reset()：它会清空这条共享 StateFlow 的 outcome，结果页仍挂在组合里时就渲染成
+                //   「成功导入 0」；而下次进导入流本来就会 loadPlan 重置，这里重置既冗余又是 Bug A 的成因。
+                when (val outcome = importResultOutcomeFor(importState)) {
+                    null -> LaunchedEffect(Unit) { popBackOutOfImportFlow(navController, inclusive = true) }
+                    else -> ImportResultScreen(
+                        outcome = outcome,
+                        onDone = { popBackOutOfImportFlow(navController, inclusive = true) },
+                        onReviewRejected = { popBackOutOfImportFlow(navController, inclusive = false) },
+                    )
+                }
             }
 
             // ── 错题模块子路由 ──────────────────────────────────
@@ -599,6 +653,12 @@ fun AppNav(
                     },
                     onEditReview = { reviewId ->
                         navController.navigate(BookRoutes.reviewEdit(reviewId)) { launchSingleTop = true }
+                    },
+                    onReviewExcerpts = { _ ->
+                        navController.navigate(BookRoutes.excerptReview()) { launchSingleTop = true }
+                    },
+                    onChapterTest = { bookId ->
+                        navController.navigate(BookRoutes.chapterTest(bookId)) { launchSingleTop = true }
                     },
                 )
             }
@@ -659,6 +719,26 @@ fun AppNav(
                 ReviewEditScreen(
                     reviewId = entry.arguments?.getLong("reviewId") ?: 0L,
                     bookId = null,
+                    viewModel = bookViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            // ── v2.7 计划 B Task 18：检索式书摘复习 + 章节自测（附在读书子路由末尾，最小附加）──
+            // 复习队列是全局的（到期书摘不分哪本书），所以 EXCERPT_REVIEW 不带参数；
+            // 章节自测绑定单书，走 {bookId}。
+            composable(BookRoutes.EXCERPT_REVIEW) {
+                ExcerptReviewScreen(
+                    viewModel = bookViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = BookRoutes.CHAPTER_TEST,
+                arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
+            ) { entry ->
+                ChapterTestScreen(
+                    bookId = entry.arguments?.getLong("bookId") ?: 0L,
                     viewModel = bookViewModel,
                     onBack = { navController.popBackStack() },
                 )

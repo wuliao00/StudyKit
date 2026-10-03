@@ -41,6 +41,7 @@ import com.studykit.ui.components.StatTile
 import com.studykit.ui.theme.AppTheme
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** 少于这个样本数就不画"你的实测"：三四个点连成的折线会被当成结论 */
 private const val MinCurveSamples = 20
@@ -156,7 +157,133 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
                 color = colors.secondaryText,
             )
         }
+
+        // 「延迟后测」卡（v2.7 spec §9 / D7）：放在最后，因为它读的是上面那张曲线的同一个原料，
+        // 但回答的是另一个问题——不是"我忘多快"，而是"模型说我会记得，我真记得吗"
+        Spacer(Modifier.height(AppTheme.space.lg))
+        SectionHeader(title = "延迟后测")
+        Spacer(Modifier.height(AppTheme.space.md))
+        RetentionCard(state.retention)
         Spacer(Modifier.height(AppTheme.space.xl))
+    }
+}
+
+/**
+ * 延迟后测卡：三个间隔桶各自的"实测 vs 模型预测"与样本量（计划 B Task 19）。
+ *
+ * 三行永远按 [RetentionBuckets.CardLabels] 的顺序在，**没数据的档也占一行**（写"还没记录"），
+ * 因为少了那一行用户会以为这个档不存在，而不是自己还没攒到。
+ *
+ * [RetentionBuckets] 已经算完全部数字，这里只排版；分桶、达标、"样本还少"的阈值
+ * 都不允许在本文件再判一遍。
+ */
+@Composable
+private fun RetentionCard(buckets: List<RetentionBucket>) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val byLabel = buckets.associateBy { it.label }
+    val legacy = byLabel[RetentionBuckets.LABEL_UNKNOWN]
+    Column {
+        Text(
+            text = "到期那天模型说你还能记得多少，你当场答对了多少：按间隔分档对一次账。",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+        Spacer(Modifier.height(AppTheme.space.sm))
+        RetentionBuckets.CardLabels.forEach { label ->
+            RetentionBucketRow(label = label, bucket = byLabel[label])
+        }
+        if (legacy != null) {
+            // spec §9：迁移前回填的 grade=-1 "单列不计入"——它们只在这里报到，不进上面三行
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Text(
+                text = "另有 ${legacy.n} 条没记评分的旧数据（迁移前的记录），不参与上面的对照。",
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
+        }
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(
+            text = "同一个口径的原始流水就在备份包里（`review_history.csv`），想自己算一遍随时拿得出。" +
+                "本应用不上传任何东西，这张卡只能上线前后自己跟自己比。",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+    }
+}
+
+/**
+ * 一行一个档。与 [DurabilityRow] 同构（标签 + 右侧数字 + 比例条），但进度的语义不一样：
+ * 条子装的是**实测**，预测值只写在文字里不给第二条，免得图例变成四条颜色没人读得懂。
+ */
+@Composable
+private fun RetentionBucketRow(label: String, bucket: RetentionBucket?) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val n = bucket?.n ?: 0
+    val thin = RetentionBuckets.isThin(n)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = AppTheme.space.sm)
+            .semantics {
+                contentDescription = if (bucket == null) {
+                    "$label：还没有记录"
+                } else {
+                    "$label：实测 ${rateLabel(bucket.observedRate)}，" +
+                        "模型预测 ${bucket.predictedMean?.let(::rateLabel) ?: "当时没记"}，共 $n 次"
+                }
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = RetentionBuckets.displayNameOf(label), style = texts.body, modifier = Modifier.weight(1f))
+            Text(
+                text = if (bucket == null) {
+                    "还没记录"
+                } else {
+                    "实测 ${rateLabel(bucket.observedRate)} · 预测 ${bucket.predictedMean?.let(::rateLabel) ?: "没记"}"
+                },
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
+        }
+        Spacer(Modifier.height(AppTheme.space.xs))
+        LinearProgressIndicator(
+            progress = { (bucket?.observedRate ?: 0.0).toFloat() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp),
+            // 预测高于实测 = 模型把这个档估乐观了，用 warning 提醒；反之是保守（success）。
+            // 没数据时既不是好也不是坏，用 divider，不给一个凭空的颜色。
+            color = when {
+                bucket == null -> colors.divider
+                (bucket.predictedMean ?: bucket.observedRate) > bucket.observedRate -> colors.warning
+                else -> colors.success
+            },
+            trackColor = colors.divider,
+            strokeCap = StrokeCap.Round,
+        )
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(
+            // 没数据那一档 n=0，[RetentionBuckets.isThin] 已经把它算进"样本还少"了，这里不再判一次 null
+            text = if (thin) "$n 次 · 样本还少，先别当真" else "$n 次",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+    }
+}
+
+/**
+ * 保留率的可读形式。
+ *
+ * 不直接印四舍五入的整数：`MemoryHealth` 那侧已经为同一个坑付过学费（见 `DurabilityBucket.shareLabel`）——
+ * "有 1 次却显示 0%"念起来像"一次都没成"。0 次才是真的 0%。
+ */
+private fun rateLabel(rate: Double): String {
+    val percent = (rate * 100).roundToInt()
+    return when {
+        percent == 0 && rate > 0.0 -> "不足 1%"
+        else -> "$percent%"
     }
 }
 

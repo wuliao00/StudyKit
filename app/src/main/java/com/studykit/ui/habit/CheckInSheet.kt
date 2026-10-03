@@ -117,6 +117,10 @@ fun CheckInSheet(
                 style = texts.caption,
             )
 
+            // 那条 MISS_ONE_DAY 宽恕贴士**不在弹层里画了**（B17 复审 ⚠3）：天数型一键打卡根本没有
+            // 弹层，挂在这里等于那条路径永远碰不到它。判定与渲染都收上到列表层那一张
+            // [OneShotTipCard]，两路共用 [gapTipShouldShow] 这一个闸门，只说一次。
+
             if (isCountType) {
                 Spacer(Modifier.height(AppTheme.space.lg))
                 if (existing != null) {

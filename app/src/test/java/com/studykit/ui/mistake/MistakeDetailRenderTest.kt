@@ -2,6 +2,7 @@ package com.studykit.ui.mistake
 
 import com.studykit.data.entity.Mistake
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,8 +11,13 @@ import org.junit.Test
  * 错题详情页面相判定（[renderMistakeDetail]）纯逻辑单元测试。
  *
  * 钉的是终审 C1 那条数据正确性：route 上的 `mistakeId` 是唯一准绳，VM 交出的行必须与它
- * 比对过才允许渲染，否则「在 B 页渲染 A」会把标记掌握 / 删除 / 设复习时间写到 A 行上。
+ * 比对过才允许渲染，否则「在 B 页渲染 A」会把标记掌握 / 删除 / 覆盖排期写到 A 行上。
  * 每条用例都各挡一种塌法：只判空、只判行 id、或者把「还没答完」当成「库里没有」。
+ *
+ * 后半组是 v2.7 B14（计划 Step 3）加进来的文案守卫：错题排期已经交给内核，
+ * v2.5 §2.4 那句「复习时间由你自己定，这里没有算法排期。」必须跟着退役——
+ * 把它钉成「不再出现」而不是删掉了事，手法与 `ContractDeleteCopyTest` 一致
+ * （文案收在纯函数里，所以守卫不需要 Robolectric）。上面那组页相判定一条未改。
  */
 class MistakeDetailRenderTest {
 
@@ -92,5 +98,41 @@ class MistakeDetailRenderTest {
         )
         val render = renderMistakeDetail(state = updated, mistakeId = 5L)
         assertEquals("改过名的题", (render as MistakeDetailReady).mistake.title)
+    }
+
+    // ── 排期文案守卫（v2.7 B14：算法接管，旧承诺退役）─────────────────────
+
+    /** 页面上与排期有关的全部说法，守卫逐条过一遍 */
+    private fun allSchedulingCopy(): List<String> = listOf(
+        reviewScheduleTitle(),
+        systemSchedulingNote(),
+        scheduleOverrideLabel(),
+        nextReviewLine(null),
+        nextReviewLine("10月05日"),
+    ) + manualOverrideOptions().map { it.first }
+
+    @Test fun `旧承诺「复习时间由你自己定」已从所有排期文案退役`() {
+        for (copy in allSchedulingCopy()) {
+            assertFalse("排期文案里不该再出现旧承诺：$copy", copy.contains("复习时间由你自己定"))
+            assertFalse("排期文案里不该再宣称没有算法：$copy", copy.contains("这里没有算法排期"))
+        }
+    }
+
+    @Test fun `主位说的是系统排期、人可以覆盖`() {
+        assertEquals("复习排期", reviewScheduleTitle())
+        assertEquals("系统按遗忘曲线排期，你可以覆盖", systemSchedulingNote())
+        assertEquals("覆盖排期", scheduleOverrideLabel())
+    }
+
+    @Test fun `三档手选保留但只作为覆盖选项`() {
+        // 降级不是删掉：用户真的在用这三档；顺序也是页面上的显示顺序
+        assertEquals(listOf("明天" to 1, "三天后" to 3, "一周后" to 7), manualOverrideOptions())
+    }
+
+    @Test fun `未排期时不假装已经定好时间`() {
+        val unset = nextReviewLine(null)
+        assertTrue(unset.contains("还没排上"))
+        assertTrue(unset.contains("由系统安排"))
+        assertEquals("下次复习：10月05日", nextReviewLine("10月05日"))
     }
 }

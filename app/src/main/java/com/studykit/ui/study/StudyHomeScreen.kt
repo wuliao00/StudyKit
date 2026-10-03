@@ -27,7 +27,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,15 +41,24 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
+import com.studykit.ui.bulkimport.BulkEntries
+import com.studykit.ui.bulkimport.BulkScreen
+import com.studykit.ui.bulkimport.ImportViewModel
+import com.studykit.ui.bulkimport.QuestionPhotoRationale
+import com.studykit.ui.bulkimport.dispatchEntryAction
+import com.studykit.ui.bulkimport.rememberQuestionPhotoImport
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
+import com.studykit.ui.components.EntryMenuButton
 import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.components.StatTileTier
+import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
@@ -60,22 +68,45 @@ import java.time.temporal.ChronoUnit
 /**
  * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
  * 颜色与文字样式统一取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
+ *
+ * v2.7.0.1：右上角那颗「＋录入」从「只能录一个单词」扩成一张小菜单（决策表在 [BulkEntries]），
+ * 其中「拍照录入题目」就地拉起相机、OCR 后直接进既有的预览屏 —— 其余项都只是往 [onNavigate] 递一条既有路由。
  */
 @Composable
 fun StudyHomeScreen(
     viewModel: StudyViewModel,
+    importViewModel: ImportViewModel,
     onOpenWords: () -> Unit,
     onStartQuiz: () -> Unit,
+    onOpenMockExam: () -> Unit,
     onOpenMistakes: () -> Unit,
-    onAddWord: () -> Unit,
     onAddQuestion: () -> Unit,
     onBulkImportQuestions: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit,
+    onNavigate: (String) -> Unit,
+    onPreviewImport: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
+    // 拍照录题就地完成（相机 → OCR → 预览屏），不另开一屏；菜单里其余项走路由
+    val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport)
+
+    // ── SIXTY_SIX 贴士（计划 B Task 17 Step 2b / spec §8）：火焰徽章天数恰好走到 21 那天，
+    // 在 hero 下方挂一次「21 天不是终点、66 天才是中位数」——每次安装一次（sixtySixTipSeen）。
+    // 判定全部在 [SixtySixTip]（纯函数，SixtySixTipTest 钉住 20/21/22 三条口径）：
+    //  - 点亮只看 [SixtySixTip.shouldLatch]，点亮那一帧就把 sixtySixTipSeen 落库（只弹一次）；
+    //  - 画不画看 [SixtySixTip.shouldShow]：天数走过 21（明天再学一次就是 22）这一枚状态自动复位，
+    //    不把已经过去的 21 天一直留在 hero 下面。
+    val sixtySixTipSeen = AppTheme.settings.sixtySixTipSeen
+    var sixtySixLatched by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.streakDays, sixtySixTipSeen) {
+        if (SixtySixTip.shouldLatch(streakDays = state.streakDays, tipSeen = sixtySixTipSeen)) {
+            sixtySixLatched = true
+            viewModel.markSixtySixTipSeen()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -90,21 +121,19 @@ fun StudyHomeScreen(
         ) {
             Text(text = "学习", style = texts.largeTitle)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onAddWord) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = colors.accentInk,
-                )
-                Spacer(Modifier.width(AppTheme.space.xs))
-                Text(
-                    text = "录入",
-                    style = texts.aux.copy(
-                        color = colors.accentInk,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                )
+            if (photoImport.isBusy()) {
+                Text(text = "识别中…", style = texts.caption, color = colors.secondaryText)
             }
+            EntryMenuButton(
+                items = BulkEntries.menuFor(BulkScreen.STUDY_HOME),
+                onSelect = { action ->
+                    dispatchEntryAction(
+                        action,
+                        navigate = onNavigate,
+                        openCamera = photoImport.start,
+                    )
+                },
+            )
             // 设置入口。这枚图标旁边**没有**等价文字（与底栏"图标 + label 同一语义节点"那种相反），
             // 所以必须给 contentDescription，否则读屏只会念出一个 unnamed 按钮。
             // 触摸目标由 IconButton 自身保证 48dp，不再叠 minimumInteractiveComponentSize。
@@ -117,6 +146,8 @@ fun StudyHomeScreen(
             }
         }
 
+        if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
+
         Spacer(Modifier.height(AppTheme.space.md))
         TodayHeroCard(
             todayDone = state.todayDone,
@@ -124,6 +155,15 @@ fun StudyHomeScreen(
             streakDays = state.streakDays,
             onStart = onOpenWords,
         )
+
+        // 连续满 21 天那次的一次性提醒（hero 正下方，紧贴火焰徽章的语义落点）。
+        // 走现成的 TipCard，不新增颜色；文案与证据都由 StudyTips 单点维护。
+        if (SixtySixTip.shouldShow(streakDays = state.streakDays, latched = sixtySixLatched)) {
+            StudyTips.forEvent(TipEvent.StreakReached(state.streakDays))?.let { tip ->
+                Spacer(Modifier.height(AppTheme.space.sm))
+                TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+            }
+        }
 
         Spacer(Modifier.height(AppTheme.space.md))
         // 三块磁贴全部走 Reference 档：这屏的第一等重点已经在上面那块（今日待办 + 主行动），
@@ -214,6 +254,17 @@ fun StudyHomeScreen(
         Spacer(Modifier.height(AppTheme.space.md))
         StaggeredIn(index = 1) {
             EntryCard(
+                icon = Icons.Outlined.CheckCircle,
+                iconColor = colors.accent,
+                iconContainerColor = colors.accentSoft,
+                title = "模考",
+                caption = "一次作答整卷 · 交卷后才逐题看反馈",
+                onClick = onOpenMockExam,
+            )
+        }
+        Spacer(Modifier.height(AppTheme.space.md))
+        StaggeredIn(index = 2) {
+            EntryCard(
                 icon = Icons.Outlined.Close,
                 iconColor = colors.warning,
                 iconContainerColor = colors.warningSoft,
@@ -262,11 +313,10 @@ private fun TodayHeroCard(
     HeroSummaryCard(
         label = "今日待办",
         value = "$todayDone / $total",
-        caption = if (todayDone >= goal) {
-            "今日目标 $goal 词，已完成"
-        } else {
-            "今日目标 $goal 词，还差 ${goal - todayDone}"
-        },
+        // 目标梯度提示（GoalCue 纯函数，GoalCueTest 钉着）：未完成时陈述"还差几词"，
+        // 达成退回原来那句"已完成"（GoalCue 对达成/非法目标返回 null = 梯度那句不出现）。
+        // 走现成的 caption 槽，不新增颜色、不再加第二行重复的"还差"。
+        caption = GoalCue.text(done = todayDone, goal = goal) ?: "今日目标 $goal 词，已完成",
         actionLabel = "去背单词",
         onAction = onStart,
         modifier = modifier,

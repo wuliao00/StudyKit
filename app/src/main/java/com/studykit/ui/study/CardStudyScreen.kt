@@ -69,10 +69,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.entity.Word
-import com.studykit.data.memory.MemoryModel
-import com.studykit.data.memory.MemoryState
+import com.studykit.data.memory.Confidence
 import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.Scheduling
+import com.studykit.data.memory.kernelStateFor
+import com.studykit.data.memory.recallForDisplay
+import com.studykit.data.memory.toKernelRating
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
@@ -80,6 +82,9 @@ import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.QuizOptionTile
 import com.studykit.ui.components.RingGauge
+import com.studykit.ui.components.TipCard
+import com.studykit.tips.StudyTips
+import com.studykit.tips.TipEvent
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import kotlin.math.roundToInt
@@ -123,6 +128,11 @@ fun CardStudyScreen(
     // 组合期读的是一枚布尔设置，不是任何逐帧值；它往下只喂给 RecallGate 那两个纯函数。
     val gateEnabled = AppTheme.settings.recallBeforeGrade
     val gateHintSeen = AppTheme.settings.recallGateHintSeen
+    // ── 计划 B Task 11 新增两枚设置的读取点（同样是"每条设置必须有消费点"）──
+    // confidenceEnabled：翻面后、评分前那行信心条开不开（关掉 = 完全退回 v2.6 交互，不采集）。
+    val confidenceEnabled = AppTheme.settings.confidenceEnabled
+    // flipTipSeen：翻面时那条 RECALL_FIRST 贴士看过没有（每次安装一次，口径同 recallGateHintSeen）。
+    val flipTipSeen = AppTheme.settings.flipTipSeen
 
     /** 闸门第一次拦下滑动时那条一次性说明；置真的键在 `AppSettings.recallGateHintSeen` */
     var showGateHint by rememberSaveable { mutableStateOf(false) }
@@ -210,6 +220,22 @@ fun CardStudyScreen(
                 val revealed = rememberSaveable(card?.id) { mutableStateOf(false) }
                 // 预测试选中的那一项：-1 = 还没选。同样按 id 键控，切卡即复位
                 var picked by rememberSaveable(card?.id) { mutableIntStateOf(-1) }
+                // ── 计划 B Task 11：自评信心 ──
+                // 这张卡选中的信心档：null = 没选（评分时 confidence 落 NULL，不参与超纠正）。
+                // 与 revealed 同一生命周期、按 card?.id 键控：换卡自动清零。Step 0 取证：revealed 用的是
+                // rememberSaveable(card?.id)，页面里并没有一个 LaunchedEffect(word.id) 去清它 —— 计划文本里
+                // "写在同一个 LaunchedEffect" 与仓内实际不符，这里按 revealed 同一条 remember 键控实现同样效果。
+                // 用非 saveable 的 remember：转屏丢了这枚选择只是"这次没采集到"，落 NULL 比拿旧值冒充更诚实。
+                var conf by remember(card?.id) { mutableStateOf<Confidence?>(null) }
+                // 首次翻面时那条 RECALL_FIRST 贴士（每次安装一次，靠 AppSettings.flipTipSeen）。
+                // showFlipTip 页面级、不按卡键控：整轮只在第一次翻面点亮一次，换卡不重置。
+                var showFlipTip by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(revealed.value) {
+                    if (revealed.value && !flipTipSeen && !showFlipTip) {
+                        showFlipTip = true
+                        viewModel.markFlipTipSeen()
+                    }
+                }
 
                 // 出题要查一次词库（同词库的其他释义），所以挂在副作用里而不是组合期
                 LaunchedEffect(card?.id, gateEnabled) {
@@ -248,13 +274,22 @@ fun CardStudyScreen(
                     // AnimatedContent 转场期间旧 idx 仍可能被重组一次 —— getOrNull 兜底，宁可不画也不崩。
                     val shown = state.queue.getOrNull(idx) ?: return@AnimatedContent
                     if (quiz != null && shown.id == quiz.wordId) {
-                        RecallPretestPanel(
-                            word = shown,
-                            pretest = quiz,
-                            picked = picked,
-                            onPick = { picked = it },
-                            onConfirm = { revealed.value = true },
-                        )
+                        Column {
+                            RecallPretestPanel(
+                                word = shown,
+                                pretest = quiz,
+                                picked = picked,
+                                onPick = { picked = it },
+                                onConfirm = { revealed.value = true },
+                            )
+                            // 新词预测试出现处带一条 PRETEST 贴士（app.docx 模块1：先猜再学）。
+                            // 这一条是"事件出现即带"的情境贴士（同 QuizScreen 的 INTERLEAVE / StrugglingReview 两处），
+                            // 不做每次安装一次的持久化 —— 只有 AboutToFlip 那条才需要 flipTipSeen。
+                            StudyTips.forEvent(TipEvent.NewCardFirstLook)?.let { tip ->
+                                Spacer(Modifier.height(AppTheme.space.md))
+                                TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
                     } else {
                         SwipeRatingCard(
                             word = shown,
@@ -265,10 +300,29 @@ fun CardStudyScreen(
                                 if (!gateHintSeen) showGateHint = true
                             },
                             onGrade = { known ->
-                                if (known) viewModel.markKnown() else viewModel.markUnknown()
+                                // 滑动/两颗按钮结算也带上当前信心档：翻面后用户没选过信心就是 conf=null
+                                // （走原口径，confidence 落 NULL、不触发超纠正）。
+                                if (known) viewModel.markKnown(conf) else viewModel.markUnknown(conf)
                             },
                         )
                     }
+                }
+                // ── 首次翻面后那条 RECALL_FIRST 贴士（每次安装一次，flipTipSeen 已置真后不再出现）──
+                if (showFlipTip) {
+                    StudyTips.forEvent(TipEvent.AboutToFlip)?.let { tip ->
+                        TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                    }
+                }
+                // ── 信心行：翻面后、评分前那 10 秒的自评（app.docx 模块1 P0"自评信心"）──
+                // 只在 confidenceEnabled 开着、答案已露出（revealed）、且当前不在做预测试时出现，摆在 GradeRow 上方。
+                // 预测试那一屏是闸门的另一条通过路径，它自己已带 PRETEST 贴士，不在此再叠信心行（quiz != null 即隐藏）。
+                if (confidenceEnabled && revealed.value && quiz == null) {
+                    ConfidenceRow(
+                        selected = conf,
+                        onPick = { conf = it },
+                    )
+                    Spacer(Modifier.height(AppTheme.space.sm))
                 }
                 // 评分按钮印出「这次会排到几天后」：整套模型唯一的可见出口。
                 // 放在 AnimatedContent 之外，切卡时只有数字变，按钮本身不跟着滑走。
@@ -285,7 +339,9 @@ fun CardStudyScreen(
                             revealed = revealed.value,
                             pretestActive = quiz != null,
                         ),
-                        onGrade = { grade -> viewModel.gradeCard(grade) },
+                        // 三档自评把用户选的信心档一并传进内核路径：conf=null 时 gradeCard 走原口径。
+                        // 传 conf 之后 A-T9 那条 Hypercorrection 侧信道与 confidence 落库才真正被喂到（Task 11 只做 UI 接线）。
+                        onGrade = { grade -> viewModel.gradeCard(grade, conf = conf) },
                     )
                 }
             }
@@ -968,6 +1024,13 @@ private const val ONE_DAY_MS = 86400000L
  * （否则看一眼卡面就顺手按"认识"，闸门就白做了）；预测试从摆出选项到用户确认之间同样灰着。
  * 灰的方式沿用 [AppButton] 那副禁用态 —— 文字退到 `secondaryText`，不另造一档颜色、
  * 不加 alpha，`clickable(enabled = false)` 本身就不吃事件也不画 ripple。
+ *
+ * 预览走的是**活跃内核**（设置里那一个，经 [KernelHub.forId]）：与 `StudyViewModel.gradeCard`
+ * 同一条 `review → nextIntervalDays` 通路、同一个 `kernelStateFor` 取状态。这不是优化，是
+ * 必须的：印在按钮上的数字与点下去真排出的间隔只要有一处各算一套，用户当场就会看见它骗人
+ * （v2.6 时这一行直接叫 `MemoryModel.preview`，那一头只有一个内核所以不会分家）。
+ * 读设置用 [AppTheme.settings] 而不加形参：页面早就在同一份 CompositionLocal 上读闸门那两项，
+ * 为这一个数字新开一条参数链会把"设置从哪来"再拆成两套。
  */
 @Composable
 private fun GradeRow(
@@ -978,18 +1041,27 @@ private fun GradeRow(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    // 预览必须用这个词**真实已拖的时间**：拿理想排期算， overdue 的词会印出比实际短得多的间隔
+    val previewKernel = KernelHub.forId(AppTheme.settings.schedulingKernel)
+    // 预览必须用这个词**真实已拖的时间**：拿理想排期算，overdue 的词会印出比实际短得多的间隔
     val gapDays = (System.currentTimeMillis() - (word.lastReviewAt ?: word.createdAt))
         .coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
-    val preview = MemoryModel.preview(
-        state = MemoryState(word.halfLifeDays, word.difficulty),
-        gapDays = gapDays,
-        targetRecall = scheduling.targetRecall,
-        maxIntervalDays = scheduling.maxIntervalDays,
-    )
+    val before = kernelStateFor(previewKernel, word)
+    // 三档各跑一遍"评一次 → 该排几天"，与 gradeCard 逐字同序；
+    // conf 现在恒为 null（采集信心是计划 B 的 ConfidencePill），侧信道不改这里的间隔，
+    // 只可能在事后把时刻往前拉，所以按钮上印的仍是内核排出来的那个间隔
+    val days = ReviewGrade.entries.associateWith { grade ->
+        val rating = grade.toKernelRating()
+        previewKernel.nextIntervalDays(
+            previewKernel.review(before, gapDays, rating, conf = null),
+            rating,
+            scheduling.targetRecall,
+            scheduling.maxIntervalDays,
+        )
+    }
+    val predictedRecall = recallForDisplay(previewKernel, before, gapDays)
     Spacer(Modifier.height(AppTheme.space.sm))
     Text(
-        text = "现在按下去，预计还记得 ${(preview.predictedRecall * 100).roundToInt()}%",
+        text = "现在按下去，预计还记得 ${(predictedRecall * 100).roundToInt()}%",
         style = texts.caption,
         color = colors.secondaryText,
     )
@@ -997,7 +1069,7 @@ private fun GradeRow(
     Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
         GradeButton(
             label = "认识",
-            interval = formatIntervalLabel(preview.recallDays),
+            interval = formatIntervalLabel(days.getValue(ReviewGrade.RECALL)),
             background = colors.successSoft,
             ink = colors.successInk,
             enabled = enabled,
@@ -1006,7 +1078,7 @@ private fun GradeRow(
         )
         GradeButton(
             label = "模糊",
-            interval = formatIntervalLabel(preview.vagueDays),
+            interval = formatIntervalLabel(days.getValue(ReviewGrade.VAGUE)),
             background = colors.goldSoft,
             ink = colors.goldInk,
             enabled = enabled,
@@ -1015,7 +1087,7 @@ private fun GradeRow(
         )
         GradeButton(
             label = "忘记",
-            interval = formatIntervalLabel(preview.forgetDays),
+            interval = formatIntervalLabel(days.getValue(ReviewGrade.FORGET)),
             background = colors.warningSoft,
             ink = colors.warningInk,
             enabled = enabled,

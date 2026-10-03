@@ -24,6 +24,17 @@ interface QuestionDao {
     @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
     suspend fun countBySubject(subject: String): Int
 
+    /**
+     * 同考点候选池（v2.7 计划 B Task 15「换一道同考点的」）。
+     *
+     * 按 `concept_tag` **完全相等**取同标签的题（含目标自身，好让 `VariantPicker` 从池里读到目标那道
+     * 的标签再排除自身；空标签的题不参与匹配 —— `''` 是「未标注」，`WHERE concept_tag = :tag` 传空串
+     * 会把所有未标注的题捞进来当变式，是错的，故调用方（Repository）先挡掉空标签）。schema 冻结在 v7，
+     * `concept_tag` 列自 v7 就在，这里只加一条只读查询，不动表结构。
+     */
+    @Query("SELECT * FROM questions WHERE concept_tag = :tag ORDER BY id")
+    suspend fun getByConceptTag(tag: String): List<Question>
+
     @Insert
     suspend fun insert(question: Question): Long
 

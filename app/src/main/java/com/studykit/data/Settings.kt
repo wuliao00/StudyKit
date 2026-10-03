@@ -30,8 +30,12 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * 关掉之后滑动与三档自评**完全**退回旧行为，不留半截拦截）；
  * [recallGateHintSeen] → 同一条闸门的「第一次拦下你」说明（`CardStudyScreen` 读、
  * 点「知道了」经 `StudyViewModel.markRecallGateHintSeen` 写，每次安装只出现一次）；
+ * [flipTipSeen] → 翻面时那条 RECALL_FIRST 贴士（`CardStudyScreen` 读、首次翻面经
+ * `StudyViewModel.markFlipTipSeen` 写，每次安装只出现一次；口径与 recallGateHintSeen 一致）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
- * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）。
+ * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
+ * [schedulingKernel] → 排期算哪个内核，消费点在 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（均经 `KernelHub.forId`，A-T9）；写侧是设置页「排期与练习」的二选一（计划 B Task 20，首个可切换的生产入口）；
+ * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen` 的 `ConfidenceRow`，采集 UI 已在计划 B Task 11-12 落地、设置页也能关（计划 B Task 20）；关掉即 conf 恒 null、confidence 列落 NULL（这一句说的是"关掉"那一侧的落库口径，不代表开关还没生效）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
@@ -105,6 +109,57 @@ data class AppSettings(
      * 而它当下更费劲（Kornell & Bjork 2008）—— 主观感受与客观效果错位是这套方法的特征，不是玄学承诺。
      */
     val interleavingEnabled: Boolean = true,
+    /**
+     * 排期内核 id（"FSRS"|"HALF_LIFE"，值域 [KERNEL_IDS]，默认 FSRS）。
+     * 消费点：`ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（计划 A-T9，都经 `KernelHub.forId`）。
+     * 写侧：设置页「排期与练习」的二选一（计划 B Task 20，首个生产入口），副标题逐字含诚实口径——
+     * 切回 HALF_LIFE 不丢评分历史，但 fsrs_*→半衰期侧的读数是换算近似（spec §2.1）。
+     */
+    val schedulingKernel: String = "FSRS",
+    /**
+     * 翻面/提交前的信心自评条（app.docx 模块1/2；默认**开**）。
+     * 关掉 = 完全退回 v2.6 交互（不采集、confidence 列恒 NULL）；采集 UI 已在计划 B Task 11-12 落地，
+     * 设置页（计划 B Task 20）也能关。这里的"恒 null"只指关掉那一侧的落库口径，开关本身已经生效。
+     */
+    val confidenceEnabled: Boolean = true,
+    /**
+     * 翻面时那条 RECALL_FIRST 贴士（"先在脑子里把答案挤一遍，再翻这一面"），看过就没有
+     * （**每次安装一次**，与 [recallGateHintSeen] 同一条纪律）。首次翻面出现时经
+     * `StudyViewModel.markFlipTipSeen` 置真。默认**没看过**（false）。
+     */
+    val flipTipSeen: Boolean = false,
+    /**
+     * 首次保存带执行意图的习惯时那条 IF_THEN 贴士（计划 B Task 16），看过就没有
+     * （**每次安装一次**，与 [flipTipSeen]、[recallGateHintSeen] 同一条纪律）。首次成功保存带
+     * `ifThen` 的习惯时经 `HabitViewModel.markIfThenTipSeen` 置真。默认**没看过**（false）。
+     */
+    val ifThenTipSeen: Boolean = false,
+    /**
+     * 连续学习满 21 天（[com.studykit.tips.StudyTips.STREAK_MYTH_DAY]）那条 SIXTY_SIX 贴士
+     * （计划 B Task 17 / spec §8），“21 天不是终点，66 天才是中位数”，看过就没有
+     * （**每次安装一次**，与 [flipTipSeen]、[ifThenTipSeen] 同一条纪律）。首页 hero 检测到
+     * 连续天数恰好到 21 时经 `StudyViewModel.markSixtySixTipSeen` 置真。默认**没看过**（false）。
+     */
+    val sixtySixTipSeen: Boolean = false,
+    /**
+     * 昨日缺卡那条 MISS_ONE_DAY 宽恕贴士（计划 B Task 17；B17 复审 ⚠3 把它接成两条入口共用），
+     * 说过一次就够（**每次安装一次**，与 [flipTipSeen]、[ifThenTipSeen]、[sixtySixTipSeen] 同一条纪律）。
+     * 打卡弹层开起来（数量型）与天数型一键打卡后的列表层卡片都读这一条，
+     * 亮那次经 `HabitViewModel.markGapTipSeen` 置真。默认**没看过**（false）。
+     */
+    val gapTipSeen: Boolean = false,
+    /**
+     * 保存第一道章节自测后那条 EXPLAIN_WHY 贴士（计划 B Task 18），看过就没有
+     * （**每次安装一次**，与 [flipTipSeen] / [ifThenTipSeen] / [sixtySixTipSeen] / [gapTipSeen] 同一条纪律）。
+     * 章节自测页首次成功保存时经 `BookViewModel.markChapterTipSeen` 置真。默认**没看过**（false）。
+     */
+    val chapterTipSeen: Boolean = false,
+    /**
+     * 书架上「只有划线没有检索」那条 RECALL_NOTES 贴士（计划 B Task 18）：存在 7 天前建且
+     * review_count==0 的书摘时首屏出一次，看过就没有（**每次安装一次**，同上纪律）。
+     * 书架首次亮它时经 `BookViewModel.markExcerptTipSeen` 置真。默认**没看过**（false）。
+     */
+    val excerptTipSeen: Boolean = false,
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -139,6 +194,14 @@ data class AppSettings(
         KEY_RECALL_BEFORE_GRADE to recallBeforeGrade.toString(),
         KEY_RECALL_GATE_HINT_SEEN to recallGateHintSeen.toString(),
         KEY_INTERLEAVING to interleavingEnabled.toString(),
+        KEY_SCHEDULING_KERNEL to schedulingKernel,
+        KEY_CONFIDENCE_ENABLED to confidenceEnabled.toString(),
+        KEY_FLIP_TIP_SEEN to flipTipSeen.toString(),
+        KEY_IF_THEN_TIP_SEEN to ifThenTipSeen.toString(),
+        KEY_SIXTY_SIX_TIP_SEEN to sixtySixTipSeen.toString(),
+        KEY_GAP_TIP_SEEN to gapTipSeen.toString(),
+        KEY_CHAPTER_TIP_SEEN to chapterTipSeen.toString(),
+        KEY_EXCERPT_TIP_SEEN to excerptTipSeen.toString(),
     )
 
     companion object {
@@ -163,6 +226,17 @@ data class AppSettings(
         const val KEY_RECALL_BEFORE_GRADE = "recall_before_grade"
         const val KEY_RECALL_GATE_HINT_SEEN = "recall_gate_hint_seen"
         const val KEY_INTERLEAVING = "interleaving_enabled"
+        const val KEY_SCHEDULING_KERNEL = "scheduling_kernel"
+        const val KEY_CONFIDENCE_ENABLED = "confidence_enabled"
+        const val KEY_FLIP_TIP_SEEN = "flip_tip_seen"
+        const val KEY_IF_THEN_TIP_SEEN = "if_then_tip_seen"
+        const val KEY_SIXTY_SIX_TIP_SEEN = "sixty_six_tip_seen"
+        const val KEY_GAP_TIP_SEEN = "gap_tip_seen"
+        const val KEY_CHAPTER_TIP_SEEN = "chapter_tip_seen"
+        const val KEY_EXCERPT_TIP_SEEN = "excerpt_tip_seen"
+
+        /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
+        val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
 
         const val DEFAULT_WORD_GOAL = 20
         const val DEFAULT_REMINDER_HOURS = 6
@@ -234,6 +308,30 @@ data class AppSettings(
                 // 交错：默认**开**，与其余每一项同一口径（垃圾值 / 缺键只让本项退回默认）
                 interleavingEnabled = map[KEY_INTERLEAVING]?.toBooleanStrictOrNull()
                     ?: defaults.interleavingEnabled,
+                // 内核：默认 FSRS；垃圾值 / 缺键同口径，只让本项退回默认
+                schedulingKernel = map[KEY_SCHEDULING_KERNEL]?.takeIf { it in KERNEL_IDS }
+                    ?: defaults.schedulingKernel,
+                // 信心条：默认**开**，关掉即完全退回 v2.6 交互
+                confidenceEnabled = map[KEY_CONFIDENCE_ENABLED]?.toBooleanStrictOrNull()
+                    ?: defaults.confidenceEnabled,
+                // 翻面贴士：默认**没看过**，口径同 recallGateHintSeen（每次安装一次的说明）
+                flipTipSeen = map[KEY_FLIP_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.flipTipSeen,
+                // 执行意图贴士：默认**没看过**，口径同 flipTipSeen（每次安装一次的说明）
+                ifThenTipSeen = map[KEY_IF_THEN_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.ifThenTipSeen,
+                // 六六贴士：默认**没看过**，口径同 flipTipSeen / ifThenTipSeen（每次安装一次的说明）
+                sixtySixTipSeen = map[KEY_SIXTY_SIX_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.sixtySixTipSeen,
+                // 宽恕贴士：默认**没看过**，口径同 flipTipSeen / ifThenTipSeen / sixtySixTipSeen
+                gapTipSeen = map[KEY_GAP_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.gapTipSeen,
+                // 章节自测贴士：默认**没看过**，口径同其余 *TipSeen（每次安装一次的说明）
+                chapterTipSeen = map[KEY_CHAPTER_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.chapterTipSeen,
+                // 书摘检索贴士：默认**没看过**，与 chapterTipSeen 分开的两枚布尔（镜像纪律）
+                excerptTipSeen = map[KEY_EXCERPT_TIP_SEEN]?.toBooleanStrictOrNull()
+                    ?: defaults.excerptTipSeen,
             )
         }
     }

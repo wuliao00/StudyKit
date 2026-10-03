@@ -24,6 +24,14 @@ class QuestionRepository(
 
     suspend fun countBySubject(subject: String): Int = questionDao.countBySubject(subject)
 
+    /**
+     * 同考点候选池（v2.7 计划 B Task 15）。[conceptTag] 为空串（未标注）时直接给空列表：
+     * 空标签不构成考点，下去会把所有未标注的题当成变式。非空时返回含目标自身的同标签题，
+     * 排除自身与选随机那两步交给纯函数 `VariantPicker`。
+     */
+    suspend fun getByConceptTag(conceptTag: String): List<Question> =
+        if (conceptTag.isBlank()) emptyList() else questionDao.getByConceptTag(conceptTag)
+
     suspend fun add(subject: String, stem: String, options: List<String>, answerIndex: Int, explanation: String): Long {
         val array = JSONArray()
         options.forEach { array.put(it) }
@@ -43,8 +51,13 @@ class QuestionRepository(
     /** 批量入库，返回实际写入条数；判重与 `uuid` 填充由调用方负责 */
     suspend fun addAll(questions: List<Question>): Int = questionDao.insertAll(questions).size
 
-    /** 提交一次练习作答并写入练习记录，返回本次作答是否正确 */
-    suspend fun submitAnswer(questionId: Long, selected: Int): Boolean {
+    /**
+     * 提交一次练习作答并写入练习记录，返回本次作答是否正确。
+     *
+     * [confidence] 为作答前自评信心的落库整数值（编码唯一归口 [com.studykit.data.memory.toStorageInt]，不在本处重抄字面量；列口径见 [com.studykit.data.entity.PracticeRecord.confidence]）；
+     * null = 用户没选或关掉信心条，落 NULL，不冒充「瞎猜」（口径同 [com.studykit.ui.study.StudyViewModel.gradeCard]）。
+     */
+    suspend fun submitAnswer(questionId: Long, selected: Int, confidence: Int? = null): Boolean {
         val correct = questionDao.getById(questionId)?.answerIndex == selected
         practiceDao.insert(
             PracticeRecord(
@@ -52,6 +65,7 @@ class QuestionRepository(
                 questionId = questionId,
                 selected = selected,
                 correct = correct,
+                confidence = confidence,
             ),
         )
         return correct

@@ -213,6 +213,15 @@ fun MistakeCaptureScreen(
             minLines = 4,
         )
 
+        // v2.7 B15：拍照题重做时多一道「重述门」（见 RedoFlow.restateGateRequired）——先把这句话
+        // 放在录入现场，让人拍照时就知道待会儿要照自己的话重述关键步骤，现在写全一点更有的可重述。
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Text(
+            text = "拍照题重做时会先请你照自己的话把关键步骤重述一遍，再展开解析。",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+
         Spacer(Modifier.height(AppTheme.space.xl))
         AppButton(
             text = "保存错题",

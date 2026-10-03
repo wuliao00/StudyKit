@@ -24,12 +24,19 @@ data class StatsUiState(
     val curve: List<CurvePoint> = emptyList(),
     val modelCurve: List<Double> = emptyList(),
     val sampleCount: Int = 0,
+    /**
+     * 「延迟后测」卡（v2.7 spec §9 / D7）：7d / 30d / other 三档加一个 unknown 旧档。
+     *
+     * 空桶根本不在列表里（判定全在 [RetentionBuckets]），所以"这个桶没数据"由
+     * **缺少那个 label** 表达，而不是由一个 0% 冒充。
+     */
+    val retention: List<RetentionBucket> = emptyList(),
 )
 
 /**
  * 记忆看板 ViewModel。
  *
- * `combine` 的变换（全库分桶、按日聚合）放 Default 线程：一次评分就会让这四个 Flow 全部重算，
+ * `combine` 的变换（全库分桶、按日聚合）放 Default 线程：一次评分就会让这几个 Flow 全部重算，
  * 落在 Main 上就是主线程数一千多个数 —— 这类账在 v2.1 的首页上踩过一次。
  */
 class StatsViewModel(application: Application) : AndroidViewModel(application) {
@@ -49,7 +56,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         wordRepository.observeScheduledTimestamps(),
         wordRepository.observeReviewGapAndResult(),
         wordRepository.observeCount(),
-    ) { halfLives, scheduled, reviews, total ->
+        wordRepository.observeRetentionRows(),
+    ) { halfLives, scheduled, reviews, total, retentionRows ->
         // 旧记录没有 gap（v2.3 之前只存时间戳），mapNotNull 丢掉它们而不是补 0
         val samples = reviews.mapNotNull { row: ReviewGapRow ->
             row.gapDays?.let { GapSample(gapDays = it, recalled = row.correct) }
@@ -67,6 +75,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             curve = MemoryHealth.forgettingCurve(samples),
             modelCurve = MemoryHealth.modelCurve(halfLives, CURVE_DAYS),
             sampleCount = samples.size,
+            // 分桶与达标口径全在 RetentionBuckets，这里只递原料（一张卡不许自带一套算法）
+            retention = RetentionBuckets.of(retentionRows),
         )
     }
         .flowOn(Dispatchers.Default)

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -97,6 +98,8 @@ fun HabitCalendarScreen(
     // 因此 AnimatedContent 触发转场时读到的就是本次手势的方向。
     var slide by remember { mutableStateOf(0) }
     var makeUpDate by remember { mutableStateOf<LocalDate?>(null) }
+    // 断签保护日详情气泡（Task 17）：选中一个受保护的缺卡日就在网格下方共情提示一句
+    var selectedGuardDate by remember { mutableStateOf<LocalDate?>(null) }
 
     /** 翻月：先记方向再换月，保证 AnimatedContent 的滑入方向与手指意图一致 */
     fun stepMonth(delta: Int) {
@@ -195,6 +198,14 @@ fun HabitCalendarScreen(
                     // 日期网格（周一为首列）
                     val checkedDates = detail?.checkedDates ?: emptySet()
                     val today = LocalDate.now()
+                    // 断签保护展示层（Task 17 / spec D6）：本月逐日布尔串派生出「受保护的缺卡日」（灰圈）
+                    // 与「跨保护日的本月连续数」；口径全部来自 ui/habit/HabitGuardDisplay.kt 那组纯函数。
+                    // 串把 today 注入进去（B17 复审 🔴1）：进行中的月份只画到今天，未来日不算缺卡，
+                    // 否则灰圈会爬到还没来的格子上、「本月连续」中旬就被未来那串破链缺卡打成 0。
+                    val monthPattern = monthMissPattern(checkedDates = checkedDates, month = shownMonth, today = today)
+                    val guardedIdx = HabitGuard.guardedIndices(monthPattern)
+                    val guardedMissDates = guardedIdx.map { shownMonth.atDay(it + 1) }.toSet()
+                    val guardedStreak = monthStreakThrough(monthPattern)
                     val leadingBlanks = shownMonth.atDay(1).dayOfWeek.value - 1
                     val days = List(leadingBlanks) { null } +
                         (1..shownMonth.lengthOfMonth()).map { shownMonth.atDay(it) }
@@ -230,12 +241,19 @@ fun HabitCalendarScreen(
                                     // 转场期间出场的旧月网格只负责动效，不再吃点击：否则 220ms 里
                                     // 屏幕上是两个月份，TalkBack 也会把同一批日期读第二遍
                                     val interactive = shownMonth == month
+                                    val guardedMiss = !checked && date in guardedMissDates
                                     DayCell(
                                         date = date,
                                         checked = checked,
                                         isToday = date == today,
                                         makeUpEligible = makeUpEligible,
-                                        onClick = if (interactive && makeUpEligible) ({ makeUpDate = date }) else null,
+                                        guardedMiss = guardedMiss,
+                                        onClick = when {
+                                            !interactive -> null
+                                            makeUpEligible -> ({ makeUpDate = date })
+                                            guardedMiss -> ({ selectedGuardDate = date })
+                                            else -> null
+                                        },
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
@@ -243,6 +261,22 @@ fun HabitCalendarScreen(
                             // 补齐最后一行空位，保持等宽
                             repeat(7 - row.size) { Spacer(Modifier.weight(1f).aspectRatio(1f)) }
                         }
+                    }
+
+                    // 选中某个受断签保护的缺卡日：网格下方给一句共情气泡（文案由 HabitGuard 钉死）
+                    // selectedGuardDate 是 `by remember` 委托属性，不能直接智能转换（同下面 makeUpDate 的处理）
+                    val selectedGuard = selectedGuardDate
+                    if (selectedGuard != null && selectedGuard in guardedMissDates) {
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        GuardDayBubble(text = HabitGuard.MISSING_GUARD_TEXT)
+                    }
+                    // monthStreakThrough 的消费点：本月真用上了保护时，多说一句跨保护日的连续数
+                    if (guardedIdx.isNotEmpty()) {
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        Text(
+                            text = "本月连续 $guardedStreak 天（漏的 ${guardedIdx.size} 天已用断签保护，不计入断签）",
+                            style = texts.caption,
+                        )
                     }
                 }
             }
@@ -254,7 +288,7 @@ fun HabitCalendarScreen(
             text = if (makeupAllowed) {
                 "过去 ${MAKEUP_WINDOW_DAYS.toInt()} 天内漏打卡的日期（灰色圈）可点击补打卡"
             } else {
-                "补打卡已在设置里关闭：漏掉的日子点不动，连续记录会就此中断"
+                "补打卡已在设置里关闭：漏掉的日子点不动，但本月前 ${HabitGuard.MONTHLY_ALLOWANCE} 次漏卡仍受断签保护（灰圈）"
             },
             style = texts.caption,
         )
@@ -320,6 +354,7 @@ private fun DayCell(
     checked: Boolean,
     isToday: Boolean,
     makeUpEligible: Boolean,
+    guardedMiss: Boolean,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -336,6 +371,7 @@ private fun DayCell(
             checked   -> colors.onAccent
             isToday   -> colors.accentInk
             makeUpEligible -> colors.secondaryText
+            guardedMiss -> colors.secondaryText
             else      -> colors.primaryText
         },
         animationSpec = tween(durationMillis = MotionSpec.FadeMs),
@@ -374,8 +410,12 @@ private fun DayCell(
                 .clip(CircleShape)
                 .background(cellColor)
                 .border(
-                    width = if (isToday && !checked) 1.5.dp else if (makeUpEligible) 1.dp else 0.dp,
-                    color = if (makeUpEligible && !isToday) {
+                    width = when {
+                        isToday && !checked -> 1.5.dp
+                        makeUpEligible || guardedMiss -> 1.dp
+                        else -> 0.dp
+                    },
+                    color = if ((makeUpEligible || guardedMiss) && !isToday) {
                         colors.secondaryText.copy(alpha = 0.55f)
                     } else {
                         colors.accent
@@ -392,5 +432,25 @@ private fun DayCell(
                 ),
             )
         }
+    }
+}
+
+/**
+ * 断签保护的日详情气泡（计划 B Task 17）：日历里选中一个「受保护的缺卡日」时，在网格下方
+ * 挂的一句共情文案——内容即 [HabitGuard.MISSING_GUARD_TEXT]（「未打卡（已用断签保护）」）。
+ * 走现成的 accentSoft 柔底 + accentInk 墨字（T16 执行意图预览同款），不新增颜色。
+ */
+@Composable
+internal fun GuardDayBubble(text: String, modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.radius.md))
+            .background(colors.accentSoft)
+            .padding(AppTheme.space.md),
+    ) {
+        Text(text = text, style = texts.caption, color = colors.accentInk)
     }
 }

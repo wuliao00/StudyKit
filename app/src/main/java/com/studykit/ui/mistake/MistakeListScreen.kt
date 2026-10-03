@@ -1,8 +1,6 @@
 package com.studykit.ui.mistake
 
 import android.Manifest
-import android.content.Context
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,7 +45,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
@@ -243,9 +240,13 @@ fun MistakeListScreen(
     ) { granted ->
         if (granted) {
             showCameraRationale = false
-            launchCamera(context) { file, uri ->
-                pendingPhotoPath = file.absolutePath
-                takePictureLauncher.launch(uri)
+            // 落点由 MistakeImageStore 统一造（拍照录题那条路共用同一份，不各写一遍 FileProvider 口径）
+            val target = MistakeImageStore.createCameraTarget(context)
+            if (target == null) {
+                Toast.makeText(context, "相机暂时打不开，再点一次试试", Toast.LENGTH_SHORT).show()
+            } else {
+                pendingPhotoPath = target.first.absolutePath
+                takePictureLauncher.launch(target.second)
             }
         } else {
             showCameraRationale = true
@@ -350,14 +351,6 @@ fun MistakeListScreen(
             }
         }
     }
-}
-
-/** 创建相机临时文件并生成 FileProvider Uri（Android 11 需经 FileProvider 共享） */
-private fun launchCamera(context: Context, onReady: (File, Uri) -> Unit) {
-    val dir = MistakeImageStore.cameraTempDir(context)
-    val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-    val uri = FileProvider.getUriForFile(context, "com.studykit.fileprovider", file)
-    onReady(file, uri)
 }
 
 /**

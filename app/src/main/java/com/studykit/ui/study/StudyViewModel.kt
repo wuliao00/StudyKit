@@ -7,13 +7,19 @@ import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.Word
-import com.studykit.data.memory.MemoryModel
-import com.studykit.data.memory.MemoryParams
+import com.studykit.data.memory.Confidence
+import com.studykit.data.memory.Hypercorrection
 import com.studykit.data.memory.MemoryScheduler
-import com.studykit.data.memory.MemoryState
 import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.data.memory.Scheduling
+import com.studykit.data.memory.fsrsDifficultyFromHalfLife
+import com.studykit.data.memory.halfDifficultyFromFsrs
+import com.studykit.data.memory.kernelStateFor
+import com.studykit.data.memory.recallForDisplay
+import com.studykit.data.memory.toKernelRating
+import com.studykit.data.memory.toStorageInt
+import com.studykit.ui.mistake.MistakeIntake
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
@@ -21,14 +27,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.zip
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
+import kotlin.math.min
 
 /** 解析题目的 options_json（JSONArray 字符串）为选项列表 */
 fun parseOptions(optionsJson: String): List<String> = try {
@@ -89,6 +99,32 @@ data class QuizUiState(
 }
 
 /**
+ * 模考会话状态（v2.7 计划 B Task 13）：一次性持有整卷题、逐题只记所选、交卷前不产出对错。
+ *
+ * 与 [QuizUiState] 的关键差别：练习模式每题答完就地判定（`selected` / `correctCount` 边答边涨），
+ * 这里 `answers` 只是"第几题选了哪个"，对错与反馈全部压到 [submitMockExam] 那一刻，
+ * 算完才填进 [results]（[MockExamState] 的产物）。交卷前 `results` 为空、`correctCount` 恒 0，
+ * 页面也就无从泄露判词。
+ */
+data class MockExamUiState(
+    val subject: String = "",
+    val questions: List<Question> = emptyList(),
+    val answers: Map<Long, Int> = emptyMap(),
+    val index: Int = 0,
+    val submitted: Boolean = false,
+    val results: Map<Long, MockExamState.Answer> = emptyMap(),
+) {
+    val started: Boolean get() = questions.isNotEmpty()
+    val total: Int get() = questions.size
+    val current: Question? get() = questions.getOrNull(index)
+    val answeredCount: Int get() = answers.size
+    val correctCount: Int
+        get() = if (submitted) questions.count { results[it.id]?.correct == true } else 0
+    val accuracyPercent: Int
+        get() = if (total == 0) 0 else correctCount * 100 / total
+}
+
+/**
  * 学习模块 ViewModel：学习首页统计、单词列表、卡片学习会话、
  * 题库练习会话、单词/题目录入，全部 StateFlow 驱动。
  */
@@ -105,7 +141,18 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         private const val SESSION_SIZE = 10
         private const val QUIZ_SIZE = 10
 
-        /** 半衰期到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列） */
+        /** 模考整卷题量：比一轮练习更长一点，取数仍走现有 `getBySubject`（库里没有就有多少出多少） */
+        private const val MOCK_EXAM_SIZE = 20
+
+        /**
+         * 到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列）。
+         *
+         * v2.7 双内核之后这个名字只有一半字面是真的：
+         *  - 跑半衰期时它量的仍是**半衰期天数**；
+         *  - 跑 FSRS 时它量的是**实际排出的下次间隔天数**（那一侧 `hDays` 是 ×12.79 的镜像读数，
+         *    直接喂这个阈值会“一次评分即已掌握”，A-T3 复审遗留决定，消费点见 [gradeCard]）。
+         * 不改名是为了不把 diff 扩到所有读数点上。
+         */
         private const val MASTERED_HALF_LIFE_DAYS = 7.0
 
         /**
@@ -139,16 +186,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ── 学习首页状态 ──────────────────────────────────────────────────────
-    // 明日那一格取的是 `observeScheduledMemoryRows()` 一条 SQL 里的四个字段：
+    // 明日那一格取的是 `observeScheduledMemoryRows()` 一条 SQL 里的那几个字段：
     // 词数与保留率必须出自同一批行，所以这里不能退回 `observeScheduledTimestamps()` +
     // `observeHalfLifeDays()` 两次查询再配对（理由见那条投影查询的 KDoc）。
+    // 活跃内核 id 也进 combine：设置页切了内核，这一格必须**当场**按新内核重算，
+    // 不能等下一次数据变化才跟上 —— 切内核不会写 words 表，只挂数据的流根本不会重发。
     val homeState: StateFlow<StudyHomeUiState> = combine(
         wordRepository.observeAll(),
         mistakeRepository.observeUnmasteredCount(),
         wordRepository.observeReviewTimestamps(),
         questionRepository.observePracticeTimestamps(),
-        wordRepository.observeScheduledMemoryRows(),
-    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, scheduled ->
+        wordRepository.observeScheduledMemoryRows()
+            // 只跟踪内核 id 这一件事：换主题/改玻璃都不该重算整页首页（A-T9 双审 Minor）
+            .zip(settingsRepository.settings.map { it.schedulingKernel }.distinctUntilChanged()) { rows, kernelId ->
+                rows to kernelId
+            },
+    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, (scheduled, kernelId) ->
         val now = System.currentTimeMillis()
         // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致
         val zone = ZoneId.systemDefault()
@@ -157,7 +210,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val all = reviewTimestamps + practiceTimestamps
         // 「明天」的区间按本地日切，不用 SQL 的 date()（不吃时区）；
         // 这一格只算一次，词数和保留率都从它来
-        val tomorrow = TomorrowForecast.of(scheduled, TomorrowForecast.window(zone, today))
+        val tomorrow = TomorrowForecast.of(
+            scheduled, TomorrowForecast.window(zone, today), KernelHub.forId(kernelId),
+        )
         StudyHomeUiState(
             // 判据从「未掌握且到期」改成「有排期且到期」：见 WordDao.getDueForReview 的注释
             dueCount = words.count { it.nextReviewAt in 1L..now },
@@ -205,54 +260,97 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun markKnown() = gradeCard(ReviewGrade.RECALL)
+    /**
+     * 滑动/两颗按钮那两档快判（右=认识、左=忘记）。
+     * [conf] 由计划 B 的信心行带入（翻面后、评分前采集）；null = 用户没选，走原口径（不触发超纠正、confidence 落 NULL）。
+     */
+    fun markKnown(conf: Confidence? = null) = gradeCard(ReviewGrade.RECALL, conf = conf)
 
     /** 「模糊」：想起来了但犹豫过。加固照算，难度照涨 —— 不是"半个错" */
-    fun markVague() = gradeCard(ReviewGrade.VAGUE)
+    fun markVague(conf: Confidence? = null) = gradeCard(ReviewGrade.VAGUE, conf = conf)
 
-    fun markUnknown() = gradeCard(ReviewGrade.FORGET)
+    fun markUnknown(conf: Confidence? = null) = gradeCard(ReviewGrade.FORGET, conf = conf)
 
     /**
-     * 评一次分：把半衰期模型走一遍并落库。
+     * 评一次分：把**当前活跃内核**走一遍并落库。
      *
      * 取代原来的"答对 +1 天 / +3 天、答错 +10 分钟"写死阶梯 ——
      * 那套阶梯与历史答对次数无关，背到第 20 次仍然只隔 3 天。
      *
      * @param reactionMs 从翻面到按下按钮的毫秒数。只入库供以后校准参考，**不进模型**：
      *                   自我评分的犹豫时长和真实提取时长不是一回事。
+     * @param conf 用户自评信心，计划 B 的信心行传入；null = 没采集。
+     *             超纠正侧信道只在 `SURE × 未忆起` 触发，所以 null 一律不干预；
+     *             落库的 `confidence` 也就留 null —— 拿 0 冒充「瞎猜」是假数据。
      */
-    fun gradeCard(grade: ReviewGrade, reactionMs: Long? = null) {
+    fun gradeCard(grade: ReviewGrade, reactionMs: Long? = null, conf: Confidence? = null) {
         val state = _session.value ?: return
         val word = state.current ?: return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val sched = _scheduling.value
-            val params = MemoryParams()
-            val before = MemoryState(word.halfLifeDays, word.difficulty)
+            // 内核每轮会话现取，且与评分按钮预览同一个来源（AppTheme.settings.schedulingKernel）：
+            // 按钮上印的间隔与点下去真排出的间隔不能分家（KernelHub 的 KDoc）
+            val kernel = KernelHub.forId(settingsRepository.current().schedulingKernel)
+            val before = kernelStateFor(kernel, word)
             // 从没复习过的词拿"加入学习"那天当锚点：Δt=0 会让第一次评分的加固量归零
             // （成功支里 (1−p)^0.970 在 p=1 时被夹到 1e-3，间隔效应直接消失）
             val anchor = word.lastReviewAt ?: word.createdAt
             val gapDays = (now - anchor).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
 
-            val predicted = MemoryModel.recallProbability(gapDays, before.halfLifeDays)
-            val after = MemoryModel.update(before, gapDays, grade, params)
-            val days = MemoryModel.schedule(after, grade, sched.targetRecall, sched.maxIntervalDays, params)
+            val rating = grade.toKernelRating()
+            val predicted = recallForDisplay(kernel, before, gapDays)
+            val after = kernel.review(before, gapDays, rating, conf)
+            val days = kernel.nextIntervalDays(after, rating, sched.targetRecall, sched.maxIntervalDays)
+            // 「已掌握」的读数按活跃内核分岔（A-T3 复审遗留决定）：FSRS 那侧 after.hDays 是
+            // ×12.79 的镜像读数，喂进 7 天阈值会"一次评分即已掌握"，所以看**真排出去的间隔**；
+            // 半衰期那侧继续看半衰期，与 v2.6 逐比特一致
             val status = when {
                 grade == ReviewGrade.FORGET -> Word.STATUS_LEARNING
-                after.halfLifeDays >= MASTERED_HALF_LIFE_DAYS -> Word.STATUS_MASTERED
-                else -> Word.STATUS_LEARNING
+                kernel.id == "HALF_LIFE" ->
+                    if ((after.hDays ?: word.halfLifeDays) >= MASTERED_HALF_LIFE_DAYS) {
+                        Word.STATUS_MASTERED
+                    } else {
+                        Word.STATUS_LEARNING
+                    }
+                else ->
+                    if (days >= MASTERED_HALF_LIFE_DAYS) Word.STATUS_MASTERED else Word.STATUS_LEARNING
+            }
+            // 排期先算完，再问侧信道要不要提前：min 只允许把时刻往前拉，
+            // 侧信道无权把用户已经排好的间隔推后
+            val scheduledAt = now + (days * ONE_DAY_MS).toLong().coerceAtLeast(TimeUnit.MINUTES.toMillis(5))
+            val retestMinutes = Hypercorrection.retestDelayMinutes(conf, recalled = grade != ReviewGrade.FORGET)
+            val nextReviewAt = if (retestMinutes == null) {
+                scheduledAt
+            } else {
+                min(scheduledAt, now + TimeUnit.MINUTES.toMillis(retestMinutes))
             }
 
             // 顺序不能反：先写状态、再写历史。中间被杀进程只丢一条历史记录（下次复习时刻仍对）；
             // 反过来会留下"历史里有一次评分、但半衰期没涨"的行，那是在污染以后的校准样本。
             wordRepository.applyReview(
                 wordId = word.id,
-                halfLifeDays = after.halfLifeDays,
-                difficulty = after.difficulty,
+                // 双写（spec §2.1）：活跃内核那一侧是原生值，另一侧是适配器算出的换算镜像；
+                // 两列都来自同一个 after，不留"半新半旧"的镜像
+                halfLifeDays = after.hDays ?: word.halfLifeDays,
+                // 列量纲固定（A-T9 终审）：words.difficulty 永远存半衰期口径那一份——
+                // FSRS 活跃时 after.difficulty 是 FSRS 的 1..10，必须过逆映射再入库，
+                // 否则切回 HALF_LIFE 会拿 FSRS 数当 halfD 喂模型（kernelStateFor 无条件读它）
+                difficulty = if (kernel.id == "HALF_LIFE") after.difficulty else halfDifficultyFromFsrs(after.difficulty),
                 status = status,
-                nextReviewAt = now + (days * ONE_DAY_MS).toLong().coerceAtLeast(TimeUnit.MINUTES.toMillis(5)),
+                nextReviewAt = nextReviewAt,
                 lastReviewAt = now,
                 lapseInc = if (grade == ReviewGrade.FORGET) 1 else 0,
+                fsrsStability = after.stability,
+                // words.difficulty 存的永远是活跃内核自己那份（量纲归属见 KernelState KDoc），
+                // fsrs_difficulty 必须是 FSRS 口径：跑半衰期时在这里折算一次（与 MIGRATION_6_7 同式）
+                fsrsDifficulty = if (kernel.id == "HALF_LIFE") {
+                    fsrsDifficultyFromHalfLife(after.difficulty)
+                } else {
+                    after.difficulty
+                },
+                fsrsState = after.cardState.ordinal + 1,
+                kernel = kernel.id,
             )
             wordRepository.recordGradedReview(
                 wordId = word.id,
@@ -260,9 +358,11 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 correct = grade != ReviewGrade.FORGET,
                 gapDays = gapDays,
                 pAtReview = predicted,
-                hBefore = before.halfLifeDays,
-                hAfter = after.halfLifeDays,
+                hBefore = before.hDays ?: word.halfLifeDays,
+                hAfter = after.hDays ?: word.halfLifeDays,
                 reactionMs = reactionMs,
+                confidence = conf?.toStorageInt(),
+                fsrsRating = rating.ordinal + 1,
             )
             _session.value = state.copy(
                 index = state.index + 1,
@@ -329,6 +429,29 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 翻面时那条 RECALL_FIRST 贴士：首次翻面出现时置真，此后每次安装都不再出现。
+     *
+     * 与 [markRecallGateHintSeen] 同一条纪律：写失败不提示也不重投 —— 后果只是"下次翻面还会
+     * 再提一次"，而这条路径是用户正打算继续学习的时候，弹一条 toast 只会打断他。
+     */
+    fun markFlipTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(flipTipSeen = true) } }
+        }
+    }
+
+    /**
+     * 连续学习满 21 天那条 SIXTY_SIX 贴士（计划 B Task 17）：首页 hero 检测到火焰徽章天数
+     * 恰好 [StudyTips.STREAK_MYTH_DAY] 时置真，此后每次安装都不再出现。
+     * 与 [markFlipTipSeen]、[markRecallGateHintSeen] 同一条纪律：写失败不提示也不重投。
+     */
+    fun markSixtySixTipSeen() {
+        viewModelScope.launch {
+            runCatching { settingsRepository.update { it.copy(sixtySixTipSeen = true) } }
+        }
+    }
+
     // ── 题库练习会话 ──────────────────────────────────────────────────────
     private val _quiz = MutableStateFlow(QuizUiState())
     val quiz: StateFlow<QuizUiState> = _quiz
@@ -383,15 +506,20 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 选择选项：即时判定，写入练习记录；答错幂等写入错题本 */
-    fun selectOption(selected: Int) {
+    /**
+     * 选择选项：即时判定，写入练习记录；答错幂等写入错题本。
+     *
+     * [conf] 由答题页信心条在**提交前**采集（计划 B Task 12）；null = 没选或关掉开关。
+     * 它一次喂两处：`practice_records.confidence`（1..3/null）与答错入本的 `mistakes.priority`（经 [MistakeIntake]）。
+     */
+    fun selectOption(selected: Int, conf: Confidence? = null) {
         val state = _quiz.value
         val question = state.current ?: return
         if (state.selected != null) return
         viewModelScope.launch {
-            val correct = questionRepository.submitAnswer(question.id, selected)
+            val correct = questionRepository.submitAnswer(question.id, selected, conf?.toStorageInt())
             if (!correct) {
-                addMistakeIfAbsent(question)
+                addMistakeIfAbsent(question, conf)
             }
             _quiz.value = state.copy(
                 selected = selected,
@@ -400,8 +528,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 答错入错题本：同一 question_id 已存在（以 note 中的 qid 标记判断）则不重复插入 */
-    private suspend fun addMistakeIfAbsent(question: Question) {
+    /** 答错入错题本：同一 question_id 已存在（以 note 中的 qid 标记判断）则不重复插入；priority 取超纠正命中档 */
+    private suspend fun addMistakeIfAbsent(question: Question, conf: Confidence?) {
         val marker = "qid:${question.id}"
         val exists = mistakeRepository.observeAll().first().any {
             it.source == Mistake.SOURCE_PRACTICE && it.note == marker
@@ -422,6 +550,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             title = question.stem,
             content = content,
             note = marker,
+            // 高置信答错（SURE × 错）= 超纠正机会，置顶；其余普通档。判定只在 MistakeIntake 一处。
+            priority = MistakeIntake.priorityFor(conf, correct = false),
         )
     }
 
@@ -430,6 +560,81 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val state = _quiz.value
         if (state.selected == null) return
         _quiz.value = state.copy(index = state.index + 1, selected = null)
+    }
+
+    // ── 模考会话（v2.7 计划 B Task 13）──────────────────────────────────────
+    private val _mockExam = MutableStateFlow(MockExamUiState())
+    val mockExam: StateFlow<MockExamUiState> = _mockExam
+
+    /**
+     * 组一卷模拟卷：与 [startQuiz] 同一取数口径（该学科前 [MOCK_EXAM_SIZE] 题、读一次交错开关
+     * 交给 [interleaveBySubject] 判定），差别只在这一卷**一次性拿全**、作答期间不再回源分页读库。
+     */
+    fun startMockExam(subject: String) {
+        viewModelScope.launch {
+            val interleaving = settingsRepository.current().interleavingEnabled
+            val questions = questionRepository.getBySubject(subject, MOCK_EXAM_SIZE, 0)
+            _mockExam.value = MockExamUiState(
+                subject = subject,
+                questions = interleaveBySubject(questions, enabled = interleaving),
+            )
+        }
+    }
+
+    /** 重置模考会话（返回学科选择 / 退出模考） */
+    fun resetMockExam() {
+        _mockExam.value = MockExamUiState()
+    }
+
+    /**
+     * 记一次作答：只把"这题选了哪个"写进会话，**不判对错、不落库、不产反馈**。
+     * 交卷前允许改答案（后写覆盖前写）；已交卷或整卷已跳走则忽略（终态锁死）。
+     */
+    fun answerMockExam(questionId: Long, selected: Int) {
+        val state = _mockExam.value
+        if (state.submitted) return
+        if (state.questions.none { it.id == questionId }) return
+        _mockExam.value = state.copy(answers = state.answers + (questionId to selected))
+    }
+
+    /** 在卷内前后翻题（交卷前自由导航）；越界夹到首 / 末题，不会崩 */
+    fun gotoMockExam(index: Int) {
+        val state = _mockExam.value
+        if (state.submitted || state.total == 0) return
+        _mockExam.value = state.copy(index = index.coerceIn(0, state.total - 1))
+    }
+
+    /**
+     * 交卷：先用 [MockExamState] 把整卷一次性算成每题 (selected, correct) 并同步翻起 submitted
+     *（页面当场跳成绩页），再把已作答的题走**与练习同一条落库路径**写练习记录（conf=null），
+     * 答错的题走现成 [addMistakeIfAbsent] 幂等入错题本（priority 取 [MistakeIntake]，conf=null → 普通档 0）。
+     *
+     * 双写只发生一次：模考作答从不碰 [selectOption]，本方法又有 `if (submitted) return` 终态锁，
+     * 未作答的题压根不进落库循环，因此不会出现记录或错题的二次入库。
+     */
+    fun submitMockExam() {
+        val state = _mockExam.value
+        if (!state.started || state.submitted) return
+        val answerKey = state.questions.associate { it.id to it.answerIndex }
+        val answerCount = state.questions.firstOrNull()?.let { parseOptions(it.optionsJson).size } ?: 0
+        val machine = MockExamState(
+            questionIds = state.questions.map { it.id },
+            answerCount = answerCount,
+            answerKey = answerKey,
+        )
+        state.answers.forEach { (questionId, selected) -> machine.answer(questionId, selected) }
+        val results = machine.submit()
+        // 先冻结 UI 终态（同步），成绩页立刻能读 results；落库在下面的协程里异步补
+        _mockExam.value = state.copy(submitted = true, results = results)
+        val answered = state.questions.filter { state.answers.containsKey(it.id) }
+        viewModelScope.launch {
+            answered.forEach { question ->
+                val selected = state.answers.getValue(question.id)
+                // 与练习同一 submitAnswer，只是 conf 传 null（模考不采集信心 → confidence 落 NULL）
+                val correct = questionRepository.submitAnswer(question.id, selected)
+                if (!correct) addMistakeIfAbsent(question, conf = null)
+            }
+        }
     }
 
     // ── 录入 ──────────────────────────────────────────────────────────────
