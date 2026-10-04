@@ -4,8 +4,11 @@
 // 基座、powk 作为自动微分标准算子、Rev.sched/state 作为 JNI 契约字段——非 test 构建下暂未被内部
 // 调用属预期，故整体豁免 dead_code 提示。
 #![allow(dead_code)]
-mod core;
-mod dual;
+// R2 起这两个模块对外可见：`src/bin/gen_fixture.rs` 要直接调 core 的纯 Double 前向函数产出口径
+// 一致 fixture（见 core.rs 顶部注释）。本 crate 不发布到 crates.io，仅本机/NDK 构建自用，扩大
+// 可见性不引入外部 API 负担；JNI 契约仍只是下面那两个 `#[no_mangle]` 导出。
+pub mod core;
+pub mod dual;
 
 use crate::core::{evaluate, train, Item, Rev, TrainCfg, DEFAULT_PARAMS};
 use crate::dual::NP;

@@ -39,32 +39,44 @@ pub type Item = Vec<Rev>;
 
 // ===================== 纯 Double 参考实现（forward_val 与测试用）=====================
 // 与 FsrsModel.kt 逐条对齐，作为 dual 前向的"值"基准。
+//
+// 这些单条公式函数在 R1 只需要 crate 内可见，R2 起被 `src/bin/gen_fixture.rs` 直接调用来
+// 产出 `fsrsjni/fixtures/forward_parity.json`——那份 fixture 是"Rust 前向 ≡ Kotlin FsrsModel"
+// 口径一致硬闸的期望值来源，故整体升到 `pub`（仅经由 `pub mod core` 暴露，JNI 契约不变）。
 
-fn decay_v(w: &[f64; NP]) -> f64 {
+/// `DECAY = −w[20]`（v6 可学习衰减指数），≡ `FsrsModel.decay`。
+pub fn decay_v(w: &[f64; NP]) -> f64 {
     -w[20]
 }
-fn factor_v(w: &[f64; NP]) -> f64 {
+/// `FACTOR = 0.9^(1/DECAY) − 1`，≡ `FsrsModel.factor`。
+pub fn factor_v(w: &[f64; NP]) -> f64 {
     0.9f64.powf(1.0 / decay_v(w)) - 1.0
 }
-fn recall_v(w: &[f64; NP], s: f64, t: f64) -> f64 {
+/// 可提取性 `R = (1 + FACTOR·t/S)^DECAY`，≡ `FsrsModel.recall`（未做 1e-7 夹取，与 Kotlin 同口径）。
+pub fn recall_v(w: &[f64; NP], s: f64, t: f64) -> f64 {
     (1.0 + factor_v(w) * t / s).powf(decay_v(w))
 }
-fn s0_idx(g: u32) -> usize {
+/// 首评稳定性取 `w[G-1]` 的下标（越界夹到 0..3），≡ `FsrsModel.initStability` 的索引口径。
+pub fn s0_idx(g: u32) -> usize {
     ((g as i32 - 1).clamp(0, 3)) as usize
 }
-fn d0_raw_v(w: &[f64; NP], g: f64) -> f64 {
+/// `D0(G) = w[4] − e^(w[5]·(G−1)) + 1`（未夹取，均值回归目标项），≡ `FsrsModel.initDifficultyRaw`。
+pub fn d0_raw_v(w: &[f64; NP], g: f64) -> f64 {
     w[4] - (w[5] * (g - 1.0)).exp() + 1.0
 }
-fn d0_v(w: &[f64; NP], g: f64) -> f64 {
+/// 落库口径的 `D0`（夹 [1,10]），≡ `FsrsModel.initDifficulty`。
+pub fn d0_v(w: &[f64; NP], g: f64) -> f64 {
     d0_raw_v(w, g).clamp(1.0, 10.0)
 }
-fn next_d_v(w: &[f64; NP], d: f64, g: f64) -> f64 {
+/// 下一次难度（均值回归到未夹取的 D0(Easy)），≡ `FsrsModel.nextDifficulty`。
+pub fn next_d_v(w: &[f64; NP], d: f64, g: f64) -> f64 {
     let delta = -w[6] * (g - 3.0);
     let arg2 = d + (10.0 - d) * delta / 9.0;
     let arg1 = d0_raw_v(w, 4.0);
     (w[7] * arg1 + (1.0 - w[7]) * arg2).clamp(1.0, 10.0)
 }
-fn next_s_ok_v(w: &[f64; NP], s: f64, d: f64, r: f64, g: u32) -> f64 {
+/// 成功支（Hard/Good/Easy）长期稳定性，≡ `FsrsModel.recallStability`。
+pub fn next_s_ok_v(w: &[f64; NP], s: f64, d: f64, r: f64, g: u32) -> f64 {
     let hard = if g == 2 { w[15] } else { 1.0 };
     let easy = if g == 4 { w[16] } else { 1.0 };
     let inc = w[8].exp()
@@ -75,12 +87,14 @@ fn next_s_ok_v(w: &[f64; NP], s: f64, d: f64, r: f64, g: u32) -> f64 {
         * easy;
     (s * (inc + 1.0)).clamp(MIN_STABILITY_FLOOR, MAX_STABILITY)
 }
-fn next_s_lapse_v(w: &[f64; NP], s: f64, d: f64, r: f64) -> f64 {
+/// lapse 支 `min(长期项, S/e^(w17·w18))`，≡ `FsrsModel.forgetStability`。
+pub fn next_s_lapse_v(w: &[f64; NP], s: f64, d: f64, r: f64) -> f64 {
     let long = w[11] * d.powf(-w[12]) * ((s + 1.0).powf(w[13]) - 1.0) * ((1.0 - r) * w[14]).exp();
     let short_cap = s / (w[17] * w[18]).exp();
     long.min(short_cap).max(MIN_STABILITY_FLOOR)
 }
-fn next_s_short_v(w: &[f64; NP], s: f64, g: f64) -> f64 {
+/// intra-day 短期稳定性（`elapsed < 1`），≡ `FsrsModel.shortTermStability`。
+pub fn next_s_short_v(w: &[f64; NP], s: f64, g: f64) -> f64 {
     let mut inc = (w[17] * (g - 3.0 + w[18])).exp() * s.powf(-w[19]);
     if g >= 2.0 {
         inc = inc.max(1.0);

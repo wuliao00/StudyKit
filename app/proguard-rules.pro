@@ -17,3 +17,10 @@
 
 # Compose 编译器生成的工具类不参与重命名（Compose 自带规则已覆盖，此处防御性保留）
 -dontwarn org.jetbrains.annotations.**
+
+# v2.9/R2 Rust 优化器的 JNI 绑定：`Java_com_studykit_optimize_FsrsNative_nativeTrain` 这类符号名
+# 是由 Rust 侧按「包名.类名.方法名」硬编码导出的，混淆改了类名或方法名 ⇒ 运行时 UnsatisfiedLinkError
+# （而且是点了校准才炸，编译期一声不响）。native 方法本身不能被重命名，类名也要保住。
+-keepclasseswithmembernames class com.studykit.optimize.FsrsNative {
+    native <methods>;
+}
