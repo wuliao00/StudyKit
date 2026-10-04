@@ -12,6 +12,7 @@ import com.studykit.data.dao.BookDao
 import com.studykit.data.dao.ContractDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
+import com.studykit.data.dao.ParamSnapshotDao
 import com.studykit.data.dao.PracticeDao
 import com.studykit.data.dao.QuestionDao
 import com.studykit.data.dao.ReviewLogDao
@@ -33,6 +34,7 @@ import com.studykit.data.entity.ReviewLog
 import com.studykit.data.entity.Word
 import com.studykit.data.entity.WordList
 import com.studykit.data.entity.WordReview
+import com.studykit.optimize.ParamSnapshot
 
 @Database(
     entities = [
@@ -52,8 +54,9 @@ import com.studykit.data.entity.WordReview
         MistakeRedo::class,
         ChapterTest::class,
         ReviewLog::class,
+        ParamSnapshot::class,
     ],
-    // v8：v2.9 计划 Task 4——新增 append-only 复习事件流 review_log（纯加表，不动既有表）
+    // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
     version = 8,
     exportSchema = true,
@@ -70,6 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appSettingDao(): AppSettingDao
     abstract fun contractDao(): ContractDao
     abstract fun reviewLogDao(): ReviewLogDao
+    abstract fun paramSnapshotDao(): ParamSnapshotDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -347,6 +351,9 @@ abstract class AppDatabase : RoomDatabase() {
          * `${TABLE_NAME}` 换成真实表名），由 [Migration7To8Test] 在 CI 里逐字校验（沿用 A-T7 那张网，
          * schema 漂移不再是真机撞运气）。
          *
+         * Task 5 把**参数快照表 `param_snapshots`** 一并并进同一份 v8（不再升 v9）：同属"纯加表、
+         * 不动既有表"，与 review_log 共用一次迁移；建表/建索引同样逐字取自 8.json。
+         *
          * 为什么单开一张表而不在 `word_reviews` 上就地扩展：优化器要跨 word/practice/mistake/excerpt
          * 四类卡统一按 `(card_kind, card_id, ts)` 分组扫描（Task 7），且要能存"卡删了历史还在"的
          * append-only 语义——四类各自的状态表既异构又会被清，兜不住这份完整轨迹。
@@ -375,6 +382,21 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_review_log_card_kind_card_id_ts` " +
                         "ON `review_log` (`card_kind`, `card_id`, `ts`)",
+                )
+                // Task 5：参数快照表 param_snapshots（同样纯加表）。建表/建索引逐字取自 8.json。
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `param_snapshots` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`params` TEXT NOT NULL, " +
+                        "`ts` INTEGER NOT NULL, " +
+                        "`n_terms` INTEGER NOT NULL, " +
+                        "`logloss` REAL NOT NULL, " +
+                        "`engine_ver` TEXT NOT NULL" +
+                        ")",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_param_snapshots_ts` " +
+                        "ON `param_snapshots` (`ts`)",
                 )
             }
         }

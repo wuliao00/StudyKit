@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "c2c366abc7bf92d3e6fe04b43d248a26",
+    "identityHash": "e95f5dc509acb143f0e2c25e48cdc9c8",
     "entities": [
       {
         "tableName": "words",
@@ -1496,12 +1496,72 @@
           }
         ],
         "foreignKeys": []
+      },
+      {
+        "tableName": "param_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `params` TEXT NOT NULL, `ts` INTEGER NOT NULL, `n_terms` INTEGER NOT NULL, `logloss` REAL NOT NULL, `engine_ver` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "params",
+            "columnName": "params",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ts",
+            "columnName": "ts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nTerms",
+            "columnName": "n_terms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "logloss",
+            "columnName": "logloss",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "engineVer",
+            "columnName": "engine_ver",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_param_snapshots_ts",
+            "unique": false,
+            "columnNames": [
+              "ts"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_param_snapshots_ts` ON `${TABLE_NAME}` (`ts`)"
+          }
+        ],
+        "foreignKeys": []
       }
     ],
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c2c366abc7bf92d3e6fe04b43d248a26')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e95f5dc509acb143f0e2c25e48cdc9c8')"
     ]
   }
 }
