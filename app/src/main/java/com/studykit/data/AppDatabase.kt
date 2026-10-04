@@ -14,6 +14,7 @@ import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
 import com.studykit.data.dao.PracticeDao
 import com.studykit.data.dao.QuestionDao
+import com.studykit.data.dao.ReviewLogDao
 import com.studykit.data.dao.WordDao
 import com.studykit.data.dao.WordListDao
 import com.studykit.data.entity.AppSetting
@@ -28,6 +29,7 @@ import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.MistakeRedo
 import com.studykit.data.entity.PracticeRecord
 import com.studykit.data.entity.Question
+import com.studykit.data.entity.ReviewLog
 import com.studykit.data.entity.Word
 import com.studykit.data.entity.WordList
 import com.studykit.data.entity.WordReview
@@ -49,9 +51,11 @@ import com.studykit.data.entity.WordReview
         Contract::class,
         MistakeRedo::class,
         ChapterTest::class,
+        ReviewLog::class,
     ],
+    // v8：v2.9 计划 Task 4——新增 append-only 复习事件流 review_log（纯加表，不动既有表）
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -65,6 +69,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun appSettingDao(): AppSettingDao
     abstract fun contractDao(): ContractDao
+    abstract fun reviewLogDao(): ReviewLogDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -333,6 +338,47 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7 → v8（v2.9 计划 Task 4）：端侧 FSRS 优化器的**事件流**表 `review_log`（append-only）。
+         *
+         * **纯加表，不动任何既有表** —— 老装机的词、题、错题、书摘一条不碰，只多出一张
+         * 供优化器只读回放的历史表。建表/建索引语句**逐字**取自
+         * `app/schemas/com.studykit.data.AppDatabase/8.json`（exportSchema=true 产物，只把
+         * `${TABLE_NAME}` 换成真实表名），由 [Migration7To8Test] 在 CI 里逐字校验（沿用 A-T7 那张网，
+         * schema 漂移不再是真机撞运气）。
+         *
+         * 为什么单开一张表而不在 `word_reviews` 上就地扩展：优化器要跨 word/practice/mistake/excerpt
+         * 四类卡统一按 `(card_kind, card_id, ts)` 分组扫描（Task 7），且要能存"卡删了历史还在"的
+         * append-only 语义——四类各自的状态表既异构又会被清，兜不住这份完整轨迹。
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `review_log` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`card_kind` TEXT NOT NULL, " +
+                        "`card_id` INTEGER NOT NULL, " +
+                        "`ts` INTEGER NOT NULL, " +
+                        "`rating` INTEGER NOT NULL, " +
+                        "`elapsed_days` REAL NOT NULL, " +
+                        "`scheduled_days` REAL NOT NULL, " +
+                        "`state` INTEGER NOT NULL, " +
+                        "`duration_ms` INTEGER NOT NULL, " +
+                        "`origin` TEXT NOT NULL, " +
+                        "`ocr_conf` REAL, " +
+                        "`self_conf` INTEGER, " +
+                        "`session_id` TEXT NOT NULL, " +
+                        "`is_makeup` INTEGER NOT NULL, " +
+                        "`log_schema_ver` INTEGER NOT NULL" +
+                        ")",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_review_log_card_kind_card_id_ts` " +
+                        "ON `review_log` (`card_kind`, `card_id`, `ts`)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -346,6 +392,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                        MIGRATION_7_8,
                     )
                     .addCallback(SeedCallback)
                     .build()
