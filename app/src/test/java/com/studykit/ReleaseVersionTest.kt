@@ -14,12 +14,12 @@ import org.junit.Test
 class ReleaseVersionTest {
 
     @Test
-    fun 发布版本名是四段式2_7_0_1() {
-        assertEquals("2.7.0.1", BuildConfig.VERSION_NAME)
+    fun 发布版本名是三段式2_8_0() {
+        assertEquals("2.8.0", BuildConfig.VERSION_NAME)
     }
 
     @Test
-    fun 版本号在16之上单调递增到17() {
-        assertEquals(17, BuildConfig.VERSION_CODE)
+    fun 版本号在16之上单调递增到18() {
+        assertEquals(18, BuildConfig.VERSION_CODE)
     }
 }
