@@ -65,6 +65,10 @@ sealed class CalibrateState {
         val nValTerms: Int,
         val dryRun: Boolean,
         val adopted: Boolean = false,
+        /** 回测在位参数的平均间隔（天）；文档 §③ 弹窗「预计平均间隔」的左值（编排层算出后带上来，供界面显示）。 */
+        val intervalBefore: Float = 0f,
+        /** 回测候选参数的平均间隔（天）；文档 §③ 弹窗「预计平均间隔」的右值。 */
+        val intervalAfter: Float = 0f,
     ) : CalibrateState() {
         /** 需要人看一眼的理由（软门槛 + 切片注记）。 */
         val reasons: List<String> get() = reasonsOf(decision)
@@ -300,6 +304,8 @@ class CalibrateViewModel(
             nTrainTerms = packed.nTrainTerms,
             nValTerms = packed.nValTerms,
             dryRun = dryRun,
+            intervalBefore = btCur.meanInterval,
+            intervalAfter = btCand.meanInterval,
         )
         _ui.value = result
         log(

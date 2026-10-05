@@ -53,7 +53,7 @@ import org.robolectric.annotation.GraphicsMode
  * 判定正确性由既有测试覆盖，这里不重复。
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], qualifiers = "w400dp-h820dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SettingsBehaviorRenderTest {
 

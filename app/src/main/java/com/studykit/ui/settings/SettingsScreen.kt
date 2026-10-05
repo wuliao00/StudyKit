@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.studykit.BuildConfig
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
@@ -64,6 +65,8 @@ import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.SectionHeader
+import com.studykit.ui.optimize.CalibrateViewModel
+import com.studykit.ui.optimize.CalibrationCard
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.backup.StorageStats
 import java.time.LocalDate
@@ -181,6 +184,15 @@ fun SettingsScreen(
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+
+    // 校准（v2.9 T12）：编排 ViewModel 靠 Factory 从容器装配；快照/评分条数走 SettingsViewModel 两条流。
+    val calibrateVm: CalibrateViewModel = viewModel(
+        factory = CalibrateViewModel.Companion.Factory(context.applicationContext as android.app.Application),
+    )
+    val calibrateState by calibrateVm.ui.collectAsStateWithLifecycle()
+    val paramSnapshots by viewModel.paramSnapshots.collectAsStateWithLifecycle()
+    val reviewRatingCount by viewModel.reviewRatingCount.collectAsStateWithLifecycle()
+    val calibrateScope = rememberCoroutineScope()
 
     // 关于与支持：两个只读弹层的开关 + 手动检查更新的临时状态
     var showTutorial by rememberSaveable { mutableStateOf(false) }
@@ -604,6 +616,32 @@ fun SettingsScreen(
                 onConfidence = viewModel::setConfidenceEnabled,
                 onInterleaving = viewModel::setInterleavingEnabled,
             )
+            HorizontalDivider(color = colors.divider)
+            CalibrationCard(
+                state = calibrateState,
+                ratingCount = reviewRatingCount,
+                snapshots = paramSnapshots,
+                onCalibrate = {
+                    viewModel.refreshCalibrationData()
+                    calibrateVm.start(dryRun = false)
+                },
+                onAdopt = {
+                    calibrateScope.launch {
+                        calibrateVm.adopt()
+                        viewModel.refreshCalibrationData()
+                    }
+                },
+                onRestoreDefault = {
+                    calibrateScope.launch {
+                        calibrateVm.restoreDefault()
+                        viewModel.refreshCalibrationData()
+                    }
+                },
+                onExport = { snap ->
+                    val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clip.setPrimaryClip(android.content.ClipData.newPlainText("param_snapshot", snap.params))
+                },
+            )
         }
 
         // ── 三、数据管理 ──────────────────────────────────────────
@@ -937,14 +975,32 @@ fun SchedulePracticeSettings(
             modifier = Modifier.selectableGroup(),
         ) {
             KernelChoices.forEach { (id, label) ->
-                ChoiceTile(
-                    label = label,
-                    selected = settings.schedulingKernel == id,
-                    onClick = { onKernel(id) },
-                    modifier = Modifier.weight(1f),
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    ChoiceTile(
+                        label = label,
+                        selected = settings.schedulingKernel == id,
+                        onClick = { onKernel(id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    // 文档 §③：FSRS 选项挂「推荐」角标（旧内核那一格留空位，两磁贴仍等高）。
+                    if (id == "FSRS") {
+                        Text(
+                            text = "推荐",
+                            style = AppTheme.texts.caption.copy(color = colors.accentInk),
+                            modifier = Modifier.padding(top = AppTheme.space.xs),
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(AppTheme.space.xs))
+                    }
+                }
             }
         }
+        // 文档 §③：旧内核灰字「仅维护、不再演进」——选不选都常驻说清旧内核现在的定位。
+        Text(
+            text = "半衰期旧内核：仅维护、不再演进。评分历史保留，记忆强度读数为换算近似。",
+            style = AppTheme.texts.caption.copy(color = colors.secondaryText),
+            modifier = Modifier.padding(top = AppTheme.space.xs),
+        )
     }
     HorizontalDivider(color = colors.divider)
     SettingBlock(
