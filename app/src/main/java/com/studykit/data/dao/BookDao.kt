@@ -68,6 +68,25 @@ interface BookDao {
     )
     fun observeDueExcerpts(now: Long): Flow<List<Excerpt>>
 
+    /**
+     * 全部**已排期**的书摘（不只是"现在到期的"那批），负荷预测与稳定性全景的取数口（v3.0-A Task 5）。
+     *
+     * 判据与 [observeDueExcerpts] 的 `next_review_at > 0` 逐字相同，也和
+     * `WordDao.observeScheduledMemoryRows` 相同 —— "哪些行算排过期"这条判据三处必须一致，
+     * 否则看板的「共 N 张卡」和首页的「明天 N 词」会变成两套账。
+     *
+     * ## 为什么另开一条，而不是 `observeDueExcerpts(Long.MAX_VALUE)`
+     * 结果集完全一样，但后者要把"我想看全部排过期的"这个意图藏在 `MAX_VALUE` 这个参数技巧里：
+     * 读的人得先在脑子里证明"`<= MAX` 等于不设上界"才敢改它，而 `next_review_at > 0` 这支
+     * 哨兵条件（0 = 未启用，见 [Excerpt.nextReviewAt]）还容易在改参数时被误当成上界一起动。
+     * 语义写在名字里，比写在传参里便宜。
+     *
+     * 与 [observeDueExcerpts] 同为 `ORDER BY next_review_at ASC`：本层不依赖顺序（装配是逐条映射），
+     * 留着只是为了和队列那一侧读到的是同一份排法，别给人"两条查询顺序不一样"的错觉。
+     */
+    @Query("SELECT * FROM excerpts WHERE next_review_at > 0 ORDER BY next_review_at ASC")
+    fun observeScheduledExcerpts(): Flow<List<Excerpt>>
+
     /** 「只有划线没有检索」那条 RECALL_NOTES 贴士的判据：:cutoff 之前建的摘且 review_count==0 的条数 */
     @Query("SELECT COUNT(*) FROM excerpts WHERE created_at < :cutoff AND review_count = 0")
     fun observeExcerptsStaleWithoutRecall(cutoff: Long): Flow<Int>
