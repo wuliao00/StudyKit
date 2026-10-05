@@ -117,6 +117,31 @@ interface WordDao {
     fun observeReviewTimestamps(): Flow<List<Long>>
 
     /**
+     * 窗口内的复习时间戳（v3.0-A Task 4：提醒的「今天练过吗」与「相位对齐到众数小时」都读它）。
+     *
+     * ## 两端都是闭区间，这是要件的口径而不是 SQL 的顺手
+     * `ReminderWorker` 取「今天零点 → 此刻」判 `todayReviewed`（`ReminderPolicy.decide` 的第一道闸），
+     * 而 `LocalDate.atStartOfDay` 给的正是零点那一刻的毫秒值 —— 开区间会把「00:00 那一次复习」漏在
+     * 窗口外，于是刚打卡的用户当天仍会被催一遍。上界取「此刻」而不是不设上界：未来的时刻不是已发生的复习。
+     *
+     * ## 与 [observeReviewTimestamps] 同形（Flow，不是 suspend 一次性读）
+     * 同表同列，只是多了窗口；两个调用点各取一次 `.first()` 快照。这跟 [getReviewHistoryRows] 那条
+     * 「一次性快照该写成 suspend」的纪律不冲突：那一条服务的是备份导出的落盘动作，订阅它没有意义；
+     * 这一条问的是「窗口里有哪些时刻」这种可观察集合，与同表那三条读数（本条、
+     * [observeReviewTimestamps]、[observeScheduledTimestamps]）形状一致，读的人不必再判断一次差别。
+     *
+     * ## 只数词卡流水
+     * `word_reviews` 是词侧的表：练习（`practice_records`）与书摘检索（`book_reviews`）都不在里面，
+     * 所以 `todayReviewed` 的真实口径是「今天**背过词**」，不是「今天用过应用」。
+     * `ORDER BY ASC` 只为让「今天第一次复习」这类读数将来能直接取首元素，众数小时不依赖顺序。
+     */
+    @Query(
+        "SELECT reviewed_at FROM word_reviews WHERE reviewed_at BETWEEN :start AND :end " +
+            "ORDER BY reviewed_at ASC",
+    )
+    fun observeReviewTimestampsBetween(start: Long, end: Long): Flow<List<Long>>
+
+    /**
      * 已排期的复习时刻（未掌握的词）。
      *
      * 分桶交给 Kotlin 按 `LocalDate` 做，不写在 SQL 里：`date()` 不吃时区，

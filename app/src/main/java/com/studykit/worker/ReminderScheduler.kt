@@ -8,10 +8,12 @@ import androidx.work.WorkManager
 import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.repository.SettingsRepository
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -51,7 +53,8 @@ object ReminderScheduler {
         val repository = (context.applicationContext as? StudyKitApp)?.container?.settingsRepository
         if (repository == null) {
             Log.w(TAG, "拿不到 SettingsRepository（Application 不是 StudyKitApp？），按默认周期排")
-            applyInterval(context, AppSettings.DEFAULT_REMINDER_HOURS)
+            // 相位对齐要读库，而这一支恰恰是读不到仓储的那一支 ⇒ 同一趟协程里排，读不到就 null
+            scope.launch { applyInterval(context, AppSettings.DEFAULT_REMINDER_HOURS) }
             return
         }
         scope.launch {
@@ -63,6 +66,31 @@ object ReminderScheduler {
             }
             applyInterval(context, hours)
         }
+    }
+
+    /**
+     * 历史复习时刻的众数整点；任何一环读不到都返回 null ⇒ **不加** `setInitialDelay`，
+     * 退回改动前"入队即开始计时"的行为。
+     *
+     * 捕获必须落日志（与 [applyInterval] 里那条同纪律）：相位对齐没做成只是"提醒时刻不准"，
+     * 静默吞掉的话排查时分不清它是没生效还是本来就没历史。
+     */
+    private suspend fun modalReviewHour(context: Context): Int? {
+        val container = (context.applicationContext as? StudyKitApp)?.container
+        if (container == null) {
+            Log.w(TAG, "拿不到 AppContainer，本次不做提醒相位对齐")
+            return null
+        }
+        return runCatching {
+            sessionHourMode(
+                container.database.wordDao()
+                    .observeReviewTimestampsBetween(0L, System.currentTimeMillis())
+                    .first(),
+                ZoneId.systemDefault(),
+            )
+        }.onFailure {
+            Log.e(TAG, "读历史复习时刻失败，本次不做相位对齐（提醒仍按每 N 小时，只是钟点没对齐）", it)
+        }.getOrNull()
     }
 
     /**
@@ -78,8 +106,14 @@ object ReminderScheduler {
      *
      * 失败时**不写** [appliedHours]：那样下一次设置变动或下一趟观察还能再试一次，
      * 而不是把"没排上"记成"已经按这个值排过了"。
+     *
+     * **v3.0-A Task 4 起它是 `suspend`**：相位对齐的原料（历史复习的众数整点）要读 `word_reviews`，
+     * 而两个调用点（[ensureScheduled] 的协程、[observeAndApply] 的 `collect`）本来就在协程里，
+     * 所以这一改动代价为零，换来"任何新调用点都得先想清楚自己在哪条协程上读库"。
+     * 那次读库自己也被包了一层（见 [modalReviewHour]），纪律与上面 ② 同一条：
+     * 它是这条链上新加的一次库访问，绝不能成为逃出 `Dispatchers.Default` 的未捕获异常。
      */
-    fun applyInterval(context: Context, hours: Int) {
+    suspend fun applyInterval(context: Context, hours: Int) {
         val target = hours.coerceIn(AppSettings.HOURS_RANGE)
         val previous = appliedHours
         if (previous == target) return
@@ -88,7 +122,24 @@ object ReminderScheduler {
         } else {
             ExistingPeriodicWorkPolicy.REPLACE
         }
+        // 相位对齐（v3.0-A Task 4 / 计划偏差 D4）：首次触发挪到历史复习的众数整点。
+        // 周期长度一个字没动（还是 reminderEveryHours），HOURS_RANGE、通知渠道与权限闸也没动。
+        // 两条诚实的边界，别把它读成"精确闹钟"：
+        //  ① WorkManager 只保证"不早于"这个时刻，还会按配额往后压，所以落点是尽力而为；要精确就得
+        //     申请 SCHEDULE_EXACT_ALARM，那与本仓"不额外要权限"的口径冲突（D4 就是为这件事写的）。
+        //  ② 对齐只在**真正重新入队**那一次生效：KEEP 沿用上一个进程留下的任务，它的倒计时和相位都是
+        //     原来那一套——而首碰用 KEEP 正是本类存在的第一条理由（见类 KDoc），不改。
+        //     于是老用户实得对齐的时机是「改了提醒周期」（REPLACE）或任务被清掉后重建，不是每次冷启。
+        val hour = modalReviewHour(context)
         val request = PeriodicWorkRequestBuilder<ReminderWorker>(target.toLong(), TimeUnit.HOURS)
+            .apply {
+                hour?.let {
+                    setInitialDelay(
+                        delayMillisToHour(it, System.currentTimeMillis(), ZoneId.systemDefault()),
+                        TimeUnit.MILLISECONDS,
+                    )
+                }
+            }
             .addTag(TAG)
             .build()
         try {

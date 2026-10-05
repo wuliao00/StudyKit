@@ -14,15 +14,30 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.studykit.AppContainer
 import com.studykit.MainActivity
 import com.studykit.R
 import com.studykit.StudyKitApp
+import com.studykit.data.AppSettings
 import com.studykit.data.entity.Word
+import com.studykit.data.memory.DueForecast
+import com.studykit.data.memory.ForecastCfg
+import com.studykit.data.memory.FsrsModel
+import com.studykit.data.memory.MemoryScheduler
+import com.studykit.data.memory.ReminderDecision
+import com.studykit.data.memory.ReminderPolicy
 import com.studykit.data.memory.SchedulingKernel
 import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.recallForDisplay
+import com.studykit.ui.stats.ForecastCards
+import com.studykit.ui.stats.toForecastCards
 import com.studykit.ui.study.KernelHub
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 
 private val ONE_DAY_MS: Long = TimeUnit.DAYS.toMillis(1)
@@ -82,12 +97,77 @@ internal fun reminderContentText(mistakeCount: Int, wordCount: Int, retentionPer
     return parts.joinToString("，") + "，打开 StudyKit 开始复习"
 }
 
+/** 通知上要落的两行字：标题一行、正文一行。拆开是因为通知本来就是两行，不是拼接位。 */
+internal data class ReminderCopy(val title: String, val text: String)
+
+/** 兜底路径的标题 —— 改动前那句「今日复习」，一字不动。 */
+internal const val FALLBACK_TITLE = "今日复习"
+
+/**
+ * 决策 → 通知那两行字的取舍（纯函数，v3.0-A Task 4）。
+ *
+ * 三档决策（跌破线 > 堆积 > 到期）在场时，标题与正文**逐字段**取自它：`headline` 进 title、
+ * `body` 进 text，不做拼接——通知没有"一行两截"的渲染，拼起来等于把正文塞进标题行。
+ * 决策为 null（今天练过了 / 没有可信的卡 / 三档都不成立 / 决策那一路读库挂了）时，
+ * 退回 [reminderContentText] 的到期直陈。
+ *
+ * 直陈也是 null（两类到期皆为 0）⇒ 整条返回 null，调用方据此**不发通知**。
+ * 这条闸与改动前逐字一致：新档位是升级，不是替换。
+ */
+internal fun reminderCopy(decision: ReminderDecision?, fallbackText: String?): ReminderCopy? = when {
+    decision != null -> ReminderCopy(decision.headline, decision.body)
+    fallbackText != null -> ReminderCopy(FALLBACK_TITLE, fallbackText)
+    else -> null
+}
+
+/**
+ * 历史复习时刻的**众数整点**（提醒相位的原料，纯函数）。
+ *
+ * 为什么对齐到它：`PeriodicWorkRequest` 的倒计时从入队那一刻起算，于是"每 6 小时"的提醒落在
+ * 用户哪天恰好打开应用的那个钟点上——可能凌晨三点，可能开会中间。复习时刻本身就是一条最强的
+ * 行为线索：一个人大概率在同一个钟点段复习，把首次触发挪到众数整点上，提醒到达时他更可能真的能坐下练。
+ * 对齐用的是 [ReminderScheduler] 的 `setInitialDelay`，**不是**精确闹钟（计划偏差 D4：
+ * `SCHEDULE_EXACT_ALARM` 要用户授权，与本仓"不额外要权限"的口径冲突），所以落点是尽力而为。
+ *
+ * 并列时取**较晚**的那个整点（用户更可能在晚间复习，晚间那一档也更该被当成提醒时刻）。
+ * 这靠的是 (次数, 整点) 双键比较，不是 map 的迭代顺序——`groupingBy` 的序是实现细节，
+ * 拿它当语义的话「9 点先出现就选 9 点」这种反向行为会悄无声息地进来。
+ *
+ * @return null = 没有任何复习史，调用方据此**不加** `setInitialDelay`，退回今天之前的固定节奏。
+ */
+internal fun sessionHourMode(timestamps: List<Long>, zone: ZoneId): Int? {
+    if (timestamps.isEmpty()) return null
+    val counts = timestamps.groupingBy { Instant.ofEpochMilli(it).atZone(zone).hour }.eachCount()
+    val byCountThenHour: Comparator<Map.Entry<Int, Int>> = compareBy({ it.value }, { it.key })
+    return counts.entries.maxWithOrNull(byCountThenHour)?.key
+}
+
+/**
+ * 到下一个 [hour] 整点的毫秒数（`setInitialDelay` 的实参，纯函数）。
+ *
+ * 严格取**未来**的那个整点：此刻正好是 21:00 也算"已过"，推到明天同一钟点。延迟 0 等于任务
+ * 入队当场就跑，而这条延迟的目的恰恰是把提醒从"入队的那一刻"挪走。
+ *
+ * 跨夏令时用 `ZonedDateTime.plusDays(1)`（加的是**日历日**，不是 86_400_000 毫秒），
+ * 所以对齐的是"钟点"本身而不是"24 小时后"。日期从 [nowMs] 推而不是 `LocalDate.now(zone)`：
+ * 后者会让这条纯函数在测试里跟着真实时钟漂，也会让「同一瞬间、不同调用」给出不一样的答案。
+ */
+internal fun delayMillisToHour(hour: Int, nowMs: Long, zone: ZoneId): Long {
+    val now = Instant.ofEpochMilli(nowMs).atZone(zone)
+    // 越界的脏整点夹进 0..23 而不是抛异常——本仓对脏值一律"降级不异常"（见 MemoryModel.recallProbability）
+    val next = now.toLocalDate().atTime(hour.coerceIn(0, 23), 0).atZone(zone)
+    val target = if (next.toInstant().isAfter(now.toInstant())) next else next.plusDays(1)
+    return Duration.between(now.toInstant(), target.toInstant()).toMillis()
+}
+
 /**
  * 复习提醒 Worker（每 6 小时由 [ReminderScheduler] 周期触发）：
  * 查询「已到期待复习的错题」与「今日到期单词」，有则发通知，点击打开应用。
  *
- * 正文由 [reminderContentText] 拼：零的那一类不提，两类都为零就不发；单词那一档
- * 本轮额外带上 [dueRetentionPercent] 算出的整体预测保留率（取不到就整段不提）。
+ * 通知那两行字先问 [ReminderPolicy]（v3.0-A Task 4）：跌破线 > 堆积 > 到期，三档都不成立
+ * （或今天已经练过词）才退回 [reminderContentText] 的到期直陈——两类皆 0 时照旧不发。
+ * 决策那一路要多读三张表的快照，读挂了也只退回直陈（见 [forecastDecision]）。
+ * 直陈里单词那一档带 [dueRetentionPercent] 算出的整体预测保留率（取不到就整段不提）。
  */
 class ReminderWorker(
     private val context: Context,
@@ -99,6 +179,9 @@ class ReminderWorker(
         const val CHANNEL_NAME = "复习提醒"
         private const val NOTIFICATION_ID = 7101
         private const val TAG = "ReminderWorker"
+
+        /** 负荷带前推天数：计划（v3.0-A Task 4 Step 3）定的 14 天窗口，也是文档 §负荷预测 的窗口 */
+        private const val FORECAST_HORIZON_DAYS = 14
 
         /** 创建通知渠道（API 26+，幂等） */
         fun ensureChannel(context: Context) {
@@ -140,7 +223,24 @@ class ReminderWorker(
             return Result.success()
         }
 
-        val contentText = reminderContentText(
+        val settings = container.settingsRepository.current()
+
+        // 新档位（v3.0-A Task 4）：该催哪件事由 ReminderPolicy 定，见 forecastDecision。
+        // 这条新路径挂了只该让「到期直陈」照旧发出去，不该把一条本来能发的提醒一起带走；
+        // 但捕获必须落 ERROR 带原始异常——否则「提醒变笨了」会被读成「今天确实没什么可催的」，
+        // 与 ReminderScheduler 那条「静默回落会把没生效伪装成正常」是同一件事（这里刻意不用
+        // runCatching：它连 CancellationException 一起吞，而那是"这次运行不该再发通知"的意思，
+        // 不是"决策读挂了"，必须照原样往外抛）。
+        val decision = try {
+            forecastDecision(container, settings, now)
+        } catch (c: CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            Log.e(TAG, "负荷预测/提醒决策没跑成，本次退回到期直陈文案", t)
+            null
+        }
+
+        val fallbackText = reminderContentText(
             mistakeCount = dueMistakes.size,
             wordCount = dueWords.size,
             // 与上面那批词同一个列表、同一个 now，不重查也不配对。
@@ -148,9 +248,13 @@ class ReminderWorker(
             retentionPercent = dueRetentionPercent(
                 dueWords,
                 now,
-                KernelHub.forId(container.settingsRepository.current().schedulingKernel),
+                KernelHub.forId(settings.schedulingKernel),
             ),
-        ) ?: return Result.success().also { Log.i(TAG, "到期量为 0，本次不发通知") }
+        )
+        // 直陈为 null 只可能是两类皆 0 —— 上面那道闸已经拦过一遍，这里再守一次是契约不是重复：
+        // 谁哪天把那道闸挪走，这一行仍然不会发一条空通知。
+        val copy = reminderCopy(decision, fallbackText)
+            ?: return Result.success().also { Log.i(TAG, "到期量为 0 且没有可催的档，本次不发通知") }
 
         val openIntent = PendingIntent.getActivity(
             context,
@@ -162,16 +266,82 @@ class ReminderWorker(
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("今日复习")
-            .setContentText(contentText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setContentTitle(copy.title)
+            .setContentText(copy.text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(copy.text))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(openIntent)
             .build()
 
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-        Log.i(TAG, "复习提醒已发送：$contentText")
+        // 带上走的是哪一路：排查「提醒没道理」时，「三档里哪一档命中的」与「退回直陈了」是两种病因
+        Log.i(TAG, "复习提醒已发送（${decision?.kind ?: "到期直陈"}）：${copy.title} / ${copy.text}")
         return Result.success()
+    }
+
+    /**
+     * 装配 → 负荷带 → 决策（v3.0-A Task 4 的接线路径，也是 [ReminderPolicy] 的第一个生产消费者）。
+     *
+     * ## 求值一次（[ForecastCards.of] 的 KDoc 契约，不是风格建议）
+     * 三张表的快照各 `.first()` 一次、`of` 只调一次，结果绑到 `cards` 这一个局部量，然后把
+     * **同一个列表**同时喂给 [DueForecast.forecast] 与 [ReminderPolicy.decide]。
+     * 调两次的代价不是"多算一遍"而是**取两次快照**：两次之间只要有一次评分落库，负荷带数的就是
+     * 旧卡集、决策数的是新卡集，通知里那句「明天会堆到 N 项」和那句「有 M 条过了线」不再是
+     * 同一批卡——而且一句都不报错。本仓在 `WordDao.observeScheduledMemoryRows` 的 KDoc 里
+     * 为同一件事写过一次返工。
+     *
+     * 三条快照都从 `container.database` 直接取：[ForecastCards] 类 KDoc 点名的就是这三条查询，
+     * 而书摘那条（`BookDao.observeScheduledExcerpts`）还没有仓储转发，三条一起走 DAO 比一半走
+     * 仓储一半走库好读。
+     *
+     * ## 两个数只有一个来源
+     * 目标保留率走 [MemoryScheduler.forSettings] 的 `Scheduling.targetRecall`（写死 0.9 等于
+     * 在提醒侧另起一份排期政策），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
+     * 时钟只读一次：`today` 与 `dayStart` 都从同一个 [now] 推，免得跨过零点那一次调用里
+     * 「今天」和「今天零点」不是同一天。
+     */
+    private suspend fun forecastDecision(
+        container: AppContainer,
+        settings: AppSettings,
+        now: Long,
+    ): ReminderDecision? {
+        val zone = ZoneId.systemDefault()
+        // 不用 LocalDate.ofInstant(...)——那是 Java 9 的静态方法，API 26 的 java.time 里没有
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val sched = MemoryScheduler.forSettings(
+            strictness = settings.reviewStrictness,
+            examEpochDay = settings.examEpochDay,
+            today = today,
+        )
+        val w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS
+        // 「今天练过吗」只数词卡流水（口径见那条查询的 KDoc：练习与书摘检索不在 word_reviews 里）
+        val todayReviewed = container.database.wordDao()
+            .observeReviewTimestampsBetween(today.atStartOfDay(zone).toInstant().toEpochMilli(), now)
+            .first()
+            .isNotEmpty()
+        val cards = ForecastCards.of(
+            words = container.database.wordDao().observeScheduledMemoryRows().first(),
+            mistakes = container.database.mistakeDao().observeUnmastered().first(),
+            excerpts = container.database.bookDao().observeScheduledExcerpts().first(),
+            now = now,
+        ).toForecastCards()
+        val bands = DueForecast.forecast(
+            cards,
+            ForecastCfg(
+                horizonDays = FORECAST_HORIZON_DAYS,
+                retention = sched.targetRecall,
+                newPerDay = settings.dailyWordGoal,
+                // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
+            ),
+            w = w,
+        )
+        return ReminderPolicy.decide(
+            cards = cards,
+            bands = bands,
+            retention = sched.targetRecall,
+            todayReviewed = todayReviewed,
+            w = w,
+        )
     }
 }
