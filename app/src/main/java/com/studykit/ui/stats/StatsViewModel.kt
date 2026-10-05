@@ -53,6 +53,30 @@ data class StatsUiState(
      * 而 `dailyWordGoal` 是每日**新词**目标、不是复习容量，那个比较天天成立、提示常亮，已删（T6 修复轮）。
      */
     val loadBand: List<DayBand> = emptyList(),
+    /**
+     * 稳定度全景的分箱结果（v3.0-A Task 7）：母体是 [stabilityCardCount] 那张卡集，
+     * 与 [loadBand] **同一批卡**（同一次 [ForecastCards.of] 的结果，见那条 KDoc 的求值一次契约）。
+     *
+     * 与 [durability] 的区别要如实说：那节数的是全库词卡的 `half_life_days`、四档嵌套 ≥，
+     * 这节数的是 FSRS 的稳定度 S、十二档互斥；两节的百分比**分母口径相同**（各自信任的那批卡），
+     * 母体不同，所以不能横向比大小。这句话由视图的 caption 说给用户，不在这里默认。
+     */
+    val stability: List<StabilityBin> = emptyList(),
+    /** 进了上面那十二档的分母的可信卡数（= 同一次装配的卡集大小），0 时视图走空态 */
+    val stabilityCardCount: Int = 0,
+)
+
+/**
+ * [StatsViewModel.loadVizFlow] 一次装配的两个产物：负荷带 + 稳定度分箱。
+ *
+ * 之所以打包成一个类型而不是两条 Flow：两条就要各调一次 [ForecastCards.of]，而那是
+ * **求值一次契约**禁止的（[ForecastCards.of] 的 KDoc：多调一次不是"多算一遍"而是"多取一次快照"，
+ * 中间只要有一次评分落库，两张图数的就不是同一批卡，而且不报错）。
+ */
+private data class LoadViz(
+    val bands: List<DayBand>,
+    val bins: List<StabilityBin>,
+    val usableCards: Int,
 )
 
 /**
@@ -78,18 +102,22 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 负荷带那一路：设置 + 三张表的已排期行 → 一次装配 → [ForecastCfg.HORIZON_DAYS] 天带。
+     * 负荷带 + 稳定度全景那一路：设置 + 三张表的已排期行 → **一次**装配 → 两个产物（[LoadViz]）。
      *
      * ## 为什么单列一条 combine，而不是塞进下面那条五路的 `combine`
      * kotlinx 的类型化 `combine` 只到 5 个 Flow（再多就只剩返回 `Array<Any?>` 的那个重载，要手写强转）。
-     * 下面那条已经用满 5 路，所以这里分两条、最外层再 `copy` 合起来——顺带让负荷带这一路
+     * 下面那条已经用满 5 路，所以这里分两条、最外层再 `copy` 合起来——顺带让这一路
      * 自己 `.flowOn(Dispatchers.Default)`：装配是全库逐卡映射，反解是全库逐卡一次除法，
      * 一次评分就会重跑一遍，绝不能落到 Main 上（理由与类 KDoc 同一条）。
      *
      * ## `ForecastCards.of` 在这一个 lambda 里只调一次（它的 KDoc 是求值一次契约）
-     * 四个上游在同一次 combine 里各取到一份快照，`of` 调一次、结果直接喂 `DueForecast.forecast`，
-     * 于是图上的实线与阴影数的是同一批卡。多加一次调用不是"多算一遍"而是"多取一次快照"，
-     * 两次之间只要有一次评分落库，图上就是半新半旧的卡集——而且不报错。
+     * 四个上游在同一次 combine 里各取到一份快照，`of` 调一次，结果**同时**喂
+     * [DueForecast.forecast] 与 [StabilityBins.bin]，于是带子的峰值与十二档数的是同一批卡。
+     * 多加一次调用不是"多算一遍"而是"多取一次快照"：两次之间只要有一次评分落库，
+     * 两张图就是半新半旧的卡集——而且不报错。这也是 [LoadViz] 打包两个产物而不是拆两条 Flow 的原因。
+     *
+     * `stabilityDays` 已在 [ForecastCards.of] 那侧滤过脏值（null / <=0 / 非有限整条丢弃），
+     * [StabilityBins.bin] 的同一道判据在这里是**幂等的安全网**，不是第二套口径。
      *
      * ## 两个数只有一个来源
      * 目标保留率走 [MemoryScheduler.forSettings] 的 `targetRecall`（写死 0.9 等于在看板另起一份
@@ -99,7 +127,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 那个比较恒真、超载提示常亮，上一轮就是这么写的，已删（见 [LoadBandChart] 类 KDoc）。
      * 时钟只读一次：`today` 由 `now` 推，免得跨过零点那一次重算里「今天」和「now」不是同一天。
      */
-    private val loadBandFlow = combine(
+    private val loadVizFlow = combine(
         settingsRepository.settings,
         wordRepository.observeScheduledMemoryRows(),
         mistakeRepository.observeUnmastered(),
@@ -113,21 +141,26 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             examEpochDay = settings.examEpochDay,
             today = today,
         )
-        DueForecast.forecast(
-            ForecastCards.of(
-                words = words,
-                mistakes = mistakes,
-                excerpts = excerpts,
-                now = now,
-            ).toForecastCards(),
-            ForecastCfg(
-                // 与提醒侧同一个常量：两处各写一份 14 时，通知和看板就不是在同一段未来里读数
-                horizonDays = ForecastCfg.HORIZON_DAYS,
-                retention = sched.targetRecall,
-                newPerDay = settings.dailyWordGoal,
-                // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
+        val cards = ForecastCards.of(
+            words = words,
+            mistakes = mistakes,
+            excerpts = excerpts,
+            now = now,
+        )
+        LoadViz(
+            bands = DueForecast.forecast(
+                cards.toForecastCards(),
+                ForecastCfg(
+                    // 与提醒侧同一个常量：两处各写一份 14 时，通知和看板就不是在同一段未来里读数
+                    horizonDays = ForecastCfg.HORIZON_DAYS,
+                    retention = sched.targetRecall,
+                    newPerDay = settings.dailyWordGoal,
+                    // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
+                ),
+                w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS,
             ),
-            w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS,
+            bins = StabilityBins.bin(cards.map { it.stabilityDays }),
+            usableCards = cards.size,
         )
     }.flowOn(Dispatchers.Default)
 
@@ -166,8 +199,12 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         )
     }.flowOn(Dispatchers.Default)
 
-    val state: StateFlow<StatsUiState> = combine(baseState, loadBandFlow) { base, bands ->
-        base.copy(loadBand = bands)
+    val state: StateFlow<StatsUiState> = combine(baseState, loadVizFlow) { base, viz ->
+        base.copy(
+            loadBand = viz.bands,
+            stability = viz.bins,
+            stabilityCardCount = viz.usableCards,
+        )
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())

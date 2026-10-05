@@ -50,8 +50,8 @@ private const val MinCurveSamples = 20
  * 记忆看板：把半衰期 / FSRS 模型已经算得出来、但用户看不见的那几件事摊开。
  *
  * 从上到下是"照这个练法会堆成什么样 → 接下来一周原本排了多少 → 已经存下多少长期记忆 →
- * 我到底忘多快 → 模型说记得的那批，我当场真记得吗"。顺序是刻意的：先看负担，再看资产，
- * 最后才是那两条最抽象的曲线。
+ * 这些卡按模型口径有多稳 → 我到底忘多快 → 模型说记得的那批，我当场真记得吗"。顺序是刻意的：
+ * 先看负担，再看资产，最后才是那两条最抽象的曲线。
  *
  * 头两块挨在一起但不是同一张图（口径区别写在 [StatsUiState.loadBand] 的 KDoc 上）：
  * 负荷带由稳定度**反解**到期日，所以"今天没练"会如实变成"明天堆积"；
@@ -135,6 +135,13 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
                     fraction = bucket.sharePercent / 100f,
                 )
             }
+        }
+
+        Spacer(Modifier.height(AppTheme.space.lg))
+        SectionHeader(title = "稳定度全景")
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            StabilityPanoramaSection(bins = state.stability, cardCount = state.stabilityCardCount)
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))
@@ -348,6 +355,53 @@ private fun ForecastBars(forecast: List<DayLoad>) {
                     modifier = Modifier.width(28.dp),
                 )
             }
+        }
+    }
+}
+
+/**
+ * 稳定度全景（v3.0-A Task 7）：FSRS 的稳定度 S 按 log2 分十二档，互斥。
+ *
+ * 行条复用 [DurabilityRow]，**不新画控件**——两节的形状本来就是一回事
+ * （标签 + "N 个 · 占比" + 比例条），换一套只会让用户多学一次怎么读。
+ * 无障碍口径也随它一起继承：一行一条 `contentDescription`。
+ *
+ * 十二档**全摆出来**，零计数的档也占一行（与 [RetentionCard] 那条"没数据的档照样在"同一条理由：
+ * 缺行会让人以为那一档不存在，而不是"自己没攒到"）。分档、分母、脏值判据全在
+ * [StabilityBins]，这里只排版——同一个算法不许在视图里再判一遍。
+ *
+ * `cardCount == 0` 走空态而不是画十二行 0%：那幅图读起来像"你的记忆全不行"，
+ * 而事实是还没有一张卡被 FSRS 写过稳定度（[ForecastCards] 的"宁缺不假"）。
+ */
+@Composable
+internal fun StabilityPanoramaSection(bins: List<StabilityBin>, cardCount: Int, modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    if (cardCount <= 0 || bins.isEmpty()) {
+        EmptyState(
+            title = "还没有可信的稳定度",
+            caption = "卡被 FSRS 写过稳定度之后，这里才会分出十二档。",
+        )
+        return
+    }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = "这里的 S 是模型给每张卡算的稳定度：S 越大，同样的保留率下能隔得越久。" +
+                "母体是已排期、且被 FSRS 写过 S 的那批卡（词 + 错题 + 书摘，共 $cardCount 张卡），" +
+                "百分比的分母就是这个可信卡数——与上面「这些记忆能扛多久」是同一套分母口径，" +
+                "但母体不同：那节数的是全库词卡的半衰期、四档是嵌套的 ≥，这里十二档互斥，" +
+                "所以两边的百分比不能横向比大小。",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+        Spacer(Modifier.height(AppTheme.space.sm))
+        bins.forEach { bin ->
+            DurabilityRow(
+                label = bin.label,
+                count = bin.count,
+                share = bin.shareLabel,
+                fraction = bin.sharePercent / 100f,
+            )
         }
     }
 }
