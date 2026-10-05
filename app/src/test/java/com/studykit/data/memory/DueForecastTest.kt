@@ -3,13 +3,21 @@ package com.studykit.data.memory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.roundToInt
+
+/**
+ * 卡（S=2 天、elapsed=0、R=0.9）的到期格子——**手算**得到的字面值，不是调用被测函数得来的。
+ * FSRS v6 反解式 `t = S/f·(R^(1/decay) − 1)`，而 `f ≡ 0.9^(1/decay) − 1`；本次 R 恰为 0.9，
+ * 于是分子分母同一个数，`t = S = 2` 天 → 第 2 格。
+ */
+private const val ARRIVAL_DAY = 2
 
 /**
  * Task 1（v3.0-A）负荷带纯函数的单测：纯 JVM，无 runner，不碰 Room。
  *
- * 口径提醒：反解出的间隔带 ULP 级噪声（S=2/R=0.9 精确值略小于 2.0），
- * 断言里取整一律用 `roundToInt`，与 [DueForecast.forecast] 同一口径。
+ * 口径提醒：反解出的间隔带 ULP 级噪声（S=2/R=0.9 的精确值是 `1.9999999999999998`），
+ * [DueForecast.forecast] 内部用 `roundToInt` 落格，所以到期落在第 2 天。
+ * 断言里的期望格子是**手算字面值**（见 [ARRIVAL_DAY]），不调 [DueForecast.intervalDays]——
+ * 用被测函数给自己出题，那条断言就永远不会红。
  */
 class DueForecastTest {
 
@@ -17,17 +25,16 @@ class DueForecastTest {
 
     @Test
     fun `一张 S 与到期时刻一致的卡落在反解出的那一天`() {
-        // S=2 天、R=0.9 → interval ≈ 2 天（同式反解，不手算硬编码）
-        val day = DueForecast.intervalDays(FsrsModel.DEFAULT_PARAMS, 2.0, 0.9).roundToInt()
         val bands = DueForecast.forecast(
-            listOf(ForecastCard(2.0, 0L, elapsedDays = 0.0)),
+            listOf(ForecastCard(2.0, elapsedDays = 0.0)),
             cfg14,
         )
-        assertEquals(1.0, bands[day].mean, 1e-9)
-        // 到期本事件只落在反解出的那一天；除返工尾巴（+1..+3，另测）外全零。
+        // 到期本事件的 1.0 只落在手算的到期日……
+        assertEquals(1.0, bands[ARRIVAL_DAY].mean, 1e-9)
+        // ……除返工尾巴（+1..+3，另测）外全零。
         assertEquals(
             0.0,
-            bands.filterIndexed { i, _ -> i < day || i > day + 3 }.sumOf { it.mean },
+            bands.filterIndexed { i, _ -> i < ARRIVAL_DAY || i > ARRIVAL_DAY + 3 }.sumOf { it.mean },
             1e-9,
         )
     }
@@ -60,7 +67,7 @@ class DueForecastTest {
 
     @Test
     fun `出窗的卡不堆到最后一格`() {
-        val far = ForecastCard(stabilityDays = 5000.0, dueAt = 0L, elapsedDays = 0.0)
+        val far = ForecastCard(stabilityDays = 5000.0, elapsedDays = 0.0)
         val bands = DueForecast.forecast(listOf(far), cfg14)
         assertEquals(0.0, bands.sumOf { it.mean }, 1e-9)
     }
@@ -68,9 +75,9 @@ class DueForecastTest {
     @Test
     fun `脏稳定度被丢掉而不是炸或产出 NaN`() {
         val dirty = listOf(
-            ForecastCard(Double.NaN, 0L, 0.0),
-            ForecastCard(0.0, 0L, 0.0),
-            ForecastCard(-3.0, 0L, 0.0),
+            ForecastCard(Double.NaN, 0.0),
+            ForecastCard(0.0, 0.0),
+            ForecastCard(-3.0, 0.0),
         )
         val bands = DueForecast.forecast(dirty, cfg14)
         assertTrue(bands.all { it.mean.isFinite() && it.mean == 0.0 })
@@ -80,14 +87,14 @@ class DueForecastTest {
     fun `新词流入按窗口守恒`() {
         val c = cfg14.copy(newPerDay = 10, learningPerNew = 2.5)
         val bands = DueForecast.forecast(emptyList(), c)
-        // 14 天 × 10 张 × 2.5 学习步 = 350 的总流入，按引入日 +0..+2 摊派；
-        // 守恒指"不重复计"，落窗外的尾部不强计（与"出窗的卡不堆最后一格"同一口径），
-        // 故窗内和 = 每个引入日落在窗内的权重之和 = 12×25 + 20 + 12.5 = 332.5。
-        val expected = (0 until 14).sumOf { intro ->
-            c.inflowW.indices.filter { intro + it < 14 }.sumOf { c.inflowW[it] } * 10 * 2.5
-        }
+        // 332.5 是**手算**字面值（每引入日流入 10×2.5×(0.5+0.3+0.2)=25，摊到引入日 +0..+2）：
+        //   intro 0..11  三步全在窗内 → 12 × 25            = 300
+        //   intro 12     +2 步落到第 14 天（窗外）→ 25×0.8 =  20
+        //   intro 13     只剩 +0 步            → 25×0.5    =  12.5
+        //   窗内合计                                        332.5
+        // 不按实现的那句 `intro + k < horizon` 重算期望值——那样共享的 off-by-one 会一起漂。
+        // 守恒指"不重复计"：窗外尾部不强计（与「出窗的卡不堆到最后一格」同一口径），故小于名义 350。
         assertEquals(332.5, bands.sumOf { it.mean }, 1e-6)
-        assertEquals(expected, bands.sumOf { it.mean }, 1e-6)
     }
 
     @Test
@@ -103,6 +110,6 @@ class DueForecastTest {
         assertEquals(1, bands.size)
     }
 
-    private fun card2(elapsedDays: Double) = ForecastCard(2.0, 0L, elapsedDays)
+    private fun card2(elapsedDays: Double) = ForecastCard(2.0, elapsedDays)
     private fun peakDay(bands: List<DayBand>): Int = bands.indices.maxByOrNull { bands[it].mean } ?: 0
 }

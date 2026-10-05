@@ -8,8 +8,6 @@ import kotlin.math.sqrt
 data class ForecastCard(
     /** FSRS v6 稳定度（天）。非有限或 <=0 视为脏数据，被丢弃。 */
     val stabilityDays: Double,
-    /** 已落库的到期时刻（epoch ms）。0 = 未排期。预测不吃这一列——见 [DueForecast.forecast] 的 KDoc。 */
-    val dueAt: Long,
     /** 距上次复习多少天。 */
     val elapsedDays: Double,
 )
@@ -24,12 +22,15 @@ data class ForecastCfg(
     /** 每张新词随后产生的学习步次数。 */
     val learningPerNew: Double = 2.5,
     /** 学习步 / 返工在「当天起 +0..+2」三天的摊派权重，和应为 1。 */
-    val inflowW: DoubleArray = DEFAULT_INFLOW,
-) {
-    companion object {
-        val DEFAULT_INFLOW = doubleArrayOf(0.5, 0.3, 0.2)
-    }
-}
+    val inflowW: DoubleArray = defaultInflow(),
+)
+
+/**
+ * 摊派权重的默认值——用函数而非 `companion object val` 常量：`DoubleArray` 可变，
+ * 常量默认值会被 `data class copy()` 与原构造共享成**同一个引用**，任一调用方原地
+ * 改写就污染全局默认。每次调用返回新数组，改不坏。
+ */
+private fun defaultInflow() = doubleArrayOf(0.5, 0.3, 0.2)
 
 /** 窗口里某一天：期望复习数与它的标准差。 */
 data class DayBand(val dayIndex: Int, val mean: Double, val sd: Double)
@@ -37,10 +38,11 @@ data class DayBand(val dayIndex: Int, val mean: Double, val sd: Double)
 /**
  * 把「已排期卡片的未来轨迹」前推成 N 天负荷带。
  *
- * ## 为什么不用落库的 `dueAt`
- * 到期时刻只反映**上一次评分**排出来的结果；用户今天多评一轮，后面十几天会整体重排。
+ * ## 为什么不吃落库的到期时刻（`Word.nextReviewAt`）
+ * 落库的到期时刻只反映**上一次评分**排出来的结果；用户今天多评一轮，后面十几天会整体重排。
  * 所以这里由 `S` 与目标保留率**反解**出「还有几天到期」，再叠上已流逝天数：
  * `remain = intervalDays(w, S, R) - elapsed`。这样「今天没练」会如实变成「明天堆积」。
+ * 也正因为如此，[ForecastCard] 不预留 `dueAt` 字段——留着就是穿过整条计划的死数据。
  *
  * ## 三件质量来源
  * 1. **到期本事件**：`mean[d0] += 1`，确定性 → 不贡献方差。
@@ -66,6 +68,8 @@ object DueForecast {
         val mean = DoubleArray(n)
         val varSum = DoubleArray(n)
 
+        // 循环不变量：返工概率只由 retention 决定，提到卡片循环外算一次。
+        val p = (1.0 - cfg.retention).coerceIn(0.0, 1.0)
         for (card in cards) {
             if (!card.stabilityDays.isFinite() || card.stabilityDays <= 0.0) continue
             val remain = max(0.0, intervalDays(w, card.stabilityDays, cfg.retention) - card.elapsedDays)
@@ -73,7 +77,6 @@ object DueForecast {
             if (d0 >= n) continue
             mean[d0] += 1.0
 
-            val p = (1.0 - cfg.retention).coerceIn(0.0, 1.0)
             for (k in cfg.inflowW.indices) {
                 val d = d0 + 1 + k
                 if (d >= n) break
@@ -83,8 +86,9 @@ object DueForecast {
             }
         }
 
+        // 循环不变量：每日流入的学习步总量与新词张数、每张步数有关，与引入日无关。
+        val intake = cfg.newPerDay * cfg.learningPerNew
         for (intro in 0 until n) {
-            val intake = cfg.newPerDay * cfg.learningPerNew
             for (k in cfg.inflowW.indices) {
                 val d = intro + k
                 if (d >= n) break
