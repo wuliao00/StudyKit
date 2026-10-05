@@ -2,6 +2,7 @@ package com.studykit.ui.stats
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -10,11 +11,14 @@ import androidx.compose.ui.test.onNodeWithText
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.ui.theme.AppThemeVals
+import com.studykit.ui.theme.DarkColors
 import com.studykit.ui.theme.LightColors
 import com.studykit.ui.theme.LocalAppTheme
 import com.studykit.ui.theme.buildAppTexts
 import java.time.LocalDate
 import java.time.ZoneOffset
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -128,6 +132,42 @@ class ReviewHeatmapRenderTest {
         composeRule.onNodeWithText("题目练习", substring = true).assertExists()
         composeRule.onNodeWithText("书摘", substring = true).assertExists()
         composeRule.onNodeWithText("还没到来", substring = true).assertExists()
+    }
+
+    /**
+     * 色阶映射的填色守卫（纯函数，两套色板各钉一次）。零复习格**必须**落在 `heatIdle`——
+     * 这个 token 就是为"灰格在卡面上要看得见"造的（`divider` 满不透明浅色 1.29:1 / 夜间 1.30:1，
+     * Palette.kt 记着这笔账）。谁把它改回 `divider`，这两行立刻红。
+     */
+    @Test
+    fun 零复习格两套主题都填heatIdle() {
+        assertEquals(LightColors.heatIdle, heatmapCellColor(LightColors, ReviewHeatmapLogic.LEVEL_NONE))
+        assertEquals(DarkColors.heatIdle, heatmapCellColor(DarkColors, ReviewHeatmapLogic.LEVEL_NONE))
+    }
+
+    /**
+     * 未来占位格**不填色**（那圈 heatIdle 描边在视图里补），与零复习的实心灰格是**两种画法**、
+     * 不是同一种灰的两档深度——上一版 `divider` / `divider.copy(alpha = 0.30)` 约 1.29:1 / 1.09:1，
+     * "未来 ≠ 零复习"只活在数据里、屏幕上看不出来。
+     */
+    @Test
+    fun 未来格不填色且与零复习格是两个答案() {
+        listOf(LightColors, DarkColors).forEach { colors ->
+            assertEquals(Color.Transparent, heatmapCellColor(colors, ReviewHeatmapLogic.LEVEL_FUTURE))
+            assertNotEquals(
+                heatmapCellColor(colors, ReviewHeatmapLogic.LEVEL_NONE),
+                heatmapCellColor(colors, ReviewHeatmapLogic.LEVEL_FUTURE),
+            )
+        }
+    }
+
+    /** 非零四档仍走 accent 的 alpha 梯（本轮只动零档与占位档）：钉中间档与顶档，两主题同一表达式。 */
+    @Test
+    fun 活跃格仍在accent的alpha梯上() {
+        listOf(LightColors, DarkColors).forEach { colors ->
+            assertEquals(colors.accent.copy(alpha = 0.55f), heatmapCellColor(colors, 2))
+            assertEquals(colors.accent, heatmapCellColor(colors, ReviewHeatmapLogic.MAX_LEVEL))
+        }
     }
 
     /** 指定日期各来几次复习，拼成时间戳后走真实装配；`weeks` 只影响网格长度。 */

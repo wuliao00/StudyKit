@@ -9,7 +9,7 @@ import java.time.ZoneId
  * 热力图的一格。
  *
  * [date] 为 `null` 表示这一格落在**今天之后**（末周残缺），没有事实可画；此时 [level] 是
- * [ReviewHeatmapLogic.LEVEL_FUTURE]，视图画一枚更淡的占位格，**不画成"零复习"的灰格**——
+ * [ReviewHeatmapLogic.LEVEL_FUTURE]，视图画一枚只描边、不填色的占位格，**不画成"零复习"的实心灰格**——
  * 把还没发生的日子画成空，读起来就是"你这几天没坚持"，而那句话没有依据。
  * 日期为 null 这重表达沿用 [com.studykit.ui.habit.buildHeatmapCells] 的同一套约定，
  * 两幅热力图对"未来"的说法因此不会分叉。

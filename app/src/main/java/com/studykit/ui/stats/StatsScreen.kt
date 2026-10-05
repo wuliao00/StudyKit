@@ -2,6 +2,7 @@ package com.studykit.ui.stats
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -184,7 +185,7 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
                     "蓝线是按全库平均半衰期算的模型预测，不是拟合你个人的曲线；" +
                         "橙线是艾宾浩斯 1885 年的经典实验数值（被后世反复转述），只当参照，不是你的数据。"
                 } else {
-                    "绿点是**你自己**每次复习的间隔与结果分桶算出来的实测回忆率；" +
+                    "绿点是你自己每次复习的间隔与结果分桶算出来的实测回忆率；" +
                         "橙线只是参照 —— 你的点越靠右上，说明排期越保守。"
                 },
                 style = texts.caption,
@@ -238,7 +239,7 @@ private fun RetentionCard(buckets: List<RetentionBucket>) {
         }
         Spacer(Modifier.height(AppTheme.space.xs))
         Text(
-            text = "同一个口径的原始流水就在备份包里（`review_history.csv`），想自己算一遍随时拿得出。" +
+            text = "同一个口径的原始流水就在备份包里（review_history.csv），想自己算一遍随时拿得出。" +
                 "本应用不上传任何东西，这张卡只能上线前后自己跟自己比。",
             style = texts.caption,
             color = colors.secondaryText,
@@ -388,8 +389,11 @@ private fun ForecastBars(forecast: List<DayLoad>) {
  * 与 [LoadBandChart] 同一条分工：看得见的和听得见的各拿一半。
  *
  * ## 占位格不是"零复习"格
- * 今天之后那几格（末周残缺）颜色比灰格更淡一档，读作"还没到来"。画成灰格就等于对用户说
- * "这几天你没坚持"，而那件事还没发生。判定在 [ReviewHeatmapLogic]，这里只换色。
+ * 今天之后那几格（末周残缺）**不填色，只描一圈 `heatIdle` 的空框**；零复习的格子是实心灰。
+ * 空心框 vs 实心块靠形状分开，两套主题都看得见——若只把占位格调成"再淡一档的 alpha"，
+ * 它和灰格的差别会掉到屏幕分辨不出的量级，而这张图的核心规则恰恰是"未来 ≠ 没坚持"。
+ * 画成灰格就等于对用户说"这几天你没坚持"，而那件事还没发生。
+ * 判定在 [ReviewHeatmapLogic]，这里只换画法。
  *
  * 格子来自 [ReviewHeatmapLogic.cells]，视图**不自己数时间戳**——数第二遍就会和读屏那句对不上。
  */
@@ -421,10 +425,10 @@ internal fun ReviewHeatmapSection(cells: List<HeatCell>, modifier: Modifier = Mo
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = "一格一天：列是周（旧 → 新，最右是本周），行是周一到周日。" +
-                "深浅是按**你自己**非零日的 90 分位排的，不是固定阈值——颜色深只说明那天比你的平常日子忙。" +
+                "深浅是按你自己非零日的 90 分位排的，不是固定阈值——颜色深只说明那天比你的平常日子忙。" +
                 "只数两路：单词复习与题目练习；书摘没有每次复习的流水表，所以这张图不等于全部学习行为，" +
                 "也不会等于顶上「复习记录」那个数（那一只数词卡）。" +
-                "灰格是那天一次都没复习，更淡的格子是还没到来的日子。",
+                "灰格是那天一次都没复习，只有一圈空框、没有填色的格子是还没到来的日子。",
             style = texts.caption,
             color = colors.secondaryText,
         )
@@ -437,12 +441,22 @@ internal fun ReviewHeatmapSection(cells: List<HeatCell>, modifier: Modifier = Mo
             columns.forEach { column ->
                 Column {
                     column.forEach { cell ->
+                        val shape = RoundedCornerShape(2.dp)
                         Box(
                             modifier = Modifier
                                 .size(HeatmapCellSide)
                                 .padding(1.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(heatmapCellColor(colors, cell.level)),
+                                .clip(shape)
+                                .background(heatmapCellColor(colors, cell.level))
+                                // 未来占位格＝空心框（见 [heatmapCellColor] 的 KDoc）：
+                                // 与实心灰格靠形状分开，不靠再淡一档的 alpha
+                                .then(
+                                    if (cell.level == ReviewHeatmapLogic.LEVEL_FUTURE) {
+                                        Modifier.border(1.dp, colors.heatIdle, shape)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         )
                     }
                 }
@@ -452,15 +466,20 @@ internal fun ReviewHeatmapSection(cells: List<HeatCell>, modifier: Modifier = Mo
 }
 
 /**
- * 一档色 → 一个既有 token。
+ * 一档色 → 一个既有 token。**不新增色值**，也不许退回 `divider`：
+ * `divider` 满不透明在浅色卡面上只有 1.29:1（Palette.kt 为这笔账写过"几乎看不见"），
+ * 零复习格正是 [AppColors.heatIdle] 这个 token 存在的理由（两主题各约 1.5:1）。
  *
- * **不新增色值**：非零四档都是 `accent` 的 alpha（0.30 / 0.55 / 0.80 / 1.0），
- * 零复习用 `divider`（与 [ForecastBars] 那根零柱同一个颜色，"没有"在本仓本来就长这样），
- * 未来占位是 `divider` 再淡一档——它必须比"零复习"更不明显，而不是更明显。
+ * - 非零四档：`accent` 的 alpha（0.30 / 0.55 / 0.80 / 1.0），一条没动；
+ * - 零复习：`heatIdle` 实心；
+ * - 未来占位：[Color.Transparent] **不填色**，由视图（[ReviewHeatmapSection]）补一圈
+ *   `heatIdle` 描边——空心框 vs 实心块是**画法**的区别，两套主题都分辨得出；
+ *   上一版用 `divider` / `divider.copy(alpha = 0.30)` 约 1.29:1 / 1.09:1，
+ *   "未来 ≠ 零复习"这条核心规则只活在数据里，屏幕上两个都快看不见。
  */
-private fun heatmapCellColor(colors: AppColors, level: Int): Color = when (level) {
-    ReviewHeatmapLogic.LEVEL_FUTURE -> colors.divider.copy(alpha = 0.30f)
-    ReviewHeatmapLogic.LEVEL_NONE -> colors.divider
+internal fun heatmapCellColor(colors: AppColors, level: Int): Color = when (level) {
+    ReviewHeatmapLogic.LEVEL_FUTURE -> Color.Transparent
+    ReviewHeatmapLogic.LEVEL_NONE -> colors.heatIdle
     1 -> colors.accent.copy(alpha = 0.30f)
     2 -> colors.accent.copy(alpha = 0.55f)
     3 -> colors.accent.copy(alpha = 0.80f)

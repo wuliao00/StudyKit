@@ -81,17 +81,24 @@ class LoadBandRenderTest {
         ).assertExists()
     }
 
-    /** 全图只许**一条**语义节点：14 个逐日节点会让读屏把同一张图念十四遍。 */
+    /**
+     * 全图只许**一条**语义节点：14 个逐日节点会让读屏把同一张图念十四遍。
+     *
+     * 数的是**任意**描述，而不是数这一句的精确串——精确串只防"第二节点同款文案"，
+     * 挂一条*不同*描述的节点照样溜过去。空串 + substring 的数法沿回
+     * [ReviewHeatmapRenderTest]（`整块热力图只有一句汇总描述`），再单独钉住"这唯一一条的内容"。
+     */
     @Test
     fun 整张图只有一条描述() {
         composeRule.setContent {
             StatsHost { LoadBandChart(bands = bands(3.0)) }
         }
         composeRule.waitForIdle()
-        composeRule.onAllNodesWithContentDescription(
+        composeRule.onAllNodesWithContentDescription("", substring = true).assertCountEquals(1)
+        composeRule.onNodeWithContentDescription(
             "未来 ${ForecastCfg.HORIZON_DAYS} 天复习负荷带：" +
                 "峰值在第 1 天，预计 3 项；实线是每天的期望项数，阴影是它的波动范围。",
-        ).assertCountEquals(1)
+        ).assertExists()
     }
 
     /**
