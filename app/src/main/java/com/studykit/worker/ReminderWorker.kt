@@ -209,9 +209,6 @@ class ReminderWorker(
         private const val NOTIFICATION_ID = 7101
         private const val TAG = "ReminderWorker"
 
-        /** 负荷带前推天数：计划（v3.0-A Task 4 Step 3）定的 14 天窗口，也是文档 §负荷预测 的窗口 */
-        private const val FORECAST_HORIZON_DAYS = 14
-
         /** 创建通知渠道（API 26+，幂等） */
         fun ensureChannel(context: Context) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -366,7 +363,9 @@ class ReminderWorker(
         val bands = DueForecast.forecast(
             cards,
             ForecastCfg(
-                horizonDays = FORECAST_HORIZON_DAYS,
+                // 与看板负荷带同一个常量（计划 v3.0-A Task 4 Step 3 定的 14 天窗口）：
+                // 两处各写一份字面量时，通知那句"后天会堆到 N 项"和看板上那座峰可能不是同一段未来
+                horizonDays = ForecastCfg.HORIZON_DAYS,
                 retention = sched.targetRecall,
                 newPerDay = settings.dailyWordGoal,
                 // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方

@@ -14,7 +14,7 @@ data class ForecastCard(
 
 /** 负荷带预测的政策参数。 */
 data class ForecastCfg(
-    val horizonDays: Int = 14,
+    val horizonDays: Int = HORIZON_DAYS,
     /** 目标保留率，来自 `Scheduling.targetRecall`，**不要**在这里写死默认值——那会悄悄分叉调度政策。 */
     val retention: Double,
     /** 每日新词 intake（`AppSettings.dailyWordGoal`）。 */
@@ -23,7 +23,18 @@ data class ForecastCfg(
     val learningPerNew: Double = 2.5,
     /** 学习步 / 返工在「当天起 +0..+2」三天的摊派权重，和应为 1。 */
     val inflowW: DoubleArray = defaultInflow(),
-)
+) {
+    companion object {
+        /**
+         * 前推窗口天数：**看板的负荷带与提醒侧的堆积判断共用这一个数**。
+         *
+         * 放在这里而不是各自写一份字面量，是因为这两处读的是同一段未来（`StatsViewModel` 画的那条带、
+         * `ReminderWorker` 那句「后天会堆到 N 项」）。窗口分叉时两边都照常工作、不报错，只是用户看到
+         * 的不再是同一次预测。上一轮就同时在两处写过 `14`，靠 KDoc 里一句「同值」维持——没人执行。
+         */
+        const val HORIZON_DAYS: Int = 14
+    }
+}
 
 /**
  * 摊派权重的默认值——用函数而非 `companion object val` 常量：`DoubleArray` 可变，

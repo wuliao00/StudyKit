@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
-import com.studykit.data.AppSettings
 import com.studykit.data.dao.ReviewGapRow
 import com.studykit.data.memory.DayBand
 import com.studykit.data.memory.DueForecast
@@ -42,25 +41,19 @@ data class StatsUiState(
      */
     val retention: List<RetentionBucket> = emptyList(),
     /**
-     * 未来两周的复习负荷带（v3.0-A Task 6）：逐日期望项数与 ±1 标准差。
+     * 未来两周的复习负荷带（v3.0-A Task 6）：逐日期望项数与 ±1 标准差，窗口取
+     * [ForecastCfg.HORIZON_DAYS]（与提醒侧同一个数）。
      *
      * 与 [forecast] 是**两套口径**、两张图各答一问，别当成重复：`forecast` 只数已落库的到期时间戳
      * （"接下来 7 天原本排了多少"），`loadBand` 由稳定度反解到期日（"照这个练法会堆成什么样"），
      * 所以今天不练，只有后者会如实把明天的量顶上去。口径见 [DueForecast] 的类 KDoc。
+     *
+     * **mean 里除了到期复习还有学习步**（`newPerDay × learningPerNew`，见 [ForecastCfg]）：它就是会比
+     * 词数大。上一版为此在这里递了一个 `capacityPerDay = settings.dailyWordGoal` 给图当对照线，
+     * 而 `dailyWordGoal` 是每日**新词**目标、不是复习容量，那个比较天天成立、提示常亮，已删（T6 修复轮）。
      */
     val loadBand: List<DayBand> = emptyList(),
-    /** 负荷带的对照线：每日容量，取 `AppSettings.dailyWordGoal`（与 [ForecastCfg.newPerDay] 同一个数） */
-    val capacityPerDay: Int = AppSettings.DEFAULT_WORD_GOAL,
 )
-
-/**
- * [StatsViewModel.loadBandFlow] 的中间产物：带子 + 画它所需要的那条容量线。
- *
- * 单独一个类型是因为这两个数**必须同源**：`capacityPerDay` 取的是 `settings.dailyWordGoal`，
- * 而带子里的新词流入项数同样由它推出（[ForecastCfg.newPerDay]）。分两条 Flow 各取一次设置，
- * 就可能出现"线是旧的、带是新的"——线画低了一格，超载日凭空多几天。
- */
-private data class LoadBandState(val bands: List<DayBand>, val capacityPerDay: Int)
 
 /**
  * 记忆看板 ViewModel。
@@ -80,18 +73,12 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         /** 未来量看 7 天：够排一周，再多就只是把"下周"也压进焦虑里 */
         private const val FORECAST_DAYS = 7
 
-        /**
-         * 负荷带看 14 天：与提醒侧 `ReminderWorker.FORECAST_HORIZON_DAYS` 同值。
-         * 用户从通知上读到的"后天会堆到 N 项"和看板上那根点，必须是同一个窗口的同一次读数。
-         */
-        private const val LOAD_BAND_DAYS = 14
-
         /** 模型曲线取第 0~9 天，与墨墨那张图的横轴一致 */
         private val CURVE_DAYS = (0..9).toList()
     }
 
     /**
-     * 负荷带那一路：设置 + 三张表的已排期行 → 一次装配 → 14 天带。
+     * 负荷带那一路：设置 + 三张表的已排期行 → 一次装配 → [ForecastCfg.HORIZON_DAYS] 天带。
      *
      * ## 为什么单列一条 combine，而不是塞进下面那条五路的 `combine`
      * kotlinx 的类型化 `combine` 只到 5 个 Flow（再多就只剩返回 `Array<Any?>` 的那个重载，要手写强转）。
@@ -100,13 +87,16 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 一次评分就会重跑一遍，绝不能落到 Main 上（理由与类 KDoc 同一条）。
      *
      * ## `ForecastCards.of` 在这一个 lambda 里只调一次（它的 KDoc 是求值一次契约）
-     * 四个上游在同一次 combine 里各取到一份快照，`of` 调一次、结果同时喂给带子与容量线，
-     * 于是图上的实线、超载点与那几行标注数的必然是同一批卡。多加一次调用不是"多算一遍"
-     * 而是"多取一次快照"，两次之间只要有一次评分落库，图上就是半新半旧的卡集——而且不报错。
+     * 四个上游在同一次 combine 里各取到一份快照，`of` 调一次、结果直接喂 `DueForecast.forecast`，
+     * 于是图上的实线与阴影数的是同一批卡。多加一次调用不是"多算一遍"而是"多取一次快照"，
+     * 两次之间只要有一次评分落库，图上就是半新半旧的卡集——而且不报错。
      *
      * ## 两个数只有一个来源
      * 目标保留率走 [MemoryScheduler.forSettings] 的 `targetRecall`（写死 0.9 等于在看板另起一份
      * 排期政策，与提醒侧同一条纪律），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
+     * `settings.dailyWordGoal` 在这里只进 [ForecastCfg.newPerDay] 一个地方：它说的是"每天进几个新词"，
+     * 带子因此含这些新词产生的学习步。**不许**把它当每日复习容量再递一份给 UI 画对照线——
+     * 那个比较恒真、超载提示常亮，上一轮就是这么写的，已删（见 [LoadBandChart] 类 KDoc）。
      * 时钟只读一次：`today` 由 `now` 推，免得跨过零点那一次重算里「今天」和「now」不是同一天。
      */
     private val loadBandFlow = combine(
@@ -123,7 +113,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             examEpochDay = settings.examEpochDay,
             today = today,
         )
-        val bands = DueForecast.forecast(
+        DueForecast.forecast(
             ForecastCards.of(
                 words = words,
                 mistakes = mistakes,
@@ -131,14 +121,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 now = now,
             ).toForecastCards(),
             ForecastCfg(
-                horizonDays = LOAD_BAND_DAYS,
+                // 与提醒侧同一个常量：两处各写一份 14 时，通知和看板就不是在同一段未来里读数
+                horizonDays = ForecastCfg.HORIZON_DAYS,
                 retention = sched.targetRecall,
                 newPerDay = settings.dailyWordGoal,
                 // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
             ),
             w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS,
         )
-        LoadBandState(bands = bands, capacityPerDay = settings.dailyWordGoal)
     }.flowOn(Dispatchers.Default)
 
     /**
@@ -176,8 +166,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         )
     }.flowOn(Dispatchers.Default)
 
-    val state: StateFlow<StatsUiState> = combine(baseState, loadBandFlow) { base, band ->
-        base.copy(loadBand = band.bands, capacityPerDay = band.capacityPerDay)
+    val state: StateFlow<StatsUiState> = combine(baseState, loadBandFlow) { base, bands ->
+        base.copy(loadBand = bands)
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())

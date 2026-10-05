@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -22,17 +20,8 @@ import com.studykit.ui.theme.AppTheme
 import kotlin.math.roundToInt
 
 /**
- * 超容量标注最多逐日点出几天，其余折成一句总数。
- *
- * 堆到容量线上是一件事（每日新词目标定得太高 / 欠下的太多），不是十四件独立的事：
- * 十四行几乎一样的字既把图挤出屏幕，读屏也要念十四遍。超过这个数就改成"另有 N 天同样…"，
- * 用户拿到的是同一个结论，字数不随窗口长度长。
- */
-private const val MaxOverdayNotes = 3
-
-/**
  * 接下来两周的复习负荷带（v3.0-A Task 6）：把 [com.studykit.data.memory.DueForecast] 算出的
- * `mean ± sd` 画成一条带，并叠上「每日容量」这条横虚线。
+ * `mean ± sd` 画成一条带。
  *
  * ## 这张图回答的是唯一一件前面几块图没回答的事
  * 「未来 7 天要复习多少」只数**已排期**的那批，所以今天不练、明天照样显示原样；负荷带由稳定度
@@ -40,57 +29,63 @@ private const val MaxOverdayNotes = 3
  * 于是"没练"会如实变成"堆积"。带子（±一个标准差）给的则是这个期望值有多不确定——
  * 阴影宽的那几天，数字本身不值得当成承诺。
  *
- * ## 画法沿用 [RetentionChart] 的既有约定
- * `Canvas` + `AppTheme.colors`，横轴线性取 `bands.size` 天、纵轴 `0..max(peak, capacity)`，
- * 折线走 `drawPath + style = Stroke`（`DrawScope.drawLine` 没有收 Path 的重载），
- * 整张图**一条** `contentDescription`。不新增色值：带子是 `accent.copy(alpha = …)`，
- * 容量线是 `divider`，超载点是 `warning`——都是本仓已有的令牌。
+ * ## 为什么图上没有「每日容量」这条线（本轮删掉的，别再加回来）
+ * 上一版把 `AppSettings.dailyWordGoal` 当容量线画在这里，逐日比较 `mean > capacityPerDay`。那个比较
+ * 从定义上就赢不了：`dailyWordGoal` 是**每日新词目标**，而带子里的 mean 除了到期复习，还含这批新词
+ * 随后产生的学习步（`newPerDay × learningPerNew`，见 [com.studykit.data.memory.DueForecast] 第三条
+ * 质量来源）。于是每一天的 mean 至少是那个"容量"的 1.25 倍——一张卡都没有也照样超，超载提示常亮，
+ * 空态永远走不到，看板上"有排期的词 0"和"第 1 天预计 N 项，超过每日容量"还能同屏出现。
+ * 本仓**没有**"每日复习容量"这个设置。真要加，得先立一个概念（它和复习政策有关，不是 UI 能定的），
+ * 用 `dailyWordGoal` 乘个系数派生一个出来只是把同一个谎换个写法。所以这里只描述，不判超载。
  *
- * ## 为什么超载信息写成文字行而不是逐日语义节点
- * 逐日 `semantics` 节点会让读屏把同一张图念十四遍（图已经有一条总描述了）。超载那几天直接以
- * 一行中文摆出来（"第 3 天预计 30 项，超过每日容量 20 项。"），可见即可读，一份语义两处用；
- * 眼睛扫到的是同一句话，所以无障碍不用额外造一个只给读屏的隐藏节点。
- * 这也是 [com.studykit.ui.stats.ForecastBars] 不用 Canvas 的同一条理由的另一半：
- * **数字要能被念出来**，图只是它的形状。
+ * ## 画法沿用 [RetentionChart] 的既有约定
+ * `Canvas` + `AppTheme.colors`，横轴线性取 `bands.size` 天、纵轴 `0..max(mean+sd)` 上浮 15%，
+ * 折线走 `drawPath + style = Stroke`（`DrawScope.drawLine` 没有收 Path 的重载），
+ * 整张图**一条** `contentDescription`。不新增色值：带子是 `accent.copy(alpha = …)`。
+ *
+ * ## 无障碍：那一条描述里必须有数字
+ * Canvas 对读屏等于一张壁纸，所以整张图唯一的语义节点说的不是画法而是**内容**：窗口长度、峰值在第
+ * 几天、那天预计多少项（与 [ForecastBars] 逐日念出数字是同一个要求，只是不许拆成 14 个节点——
+ * 读屏会把同一张图念十四遍）。编码方式（实线/阴影各是什么）写在图下那行 caption 里，看得见的和
+ * 听得见的各拿一半，两份合起来才是完整的一张图。
  *
  * ## 空态
- * 全零（或一条卡都没有：新库、刚切内核还没回填稳定度）时不给一条贴底的平线冒充数据，
- * 直接 [EmptyState] 说"接下来两周没有排期"——与「未来 7 天」那张卡的空态同一个处理。
+ * 见 [LoadBandChart] 里的判定：这条带**只在一条线都画不出来时**才空。零卡不是空态——每日新词目标
+ * 照样会产生学习步，那本身就是对"照这个练法开下去会有多忙"的如实预测，把它画出来比写"没有排期"诚实。
  *
- * 纯展示：不读库、不算算法，`bands` 与 `capacityPerDay` 都由 [StatsViewModel] 在主线程之外算好递进来。
+ * 纯展示：不读库、不算算法，`bands` 由 [StatsViewModel] 在主线程之外算好递进来。
  */
 @Composable
-fun LoadBandChart(
-    bands: List<DayBand>,
-    capacityPerDay: Int,
-    modifier: Modifier = Modifier,
-) {
+fun LoadBandChart(bands: List<DayBand>, modifier: Modifier = Modifier) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    // isEmpty() 写在前面：空列表时 `all` 也返回 true，但 Canvas 那侧的 maxOf/bands[0] 要在
+    // 非空判定之后才求值，读的人不必自己推理 `all` 的空真值（全零同理：贴底平线不是数据）。
     if (bands.isEmpty() || bands.all { it.mean <= 0.0 }) {
         EmptyState(
-            title = "接下来两周没有排期",
+            title = "接下来两周还没有可画的负荷",
             caption = "评满一轮分、排期落库之后，这里才会画出负荷。",
         )
         return
     }
-    val overDays = bands.indices.filter { bands[it].mean > capacityPerDay }
+    // 峰值那天是这张图唯一值得单报的数：横轴没有刻度（14 个标签在窄屏挤成一团），
+    // 而"最忙的是哪天、大概多少项"正是这块看板要回答的那一句话。
+    val peak = bands.maxBy { it.mean }
+    val description = "未来 ${bands.size} 天复习负荷带：峰值在第 ${peak.dayIndex + 1} 天，" +
+        "预计 ${peak.mean.roundToInt()} 项；实线是每天的期望项数，阴影是它的波动范围。"
 
     Column(modifier = modifier.fillMaxWidth()) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(160.dp)
-                .semantics {
-                    contentDescription = "未来 ${bands.size} 天复习负荷带：" +
-                        "实线是期望数量，阴影是波动范围，横虚线是每日容量"
-                },
+                .semantics { contentDescription = description },
         ) {
-            // 纵轴上界同时容纳「mean+sd 的峰」与「容量线」，各留 15% 余量：
-            // 容量线贴着顶或峰贴着顶都会让人读不出"还剩多少空间"。
-            val peak = (bands.maxOf { it.mean + it.sd } * 1.15).coerceAtLeast(capacityPerDay * 1.15)
+            // 纵轴上界取「mean+sd 的峰」并上浮 15%：峰贴着顶会让人读不出那天上面还剩多少空间。
+            // 空态已保证 bands 非空且至少一天 mean > 0，故这个上界不为 0，y() 不会除零。
+            val top = bands.maxOf { it.mean + it.sd } * 1.15
             fun x(i: Int) = size.width * (i.toFloat() / (bands.size - 1).coerceAtLeast(1))
-            fun y(v: Double) = size.height * (1f - (v / peak).toFloat().coerceIn(0f, 1f))
+            fun y(v: Double) = size.height * (1f - (v / top).toFloat().coerceIn(0f, 1f))
 
             // 阴影带 mean±sd：正向描上沿、反向补下沿，闭合成多边形。下沿夹到 0，
             // 因为「负的一项」不存在，让它穿到横轴下面会凭空多出半格高度。
@@ -114,47 +109,15 @@ fun LoadBandChart(
                 color = colors.accent,
                 style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
             )
-            // 每日容量线：整幅横穿的虚线，一眼看出哪几天顶到了上面
-            drawLine(
-                color = colors.divider,
-                start = Offset(0f, y(capacityPerDay.toDouble())),
-                end = Offset(size.width, y(capacityPerDay.toDouble())),
-                strokeWidth = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
-            )
-            overDays.forEach { i ->
-                drawCircle(
-                    color = colors.warning,
-                    radius = 4.dp.toPx(),
-                    center = Offset(x(i), y(bands[i].mean)),
-                )
-            }
         }
         Spacer(Modifier.height(AppTheme.space.xs))
         Text(
-            text = "实线是那天预计要复习的项数，阴影是它的波动范围（±1 个标准差），" +
-                "横虚线是每日容量 $capacityPerDay 项——线跑到虚线上面就是会超载的日子。",
+            text = "实线是那天预计要处理的项数，阴影是它的波动范围（±1 个标准差）。" +
+                "带子里除了已排期的到期复习，还含两笔：忘了的卡按返工概率摊到之后几天，" +
+                "以及设置里「每日新词」目标随后产生的学习步（每张新词约 2.5 次）。" +
+                "所以这里的项数会比「有排期的词」那个数大，一张卡都还没背时也不会是零。",
             style = texts.caption,
             color = colors.secondaryText,
         )
-        overDays.take(MaxOverdayNotes).forEach { i ->
-            Spacer(Modifier.height(AppTheme.space.xs))
-            Text(
-                text = "第 ${i + 1} 天预计 ${bands[i].mean.roundToInt()} 项，超过每日容量 $capacityPerDay 项。",
-                style = texts.caption,
-                // 用 warningInk 而不是 warning 本身：填充色直接当文字色在浅色主题下对比度不够
-                // （本仓在图例上为同一件事写过一次），见 StatsScreen 的 LegendDot。
-                color = colors.warningInk,
-            )
-        }
-        val rest = overDays.size - MaxOverdayNotes
-        if (rest > 0) {
-            Spacer(Modifier.height(AppTheme.space.xs))
-            Text(
-                text = "另有 $rest 天同样超过每日容量 $capacityPerDay 项。",
-                style = texts.caption,
-                color = colors.warningInk,
-            )
-        }
     }
 }

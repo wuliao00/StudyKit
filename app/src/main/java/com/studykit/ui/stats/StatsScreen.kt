@@ -100,7 +100,7 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
         SectionHeader(title = "接下来两周的负荷")
         Spacer(Modifier.height(AppTheme.space.md))
         AppCard(modifier = Modifier.fillMaxWidth()) {
-            LoadBandChart(bands = state.loadBand, capacityPerDay = state.capacityPerDay)
+            LoadBandChart(bands = state.loadBand)
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))
