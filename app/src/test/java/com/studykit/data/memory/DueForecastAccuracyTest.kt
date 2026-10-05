@@ -16,19 +16,19 @@ import kotlin.math.roundToInt
  * 「自证式」的）。所以它证明的是「反解 → 取整落格 → 返工摊派 → 窗边界」这套账与调度器的计划一致，
  * **不**证明 FSRS 拟合得准。真验准得用 `word_reviews.p_at_review` 与实测召回对照（A 期之外的评测计划）。
  *
- * ## 文档那句 ≤1 天**不能**按字面拿「用户实际出现那天」当真相
- * `SynthLog` 给每张卡的实际复习时刻叠了 `U(0.7,1.6)` 的**用户迟到噪声**（`SynthLog.kt:60-61`）。
- * 切在第 200 天时，窗内那些卡的平均稳定度已到 74-94 天，光「迟到」一项就是好几天
- * （`|计划日 − 实际日|` 与逐卡 MAE 同量级，具体数字见各测试的 `GATE*` println 与 task-2-report.md）。
- * 用户当天来不来不是账本管得着的事，所以那条**绝对** ≤1 天门不是 [DueForecast] 的修法能满足的——
- * 误差的大头是语料自己的抖动，不是摊派/取整。
- * 于是这里跑三条**真的会红**的门，绝对数字全部 println 出来、不藏：
- *  1. 逐卡到期格子 vs **调度器排定的**那一天 ≤1 天 —— 文档说的「摊派/取整/窗边界」账，实测 0.0 天；
- *  2. 逐卡到期格子 vs **实际**到达那天，不得比「计划日 vs 实际日」（语料自己的迟到量级）再差过 1 天；
- *     外加一条「迟到量级 > 1 天」的哨兵：哪天语料的抖动被压进 1 天以内，哨兵会红，提醒把文档那条
- *     绝对门改回来，而不是让替身门永久化。
- *  3. 负荷带峰值日 vs **调度器排定的**最忙日相差 ≤1 天（对照：与噪声后的实际最忙日相差 4 天，
- *     那 4 天就是第 2 条说的迟到量级，不是本门的账）。
+ * ## 文档那句 ≤1 天有**两种读法**，两道门都实现（裁决：不许放宽阈值，歧义两侧各自成门）
+ * `SynthLog` 给每张卡的实际复习时刻叠了 `U(0.7,1.6)` 的**用户迟到噪声**（`SynthLog.kt:60-61,97`），
+ * 于是「replay 实测」既可能指**排期到期日**，也可能指**用户实际出现那天**。两侧分开量：
+ *  1. **读法 (b)——绝对门**：逐卡到期格子 vs 语料落库的**排期到期日** ≤1 天。这才是「反解→取整落格→
+ *     返工摊派→窗边界」那本账，实测 0.0 天（见 `预测到期日与排期到期日的日均偏差不超过一天`）；
+ *  2. **读法 (a)——不劣化门**：逐卡到期格子 vs **实际到达日**，不得比「直接相信排期日」的朴素基线
+ *     差过 0.5 天（见 `预测到期日相对实际到达日不劣于排期基线…`）。那条**绝对** ≤1 天在这里**没有意义**：
+ *     噪声比例 f ~ U(0.7,1.6) 的 `E|f−1| = 0.25`，实际到达日离自己的排期日恒有约 `0.25·S` 天，
+ *     与预测质量无关（算术与窗内量级写在第二条门的注释里）。误差大头是语料自己的抖动，不是摊派/取整；
+ *     外加「基线 > 1 天」哨兵：哪天语料抖动被压进 1 天以内它会红，提醒把这条改回绝对口径，
+ *     而不是让相对门永久化。
+ *  3. 负荷带峰值日 vs **排期**最忙日相差 ≤1 天（对照：与噪声后的实际最忙日相差 4 天，
+ *     那 4 天就是读法 (a) 说的迟到量级，不是本门的账）。
  *
  * 状态重建只用 `ts <= cut` 的行（切点后各行的 `scheduledDays` 只出现在**真相**侧，不进预测输入）。
  */
@@ -88,11 +88,13 @@ class DueForecastAccuracyTest {
         return if (seen) ForecastCard(s, (cutTs - lastTs).toDouble() / dayMs) else null
     }
 
-    /** 一张卡在切点上的三份账：预测输入 + 调度器排定的到期日 + 实际到达日。 */
+    /** 一张卡在切点上的四份账：预测输入 + 调度器排定的到期日 + 朴素基线的到期日 + 实际到达日。 */
     private class Replayed(
         val card: ForecastCard,
         /** 调度器为「切点后第一次复习」排的那一天（0..，>= [horizon] 即出窗）。 */
         val planDay: Int,
+        /** 朴素基线「直接相信落库的排期日」给出的到期格：`round(scheduledDays − elapsedDays)`，不经 [DueForecast]。 */
+        val baselineDay: Int,
         /** 实际发生复习的那一天（切点后必有下次复习，否则这张卡不入账）。 */
         val actualDay: Int,
         /** 该行记的间隔撞到生成器的 365 天政策上限：此时记录值不再等于稳定度，不能当真相。 */
@@ -108,6 +110,7 @@ class DueForecastAccuracyTest {
             Replayed(
                 card = card,
                 planDay = maxOf(0, (planned - card.elapsedDays).roundToInt()),
+                baselineDay = maxOf(0, (next.scheduledDays - card.elapsedDays).roundToInt()),
                 actualDay = ((next.ts - cutTs).toDouble() / dayMs).roundToInt(),
                 planSaturated = next.scheduledDays >= synthScheduleCapDays,
             )
@@ -122,53 +125,85 @@ class DueForecastAccuracyTest {
             .indexOfFirst { it.mean >= 1.0 - 1e-9 }
             .let { if (it < 0) horizon else it }
 
+    /** 一条 MAE 统计：样本数与日均绝对偏差。`toString` 带上实测数字，失败消息直接可抄进报告。 */
+    private class MaeStat(val n: Int, val mae: Double) {
+        override fun toString(): String = "n=$n mae=$mae 天"
+    }
+
+    /**
+     * 一组（预测格, 真相格）配对的日均绝对偏差。**两条 MAE 门共用这一条循环**，不各写一遍累加的形状。
+     * 空样本返回 `mae = NaN`——任何 `<=` 断言都会因此变红，不会悄悄放行。
+     */
+    private fun maeOf(pairs: List<Pair<Int, Int>>): MaeStat {
+        if (pairs.isEmpty()) return MaeStat(0, Double.NaN)
+        var sum = 0.0
+        for ((pred, truth) in pairs) sum += abs(pred - truth)
+        return MaeStat(pairs.size, sum / pairs.size)
+    }
+
+    /** 读法 (b) 的**绝对**门：文档那句 ≤1 天落在「账本真能违反的量」上。 */
     @Test
-    fun `负荷带把每张卡放在调度器排定的那一格（日均偏差≤1天）`() {
+    fun `预测到期日与排期到期日的日均偏差不超过一天`() {
         val logs = SynthLog.generate(seed = 7L, nCards = 400, reviewsPerCard = 12, retention = retention)
         val cut = logs.minOf { it.ts } + 200 * dayMs
-        var sumAbs = 0.0
-        var n = 0
+        val pairs = ArrayList<Pair<Int, Int>>()
         var saturated = 0
         var outOfWindow = 0
         for (r in replays(logs, cut)) {
             if (r.planSaturated) { saturated++; continue }
             if (r.planDay >= horizon) { outOfWindow++; continue }   // 与负荷带「出窗即丢」同一口径
-            sumAbs += abs(arrivalDay(r.card) - r.planDay); n++
+            pairs += arrivalDay(r.card) to r.planDay
         }
-        val mae = if (n > 0) sumAbs / n else Double.NaN
-        println("GATE1 逐卡 vs 计划日：n=$n mae=$mae 天（饱和行=$saturated 出窗=$outOfWindow）")
-        assertTrue("参与统计的卡太少（n=$n），这个门没有意义", n >= 50)
-        assertTrue("逐卡到期时机 MAE=$mae 天（n=$n），超出文档给的 1 天门", mae <= 1.0)
+        val stat = maeOf(pairs)
+        println("GATE1 逐卡 vs 排期日（读法 b，绝对门）：$stat（饱和行=$saturated 出窗=$outOfWindow）")
+        assertTrue("参与统计的卡太少（n=${stat.n}），这个门没有意义", stat.n >= 50)
+        assertTrue("逐卡到期时机 MAE=${stat.mae} 天（n=${stat.n}），超出文档给的 1 天门", stat.mae <= 1.0)
     }
 
+    /**
+     * 读法 (a) 的**诚实版本**——不劣化门：预测与「直接相信落库排期日」的朴素基线同台比，
+     * 双方都对齐**同一个**真相（实际到达日），预测不许比基线差过 0.5 天。
+     *
+     * 为什么这条**只能**是相对的、不能用绝对 ≤1 天：合成器把实际复习时刻画成
+     * `tAct = tSched · U(0.7,1.6)`（`SynthLog.kt:60-61,97`），迟到比例 f 的
+     * `E|f−1| = (0.045 + 0.18) / 0.9 = 0.25`（两段三角面积除以区间宽度），于是实际到达日离
+     * **它自己的排期日**恒有约 `0.25·S` 天——窗内样本平均 S≈20 天 ⇒ ≈5.6 天。这一项与预测质量无关：
+     * 逐卡再准也追不上语料自己的抖动，绝对门量的是噪声而不是账。基线与预测共用同一样本集，
+     * 两者的差才是负荷带自己引入的那部分。
+     */
     @Test
-    fun `逐卡到期时机不比语料自身的迟到量级差过一天`() {
+    fun `预测到期日相对实际到达日不劣于排期基线（绝对一天门在此语料不可满足）`() {
         // 400 卡时切点后 14 天内到达的卡只有 20 张，撑不起 brief 的 n>=50 门，故把语料放大 5 倍
         // （只增样，不缩样、不加筛）。
         val logs = SynthLog.generate(seed = 7L, nCards = 2000, reviewsPerCard = 12, retention = retention)
         val cut = logs.minOf { it.ts } + 200 * dayMs
-        var sumAbs = 0.0
-        var sumLateness = 0.0
-        var n = 0
+        val forecastPairs = ArrayList<Pair<Int, Int>>()
+        val baselinePairs = ArrayList<Pair<Int, Int>>()
         var saturated = 0
         for (r in replays(logs, cut)) {
             if (r.planSaturated) { saturated++; continue }          // 计划值被生成器的 365 天上限夹过，两侧都不入账
             val actual = r.actualDay
             if (actual >= horizon) continue                          // 与负荷带「出窗即丢」同一口径
-            sumAbs += abs(arrivalDay(r.card) - actual)
-            // 基线两侧同口径：计划日出窗时也按窗边缘（horizon）记，否则「带子如实丢掉出窗卡」这件
+            forecastPairs += arrivalDay(r.card) to actual
+            // 基线两侧同口径：基线出窗时也按窗边缘（horizon）记，否则「带子如实丢掉出窗卡」这件
             // 正确的事会被误算成我们的误差（负荷带按设计就是不含出窗卡的）。
-            sumLateness += abs(minOf(r.planDay, horizon) - actual)
-            n++
+            baselinePairs += minOf(r.baselineDay, horizon) to actual
         }
-        val mae = if (n > 0) sumAbs / n else Double.NaN
-        val lateness = if (n > 0) sumLateness / n else Double.NaN
-        println("GATE2 逐卡 vs 实际到达：n=$n mae=$mae 天，语料迟到量级（计划日 vs 实际日）=$lateness 天（饱和行=$saturated）")
-        assertTrue("参与统计的卡太少（n=$n），这个门没有意义", n >= 50)
-        // 哨兵：文档那条**绝对**门（mae<=1.0）在这份语料上不可满足。若哪天语料的迟到量级被压进 1 天，
-        // 这条会红——那时请把断言改回绝对口径，而不是留着替身门。
-        assertTrue("语料迟到量级=$lateness 天已 ≤1 天：文档的绝对门可以用回来了，别再跑这条相对门", lateness > 1.0)
-        assertTrue("负荷带的逐卡误差 mae=$mae 天，比语料自己的迟到量级 $lateness 天还差过 1 天", mae <= lateness + 1.0)
+        val forecast = maeOf(forecastPairs)
+        val baseline = maeOf(baselinePairs)
+        println("GATE2 逐卡 vs 实际到达（读法 a，不劣化门）：预测 $forecast，排期基线 $baseline（饱和行=$saturated）")
+        assertTrue("参与统计的卡太少（n=${forecast.n}），这个门没有意义", forecast.n >= 50)
+        assertTrue(
+            "负荷带的逐卡误差 ${forecast.mae} 天（n=${forecast.n}），比「直接相信排期日」基线的 ${baseline.mae} 天" +
+                "还差过 0.5 天",
+            forecast.mae <= baseline.mae + 0.5,
+        )
+        // 哨兵：文档那条**绝对**门（forecast.mae <= 1.0）在这份语料上不可满足。若哪天基线误差被压进
+        // 1 天以内，这条会红——那时请把断言改回绝对口径，而不是留着相对门。
+        assertTrue(
+            "基线误差（语料迟到量级）${baseline.mae} 天已 ≤1 天：文档的绝对门可以用回来了，别再跑这条相对门",
+            baseline.mae > 1.0,
+        )
     }
 
     @Test
