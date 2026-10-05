@@ -47,10 +47,15 @@ import kotlin.math.roundToInt
 private const val MinCurveSamples = 20
 
 /**
- * 记忆看板：把 v2.3 半衰期模型已经算得出来、但用户看不见的三件事摊开。
+ * 记忆看板：把半衰期 / FSRS 模型已经算得出来、但用户看不见的那几件事摊开。
  *
- * 三块图从上到下是"接下来要还多少债 → 已经存下多少长期记忆 → 我到底忘多快"，
- * 顺序是刻意的：先看负担，再看资产，最后才是那条最抽象的曲线。
+ * 从上到下是"照这个练法会堆成什么样 → 接下来一周原本排了多少 → 已经存下多少长期记忆 →
+ * 我到底忘多快 → 模型说记得的那批，我当场真记得吗"。顺序是刻意的：先看负担，再看资产，
+ * 最后才是那两条最抽象的曲线。
+ *
+ * 头两块挨在一起但不是同一张图（口径区别写在 [StatsUiState.loadBand] 的 KDoc 上）：
+ * 负荷带由稳定度**反解**到期日，所以"今天没练"会如实变成"明天堆积"；
+ * 下面那根 7 天柱只数已经落库的到期时间戳，读的是"原本排了多少"。
  *
  * 根 Column 只有一处 `verticalScroll` + 一处 `padding(pageH)`，**不碰 insets** ——
  * `AppNav` 根 Scaffold 的 `innerPadding` 是全仓唯一的键盘/系统栏消费者，
@@ -89,6 +94,13 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
             StatTile(value = "${state.totalWords}", label = "单词总数", modifier = Modifier.weight(1f))
             StatTile(value = "${state.plannedCount}", label = "有排期的词", modifier = Modifier.weight(1f))
             StatTile(value = "${state.sampleCount}", label = "复习记录", modifier = Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(AppTheme.space.lg))
+        SectionHeader(title = "接下来两周的负荷")
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            LoadBandChart(bands = state.loadBand, capacityPerDay = state.capacityPerDay)
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))

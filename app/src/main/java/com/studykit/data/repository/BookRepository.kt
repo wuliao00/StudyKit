@@ -1,6 +1,7 @@
 package com.studykit.data.repository
 
 import com.studykit.data.dao.BookDao
+import com.studykit.data.dao.ScheduledExcerptRow
 import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.ChapterTest
@@ -39,6 +40,16 @@ class BookRepository(private val bookDao: BookDao) {
 
     /** 到期且已启用的书摘（next_review_at>0 且 <= now） */
     fun observeDueExcerpts(now: Long): Flow<List<Excerpt>> = bookDao.observeDueExcerpts(now)
+
+    /**
+     * 全部**已排期**的书摘（负荷带 / 稳定性全景的取数口，v3.0-A Task 6 的 [com.studykit.ui.stats.StatsViewModel]
+     * 是第一个消费者）。
+     *
+     * 只转发不加一层筛：「哪些行算排过期」的判据只有 [BookDao.observeScheduledExcerpts] 那一处 SQL，
+     * 仓储再判一次就和词卡、错题那两侧分叉了（同一件事在 `ForecastCards` 类 KDoc 里写过）。
+     * 加这一层的理由与 [WordRepository.observeScheduledMemoryRows] 相同：ViewModel 只认仓储，不碰 DAO。
+     */
+    fun observeScheduledExcerpts(): Flow<List<ScheduledExcerptRow>> = bookDao.observeScheduledExcerpts()
 
     /** :cutoff 之前建、却从没检索过（review_count==0）的书摘条数——RECALL_NOTES 贴士的判据 */
     fun observeExcerptsStaleWithoutRecall(cutoff: Long): Flow<Int> =
