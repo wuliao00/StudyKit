@@ -1,10 +1,9 @@
 package com.studykit.ui.stats
 
+import com.studykit.data.dao.ScheduledExcerptRow
 import com.studykit.data.dao.ScheduledMemoryRow
-import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Mistake
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -16,11 +15,15 @@ import org.junit.Test
  * 四条真实坑，每条都有对应的测试（口径详见 [ForecastCards] 的 KDoc）：
  *  1. `Mistake` **没有 `last_review_at` 列** —— 锚点只能用 `created_at`，于是错题的 elapsed
  *     是「建卡至今」；这不是精确值，代码不许把它说成「距上次复习」。
- *  2. `Excerpt.stability` **可空** —— 空就是「这本书摘还没被 FSRS 写过」，丢掉而不是当 0。
+ *  2. 书摘侧的稳定度**可空**（列 `excerpts.stability`，见 [ScheduledExcerptRow.stability]）——
+ *     空就是「这本书摘还没被 FSRS 写过」，丢掉而不是当 0。
  *  3. `questions` 表**压根没有记忆态列** —— 所以它不参与预测，签名里没有它不是漏了。
  *  4. 脏 S（null / <=0 / 非有限）在**装配这一层**就丢掉 —— 留给 `DueForecast` 丢也行，但那样
  *     看板上的「14 天负荷」和「共 N 张卡」数的就不是同一批卡（本仓在概率与词数不同批这件事上
  *     写过整条 [com.studykit.ui.study.TomorrowLoad.sampledCount] 的防线，同源不另造口径）。
+ *
+ * 书摘入参用的是 [ScheduledExcerptRow] 投影（`BookDao.observeScheduledExcerpts` 的返回类型），
+ * 不是 `Excerpt` 实体——所以这里压根不碰 Room，也不需要实体构造器。
  */
 class ForecastCardsTest {
 
@@ -57,11 +60,13 @@ class ForecastCardsTest {
         val cards = ForecastCards.of(
             words = emptyList(),
             mistakes = emptyList(),
+            // helper 默认建在 5 天前：这样 elapsed 有非零真值可断，锚点取错列不会被 0 天掩盖
             excerpts = listOf(excerpt(stability = 8.0)),
             now = now,
         )
         assertEquals("excerpt", cards.single().kind)
         assertEquals(8.0, cards.single().stabilityDays, 1e-9)
+        assertEquals(5.0, cards.single().elapsedDays, 1e-9)
     }
 
     @Test
@@ -72,7 +77,43 @@ class ForecastCardsTest {
             excerpts = emptyList(),
             now = now,
         )
-        assertTrue(cards.single().elapsedDays >= 0.0)
+        // 钳位后的真值是 0.0，不是"某个非负数"：断精确值才挡得住「算成了 10 天」这类反向错。
+        assertEquals(0.0, cards.single().elapsedDays, 1e-9)
+    }
+
+    /**
+     * 类 KDoc 承诺「`null` / `<= 0` / **非有限**一律丢」，前两种别的测试钉着，这一条专门钉非有限：
+     * NaN 与 ±Inf 是能进库的脏值（导入、备份恢复、数值溢出都会写进去），而反解式在它们身上没有定义。
+     *
+     * 三张表都喂：守卫虽然只有一份（[ForecastCards] 私有的 `usable()` 被三条分支共用），但三条分支的
+     * `?: continue` 是各自独立写的——只测一张表，另外两条分支哪天换成裸取值也不会红。
+     * 另注：NaN 就算删掉 `isFinite()` 也过不了 `> 0.0`，所以**正无穷才是这条测试的杀招**。
+     */
+    @Test
+    fun `非有限稳定度（NaN 与正负无穷）在三张表上都整条丢掉`() {
+        val cards = ForecastCards.of(
+            words = listOf(
+                row(stability = Double.NaN, lastReviewAt = now - day, createdAt = now - day),
+                row(stability = Double.POSITIVE_INFINITY, lastReviewAt = now - day, createdAt = now - day),
+                row(stability = 7.0, lastReviewAt = now - day, createdAt = now - day),
+            ),
+            mistakes = listOf(
+                mistake(stability = Double.NaN),
+                mistake(stability = Double.POSITIVE_INFINITY),
+                mistake(stability = 4.0),
+            ),
+            excerpts = listOf(
+                excerpt(stability = Double.NaN),
+                excerpt(stability = Double.POSITIVE_INFINITY),
+                excerpt(stability = 5.0),
+            ),
+            now = now,
+        )
+        assertEquals(3, cards.size)
+        assertEquals(listOf("word", "mistake", "excerpt"), cards.map { it.kind })
+        assertEquals(7.0, cards[0].stabilityDays, 1e-9)
+        assertEquals(4.0, cards[1].stabilityDays, 1e-9)
+        assertEquals(5.0, cards[2].stabilityDays, 1e-9)
     }
 
     @Test
@@ -139,9 +180,9 @@ class ForecastCardsTest {
         assertEquals(2, forecast.size)
         assertEquals(2.5, forecast[0].stabilityDays, 1e-9)
         assertEquals(9.0, forecast[1].stabilityDays, 1e-9)
-        // 两个 helper 的 createdAt 默认都是 now，所以 elapsed 是 0.0 天（不是"缺省值"，是同一个 now）
+        // elapsed 是投影带过来的真值，不是缺省：错题 helper 建在 now（0.0 天），书摘 helper 建在 5 天前（5.0 天）
         assertEquals(0.0, forecast[0].elapsedDays, 1e-9)
-        assertEquals(0.0, forecast[1].elapsedDays, 1e-9)
+        assertEquals(5.0, forecast[1].elapsedDays, 1e-9)
     }
 
     private fun mistake(stability: Double?, createdAt: Long = now, reviewAt: Long? = null) = Mistake(
@@ -156,19 +197,20 @@ class ForecastCardsTest {
         reviewAt = reviewAt,
     )
 
-    private fun excerpt(stability: Double?) = Excerpt(
-        uuid = "u",
-        bookId = 1L,
-        content = "x",
+    /**
+     * 书摘 helper 建在 **5 天前**（不是 `now`）：锚点用错列、或者钳位写错方向，在 `createdAt = now`
+     * 下都会算出 0.0 天而悄悄通过——elapsed 得有非零真值才测得到。5.0 是能整除的字面值。
+     */
+    private fun excerpt(stability: Double?, createdAt: Long = now - 5 * day) = ScheduledExcerptRow(
         stability = stability,
-        createdAt = now,
+        createdAt = createdAt,
     )
 
-    private fun row(lastReviewAt: Long?, createdAt: Long) = ScheduledMemoryRow(
+    private fun row(lastReviewAt: Long?, createdAt: Long, stability: Double? = 10.0) = ScheduledMemoryRow(
         nextReviewAt = now + day,
         halfLifeDays = 2.0,
         lastReviewAt = lastReviewAt,
         createdAt = createdAt,
-        fsrsStability = 10.0,
+        fsrsStability = stability,
     )
 }

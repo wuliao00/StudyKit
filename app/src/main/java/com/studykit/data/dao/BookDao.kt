@@ -81,11 +81,20 @@ interface BookDao {
      * 哨兵条件（0 = 未启用，见 [Excerpt.nextReviewAt]）还容易在改参数时被误当成上界一起动。
      * 语义写在名字里，比写在传参里便宜。
      *
+     * ## 只投影两列，不返回整行 [Excerpt]
+     * 与 [WordDao.observeScheduledMemoryRows] 同一个口径：消费方（`ForecastCards.of`）只读
+     * `stability` 与 `created_at`，而 `content` 是书摘正文、一行可以几百到几千字。这条 Flow 被
+     * 看板每次评分重算一遍，整行过 Binder 是纯浪费（[WordDao.observeHalfLifeDays] 的 KDoc 写的
+     * 就是这个理由）。投影类的字段即这条查询的契约——加列会在这里被看见，而不是静默发生。
+     *
      * 与 [observeDueExcerpts] 同为 `ORDER BY next_review_at ASC`：本层不依赖顺序（装配是逐条映射），
      * 留着只是为了和队列那一侧读到的是同一份排法，别给人"两条查询顺序不一样"的错觉。
      */
-    @Query("SELECT * FROM excerpts WHERE next_review_at > 0 ORDER BY next_review_at ASC")
-    fun observeScheduledExcerpts(): Flow<List<Excerpt>>
+    @Query(
+        "SELECT stability AS stability, created_at AS createdAt FROM excerpts " +
+            "WHERE next_review_at > 0 ORDER BY next_review_at ASC",
+    )
+    fun observeScheduledExcerpts(): Flow<List<ScheduledExcerptRow>>
 
     /** 「只有划线没有检索」那条 RECALL_NOTES 贴士的判据：:cutoff 之前建的摘且 review_count==0 的条数 */
     @Query("SELECT COUNT(*) FROM excerpts WHERE created_at < :cutoff AND review_count = 0")
@@ -151,3 +160,17 @@ interface BookDao {
     @Query("DELETE FROM books")
     suspend fun deleteAllBooks()
 }
+
+/**
+ * [BookDao.observeScheduledExcerpts] 的投影行：负荷预测只需要「稳定度」与「Δt 的锚点」两列，
+ * 所以只取这两列（理由见那条 SQL 的 KDoc「只投影两列」一节）。
+ *
+ * 放在 `data/dao` 而不是 `data/entity`：它得被 Room 的编译期列校验覆盖一次才谈得上
+ * "列名不会打错"，而且它压根不是一行书摘，只是那条查询的形状。
+ */
+data class ScheduledExcerptRow(
+    /** FSRS 稳定性（天）；null = 这本书摘还没被 FSRS 写过，装配层整条丢弃（不当 0 天） */
+    val stability: Double?,
+    /** 建摘时刻，Δt 的锚点。书摘侧没有"上次复习"的时间戳列，口径见 [com.studykit.ui.stats.ForecastCards] */
+    val createdAt: Long,
+)

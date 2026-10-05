@@ -1,5 +1,6 @@
 package com.studykit.ui.stats
 
+import com.studykit.data.dao.ScheduledExcerptRow
 import com.studykit.data.dao.ScheduledMemoryRow
 import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Mistake
@@ -9,10 +10,15 @@ import java.util.concurrent.TimeUnit
 /**
  * 一张进了预测队列的卡：来自哪张表、稳定度多少、距锚点多久。
  *
- * [kind] 是装配完成后**唯一**还留着的「这张卡来自哪张表」的证据，所以它得是字符串而不是
- * 事后能推出来的东西 —— Task 7 的稳定性全景按来源分组靠的就是它。取值只能是
- * [ForecastCards.KIND_WORD] / [ForecastCards.KIND_MISTAKE] / [ForecastCards.KIND_EXCERPT]
- * 三者之一（有条测试把它钉成恰好这三个，多一种就得先改测试）。
+ * [kind] 记的是「这张卡来自哪张表」这份来路：[ForecastCards.of] 把三张表折平之后，认得出来源的地方
+ * 就只剩它了——事后从 `stabilityDays` / `elapsedDays` 推不出这张卡是词、错题还是书摘。所以它是字符串
+ * 而不是能推导的东西。取值只能是 [ForecastCards.KIND_WORD] / [ForecastCards.KIND_MISTAKE] /
+ * [ForecastCards.KIND_EXCERPT] 三者之一（有条测试把它钉成恰好这三个，多一种就得先改测试）。
+ *
+ * **直说：目前没有任何生产代码读它。** 负荷带与提醒都不区分来源，Task 7 的稳定性全景收的是
+ * `List<Double>`（只有稳定度，没有来源维度），同样不读。留着它的理由就两条：装配层出错时能问出
+ * 「这批卡是哪张表来的」，以及上面那条测试对「第四种来源被顺手接进来」的拦截（brief 的接口也点名要这一字段）。
+ * 将来真要按来源出图时不必改动装配层——但那是**将来**，不是现在任何一个任务的依赖。
  *
  * ## 刻意没有 `dueAt` 与 `id`（计划的接口里写了这两个字段，落地时删掉）
  * - `dueAt`：全计划无人读它，而负荷带按设计**不吃**落库的到期时刻（见
@@ -47,7 +53,8 @@ data class ScheduledCard(
  *    `created_at`，于是错题的 elapsed 是「**建卡至今**」而非「上次复习至今」——**偏大**，会让错题
  *    显得比实际更该复习。可接受（错题本来就倾向催），但别对外说这是精确值。
  *    稳定度取 `fsrs_stability`（v2.7「排期接管」那批列）。
- *  - `excerpts`：稳定度列 [Excerpt.stability] **可空**（没评过分的书摘就是 null）；锚点 `created_at`
+ *  - `excerpts`：稳定度取 [ScheduledExcerptRow.stability]，投影自列 [Excerpt.stability]，**可空**
+ *    （没评过分的书摘就是 null）；锚点取同一条投影的 [ScheduledExcerptRow.createdAt]（列 `created_at`）
  *    —— [com.studykit.data.memory.ExcerptReview] 自己算 gapDays 用的也是 `createdAt`（那一侧同样没有
  *    last-review 时间戳），同源不另造口径。
  *  - `questions`：**不参与**。题目表没有任何记忆态列（`entity/Question.kt` 无 stability、无排期列），
@@ -82,10 +89,31 @@ object ForecastCards {
     const val KIND_MISTAKE = "mistake"
     const val KIND_EXCERPT = "excerpt"
 
+    /**
+     * 三份已排期的行折成统一投影：逐条映射，不排序、不去重、不再判「哪些行算排过期」（口径见类 KDoc）。
+     *
+     * ## 求值一次：结果绑到一个局部变量，把**同一个列表**同时喂给负荷带与提醒
+     * 即 [com.studykit.data.memory.DueForecast.forecast] 与 [com.studykit.data.memory.ReminderPolicy.decide]
+     * 共用一次 `of` 的结果，不许各调一次。
+     *
+     * 三个入参是调用方从三条 Flow `.first()` 出来的**快照**，本函数自己不读库——所以「多调一次」的代价
+     * 不是多算一遍，而是**取两次快照**：两次之间只要有一次评分落库（复习页每答一张就写一次），
+     * 两个消费者数到的就是**不同的卡集**——通知说 3 张、看板画 2 张，而且不报错。本仓在这同一件事上
+     * 踩过一次（`WordDao.observeScheduledMemoryRows` 的 KDoc：分两次查 ⇒ 观察者拿到半新半旧的快照，
+     * N 是对的、百分比数的是另一批卡），所以这是**契约**而不是风格建议。
+     *
+     * 正确形状（Task 4 计划里那段过渡形态正是调了两次，接线时改成一次）：
+     * ```
+     * val cards = ForecastCards.of(words, mistakes, excerpts, now)   // 只此一次
+     * val bands = DueForecast.forecast(cards.toForecastCards(), cfg, w)
+     * val decision = ReminderPolicy.decide(cards.toForecastCards(), bands, retention, todayReviewed, w)
+     * ```
+     * `toForecastCards()` 是对同一个列表的纯投影，多调一次无妨；**`of` 一次都不许多调**。
+     */
     fun of(
         words: List<ScheduledMemoryRow>,
         mistakes: List<Mistake>,
-        excerpts: List<Excerpt>,
+        excerpts: List<ScheduledExcerptRow>,
         now: Long,
     ): List<ScheduledCard> = buildList {
         for (word in words) {
@@ -110,7 +138,15 @@ object ForecastCards {
     private fun elapsed(anchorAt: Long, now: Long): Double =
         (now - anchorAt).coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
 
-    /** 可信稳定度：`null` / `<= 0` / 非有限都当「这一行没有 S」，返回 null 让调用方丢弃。 */
+    /**
+     * 可信稳定度：`null` / `<= 0` / 非有限都当「这一行没有 S」，返回 null 让调用方丢弃。
+     *
+     * `isFinite()` 不是保险丝，删不得：NaN 比不过 `> 0.0`，但 **±Infinity 过得了 `> 0.0`**——
+     * 只有这一支挡得住它。漏下去时 [com.studykit.data.memory.DueForecast] 与
+     * [com.studykit.data.memory.ReminderPolicy] 会各自再丢一次（它们自己也判非有限），于是看板的
+     * 「共 N 张卡」和负荷带数的又成了两批卡——正是上面那条纪律要拦的分叉。所以钉这条守卫的测试
+     * **必须喂正无穷**：只喂 NaN 的话，把 `isFinite()` 删掉也能全绿。
+     */
     private fun Double?.usable(): Double? = takeIf { it != null && it.isFinite() && it > 0.0 }
 }
 
@@ -120,8 +156,8 @@ object ForecastCards {
  *
  * 只做字段投影，**不**再过滤一次：脏 S 在 [ForecastCards.of] 里已经丢完，所以这里的条数与 `of`
  * 的条数逐条相等（[com.studykit.ui.stats.ForecastCardsTest] 钉住了这一点）。[ScheduledCard.kind]
- * 在这一步丢掉：负荷带答的是「一天多少项」，不区分来源；要按来源看就直接用 `of` 的结果
- * （Task 7 的稳定性全景干的是那件事）。
+ * 在这一步丢掉：负荷带答的是「一天多少项」，不区分来源；要看来源就得自己回到 `of` 的结果，
+ * 但**目前无人这么做**（Task 7 的分箱收的是 `List<Double>`，没有来源维度，见 [ScheduledCard.kind] 的说明）。
  *
  * 写成**顶层扩展**而不是 `ForecastCards` 的成员扩展：成员扩展要求每个调用点都套一层
  * `with(ForecastCards) { … }`，而 Task 4/6 要写的本来就是 `ForecastCards.of(…).toForecastCards()`
