@@ -64,6 +64,15 @@ data class StatsUiState(
     val stability: List<StabilityBin> = emptyList(),
     /** 进了上面那十二档的分母的可信卡数（= 同一次装配的卡集大小），0 时视图走空态 */
     val stabilityCardCount: Int = 0,
+    /**
+     * 复习热力图（v3.0-A Task 8）：`weeks × 7` 个格子，**列 = 周（旧→新）、行 = 周一..周日**。
+     *
+     * 只数 `word_reviews.reviewed_at` 与 `practice_records.at` 两路——书摘侧**没有"每次复习"的流水表**
+     * （`excerpts` 只有 `next_review_at` / `review_count` / `stability` 三个当前态列），
+     * 所以它**不是**全部学习行为，也不等于 [sampleCount]（那一只数词卡流水）。
+     * 这句话由视图的 caption 说给用户。等级与占位口径见 [ReviewHeatmapLogic]。
+     */
+    val heatmap: List<HeatCell> = emptyList(),
 )
 
 /**
@@ -91,6 +100,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val wordRepository = container.wordRepository
     private val mistakeRepository = container.mistakeRepository
     private val bookRepository = container.bookRepository
+    private val questionRepository = container.questionRepository
     private val settingsRepository = container.settingsRepository
 
     companion object {
@@ -165,6 +175,36 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }.flowOn(Dispatchers.Default)
 
     /**
+     * 复习热力图那一路：词卡流水 + 练习流水 → [ReviewHeatmapLogic.cells]。
+     *
+     * ## 两路时间戳必须凑在同一次 combine 里
+     * 热力图问的是「某天两路各来了几次」，两路来自两张表。分成两条 Flow 各自渲染的话，
+     * 同一天的格子会被后到的那一路重写一次，中间那一帧只数到一路——图上凭空浅一档，而且没人会去查。
+     * 凑在一条 combine 里就只有一个快照时刻，与 [loadVizFlow] 同一条理由。
+     *
+     * ## 复用两条**已有**的全量时间戳查询，不加带窗口的新查询
+     * [WordRepository.observeReviewTimestamps]（`word_reviews.reviewed_at`）与
+     * [QuestionRepository.observePracticeTimestamps]（`practice_records.at`）取的就是这里要的那两列，
+     * Room schema 因此**停在 v8 不动**。带窗口的变体在这里反而不能用：Flow 的上界必须在订阅那一刻
+     * 定死，把「此刻」写进 SQL 参数，之后新发生的复习就永远落在界外——图上今天的格子会一直是空的。
+     * （提醒侧那条 `observeReviewTimestampsBetween` 是一次性读，才敢把上界写成 `now`。）
+     * 精确的 52 周窗口由 [ReviewHeatmapLogic] 按本地日判：SQL 的 `date()` 不吃时区，
+     * 把周对齐摊到 SQL 参数上等于再养一套窗口口径（[MemoryHealth.forecastByDay] 的 KDoc 同一条坑）。
+     *
+     * 书摘那一路**不接**：`excerpts` 没有"每次复习"的流水表（见 [StatsUiState.heatmap] 的口径说明），
+     * `book_reviews` 是书评不是复习记录。
+     */
+    private val heatmapFlow = combine(
+        wordRepository.observeReviewTimestamps(),
+        questionRepository.observePracticeTimestamps(),
+    ) { reviews, practices ->
+        val zone = ZoneId.systemDefault()
+        // 时钟只读一次，today 与 zone 同源；格子按本地日切，跨零点/换时区不会多一格少一格
+        val today = Instant.ofEpochMilli(System.currentTimeMillis()).atZone(zone).toLocalDate()
+        ReviewHeatmapLogic.cells(reviews + practices, today, zone = zone)
+    }.flowOn(Dispatchers.Default)
+
+    /**
      * 看板其余几路：全库半衰期 / 已排期时间戳 / 复习流水 / 词数 / 延迟后测原料。
      *
      * 各消费方共用的字段口径不在这里判（`plannedCount` 与 `loadBand` 是不是同一批卡，
@@ -199,11 +239,12 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         )
     }.flowOn(Dispatchers.Default)
 
-    val state: StateFlow<StatsUiState> = combine(baseState, loadVizFlow) { base, viz ->
+    val state: StateFlow<StatsUiState> = combine(baseState, loadVizFlow, heatmapFlow) { base, viz, cells ->
         base.copy(
             loadBand = viz.bands,
             stability = viz.bins,
             stabilityCardCount = viz.usableCards,
+            heatmap = cells,
         )
     }
         .flowOn(Dispatchers.Default)

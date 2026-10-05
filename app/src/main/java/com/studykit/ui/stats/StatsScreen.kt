@@ -2,7 +2,9 @@ package com.studykit.ui.stats
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,7 +24,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +45,7 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.components.StatTile
+import com.studykit.ui.theme.AppColors
 import com.studykit.ui.theme.AppTheme
 import java.time.format.TextStyle
 import java.util.Locale
@@ -50,8 +58,8 @@ private const val MinCurveSamples = 20
  * 记忆看板：把半衰期 / FSRS 模型已经算得出来、但用户看不见的那几件事摊开。
  *
  * 从上到下是"照这个练法会堆成什么样 → 接下来一周原本排了多少 → 已经存下多少长期记忆 →
- * 这些卡按模型口径有多稳 → 我到底忘多快 → 模型说记得的那批，我当场真记得吗"。顺序是刻意的：
- * 先看负担，再看资产，最后才是那两条最抽象的曲线。
+ * 这些卡按模型口径有多稳 → 这一年实际练了哪几天 → 我到底忘多快 → 模型说记得的那批，我当场真记得吗"。
+ * 顺序是刻意的：先看负担，再看资产，然后才是对过去的一年点名，最后才是那两条最抽象的曲线。
  *
  * 头两块挨在一起但不是同一张图（口径区别写在 [StatsUiState.loadBand] 的 KDoc 上）：
  * 负荷带由稳定度**反解**到期日，所以"今天没练"会如实变成"明天堆积"；
@@ -142,6 +150,13 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
         Spacer(Modifier.height(AppTheme.space.md))
         AppCard(modifier = Modifier.fillMaxWidth()) {
             StabilityPanoramaSection(bins = state.stability, cardCount = state.stabilityCardCount)
+        }
+
+        Spacer(Modifier.height(AppTheme.space.lg))
+        SectionHeader(title = "这一年练了哪几天")
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            ReviewHeatmapSection(cells = state.heatmap)
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))
@@ -358,6 +373,105 @@ private fun ForecastBars(forecast: List<DayLoad>) {
         }
     }
 }
+
+/**
+ * 复习热力图（v3.0-A Task 8）：`周 × 7` 的格子，**列 = 周（旧 → 新，最右是本周）、行 = 周一..周日**。
+ *
+ * ## 为什么横向滚动而不是把 52 列挤进一屏
+ * 52 列 × 7 行是 364 格，一屏宽只有 ~360dp，格子要缩到 6dp 才放得下——那时色阶的四级深浅
+ * 在物理上就分辨不出了，图就白画。本仓的 [com.studykit.ui.components.HabitSnake]（20 周一排）
+ * 早就走了同一条路：横向滚动 + 首帧滚到今天。这里连"滚到最右"那条一次性守卫都照抄。
+ *
+ * ## 无障碍：整块图**一句**汇总描述
+ * 逐格念的话读屏要把这一年念三百多遍（364 个节点），那不是无障碍而是刑罚。
+ * 汇总里带真数（周数 + 有复习的天数），画法与口径写在图下那行 caption 里——
+ * 与 [LoadBandChart] 同一条分工：看得见的和听得见的各拿一半。
+ *
+ * ## 占位格不是"零复习"格
+ * 今天之后那几格（末周残缺）颜色比灰格更淡一档，读作"还没到来"。画成灰格就等于对用户说
+ * "这几天你没坚持"，而那件事还没发生。判定在 [ReviewHeatmapLogic]，这里只换色。
+ *
+ * 格子来自 [ReviewHeatmapLogic.cells]，视图**不自己数时间戳**——数第二遍就会和读屏那句对不上。
+ */
+@Composable
+internal fun ReviewHeatmapSection(cells: List<HeatCell>, modifier: Modifier = Modifier) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    if (cells.isEmpty()) {
+        EmptyState(
+            title = "还没有复习流水",
+            caption = "背完第一个词、练完第一道题，这里才会亮起来。",
+        )
+        return
+    }
+    val columns = cells.chunked(HeatmapRowsPerWeek)
+    val activeDays = cells.count { it.level > ReviewHeatmapLogic.LEVEL_NONE }
+    val description = "最近 ${columns.size} 周复习热力图，共 $activeDays 天有复习"
+
+    val scrollState = rememberScrollState()
+    // 只在第一次（且已量出可滚范围时）滚到今天；之后用户滚到哪就停在哪——与 HabitSnake 同一条守卫
+    var didCenter by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(scrollState.maxValue, columns.size) {
+        if (!didCenter && scrollState.maxValue > 0) {
+            didCenter = true
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = "一格一天：列是周（旧 → 新，最右是本周），行是周一到周日。" +
+                "深浅是按**你自己**非零日的 90 分位排的，不是固定阈值——颜色深只说明那天比你的平常日子忙。" +
+                "只数两路：单词复习与题目练习；书摘没有每次复习的流水表，所以这张图不等于全部学习行为，" +
+                "也不会等于顶上「复习记录」那个数（那一只数词卡）。" +
+                "灰格是那天一次都没复习，更淡的格子是还没到来的日子。",
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Row(
+            modifier = Modifier
+                .horizontalScroll(scrollState)
+                .semantics { contentDescription = description },
+        ) {
+            columns.forEach { column ->
+                Column {
+                    column.forEach { cell ->
+                        Box(
+                            modifier = Modifier
+                                .size(HeatmapCellSide)
+                                .padding(1.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(heatmapCellColor(colors, cell.level)),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 一档色 → 一个既有 token。
+ *
+ * **不新增色值**：非零四档都是 `accent` 的 alpha（0.30 / 0.55 / 0.80 / 1.0），
+ * 零复习用 `divider`（与 [ForecastBars] 那根零柱同一个颜色，"没有"在本仓本来就长这样），
+ * 未来占位是 `divider` 再淡一档——它必须比"零复习"更不明显，而不是更明显。
+ */
+private fun heatmapCellColor(colors: AppColors, level: Int): Color = when (level) {
+    ReviewHeatmapLogic.LEVEL_FUTURE -> colors.divider.copy(alpha = 0.30f)
+    ReviewHeatmapLogic.LEVEL_NONE -> colors.divider
+    1 -> colors.accent.copy(alpha = 0.30f)
+    2 -> colors.accent.copy(alpha = 0.55f)
+    3 -> colors.accent.copy(alpha = 0.80f)
+    else -> colors.accent
+}
+
+/** 一行的格子数（周一..周日）：`cells` 按 7 个一列切回来 */
+private const val HeatmapRowsPerWeek = 7
+
+/** 一格边长（含 1dp 间隔）：再小就分辨不出四级深浅，所以宁可横向滚动 */
+private val HeatmapCellSide = 13.dp
 
 /**
  * 稳定度全景（v3.0-A Task 7）：FSRS 的稳定度 S 按 log2 分十二档，互斥。
