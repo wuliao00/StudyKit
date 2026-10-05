@@ -1,0 +1,16 @@
+[package]
+name = "fsrsjni"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# cdylib => Android .so ; rlib => host `cargo test` 可运行单元测试
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = "0.21"
+
+[profile.release]
+lto = true
+opt-level = 3
+strip = true

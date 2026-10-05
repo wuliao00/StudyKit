@@ -1,6 +1,7 @@
 package com.studykit.data
 
 import androidx.compose.runtime.Immutable
+import com.studykit.data.memory.FsrsModel
 import com.studykit.data.memory.ReviewStrictness
 import java.time.LocalDate
 
@@ -160,6 +161,25 @@ data class AppSettings(
      * 书架首次亮它时经 `BookViewModel.markExcerptTipSeen` 置真。默认**没看过**（false）。
      */
     val excerptTipSeen: Boolean = false,
+    /**
+     * 端侧优化器训练出的**活跃 FSRS 参数**（21 项 v6 向量）（v2.9 计划 Task 5）。
+     * null = 从没校准过（首装 / 恢复默认）→ [com.studykit.ui.study.KernelHub] 用
+     * [com.studykit.data.memory.FsrsModel.DEFAULT_PARAMS]，行为与今天逐比特一致；
+     * 非 null = 采纳了个性化参数，消费点在 [com.studykit.ui.study.KernelHub] 据此构造 `FsrsKernel(w)`。
+     *
+     * 存法与脏值口径：以逗号拼接的字符串存（[toMap]），读回时**要么 21 项全数字，要么一律 null**
+     * （长度≠21 或含非数字都当脏值丢弃，绝不用残缺数组喂调度器）——这条纪律与其余每一项
+     * "垃圾值只让那一项退回默认"同构，只是这里的默认是 null 而非某个具体值。
+     */
+    val fsrsActiveParams: DoubleArray? = null,
+    /**
+     * 上一次「充电 + 空闲」干跑校准留下的**报告文本**（v2.9 计划 Task 11）。
+     *
+     * **只记不判**：与 [lastDictFailure] 同一口径——它只是给人看的一行诊断（训练器不可用、
+     * 数据不足、门禁拒绝理由、或一份可以采纳的报告），不参与任何调度与排期算术。
+     * 默认空串 = 从没跑过；[com.studykit.ui.optimize.CalibrateWorker] 每跑一次覆写一次。
+     */
+    val lastCalibrateReport: String = "",
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -202,6 +222,10 @@ data class AppSettings(
         KEY_GAP_TIP_SEEN to gapTipSeen.toString(),
         KEY_CHAPTER_TIP_SEEN to chapterTipSeen.toString(),
         KEY_EXCERPT_TIP_SEEN to excerptTipSeen.toString(),
+        // 活跃参数：非 null 才拼串；null 写空串，fromMap 遇空串/脏串一律退回 null
+        KEY_FSRS_ACTIVE_PARAMS to (fsrsActiveParams?.joinToString(",") ?: ""),
+        // 干跑报告：只记不判的诊断文本，口径同 KEY_DICT_FAILURE
+        KEY_CALIBRATE_REPORT to lastCalibrateReport,
     )
 
     companion object {
@@ -234,6 +258,8 @@ data class AppSettings(
         const val KEY_GAP_TIP_SEEN = "gap_tip_seen"
         const val KEY_CHAPTER_TIP_SEEN = "chapter_tip_seen"
         const val KEY_EXCERPT_TIP_SEEN = "excerpt_tip_seen"
+        const val KEY_FSRS_ACTIVE_PARAMS = "fsrs_active_params"
+        const val KEY_CALIBRATE_REPORT = "last_calibrate_report"
 
         /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
         val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
@@ -332,6 +358,19 @@ data class AppSettings(
                 // 书摘检索贴士：默认**没看过**，与 chapterTipSeen 分开的两枚布尔（镜像纪律）
                 excerptTipSeen = map[KEY_EXCERPT_TIP_SEEN]?.toBooleanStrictOrNull()
                     ?: defaults.excerptTipSeen,
+                // 活跃 FSRS 参数：默认 null（走 DEFAULT_PARAMS）。逗号串必须是**恰好 21 项且全数字**，
+                // 否则一律当脏值退回 null——绝不允许把半截/含非数字的向量拼成残缺数组喂给调度器。
+                fsrsActiveParams = map[KEY_FSRS_ACTIVE_PARAMS]?.let { raw ->
+                    val tokens = raw.split(",")
+                    if (tokens.size != FsrsModel.NP) {
+                        null
+                    } else {
+                        val vals = tokens.map { it.toDoubleOrNull() }
+                        if (vals.any { it == null }) null else DoubleArray(vals.size) { vals[it]!! }
+                    }
+                } ?: defaults.fsrsActiveParams,
+                // 干跑报告：缺键退回默认（空串 = 从没跑过）；超长掐掉，口径同 lastDictFailure
+                lastCalibrateReport = map[KEY_CALIBRATE_REPORT]?.take(400) ?: defaults.lastCalibrateReport,
             )
         }
     }

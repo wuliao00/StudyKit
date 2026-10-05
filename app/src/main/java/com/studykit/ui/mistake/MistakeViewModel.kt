@@ -6,9 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
+import com.studykit.data.entity.ReviewLog
 import com.studykit.data.memory.Confidence
 import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReviewGrade
+import com.studykit.data.memory.kernelStateFor
+import com.studykit.data.memory.toKernelRating
+import com.studykit.data.memory.toStorageInt
 import com.studykit.ui.study.KernelHub
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
@@ -33,6 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
+import java.util.UUID
 
 /** 学科分组条目 */
 data class SubjectGroup(val subject: String, val items: List<Mistake>)
@@ -115,6 +120,10 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     // 提示阶梯与同考点变式都只吃「题目」这一维数据（subject 驱提示、concept_tag 驱变式），
     // 由刷题收录写进 note 的 `qid:` 标记回溯到它（见 RedoFlow.linkedQuestionId）。
     private val questionRepository = container.questionRepository
+
+    // v2.9 Task 6：重做评分双写 review_log 的写入侧；sessionId = 本页实例的粗粒度会话键。
+    private val reviewLogRepository = container.reviewLogRepository
+    private val sessionId: String = UUID.randomUUID().toString()
 
     // ── 列表与筛选 ────────────────────────────────────────────────────────
     /**
@@ -408,6 +417,24 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
                 correct = grade != ReviewGrade.FORGET,
                 hintsUsed = hintsUsed,
                 hadNoteRebuild = hadNoteRebuild,
+            )
+            // v2.9 Task 6 双写 review_log：重做评分追加进事件流，排在状态写(update)与历史写(insertRedo)之后。
+            // rating=档位映射、state=评分前那份错题状态（经 kernelStateFor 取行上留存状态，首评 stability 空→New0）、
+            // self_conf 与背词同口径。错题没有 last_review_at，反推「距上次评分」的算术全藏在
+            // MistakeScheduling.grade 内部——双写不复算它（免得与调度器分叉）→ elapsed/scheduled 记 0；
+            // 重做路径未采集作答耗时 → duration 记 0。
+            val beforeState = kernelStateFor(kernel, mistake)
+            reviewLogRepository.recordGradedReview(
+                cardKind = ReviewLog.KIND_MISTAKE,
+                cardId = id,
+                rating = grade.toKernelRating().ordinal + 1,
+                elapsedDays = 0.0,
+                scheduledDays = 0.0,
+                state = if (beforeState.stability == null) 0 else beforeState.cardState.ordinal + 1,
+                durationMs = 0L,
+                origin = "mistake",
+                selfConf = conf?.toStorageInt(),
+                sessionId = sessionId,
             )
         }
     }

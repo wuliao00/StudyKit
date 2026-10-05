@@ -1,5 +1,6 @@
 package com.studykit.ui.study
 
+import com.studykit.data.AppSettings
 import com.studykit.data.memory.FsrsKernel
 import com.studykit.data.memory.HalfLifeKernel
 import com.studykit.data.memory.SchedulingKernel
@@ -26,4 +27,19 @@ object KernelHub {
 
     /** 按设置里的 id 取内核；`null`（没读到设置）与垃圾值一样回默认 FSRS */
     fun forId(id: String?): SchedulingKernel = if (id == "HALF_LIFE") halfLife else fsrs
+
+    /**
+     * v2.9 Task 5：取内核时把**活跃 FSRS 参数**也带进来。纯函数、参数来自 [AppSettings]，
+     * 便于 `ParamInjectionTest` 直接从设置层驱动验证"训练参数真的进入调度器"。
+     *
+     * 只作用于 FSRS 分支：`settings.fsrsActiveParams` 非 null → 用它构造 `FsrsKernel(w)`；
+     * null（没校准过 / 脏值退回）→ 复用默认 [fsrs]（= DEFAULT_PARAMS），与旧签名 `forId(id)` 逐比特一致。
+     * HALF_LIFE 不受影响：它没有 FSRS 参数维，仍按 id 返回半衰期内核。`settings` 传 null 时同 null 参数。
+     */
+    fun forId(id: String?, settings: AppSettings?): SchedulingKernel =
+        if (id == "HALF_LIFE") {
+            halfLife
+        } else {
+            settings?.fsrsActiveParams?.let { FsrsKernel(it) } ?: fsrs
+        }
 }

@@ -52,11 +52,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.studykit.BuildConfig
+import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
 import com.studykit.data.memory.ReviewStrictness
+import com.studykit.optimize.SynthLog
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
@@ -64,6 +67,8 @@ import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.SectionHeader
+import com.studykit.ui.optimize.CalibrateViewModel
+import com.studykit.ui.optimize.CalibrationCard
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.backup.StorageStats
 import java.time.LocalDate
@@ -181,6 +186,15 @@ fun SettingsScreen(
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+
+    // 校准（v2.9 T12）：编排 ViewModel 靠 Factory 从容器装配；快照/评分条数走 SettingsViewModel 两条流。
+    val calibrateVm: CalibrateViewModel = viewModel(
+        factory = CalibrateViewModel.Companion.Factory(context.applicationContext as android.app.Application),
+    )
+    val calibrateState by calibrateVm.ui.collectAsStateWithLifecycle()
+    val paramSnapshots by viewModel.paramSnapshots.collectAsStateWithLifecycle()
+    val reviewRatingCount by viewModel.reviewRatingCount.collectAsStateWithLifecycle()
+    val calibrateScope = rememberCoroutineScope()
 
     // 关于与支持：两个只读弹层的开关 + 手动检查更新的临时状态
     var showTutorial by rememberSaveable { mutableStateOf(false) }
@@ -604,6 +618,50 @@ fun SettingsScreen(
                 onConfidence = viewModel::setConfidenceEnabled,
                 onInterleaving = viewModel::setInterleavingEnabled,
             )
+            HorizontalDivider(color = colors.divider)
+            CalibrationCard(
+                state = calibrateState,
+                ratingCount = reviewRatingCount,
+                snapshots = paramSnapshots,
+                onCalibrate = {
+                    viewModel.refreshCalibrationData()
+                    calibrateVm.start(dryRun = false)
+                },
+                onAdopt = {
+                    calibrateScope.launch {
+                        calibrateVm.adopt()
+                        viewModel.refreshCalibrationData()
+                    }
+                },
+                onRestoreDefault = {
+                    calibrateScope.launch {
+                        calibrateVm.restoreDefault()
+                        viewModel.refreshCalibrationData()
+                    }
+                },
+                onExport = { snap ->
+                    val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clip.setPrimaryClip(android.content.ClipData.newPlainText("param_snapshot", snap.params))
+                },
+            )
+            // 仅 `-PseedSynth=true` 的本地构建：review_log 初值为空，一键灌合成数据把校准链路端到端跑通看报告。
+            // 出现条件再叠一条 `reviewRatingCount == 0`：这张表 append-only、没有反悔路径，
+            // 手抖点第二次会把同一份合成记录再铺一遍（1500 卡 ≈ 上万行），所以有记录了就收起入口。
+            if (BuildConfig.SEED_SYNTH_LOG && reviewRatingCount == 0) {
+                HorizontalDivider(color = colors.divider)
+                AppButton(
+                    text = "灌合成数据(1500卡)·仅本地构建",
+                    onClick = {
+                        calibrateScope.launch {
+                            val dao =
+                                (context.applicationContext as StudyKitApp).container.database.reviewLogDao()
+                            withContext(Dispatchers.IO) { SynthLog.seedForDebug(dao) }
+                            viewModel.refreshCalibrationData()
+                        }
+                    },
+                    modifier = Modifier.testTag("debug_seed_synth_log"),
+                )
+            }
         }
 
         // ── 三、数据管理 ──────────────────────────────────────────
@@ -792,7 +850,8 @@ fun SettingsScreen(
 
         SettingBlock(
             title = "排期算法来源",
-            hint = "「排期内核」里的 FSRS 公式思想有开源实现 py-fsrs（open-spaced-repetition/py-fsrs，MIT 许可）。" +
+            hint = "排期内核跑的是 FSRS-6，参数由自研 Rust 优化器 fsrsjni 在端侧拟合（纯端侧，记录不出设备）；" +
+                "其公式思想有开源实现 py-fsrs（open-spaced-repetition/py-fsrs，MIT 许可）。" +
                 "本应用按自己的口径重写，不声称与 Anki 结果相等。",
         )
 
@@ -937,14 +996,32 @@ fun SchedulePracticeSettings(
             modifier = Modifier.selectableGroup(),
         ) {
             KernelChoices.forEach { (id, label) ->
-                ChoiceTile(
-                    label = label,
-                    selected = settings.schedulingKernel == id,
-                    onClick = { onKernel(id) },
-                    modifier = Modifier.weight(1f),
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    ChoiceTile(
+                        label = label,
+                        selected = settings.schedulingKernel == id,
+                        onClick = { onKernel(id) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    // 文档 §③：FSRS 选项挂「推荐」角标（旧内核那一格留空位，两磁贴仍等高）。
+                    if (id == "FSRS") {
+                        Text(
+                            text = "推荐",
+                            style = AppTheme.texts.caption.copy(color = colors.accentInk),
+                            modifier = Modifier.padding(top = AppTheme.space.xs),
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(AppTheme.space.xs))
+                    }
+                }
             }
         }
+        // 文档 §③：旧内核灰字「仅维护、不再演进」——选不选都常驻说清旧内核现在的定位。
+        Text(
+            text = "半衰期旧内核：仅维护、不再演进。评分历史保留，记忆强度读数为换算近似。",
+            style = AppTheme.texts.caption.copy(color = colors.secondaryText),
+            modifier = Modifier.padding(top = AppTheme.space.xs),
+        )
     }
     HorizontalDivider(color = colors.divider)
     SettingBlock(

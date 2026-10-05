@@ -13,6 +13,7 @@ import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
 import com.studykit.data.memory.ReviewStrictness
+import com.studykit.optimize.ParamSnapshot
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OneShotGate
 import com.studykit.util.backup.BackupArchive
@@ -93,6 +94,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     /** 长任务进行中：导出、恢复（以及 [clearBusinessData]）。界面据此禁用这几个入口 */
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
+    private val _paramSnapshots = MutableStateFlow<List<ParamSnapshot>>(emptyList())
+
+    /**
+     * 参数快照（按 ts 降序，取自 `param_snapshots`）：校准卡「已用你的 N 次评分校准 · 优化过」
+     * 的状态行与「参数快照」列表都读它。空 = 从没采纳过任何一次校准。
+     */
+    val paramSnapshots: StateFlow<List<ParamSnapshot>> = _paramSnapshots.asStateFlow()
+
+    private val _reviewRatingCount = MutableStateFlow(0)
+
+    /** 本机可校准的复习评分条数（`review_log` 行数）：校准卡「还差 N 次」这一档的输入。 */
+    val reviewRatingCount: StateFlow<Int> = _reviewRatingCount.asStateFlow()
+
     private val statsGate = OneShotGate()
     private val exportGate = OneShotGate()
     private val restoreGate = OneShotGate()
@@ -101,6 +115,29 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     init {
         refreshStats()
+        refreshCalibrationData()
+    }
+
+    // ── 校准数据（快照 + 可校准评分条数）──────────────────────────
+
+    /**
+     * 读回参数快照与可校准评分条数，喂给「排期内核」校准卡（v2.9 计划 Task 12）。
+     *
+     * 只在进入设置页、点校准、采纳/恢复默认后调它——快照与评分条数都是低频、只在采纳时才变的量，
+     * 没必要常驻一条 Flow 每次评分都回库里翻一遍。失败只留原值，不把已经画出来的列表抹空。
+     */
+    fun refreshCalibrationData() {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    container.database.paramSnapshotDao().getAll() to
+                        container.reviewLogRepository.getAllSince().size
+                }
+            }.onSuccess { (snaps, count) ->
+                _paramSnapshots.value = snaps
+                _reviewRatingCount.value = count
+            }
+        }
     }
 
     // ── 占用统计 ────────────────────────────────────────────────

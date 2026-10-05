@@ -8,12 +8,17 @@ import com.studykit.data.entity.Book
 import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.Excerpt
+import com.studykit.data.entity.ReviewLog
 import com.studykit.data.memory.Confidence
 import com.studykit.data.memory.ExcerptReview
 import com.studykit.data.memory.ReviewGrade
+import com.studykit.data.memory.kernelStateOf
+import com.studykit.data.memory.toKernelRating
+import com.studykit.data.memory.toStorageInt
 import com.studykit.ui.study.KernelHub
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -77,6 +82,10 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as StudyKitApp).container.bookRepository
     private val settingsRepository = (application as StudyKitApp).container.settingsRepository
+
+    // v2.9 Task 6：书摘自评双写 review_log 的写入侧；sessionId = 本页实例的粗粒度会话键。
+    private val reviewLogRepository = (application as StudyKitApp).container.reviewLogRepository
+    private val excerptSessionId: String = UUID.randomUUID().toString()
 
     // ── 书架页状态：书籍流 × 书摘总数流 × 主指标检索数流 × 陈旧未检索流 ─────
     /** 7 天前那道线：VM 构造时定一次即可，这条只驱动一条一次性贴士 */
@@ -299,14 +308,33 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val excerpt = repository.getExcerpt(excerptId) ?: return@launch
+                val now = System.currentTimeMillis()
                 val kernel = KernelHub.forId(settingsRepository.current().schedulingKernel)
-                val result = ExcerptReview.schedule(kernel, excerpt, grade, conf, System.currentTimeMillis())
+                val result = ExcerptReview.schedule(kernel, excerpt, grade, conf, now)
                 repository.updateExcerpt(
                     excerpt.copy(
                         stability = result.stability,
                         reviewCount = result.reviewCount,
                         nextReviewAt = result.nextReviewAt,
                     ),
+                )
+                // v2.9 Task 6 双写 review_log：书摘自评追加进事件流，排在状态写(updateExcerpt)之后。
+                // rating=档位映射、self_conf 同背词口径；elapsed 取与 ExcerptReview.schedule 同一的
+                // (now − createdAt)（同一个 now、同一行 before 快照，不另算一套）；state 由行上的
+                // stability 推出（kernelStateOf(excerpt)，空→首评 New0，否则 REVIEW）。
+                // scheduled/duration 未从 schedule 回传 / 未采集 → 按 Step 0 默认记 0。
+                val beforeState = kernelStateOf(excerpt)
+                reviewLogRepository.recordGradedReview(
+                    cardKind = ReviewLog.KIND_EXCERPT,
+                    cardId = excerpt.id,
+                    rating = grade.toKernelRating().ordinal + 1,
+                    elapsedDays = (now - excerpt.createdAt).coerceAtLeast(0L) / TimeUnit.DAYS.toMillis(1).toDouble(),
+                    scheduledDays = 0.0,
+                    state = if (beforeState.stability == null) 0 else beforeState.cardState.ordinal + 1,
+                    durationMs = 0L,
+                    origin = "excerpt",
+                    selfConf = conf?.toStorageInt(),
+                    sessionId = excerptSessionId,
                 )
             } finally {
                 gradingExcerpt.leave()

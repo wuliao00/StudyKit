@@ -1,0 +1,162 @@
+package com.studykit.optimize
+
+import android.content.Context
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.studykit.data.AppDatabase
+import com.studykit.data.entity.ReviewLog
+import com.studykit.data.memory.CardState
+import com.studykit.data.memory.Confidence
+import com.studykit.data.memory.KernelRating
+import com.studykit.data.memory.KernelState
+import com.studykit.data.memory.toStorageInt
+import com.studykit.data.repository.ReviewLogRepository
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * v2.9 计划 Task 6 —— 四处评分点双写 `review_log` 的写入侧证据。
+ *
+ * 为什么测**仓储级 helper**（[ReviewLogRepository.recordGradedReview]）而不是四个 ViewModel：
+ * 本仓库既有测试文化一致回避直接驱动 `AndroidViewModel`（`KernelWiringTest`/`QuizConfidenceWiringTest`
+ * 都写明"那是 Room + Robolectric 才跑得动，改测纯函数/仓储"）。四处评分点（word/practice/mistake/
+ * excerpt）最终都收敛成对同一个 helper 的一次调用，字段映射（rating/self_conf/state）的**语义**在
+ * helper 这一层钉死；各点"能拿到什么、缺什么用什么默认"在实现说明里逐条登记。
+ *
+ * 钉三件事：
+ * 1) **每评一次分恰多一行**，且 `card_kind` / `origin` / `rating` 与该次评分自洽；四类各验一条。
+ * 2) **self_conf 与传入的 [Confidence] 一致**（[Confidence.toStorageInt] = ordinal+1），没采集信心时落 null
+ *    —— 拿 0 冒充"肯定不记得"会触发 FSRS 超纠正，必须留空（实体 KDoc 同口径）。
+ * 3) **先状态后历史**：日志写在状态写之后。协程里状态写一抛，日志那行根本执行不到 → 库中零行
+ *    （与 `applyReview → recordGradedReview`、`grade → insertRedo` 那条纪律同一条，见 [stateThrowsThenNoLogRow]）。
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class ReviewLogWriteTest {
+
+    private lateinit var db: AppDatabase
+    private lateinit var reviewLog: ReviewLogRepository
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        reviewLog = ReviewLogRepository(db.reviewLogDao())
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
+    }
+
+    /** 各点都必带的公共缺省（duration/session 在部分站点拿不到，用默认，见类 KDoc 登记） */
+    private suspend fun writeWordGood(cardId: Long, conf: Confidence?) = reviewLog.recordGradedReview(
+        cardKind = ReviewLog.KIND_WORD,
+        cardId = cardId,
+        rating = KernelRating.GOOD.ordinal + 1, // RECALL → GOOD → 3
+        elapsedDays = 1.5,
+        scheduledDays = 4.0,
+        state = stateCode(KernelState(stability = 2.0, difficulty = 5.0, cardState = CardState.REVIEW)),
+        durationMs = 800L,
+        origin = "word",
+        selfConf = conf?.toStorageInt(),
+        sessionId = "sess-word",
+    )
+
+    @Test
+    fun `背词评一次 GOOD 恰多一行且字段自洽`() = runBlocking {
+        writeWordGood(cardId = 11L, conf = Confidence.SURE)
+        val rows = db.reviewLogDao().getAllSince()
+        assertEquals("一次评分只产一行", 1, rows.size)
+        val row = rows.single()
+        assertEquals(ReviewLog.KIND_WORD, row.cardKind)
+        assertEquals("word", row.origin)
+        assertEquals(11L, row.cardId)
+        assertEquals(3, row.rating)
+        assertEquals(1.5, row.elapsedDays, 1e-9)
+        assertEquals(4.0, row.scheduledDays, 1e-9)
+        // REVIEW 卡评分前状态 → 序号+1 = 2
+        assertEquals(2, row.state)
+        assertEquals(800L, row.durationMs)
+        // self_conf 与传入 Confidence 完全一致
+        assertEquals(Confidence.SURE.toStorageInt(), row.selfConf)
+        assertEquals("sess-word", row.sessionId)
+        assertEquals(0, row.isMakeup)
+        assertEquals(ReviewLog.CURRENT_SCHEMA_VER, row.logSchemaVer)
+    }
+
+    @Test
+    fun `没采集信心时 self_conf 落 NULL 不冒充`() = runBlocking {
+        writeWordGood(cardId = 12L, conf = null)
+        val row = db.reviewLogDao().getAllSince().single()
+        assertNull("没选信心必须留空，不能拿 0 冒充『肯定不记得』", row.selfConf)
+    }
+
+    @Test
+    fun `四类评分点各写一行 kind 与 origin 一一对应`() = runBlocking {
+        reviewLog.recordGradedReview(
+            ReviewLog.KIND_WORD, 1L, 3, 1.0, 2.0, 2, 0L, "word", 3, "s",
+        )
+        reviewLog.recordGradedReview(
+            ReviewLog.KIND_PRACTICE, 2L, 3, 0.0, 0.0, 0, 0L, "practice", null, "s",
+        )
+        reviewLog.recordGradedReview(
+            ReviewLog.KIND_MISTAKE, 3L, 1, 0.5, 1.0, 0, 0L, "mistake", 1, "s",
+        )
+        reviewLog.recordGradedReview(
+            ReviewLog.KIND_EXCERPT, 4L, 3, 6.0, 3.0, 2, 0L, "excerpt", null, "s",
+        )
+
+        val rows = db.reviewLogDao().getAllSince()
+        assertEquals(4, rows.size)
+        // 按 (card_kind, card_id, ts) 升序读回：字母序 excerpt < mistake < practice < word
+        assertEquals(
+            listOf(
+                ReviewLog.KIND_EXCERPT,
+                ReviewLog.KIND_MISTAKE,
+                ReviewLog.KIND_PRACTICE,
+                ReviewLog.KIND_WORD,
+            ),
+            rows.map { it.cardKind },
+        )
+        // origin 与 card_kind 一一对应（同 kind 下区分写入路径的位）
+        assertEquals(rows.map { it.cardKind }, rows.map { it.origin })
+        // rating 各自自洽：practice 判对 → GOOD(3)，mistake 忘记 → AGAIN(1)
+        assertEquals(1, rows.first { it.cardKind == ReviewLog.KIND_MISTAKE }.rating)
+        assertEquals(3, rows.first { it.cardKind == ReviewLog.KIND_PRACTICE }.rating)
+    }
+
+    /**
+     * 先状态后历史：把"状态写"与"日志写"串在同一协程里（正是四个 ViewModel 的调用序），
+     * 状态写抛异常时协程根本走不到日志那一行 → review_log 零行。反过来若把日志排在状态写之前，
+     * 这条会留下"有一次评分、状态却没落库"的脏样本——那是在污染以后的校准（Task 7 LogPacker）。
+     */
+    @Test
+    fun `状态写失败则不写日志行`() = runBlocking {
+        val dao = db.reviewLogDao()
+        val boom = runCatching {
+            // ① 站点里"先写状态"那一步（此处用会抛的桩模拟 applyReview/update/updateExcerpt/submitAnswer）
+            error("state write failed")
+            // ② 只有状态写成功才会执行到这里
+            reviewLog.recordGradedReview(
+                ReviewLog.KIND_WORD, 99L, 3, 1.0, 2.0, 0, 0L, "word", null, "s",
+            )
+        }.isFailure
+        assertTrue("状态写应确实抛错", boom)
+        assertEquals("状态写失败时不得留下日志行", 0, dao.getAllSince().size)
+    }
+
+    /** 与实现里同一套 state 编码：稳定度为空 → New(0)，否则 CardState 序号+1（对齐 0New/1Learn/2Review/3Relearn） */
+    private fun stateCode(before: KernelState): Int =
+        if (before.stability == null) 0 else before.cardState.ordinal + 1
+}

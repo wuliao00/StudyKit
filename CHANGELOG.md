@@ -2,6 +2,28 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [2.9.0] - 2026-10-05
+
+换代版：排期内核在 v2.8 的 FSRS v6 之上补上**端侧个性化校准**——用自己的复习记录把 21 个参数重训一遍、过门槛才换核。
+核心是交叉编译进 APK 的 Rust 优化器 `fsrsjni`，配一条 append-only 的 `review_log` 事件流、一套硬/软门槛门禁、以及设置页的校准卡。
+`versionCode` 18→19。
+
+### 新增（端侧 FSRS 个性化优化器）
+- **Rust `fsrsjni` crate**：21 参 v6 的 AdamW 拟合，经 **cargo-ndk 交叉编译**同时打进 `arm64-v8a` 与 `armeabi-v7a`，JNI 桥接进 `NativeFsrsTrainer`（`FsrsTrainer` 接缝，单测换假实现钉护栏）。损失为 **BCE，正例定义为 rating≥2**（失败评分当负例同样进 loss，不是只在成功支上算）；训练/验证按**时序 80/20 切分**（同卡历史按 ts 升序）。
+- **Rust≡Kotlin 前向 fixture 口径一致硬闸**：同一批输入下 Rust 前向与 Kotlin `FsrsModel` 逐值对齐由 fixture 钉死——**这条是「换核前后排期一致」的唯一机检证据**，任一端口径漂了就红。
+- **`review_log` v8（append-only 事件流）**：`ReviewLogDao` 刻意只有 `insert`/`getAllSince` 两条，无反射改历史的路径（`ReviewLogDaoTest` 反射钉死）。**四处评分点双写**（先写状态、后写历史），富字段带 `self_conf`/`elapsed`/`state`。清库不删这张表。
+- **`FsrsGate` 硬/软门槛**：硬门槛——**term<1000 直接不训**（别烧一次设备训练）、val 侧 **logloss 相对改善≥1%** 才有资格；软门槛——校准曲线/回测存疑时转 **`Decision.Manual`**（出报告但要人看一眼再采用）；**坏回测永不 `Adopt`**；**S0 单调常识闸**（初始稳定度排序反了直接拦下，评估与回测都不做）。一次报告**永不自己换核**，采纳是另一次动作。
+- **参数快照 keep-5 + `fsrsActiveParams` 注入生效**：采纳时先写快照、裁到最近 5 份、再把参数置进 `AppSettings.fsrsActiveParams`——**训练参数真正回流到调度器**（`KernelHub` 读到就用它；`restoreDefault` 清成 null 即回默认，快照一份不动，可回滚）。串口径与快照逐字符一致。
+- **设置页「排期内核」校准区**：`CalibrationCard`（状态行三档 / 重新校准置灰不隐藏 / 运行中轻提示 / 失败原话 / 参数快照列表 + 导出贴 issue / 恢复默认页脚）+ `CalibrateResultDialog`（Adopt/Manual 两套标题、三行数字、Manual「提醒你」追加行、Canvas 校准曲线小图）+ 快照列表。文案逐字取文档 §③，`CalibrateRenderTest` 钉住；「全部计算在本机完成，记录不出设备」。
+- **WorkManager 充电+空闲干跑**：`CalibrateWorker` 只在**充电 + 空闲、不要网**时周期触发，**只干跑**（`dryRun=true`）——出报告落进设置页诊断，`adopt()` 对干跑一律拒绝写库，后台永不换核。
+
+### 已知边界（诚实记账）
+- **训练 device-only**：`fsrsjni` 是 arm `.so`，**Robolectric 加载不了**，端侧训练这条只能在真机验；「Rust≡Kotlin 口径一致」靠 **fixture 测**（纯 JVM 跑前向）、JNI 调用**真机验证**。CI 里没有真机训练结果。
+- **真机 `review_log` 初值为空**：覆盖升级不动存量，但本版新表初值为空——校准卡默认落在「还差 1000 次评分就能校准」的**数据不足态**；要端到端跑通干跑/报告，需先攒够真实记录，或用**「灌合成数据(1500卡)」入口**（**只在 `-PseedSynth=true` 的本地构建里出现**，且 `review_log` 已有记录即收起——这张表 append-only、清库也不删，铺进去的假记录没有反悔路径；调 `SynthLog.seedForDebug`）铺满假记录。本版验收即走后者：ColorOS 机上原 2.5.0 由另一把 debug 钥匙签（证书不符，`adb install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`），按既有口径卸载后装 2.9.0 → 全新库 → 灌合成数据 → 点「重新校准」，**报告为预测误差 0.374→0.368、校准曲线最大偏差 1.6%、预计平均间隔 71.6→65.7 天**；截图前点「先不改」，状态行仍停在「还在用通用曲线」、快照 0 份，即一次报告确实没有自己换核。发版两张截图按此真实经过取。
+- **带存量数据的真机覆盖升级本轮未验**：v7→v8 的 `review_log` 迁移只有 CI 里 `Migration7To8Test`（`MigrationTestHelper`）这一条机检证据；验收机因上述签名不符只能卸载重装（等价于全新库），**没有**在装着旧数据的机器上跑过一次 `adb install -r` 的存量迁移。下次拿到同钥匙签的旧版本机器时补这一验。
+- **无独立第三方与 Anki 逐比特对拍**：v6 数值口径 = **官方 py-fsrs 6.3.2 预言机**（`docs/evidence/fsrs6-golden.json`，承自 v2.8），本机无 Anki 桌面端，不声称 = Anki 逐比特结果。
+- **无纸质畸变照片**：本版无 OCR 改动，不涉及真实畸变/透视/光照纸质照片输入。
+
 ## [2.8.0] - 2026-10-04
 
 换代版：两条主线各自落地——**排期内核从简化 FSRS-5 升到真 FSRS v6（21 参数）**、
