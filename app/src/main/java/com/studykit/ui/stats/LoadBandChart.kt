@@ -43,11 +43,12 @@ import kotlin.math.roundToInt
  * 折线走 `drawPath + style = Stroke`（`DrawScope.drawLine` 没有收 Path 的重载），
  * 整张图**一条** `contentDescription`。不新增色值：带子是 `accent.copy(alpha = …)`。
  *
- * ## 无障碍：那一条描述里必须有数字
+ * ## 无障碍：那一条描述里必须有数字，而且数字还得看得见
  * Canvas 对读屏等于一张壁纸，所以整张图唯一的语义节点说的不是画法而是**内容**：窗口长度、峰值在第
  * 几天、那天预计多少项（与 [ForecastBars] 逐日念出数字是同一个要求，只是不许拆成 14 个节点——
- * 读屏会把同一张图念十四遍）。编码方式（实线/阴影各是什么）写在图下那行 caption 里，看得见的和
- * 听得见的各拿一半，两份合起来才是完整的一张图。
+ * 读屏会把同一张图念十四遍）。同一组数字另外还有一行**可见**文字（"最忙的是第 N 天，预计 M 项"）：
+ * 横轴没有刻度，只把数字放进描述就等于反着来——视力正常的人什么数都读不到，读屏用户却能。
+ * 编码方式（实线/阴影各是什么）写在图下那行 caption 里，看得见的和听得见的各拿一半，两份合起来才是完整的一张图。
  *
  * ## 空态
  * 见 [LoadBandChart] 里的判定：这条带**只在一条线都画不出来时**才空。零卡不是空态——每日新词目标
@@ -110,6 +111,15 @@ fun LoadBandChart(bands: List<DayBand>, modifier: Modifier = Modifier) {
                 style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
             )
         }
+        Spacer(Modifier.height(AppTheme.space.xs))
+        // 同一组数字的可见版：横轴没有刻度，只剩描述里的数字就等于把数只给读屏用户，
+        // 与本仓 [ForecastBars]（逐日把数字写在柱子顶上）正相反。取的是同一个 `peak`、同一个 roundToInt，
+        // 所以看得见的和听得见的不会各说一套。
+        Text(
+            text = "最忙的是第 ${peak.dayIndex + 1} 天，预计 ${peak.mean.roundToInt()} 项。",
+            style = texts.body,
+            color = colors.primaryText,
+        )
         Spacer(Modifier.height(AppTheme.space.xs))
         Text(
             text = "实线是那天预计要处理的项数，阴影是它的波动范围（±1 个标准差）。" +

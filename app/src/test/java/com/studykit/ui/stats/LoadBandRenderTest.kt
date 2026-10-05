@@ -40,8 +40,9 @@ import org.robolectric.annotation.GraphicsMode
  *
  * ## 无障碍断言的口径
  * 整张图**只有一条** `contentDescription`（逐日节点会让读屏把同一张图念十四遍），而它必须带真数：
- * 窗口长度、峰值在第几天、那天预计多少项。画法（实线/阴影各是什么）与"比词数大的原因"写在
- * 图下那行 caption 里——它是普通文字，读屏照念，看得见的和听得见的各拿一半。
+ * 窗口长度、峰值在第几天、那天预计多少项。同一组数字另外还有一行**看得见**的文字（横轴没有刻度，
+ * 只剩描述里的数字就等于把数只给读屏用户，与本仓 ForecastBars 的约定相反）。画法（实线/阴影各是什么）
+ * 与"比词数大的原因"写在图下那行 caption 里——它是普通文字，读屏照念，看得见的和听得见的各拿一半。
  *
  * provider 与「一个测试一次 setContent」沿用 [com.studykit.ui.optimize.CalibrateRenderTest]：
  * `AppSettings(glass = OFF, reduceMotion = true)` 里的 `reduceMotion` 让 `waitForIdle()` 等得到。
@@ -107,6 +108,36 @@ class LoadBandRenderTest {
         composeRule.onNodeWithText("每日新词", substring = true).assertExists()
         composeRule.onNodeWithText("学习步", substring = true).assertExists()
         composeRule.onNodeWithText("有排期的词", substring = true).assertExists()
+    }
+
+    /**
+     * 峰值那两三个数必须**看得见**，不能只活在 `contentDescription` 里。
+     *
+     * 撤掉超容量那行字之后，视力正常的人在这张图上读不到任何数字（横轴没有刻度），
+     * 而读屏描述里却有——这与本仓 [ForecastBars] 逐日把数字摆在柱子顶上正相反，
+     * 等于把"谁拿得到数"反过来。可见这一行与下面那条描述同源（同一个 `peak`、同一个取整）。
+     */
+    @Test
+    fun 峰值数字有一行看得见的文字() {
+        composeRule.setContent {
+            StatsHost { LoadBandChart(bands = bands(10.0, spikeAt = 2)) }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("最忙的是第 3 天，预计 30 项。").assertExists()
+    }
+
+    /**
+     * 反向守卫：这一行不许是写死的装饰。峰换到第 8 天时它必须跟着走——
+     * 上一条断言若把"第 3 天"硬编码进视图，只有这一条会红。
+     */
+    @Test
+    fun 可见那行数字跟着峰值日走() {
+        composeRule.setContent {
+            StatsHost { LoadBandChart(bands = bands(10.0, spikeAt = 7)) }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("最忙的是第 8 天，预计 30 项。").assertExists()
+        composeRule.onNodeWithText("最忙的是第 3 天，预计 30 项。").assertDoesNotExist()
     }
 
     /**
