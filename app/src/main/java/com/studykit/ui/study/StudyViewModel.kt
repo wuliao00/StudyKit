@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
+import com.studykit.data.entity.ReviewLog
 import com.studykit.data.entity.Word
 import com.studykit.data.memory.Confidence
 import com.studykit.data.memory.Hypercorrection
+import com.studykit.data.memory.KernelRating
 import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.ReviewStrictness
@@ -37,6 +39,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
@@ -135,6 +138,14 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val questionRepository = container.questionRepository
     private val mistakeRepository = container.mistakeRepository
     private val settingsRepository = container.settingsRepository
+    private val reviewLogRepository = container.reviewLogRepository
+
+    /**
+     * v2.9 Task 6：背词与练习两条评分点共用的**粗粒度会话键**（每个 VM 实例一个，同一屏幕内的多次评分
+     * 共享）。review_log 的 `session_id` 供 Task 7 统计会话长度 / 同会话连点去重分组用；两类写入路径靠
+     * `origin`（word / practice）区分，不靠 session 键。
+     */
+    private val sessionId: String = UUID.randomUUID().toString()
 
     companion object {
         private val ONE_DAY_MS = TimeUnit.DAYS.toMillis(1)
@@ -378,6 +389,23 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 confidence = conf?.toStorageInt(),
                 fsrsRating = rating.ordinal + 1,
             )
+            // v2.9 Task 6 双写 review_log：这一次"已评分复习"追加进事件流，排在上面的状态写
+            // （applyReview）与历史写（recordGradedReview）之后——先状态后历史，中间被杀只丢一条日志、
+            // 下次复习时刻仍对。富字段这里全部现成：rating=内核档位 1..4、elapsedDays=喂内核的 Δt(gapDays)、
+            // scheduledDays=刚排出去的间隔(days)、state=评分前那份卡状态(0New/1Learn/2Review/3Relearn，
+            // 稳定度为空即首评→New0)、durationMs=翻面到按分的毫秒(没传记 0)、self_conf=信心 ordinal+1(没选记 null)。
+            reviewLogRepository.recordGradedReview(
+                cardKind = ReviewLog.KIND_WORD,
+                cardId = word.id,
+                rating = rating.ordinal + 1,
+                elapsedDays = gapDays,
+                scheduledDays = days,
+                state = if (before.stability == null) 0 else before.cardState.ordinal + 1,
+                durationMs = reactionMs ?: 0L,
+                origin = "word",
+                selfConf = conf?.toStorageInt(),
+                sessionId = sessionId,
+            )
             _session.value = state.copy(
                 index = state.index + 1,
                 knownCount = state.knownCount + if (grade == ReviewGrade.RECALL) 1 else 0,
@@ -538,6 +566,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             _quiz.value = state.copy(
                 selected = selected,
                 correctCount = state.correctCount + if (correct) 1 else 0,
+            )
+            // v2.9 Task 6 双写 review_log：练习的即时判定就是"一次已评分复习"，写在 submitAnswer(状态写)之后。
+            // 练习不进 FSRS 状态机、也没有逐卡的 Δt / 排出的间隔 / 作答耗时——这几列按 Step 0 定的默认填
+            // （elapsed/scheduled/duration=0、state=0New）；rating 由对错映射（判对→GOOD3、判错→AGAIN1），
+            // self_conf 与背词同口径（没选信心记 null，不拿 0 冒充"肯定不记得"）。
+            reviewLogRepository.recordGradedReview(
+                cardKind = ReviewLog.KIND_PRACTICE,
+                cardId = question.id,
+                rating = if (correct) KernelRating.GOOD.ordinal + 1 else KernelRating.AGAIN.ordinal + 1,
+                elapsedDays = 0.0,
+                scheduledDays = 0.0,
+                state = 0,
+                durationMs = 0L,
+                origin = "practice",
+                selfConf = conf?.toStorageInt(),
+                sessionId = sessionId,
             )
         }
     }

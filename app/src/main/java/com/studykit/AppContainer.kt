@@ -7,6 +7,7 @@ import com.studykit.data.repository.ContractRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
 import com.studykit.data.repository.QuestionRepository
+import com.studykit.data.repository.ReviewLogRepository
 import com.studykit.data.repository.SettingsRepository
 import com.studykit.data.repository.WordListRepository
 import com.studykit.data.repository.WordRepository
@@ -39,4 +40,10 @@ class AppContainer(context: Context) {
     val mistakeRepository: MistakeRepository = MistakeRepository(database.mistakeDao())
 
     val settingsRepository: SettingsRepository = SettingsRepository(database.appSettingDao())
+
+    /**
+     * `review_log` 事件流写入侧（v2.9 Task 6）：四处评分点在各自状态写之后追加一行。
+     * 只持有 append-only 的 [ReviewLogDao]，没有改历史的路径（DAO 那侧由 `ReviewLogDaoTest` 反射钉死）。
+     */
+    val reviewLogRepository: ReviewLogRepository = ReviewLogRepository(database.reviewLogDao())
 }
