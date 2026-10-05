@@ -100,13 +100,17 @@ class ReminderPolicyWiringTest {
     /**
      * 此刻正好落在众数小时上也算"已过"，推到明天：延迟 0 等于任务入队当场就跑，
      * 而这条延迟的用途是"把提醒挪到用户真的在复习的那个钟点"，不是"立刻再发一条"。
+     *
+     * 唯一的断言就是 `delay == 一天`（生产函数的返回值），它同时覆盖"推到明天"和"不是零延迟"两件事。
+     * 这里原有第二条断言拿 `exactly + dayMs` 比 `today.plusDays(1).atTime(21, 0)`——两边都是夹具自己
+     * 算出来的本地量，一个字的生产代码都没经过，因此在 UTC 夹具下恒真、永远不会红，已删。
+     * （"延迟落在正确的绝对时刻上"由上面两条 `nowMs + delay == 目标整点` 钉住，形状是对的。）
      */
     @Test
     fun `此刻正是众数小时也推到明天而不是零延迟`() {
         val exactly = today.atTime(21, 0).toInstant(utc).toEpochMilli()
         val delay = delayMillisToHour(hour = 21, nowMs = exactly, zone = utc)
         assertEquals(dayMs, delay)
-        assertEquals(exactly + dayMs, today.plusDays(1).atTime(21, 0).toInstant(utc).toEpochMilli())
     }
 
     // ── 决策 → 通知那两行字 ─────────────────────────────────────

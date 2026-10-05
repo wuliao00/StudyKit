@@ -262,12 +262,14 @@ class ReminderWorker(
         // 与 ReminderScheduler 那条「静默回落会把没生效伪装成正常」是同一件事（这里刻意不用
         // runCatching：它连 CancellationException 一起吞，而那是"这次运行不该再发通知"的意思，
         // 不是"决策读挂了"，必须照原样往外抛）。
+        // 捕获范围是 Exception 而不是 Throwable：Error（OOM、StackOverflowError）不是"决策这条路读挂了"，
+        // 把它吞下来等于在 JVM 已经在崩塌时照常发一条通知出去。
         val decision = try {
             forecastDecision(container, settings, now)
         } catch (c: CancellationException) {
             throw c
-        } catch (t: Throwable) {
-            Log.e(TAG, "负荷预测/提醒决策没跑成，本次退回到期直陈文案", t)
+        } catch (e: Exception) {
+            Log.e(TAG, "负荷预测/提醒决策没跑成，本次退回到期直陈文案", e)
             null
         }
 

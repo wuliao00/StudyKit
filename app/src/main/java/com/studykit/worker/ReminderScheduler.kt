@@ -109,7 +109,14 @@ object ReminderScheduler {
      *
      * **v3.0-A Task 4 起它是 `suspend`**：相位对齐的原料（历史复习的众数整点）要读 `word_reviews`，
      * 而两个调用点（[ensureScheduled] 的协程、[observeAndApply] 的 `collect`）本来就在协程里，
-     * 所以这一改动代价为零，换来"任何新调用点都得先想清楚自己在哪条协程上读库"。
+     * 换来的是"任何新调用点都得先想清楚自己在哪条协程上读库"。
+     * **但代价不是零**，而且只落在开机广播那一路：[ensureScheduled] 把活扔进挂在 `object` 上的 [scope]
+     * 之后立刻返回，[com.studykit.receiver.BootCompletedReceiver] 没有 `goAsync()`，于是进程若在
+     * `applyInterval` 真正排完之前被回收，这次重挂会**静默丢掉**——连日志都不会有，因为那行 `Log`
+     * 跟着进程一起没了（与上面 ① 的"捕获必须落 ERROR"是两种失效：那是记下来的降级，这是没记下来的丢失）。
+     * 接受它，是因为周期任务本来就由 WorkManager 持久化并跨重启留存，丢的那一次最多是"周期与相位没刷新"，
+     * 下一次冷启动由 [observeAndApply] 补回来，用户不会因此收不到提醒。**软失败，不是零成本。**
+     * 真要修是 `goAsync()` + 完工前不释放广播令牌那一类改动，属于**开机路径的缺陷类**，不在本任务范围，这里不动。
      * 那次读库自己也被包了一层（见 [modalReviewHour]），纪律与上面 ② 同一条：
      * 它是这条链上新加的一次库访问，绝不能成为逃出 `Dispatchers.Default` 的未捕获异常。
      */
