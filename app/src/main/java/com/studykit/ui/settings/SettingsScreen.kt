@@ -54,10 +54,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.studykit.BuildConfig
+import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
 import com.studykit.data.memory.ReviewStrictness
+import com.studykit.optimize.SynthLog
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppButtonTone
 import com.studykit.ui.components.AppCard
@@ -642,6 +644,24 @@ fun SettingsScreen(
                     clip.setPrimaryClip(android.content.ClipData.newPlainText("param_snapshot", snap.params))
                 },
             )
+            // 仅 `-PseedSynth=true` 的本地构建：review_log 初值为空，一键灌合成数据把校准链路端到端跑通看报告。
+            // 出现条件再叠一条 `reviewRatingCount == 0`：这张表 append-only、没有反悔路径，
+            // 手抖点第二次会把同一份合成记录再铺一遍（1500 卡 ≈ 上万行），所以有记录了就收起入口。
+            if (BuildConfig.SEED_SYNTH_LOG && reviewRatingCount == 0) {
+                HorizontalDivider(color = colors.divider)
+                AppButton(
+                    text = "灌合成数据(1500卡)·仅本地构建",
+                    onClick = {
+                        calibrateScope.launch {
+                            val dao =
+                                (context.applicationContext as StudyKitApp).container.database.reviewLogDao()
+                            withContext(Dispatchers.IO) { SynthLog.seedForDebug(dao) }
+                            viewModel.refreshCalibrationData()
+                        }
+                    },
+                    modifier = Modifier.testTag("debug_seed_synth_log"),
+                )
+            }
         }
 
         // ── 三、数据管理 ──────────────────────────────────────────
@@ -830,7 +850,8 @@ fun SettingsScreen(
 
         SettingBlock(
             title = "排期算法来源",
-            hint = "「排期内核」里的 FSRS 公式思想有开源实现 py-fsrs（open-spaced-repetition/py-fsrs，MIT 许可）。" +
+            hint = "排期内核跑的是 FSRS-6，参数由自研 Rust 优化器 fsrsjni 在端侧拟合（纯端侧，记录不出设备）；" +
+                "其公式思想有开源实现 py-fsrs（open-spaced-repetition/py-fsrs，MIT 许可）。" +
                 "本应用按自己的口径重写，不声称与 Anki 结果相等。",
         )
 

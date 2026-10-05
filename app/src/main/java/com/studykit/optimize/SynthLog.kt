@@ -12,8 +12,10 @@ import kotlin.random.Random
  * 排下一次复习，产出可直接喂 [LogPacker.pack] 的 [ReviewLog] 行。两大用途：
  *  - **参数恢复测试**（Task 9/10）：用已知 `wTrue` 造数据 → 训练 → 断言能把参数学回来；
  *    这是"优化器真能反推曲线"的唯一硬证据，也是验收门禁的前置回归。
- *  - **debug 真机干跑灌数**：设置页 debug 入口（或 [seedForDebug]）一次性铺 1500 卡假复习记录，
- *    让校准链路在缺少真实记录时也能端到端跑通看报告（真机只 `adb install -r`、不清数据）。
+ *  - **真机干跑灌数**：设置页入口（或 [seedForDebug]）一次性铺 1500 卡假复习记录，
+ *    让校准链路在缺少真实记录时也能端到端跑通看报告。入口只在 `-PseedSynth=true` 的本地构建里出现，
+ *    且 `review_log` 已有记录即收起——这张表 append-only、清库也不删，铺进去的假记录没有反悔路径。
+ *    （v2.9 验收那台机因旧包由另一把 debug 钥匙签，只能卸载重装，见 CHANGELOG 已知边界。）
  *
  * **口径与推理同式**：状态转移逐值走 [FsrsModel]（`initStability`/`initDifficulty`/`recall`/
  * `nextIntervalDays`/`recallStability`/`forgetStability`/`nextDifficulty`），并且**完全对齐
@@ -32,8 +34,8 @@ import kotlin.random.Random
  * 与 Rust `synth.rs` 的差异：本版**不含同天加练**（`same_day_p`）——它会引入 elapsed=0 的行、
  * 干扰 ts 严格升序与召回口径，且 Task 8 的采样契约不需要；如后续要做"同天短期路径"覆盖，再补。
  *
- * Task 11 会接 `CalibrateViewModel`：debug 构建暴露"灌合成数据(1500 卡)"入口并调用 [seedForDebug]
- * 写满 `review_log`，再走校准干跑（只出报告不换核）。
+ * Task 11/12 落地：设置页在 `-PseedSynth=true` 构建里暴露"灌合成数据(1500 卡)"入口并调用 [seedForDebug]
+ * 写满 `review_log`，再走校准（报告只出，换核要另一次显式采纳）。
  */
 object SynthLog {
 

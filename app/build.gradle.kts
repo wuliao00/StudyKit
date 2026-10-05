@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "2.8.0"
+        versionCode = 19
+        versionName = "2.9.0"
         // 端侧 OCR 走 PP-OCRv6（ONNX Runtime Android），每个 ABI 各带一份 libonnxruntime.so
         // （arm64-v8a 约 32MB + armeabi-v7a 约 22.7MB，stored 不压缩）。本仓是**直接发 APK**
         // （GitHub Release / 网盘），不是走应用商店的 per-device split，故只留两个 arm ABI：
@@ -128,6 +128,16 @@ android {
             "boolean",
             "DEMO_SEED",
             "${project.findProperty("demoSeed") == "true"}",
+        )
+        // v2.9 校准链路的「灌合成数据」入口闸门。**不能图省事用 BuildConfig.DEBUG**——理由与
+        // 上面 DEMO_SEED 完全同一条：分发出去的就是 debug 包，那条恒为 true。review_log 是
+        // append-only 且「清空学习数据」不删它，假记录一旦灌进用户机器就永久留着，还能凑满
+        // FsrsGate.MIN_TERMS=1000 让校准有资格「采用新参数」——等于用合成曲线排他的真复习。
+        // 本地验链路：./gradlew assembleDebug -PseedSynth=true
+        buildConfigField(
+            "boolean",
+            "SEED_SYNTH_LOG",
+            "${project.findProperty("seedSynth") == "true"}",
         )
     }
 
