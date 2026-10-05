@@ -20,6 +20,7 @@ import com.studykit.R
 import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.entity.Word
+import com.studykit.data.memory.AlertKind
 import com.studykit.data.memory.DueForecast
 import com.studykit.data.memory.ForecastCfg
 import com.studykit.data.memory.FsrsModel
@@ -80,7 +81,11 @@ internal fun dueRetentionPercent(
 }
 
 /**
- * 通知正文（纯函数）。零的那一类不出现在文案里；两类都为零 ⇒ null，调用方据此**不发通知**。
+ * 通知正文（纯函数）。零的那一类不出现在文案里；两类都为零 ⇒ null。
+ *
+ * 这是**兜底路径**的判据：它为零只说明「今天没有东西躺在到期列表里」，
+ * 而 [ReminderPolicy] 的堆积档说的恰恰是这种情况——所以 null 不等于「不发通知」，
+ * 最终取舍在 [reminderCopy] 里按档位定。
  *
  * 保留率拿不到（[retentionPercent] = null）时整段不提，也不拿 0% 顶上。
  * 那半句主语是"这些单词"：错题没有半衰期字段（`Mistake` 只有 `reviewAt`），
@@ -111,11 +116,32 @@ internal const val FALLBACK_TITLE = "今日复习"
  * 决策为 null（今天练过了 / 没有可信的卡 / 三档都不成立 / 决策那一路读库挂了）时，
  * 退回 [reminderContentText] 的到期直陈。
  *
- * 直陈也是 null（两类到期皆为 0）⇒ 整条返回 null，调用方据此**不发通知**。
- * 这条闸与改动前逐字一致：新档位是升级，不是替换。
+ * 直陈也是 null（两类到期皆为 0）**且决策也是 null** ⇒ 整条返回 null，调用方据此**不发通知**。
+ * 这条与改动前逐字一致：新档位是升级，不是替换。
+ *
+ * ## 零到期日（[nothingDueToday]）按档位放行，不按"有没有东西到期"一刀切
+ * 「两类皆 0 ⇒ 什么都不发」这道老闸是为**直陈**定的：对着一个今天没东西可复习的用户念"0 个单词待复习"
+ * 是纯骚扰。但它一旦也打在决策上就会反过来咬掉两个档：
+ *  - [AlertKind.LOAD_SPIKE] 的语义就是"今天没事做、明天要堆起来"（[com.studykit.data.memory.DueForecast]
+ *    的类注释：「今天没练」会如实变成「明天堆积」）。**今天为空正是它唯一要开口的场合**，
+ *    一刀切等于把三档里唯一为闲置用户设计的那档永久静音。
+ *  - [AlertKind.RETENTION_DROP] 同理不总在该闸后面：跌破判定按 `fsrs_stability` 反解，而闸看的那两条
+ *    SQL 口径都比它窄——词要 `next_review_at > 0 AND next_review_at <= now`（落库排期，切内核/改严格度
+ *    之后不跟反解值同步），错题还要 `review_at IS NOT NULL`（v2.7 起那列是"手动覆盖，可空"，从没手动
+ *    排过的错题进不了到期列表却就在预测卡集里），而书摘（第三张表）**根本不喂给这道闸**。
+ *    于是"只有书摘跌破线"、"只有没手动排过的错题跌破线"这类运行，两类皆 0 而跌破档成立——照样被闸打死。
+ *  - [AlertKind.DUE_NOW] 维持原行为：它按定义是"有东西到期"的直陈升级版，
+ *    列表为空时那句"N 项今天到期"是在催一批 App 里找不到的人。
+ * 所以这里只把 DUE_NOW 那一档留在闸后，另两档放行。
  */
-internal fun reminderCopy(decision: ReminderDecision?, fallbackText: String?): ReminderCopy? = when {
-    decision != null -> ReminderCopy(decision.headline, decision.body)
+internal fun reminderCopy(
+    decision: ReminderDecision?,
+    fallbackText: String?,
+    nothingDueToday: Boolean,
+): ReminderCopy? = when {
+    decision != null && !(nothingDueToday && decision.kind == AlertKind.DUE_NOW) ->
+        ReminderCopy(decision.headline, decision.body)
+
     fallbackText != null -> ReminderCopy(FALLBACK_TITLE, fallbackText)
     else -> null
 }
@@ -165,7 +191,10 @@ internal fun delayMillisToHour(hour: Int, nowMs: Long, zone: ZoneId): Long {
  * 查询「已到期待复习的错题」与「今日到期单词」，有则发通知，点击打开应用。
  *
  * 通知那两行字先问 [ReminderPolicy]（v3.0-A Task 4）：跌破线 > 堆积 > 到期，三档都不成立
- * （或今天已经练过词）才退回 [reminderContentText] 的到期直陈——两类皆 0 时照旧不发。
+ * （或今天已经练过词）才退回 [reminderContentText] 的到期直陈——两类皆 0 时直陈为空，照旧不发。
+ * **今日没有到期内容不等于不发**：[AlertKind.LOAD_SPIKE]（今天闲、明天堆积）与
+ * [AlertKind.RETENTION_DROP]（跌破线，含只存在于书摘表的那些卡）就是为那种日子准备的，
+ * 只有 [AlertKind.DUE_NOW] 留在旧闸后面，取舍见 [reminderCopy]。
  * 决策那一路要多读三张表的快照，读挂了也只退回直陈（见 [forecastDecision]）。
  * 直陈里单词那一档带 [dueRetentionPercent] 算出的整体预测保留率（取不到就整段不提）。
  */
@@ -205,10 +234,12 @@ class ReminderWorker(
         val dueMistakes = container.mistakeRepository.getDueForReview(now)
         val dueWords = container.wordRepository.getDueForReview(now)
 
-        if (dueMistakes.isEmpty() && dueWords.isEmpty()) {
-            Log.i(TAG, "无到期复习内容，本次不发通知")
-            return Result.success()
-        }
+        // 今日两类皆 0 —— 这只是一个**事实**，不是"不发"的决定（v3.0-A/T4 的这处修复）。
+        // 改动前这里直接 `return Result.success()`，于是 LOAD_SPIKE 唯一要开口的场合（今天没东西
+        // 到期、明天堆积）连同"只有书摘跌破线"的那批 RETENTION_DROP 一起被静音。发不发由
+        // [reminderCopy] 按档位定：跌破与堆积放行，到期直陈维持旧的零到期日静默。
+        // 代价说清楚：零到期日现在也会走一遍设置与三张表的快照（每 6 小时一次），换的是那两档能说话。
+        val nothingDueToday = dueMistakes.isEmpty() && dueWords.isEmpty()
 
         // Android 13+ 未授予通知权限则跳过（代码兼容；渠道与权限由启动流程保证）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -251,10 +282,14 @@ class ReminderWorker(
                 KernelHub.forId(settings.schedulingKernel),
             ),
         )
-        // 直陈为 null 只可能是两类皆 0 —— 上面那道闸已经拦过一遍，这里再守一次是契约不是重复：
-        // 谁哪天把那道闸挪走，这一行仍然不会发一条空通知。
-        val copy = reminderCopy(decision, fallbackText)
-            ?: return Result.success().also { Log.i(TAG, "到期量为 0 且没有可催的档，本次不发通知") }
+        // "不发"在这里收口，两种情形（逐条见 [reminderCopy] 的零到期日规则）：
+        //  ① 两类皆 0 且没有决策——旧行为，一字未改；
+        //  ② 两类皆 0 且决策是 DUE_NOW——列表本就空，那句"N 项今天到期"催的是 App 里找不到的一批人。
+        // 跌破线 / 堆积这两档在 ①② 之外照发：那正是它们存在的理由。
+        val copy = reminderCopy(decision, fallbackText, nothingDueToday) ?: return Result.success().also {
+            val reason = if (decision?.kind == AlertKind.DUE_NOW) "到期直陈档今日无到期内容" else "今日无可催的档"
+            Log.i(TAG, "$reason，本次不发通知")
+        }
 
         val openIntent = PendingIntent.getActivity(
             context,

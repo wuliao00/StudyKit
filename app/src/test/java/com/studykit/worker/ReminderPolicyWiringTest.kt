@@ -29,6 +29,8 @@ import org.junit.Test
  * [reminderCopy] 断言的是 [com.studykit.data.memory.ReminderDecision.headline] /
  * [com.studykit.data.memory.ReminderDecision.body] **两个字段各自落到哪一行**，
  * 不是把它们拼成一个字符串再比（拼串是断言接缝，产品里没有那个形状）。
+ * 它还收一个 `nothingDueToday`：旧的那道「两类皆 0 ⇒ 什么都不发」闸现在按档位放行
+ * （跌破 / 堆积照发，只有 DUE_NOW 留在闸后），所以这一组断言同时是"一刀切被装回去"的哨兵。
  *
  * 夹具一律 [ZoneOffset.UTC] 并**显式传 now**，不依赖测试机的默认时区。
  */
@@ -114,7 +116,7 @@ class ReminderPolicyWiringTest {
         val decision = ReminderDecision(
             AlertKind.LOAD_SPIKE, "明天会堆到 42 项", "今天先清一点。",
         )
-        val copy = reminderCopy(decision, fallbackText = "5 个单词待复习，打开 StudyKit 开始复习")!!
+        val copy = reminderCopy(decision, fallbackText = "5 个单词待复习，打开 StudyKit 开始复习", nothingDueToday = false)!!
         assertEquals("明天会堆到 42 项", copy.title)
         assertEquals("今天先清一点。", copy.text)
     }
@@ -122,7 +124,7 @@ class ReminderPolicyWiringTest {
     /** 决策为 null（今天练过了 / 没有可信的卡 / 三档都不成立）⇒ 老文案原样出去，标题仍是那句「今日复习」。 */
     @Test
     fun `没有决策时退回既有直陈文案`() {
-        val copy = reminderCopy(null, fallbackText = "3 道错题到期，打开 StudyKit 开始复习")!!
+        val copy = reminderCopy(null, fallbackText = "3 道错题到期，打开 StudyKit 开始复习", nothingDueToday = false)!!
         assertEquals(FALLBACK_TITLE, copy.title)
         assertEquals("3 道错题到期，打开 StudyKit 开始复习", copy.text)
     }
@@ -130,7 +132,104 @@ class ReminderPolicyWiringTest {
     /** 兜底文案为 null（两类到期皆 0）且没有决策 ⇒ 不发通知，这条闸与改动前一致。 */
     @Test
     fun `决策与兜底都没有时不发通知`() {
-        assertNull(reminderCopy(null, fallbackText = null))
+        assertNull(reminderCopy(null, fallbackText = null, nothingDueToday = true))
+    }
+
+    // ── 零到期日的按档位放行（这组是"一刀切闸被重新装回去"的专用哨兵）──────────
+    //
+    // 上一条 commit 在 `doWork()` 里保留的旧闸是「两类到期皆为 0 ⇒ 什么都不发」，它打在**所有**档位上。
+    // 现在的形状是：那个事实以 `nothingDueToday` 传进 [reminderCopy]，只有 DUE_NOW 留在闸后。
+    // 谁把一刀切装回去（无论装在 `reminderCopy` 里还是装在 `doWork()` 里但没同时改这里），
+    // 下面前两条立刻红。
+
+    /**
+     * 「今天没东西到期、明天堆积」是 [AlertKind.LOAD_SPIKE] 的靶心情形——不是边角案例。
+     * 零到期日把它静音等于三档里唯一为闲置用户设计的那档永远不开口。
+     */
+    @Test
+    fun `零到期日的堆积档照发`() {
+        val decision = ReminderDecision(AlertKind.LOAD_SPIKE, "明天会堆到 42 项", "今天先清一点。")
+        val copy = reminderCopy(decision, fallbackText = null, nothingDueToday = true)
+        requireNotNull(copy)
+        assertEquals("明天会堆到 42 项", copy.title)
+        assertEquals("今天先清一点。", copy.text)
+    }
+
+    /**
+     * [AlertKind.RETENTION_DROP] 同样不能被零到期日打死：跌破判定按 `fsrs_stability` 反解，
+     * 而那道闸读的两条 SQL 更窄（书摘压根不在里面），所以「两类皆 0 但确有卡跌破线」是真会发生的状态。
+     */
+    @Test
+    fun `零到期日的跌破档照发`() {
+        val decision = ReminderDecision(AlertKind.RETENTION_DROP, "有 3 条记忆已经过了线", "现在回想起来会吃力，补一次能把它拉回去。")
+        val copy = reminderCopy(decision, fallbackText = null, nothingDueToday = true)
+        requireNotNull(copy)
+        assertEquals("有 3 条记忆已经过了线", copy.title)
+        assertEquals("现在回想起来会吃力，补一次能把它拉回去。", copy.text)
+    }
+
+    /**
+     * [AlertKind.DUE_NOW] 按定义是"有东西到期"，零到期日维持旧行为不发——
+     * 那句「N 项今天到期」对着两个列表都空的用户是在催一批他们在 App 里找不到的卡。
+     */
+    @Test
+    fun `零到期日的到期档维持不发`() {
+        val decision = ReminderDecision(AlertKind.DUE_NOW, "2 项今天到期", "按现在的状态，这些还来得及。")
+        assertNull(reminderCopy(decision, fallbackText = null, nothingDueToday = true))
+    }
+
+    /** 反向哨兵：闸不许被顺手扩到"有到期也不发"——DUE_NOW 在非零到期日照发。 */
+    @Test
+    fun `有到期内容时到期档照发`() {
+        val decision = ReminderDecision(AlertKind.DUE_NOW, "2 项今天到期", "按现在的状态，这些还来得及。")
+        val copy = reminderCopy(decision, fallbackText = "2 个单词待复习，打开 StudyKit 开始复习", nothingDueToday = false)
+        requireNotNull(copy)
+        assertEquals("2 项今天到期", copy.title)
+        assertEquals("按现在的状态，这些还来得及。", copy.text)
+    }
+
+    /** 零到期日 + 决策读挂了（decision 为 null）：兜底直陈也是 null，照旧不发——旧行为一字未动。 */
+    @Test
+    fun `零到期日且没有决策时不发通知`() {
+        assertNull(reminderCopy(null, fallbackText = reminderContentText(0, 0, null), nothingDueToday = true))
+        assertNull(reminderContentText(0, 0, null))
+    }
+
+    /**
+     * 端到端的"闲置用户"链路：装配 → 预测 → 决策 → 文案，全程**没有任何东西到期**。
+     *
+     * 夹具：10 张 S=10 天、已流逝 9 天的词卡（`intervalDays(w, 10, 0.9) ≈ 10.0`，所以今天没到期、
+     * 跌破线（第 19.06 天）更远未过），到期事件整批落在明天；`newPerDay = 1` 让其余天的基线只有约 2.5 项。
+     * 于是负荷带是「明天 12 项 vs 平时约 3 项」——1.5 倍门槛远超，堆积档成立。
+     * 兜底文案用真实的 [reminderContentText] 现算（0/0 ⇒ null），为的是把"这条通知没有任何直陈可退回"
+     * 也一并钉住：它只能在堆积档上发出去。
+     */
+    @Test
+    fun `今天无到期但明天堆积时从决策走到文案`() {
+        val cards = ForecastCards.of(
+            words = List(10) { overdueRow(lastReviewAt = nowMs - 9 * dayMs) },
+            mistakes = emptyList(),
+            excerpts = emptyList(),
+            now = nowMs,
+        ).toForecastCards()
+        val bands = DueForecast.forecast(
+            cards,
+            ForecastCfg(horizonDays = 14, retention = 0.9, newPerDay = 1),
+            w = FsrsModel.DEFAULT_PARAMS,
+        )
+        val decision = ReminderPolicy.decide(
+            cards = cards, bands = bands, retention = 0.9, todayReviewed = false,
+            w = FsrsModel.DEFAULT_PARAMS,
+        )
+        requireNotNull(decision)
+        assertEquals(AlertKind.LOAD_SPIKE, decision.kind)
+        // 没有任何东西到期 ⇒ 兜底为 null ⇒ 能不能发出去全看档位放行那一支
+        val fallbackText = reminderContentText(mistakeCount = 0, wordCount = 0, retentionPercent = null)
+        assertNull(fallbackText)
+        val copy = reminderCopy(decision, fallbackText, nothingDueToday = true)
+        requireNotNull(copy)
+        assertEquals(decision.headline, copy.title)
+        assertEquals(decision.body, copy.text)
     }
 
     /**
@@ -163,7 +262,7 @@ class ReminderPolicyWiringTest {
             w = FsrsModel.DEFAULT_PARAMS,
         )
         requireNotNull(decision)
-        val copy = reminderCopy(decision, fallbackText = "1 个单词待复习，打开 StudyKit 开始复习")!!
+        val copy = reminderCopy(decision, fallbackText = "1 个单词待复习，打开 StudyKit 开始复习", nothingDueToday = false)!!
         assertEquals(AlertKind.RETENTION_DROP, decision.kind)
         assertEquals(decision.headline, copy.title)
         assertEquals(decision.body, copy.text)
@@ -188,7 +287,7 @@ class ReminderPolicyWiringTest {
             w = FsrsModel.DEFAULT_PARAMS,
         )
         assertNull(decision)
-        val copy = reminderCopy(decision, fallbackText = "1 个单词待复习，打开 StudyKit 开始复习")!!
+        val copy = reminderCopy(decision, fallbackText = "1 个单词待复习，打开 StudyKit 开始复习", nothingDueToday = false)!!
         assertEquals(FALLBACK_TITLE, copy.title)
     }
 
