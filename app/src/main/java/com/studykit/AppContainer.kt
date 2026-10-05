@@ -11,6 +11,8 @@ import com.studykit.data.repository.ReviewLogRepository
 import com.studykit.data.repository.SettingsRepository
 import com.studykit.data.repository.WordListRepository
 import com.studykit.data.repository.WordRepository
+import com.studykit.optimize.FsrsTrainer
+import com.studykit.optimize.NativeFsrsTrainer
 
 /**
  * 手动依赖注入容器：持有数据库与全部仓储实例。
@@ -46,4 +48,12 @@ class AppContainer(context: Context) {
      * 只持有 append-only 的 [ReviewLogDao]，没有改历史的路径（DAO 那侧由 `ReviewLogDaoTest` 反射钉死）。
      */
     val reviewLogRepository: ReviewLogRepository = ReviewLogRepository(database.reviewLogDao())
+
+    /**
+     * 端侧优化器的**训练接缝**（v2.9 Task 11）：`FsrsNative` 那两个 `external fun` 的唯一入口。
+     *
+     * 无状态，所以整个进程一份就够；[com.studykit.ui.optimize.CalibrateViewModel] 只认
+     * [FsrsTrainer] 接口，单测里换成假实现就能把护栏逐条钉住（本仓无 Hilt，注入就停在这一层）。
+     */
+    val fsrsTrainer: FsrsTrainer = NativeFsrsTrainer()
 }

@@ -172,6 +172,14 @@ data class AppSettings(
      * "垃圾值只让那一项退回默认"同构，只是这里的默认是 null 而非某个具体值。
      */
     val fsrsActiveParams: DoubleArray? = null,
+    /**
+     * 上一次「充电 + 空闲」干跑校准留下的**报告文本**（v2.9 计划 Task 11）。
+     *
+     * **只记不判**：与 [lastDictFailure] 同一口径——它只是给人看的一行诊断（训练器不可用、
+     * 数据不足、门禁拒绝理由、或一份可以采纳的报告），不参与任何调度与排期算术。
+     * 默认空串 = 从没跑过；[com.studykit.ui.optimize.CalibrateWorker] 每跑一次覆写一次。
+     */
+    val lastCalibrateReport: String = "",
 ) {
 
     /** 主题三态落到"这次构图用不用深色"。[systemDark] 由调用方传 `isSystemInDarkTheme()`。 */
@@ -216,6 +224,8 @@ data class AppSettings(
         KEY_EXCERPT_TIP_SEEN to excerptTipSeen.toString(),
         // 活跃参数：非 null 才拼串；null 写空串，fromMap 遇空串/脏串一律退回 null
         KEY_FSRS_ACTIVE_PARAMS to (fsrsActiveParams?.joinToString(",") ?: ""),
+        // 干跑报告：只记不判的诊断文本，口径同 KEY_DICT_FAILURE
+        KEY_CALIBRATE_REPORT to lastCalibrateReport,
     )
 
     companion object {
@@ -249,6 +259,7 @@ data class AppSettings(
         const val KEY_CHAPTER_TIP_SEEN = "chapter_tip_seen"
         const val KEY_EXCERPT_TIP_SEEN = "excerpt_tip_seen"
         const val KEY_FSRS_ACTIVE_PARAMS = "fsrs_active_params"
+        const val KEY_CALIBRATE_REPORT = "last_calibrate_report"
 
         /** 内核 id 的白名单；不在表内的值一律回默认——设置页 UI 也只画这两项 */
         val KERNEL_IDS = setOf("FSRS", "HALF_LIFE")
@@ -358,6 +369,8 @@ data class AppSettings(
                         if (vals.any { it == null }) null else DoubleArray(vals.size) { vals[it]!! }
                     }
                 } ?: defaults.fsrsActiveParams,
+                // 干跑报告：缺键退回默认（空串 = 从没跑过）；超长掐掉，口径同 lastDictFailure
+                lastCalibrateReport = map[KEY_CALIBRATE_REPORT]?.take(400) ?: defaults.lastCalibrateReport,
             )
         }
     }

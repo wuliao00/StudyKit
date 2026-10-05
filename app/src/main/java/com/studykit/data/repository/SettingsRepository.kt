@@ -37,6 +37,14 @@ class SettingsRepository(private val dao: AppSettingDao) {
     /** 只记不判：诊断文本，设置页原样展示 */
     suspend fun recordDictFailure(message: String) = update { it.copy(lastDictFailure = message.take(400)) }
 
+    /**
+     * 只记不判：写入上一次「充电 + 空闲」校准干跑的报告文本（v2.9 Task 11）。
+     *
+     * 超长由 [AppSettings.fromMap] 那一侧的 `take(400)` 兜住，这里先掐一次，免得一次堆栈把设置页撑坏。
+     */
+    suspend fun recordCalibrateReport(message: String) =
+        update { it.copy(lastCalibrateReport = message.take(400)) }
+
     /** 清空即回到默认 —— [AppSettings.fromMap] 对缺键取默认，所以不需要逐个键写回默认值 */
     suspend fun resetToDefaults() = dao.clearAll()
 }

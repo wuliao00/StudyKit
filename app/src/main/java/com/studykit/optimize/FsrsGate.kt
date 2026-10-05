@@ -309,6 +309,38 @@ object FsrsGate {
         return if (soft.isEmpty()) Decision.Adopt else Decision.Manual(soft + sliceNotes)
     }
 
+    /** 首评稳定度的四个档位（rating 1..4 → `w[0..3]`），常识校验就看这一小段。 */
+    private val S0_LABELS = listOf("Again", "Hard", "Good", "Easy")
+
+    /**
+     * **常识校验**（文档 §阶段5「护栏兜底」里那条最便宜的）：首评稳定度必须随评分单调不降，
+     * 即 `S0(Again) ≤ S0(Hard) ≤ S0(Good) ≤ S0(Easy)`。因为 [FsrsModel.initStability] 就是
+     * 直接取 `w[G-1]`，这四个数一旦错序，含义是「按 Again 反而记得更久」——用户按错反而被罚得更轻，
+     * 排期会把人往错误的按钮上推。
+     *
+     * 为什么门禁的 loss 门槛拦不住它：训练器优化的是**验证集拟合**，一段小样本能把这四档拟合反；
+     * loss 只要降了就会一路 Adopt，而这条序**不参与 loss**，所以必须单独查。
+     *
+     * 返回 null = 顺序成立（或没法判）；非 null = 一句能说清违反了哪一档的人话，
+     * 调用方（[com.studykit.ui.optimize.CalibrateViewModel]）据此把结论按 [Decision.Reject] 处理。
+     *
+     * 两处刻意**不**管：
+     *  - 数组长度 ≠ [FsrsModel.NP]：那是残缺向量，交给 [decide] 的"数值异常"与设置层的脏值口径，
+     *    本函数只在长度够读这四档时才发言；
+     *  - 四档里有 NaN/Inf：也交给"数值异常"（[TrainReport.hasNonFiniteParams] 那条），免得同一次失败给出两条理由。
+     */
+    fun s0OrderViolation(w: DoubleArray): String? {
+        if (w.size < FsrsModel.NP) return null
+        val s0 = (0 until S0_LABELS.size).map { w[it] }
+        if (s0.any { !it.isFinite() }) return null
+        for (i in 0 until S0_LABELS.size - 1) {
+            if (s0[i] > s0[i + 1]) {
+                return "首评稳定性顺序不成立：S0(${S0_LABELS[i]})=${fmt3(s0[i])} > S0(${S0_LABELS[i + 1]})=${fmt3(s0[i + 1])}"
+            }
+        }
+        return null
+    }
+
     /**
      * 回测：把真实日志按 [params] **重放**一遍，看换核后平均会排多远、平均预测保留率是多少。
      *
@@ -349,4 +381,7 @@ object FsrsGate {
     private fun pct1(v: Float): String = String.format(Locale.US, "%.1f", v)
 
     private fun signedPct0(v: Float): String = String.format(Locale.US, "%+.0f", v)
+
+    /** 首评稳定度是"天数"量纲，三位小数够看清错序，又不会把一长串浮点尾差印进人话里。 */
+    private fun fmt3(v: Double): String = String.format(Locale.US, "%.3f", v)
 }

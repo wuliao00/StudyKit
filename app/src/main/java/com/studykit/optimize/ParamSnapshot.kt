@@ -42,5 +42,15 @@ data class ParamSnapshot(
     companion object {
         /** 只保留最近这么多份快照：够回滚几步，又不让表无限膨胀（Task 11 护栏）。 */
         const val MAX_KEEP = 5
+
+        /**
+         * 写快照时盖上的**训练/推理引擎版本**（Task 11）。
+         *
+         * 口径：`v` + FSRS 主版本 + `.` + 参数个数，于是 "v6.21" 读作「21 参的 v6 引擎」。
+         * 日后公式演进（改 `FsrsModel` 里任何一个式子或参数个数）必须同步改这一串，
+         * 否则旧快照会被当成可以拿新内核重放的东西——而 [params] 里那 21 个数对新公式毫无意义。
+         * 测试侧（`ParamSnapshotDaoTest` / `CalibrateGuardrailTest`）引用同一个常量，不许两处各自写字面量。
+         */
+        const val ENGINE_VER = "v6.21"
     }
 }
