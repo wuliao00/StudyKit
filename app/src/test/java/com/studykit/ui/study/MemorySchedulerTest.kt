@@ -1,8 +1,8 @@
 package com.studykit.ui.study
 
 import com.studykit.data.memory.ExamEntry
-import com.studykit.data.memory.ExamPolicy
 import com.studykit.data.memory.MemoryModel
+import com.studykit.data.memory.MemoryParams
 import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.MemoryState
 import com.studykit.data.memory.ReviewStrictness
@@ -54,6 +54,13 @@ class MemorySchedulerTest {
         assertEquals(6.0, soon.maxIntervalDays, 1e-6)
     }
 
+    /**
+     * 手动档压过考试推导出的 target —— 只在**窗外**成立。
+     *
+     * 300 天后考、ramp 窗 30 天，所以这一格读的是没被抬过的 base。窗内手动档会跟着 ramp 往上走
+     * （只抬不降，见下面 `manual 严格度也参与 ramp` 那一格）；把这条测试挪进窗口里它会红，
+     * 那不是 bug，是这句话的字面范围。
+     */
     @Test
     fun `manual strictness overrides the exam-derived target`() {
         val exam = examIn(300)
@@ -152,6 +159,26 @@ class MemorySchedulerTest {
 
     // ── v3.0-B T3：per-subject 调度 ────────────────────────────────────────
 
+    /**
+     * `params` 不是摆设：两个分支都要认它。
+     *
+     * 这一格盯的是"传进去的一份非默认参数会不会被静默丢掉" —— 丢掉不会崩、不会红别的测试，
+     * 只会让校准器训练出来的参数又走回发布默认值那条老路（v2.9 的 calibrated 参数就是这么丢的）。
+     */
+    @Test
+    fun `自定义 params 在有无考试两个分支都算数`() {
+        val params = MemoryParams(defaultTargetRecall = 0.72, absoluteMaxIntervalDays = 40.0)
+        val noExam = MemoryScheduler.forSubject(ReviewStrictness.AUTO, emptyList(), "数学", today, params)
+        assertEquals(0.72, noExam.targetRecall, 1e-9)
+        // 默认保持期 180 天的 1/5 = 36 天，没顶到 absoluteMaxIntervalDays=40，所以这里读的是 36
+        assertEquals(36.0, noExam.maxIntervalDays, 1e-9)
+        // 顶到上限的那一档：窗外的远考试给 300 天 -> 60 天 -> 夹到 40
+        val far = MemoryScheduler.forSubject(
+            ReviewStrictness.AUTO, listOf(exam(300L, window = 0)), "数学", today, params,
+        )
+        assertEquals(40.0, far.maxIntervalDays, 1e-9)
+    }
+
     private fun exam(dayOffset: Long, subjects: List<String> = emptyList(), sprint: Double = 0.95, window: Int = 30) =
         ExamEntry(name = "考", epochDay = today.plusDays(dayOffset).toEpochDay(), subjects = subjects, rSprint = sprint, windowDays = window)
 
@@ -197,9 +224,11 @@ class MemorySchedulerTest {
         val relaxed = MemoryScheduler.forSubject(
             ReviewStrictness.RELAXED, listOf(exam(0L, sprint = 0.99, window = 30)), "数学", today,
         )
-        assertEquals(ExamPolicy.MAX_EFFECTIVE_RETENTION, relaxed.targetRecall, 1e-9)
-        // RELAXED base=0.80，left=0 -> 冲刺 0.99 -> 封顶 0.97。间隔上限仍按剩余天数（此处只剩 1 天 -> 地板 3 天）
-        assertEquals(MemoryModel.maxIntervalDaysFor(1), relaxed.maxIntervalDays, 1e-9)
+        // 期望值写死字面量而不是读 MAX_EFFECTIVE_RETENTION / maxIntervalDaysFor(1)：
+        // 这两处读的若不是同一个生产常量，"闸门"就会跟着常量一起移，测试永远红不了。
+        assertEquals(0.97, relaxed.targetRecall, 1e-9)
+        // RELAXED base=0.80，left=0 -> 冲刺 0.99 -> 封顶 0.97。间隔上限仍按剩余天数（当天夹到 1 天 -> 地板 3 天）
+        assertEquals(3.0, relaxed.maxIntervalDays, 1e-9)
     }
 
     @Test
@@ -215,8 +244,9 @@ class MemorySchedulerTest {
         val exams = listOf(exam(100L, subjects = listOf("英语"), window = 30), exam(20L, subjects = listOf("数学"), window = 30))
         val math = MemoryScheduler.forSubject(ReviewStrictness.AUTO, exams, "数学", today)
         val eng = MemoryScheduler.forSubject(ReviewStrictness.AUTO, exams, "英语", today)
-        assertEquals(MemoryModel.maxIntervalDaysFor(20), math.maxIntervalDays, 1e-9)
-        assertEquals(MemoryModel.maxIntervalDaysFor(100), eng.maxIntervalDays, 1e-9)
+        // 4.0 = 20 天的 1/5，20.0 = 100 天的 1/5（写死数字，别让断言与实现读同一个函数）
+        assertEquals(4.0, math.maxIntervalDays, 1e-9)
+        assertEquals(20.0, eng.maxIntervalDays, 1e-9)
     }
 
     /**

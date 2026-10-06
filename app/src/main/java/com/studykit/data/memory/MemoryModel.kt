@@ -344,6 +344,12 @@ object MemoryScheduler {
      * （经验带 ≈1/5 保持期）。目标保留率变严会自动让排出的间隔变短，不需要再削上限；
      * 两头一起收等于对同一个约束罚两次。
      *
+     * 多场考试同时命中一个学科时，两边各取各的：**rate 取最紧的那一场**（`effectiveRetention` 内部
+     * 逐场算完取 max），**horizon 取最近的那一场**（`nearestExamDaysLeft` 取 min）。这两件不总是
+     * 同一场 —— 于可能出现"远的那场贡献了冲刺率、近的那场贡献了间隔上限"的配对。可接受，
+     * 因为配对只往严的方向偏、且封顶 0.97，而反过来（rate 与 horizon 都取最近那场）会让
+     * 一门外科考试在窗内时把这科放松，那才是错的读法。
+     *
      * horizon 上那道 `coerceAtLeast(1)` 是必须的，不是防御性装饰：[ExamPolicy.nearestExamDaysLeft]
      * 考试当天返回 0，而 [MemoryModel.targetRecallFor] 与 [MemoryModel.maxIntervalDaysFor] 拿到 0
      * 都走"无信息"分支（当作没有考试，后者直接给 365 天上限）。0 天原样喂过去，症状是**最紧急的
