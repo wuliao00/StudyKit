@@ -7,7 +7,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
 
 /**
  * 一次自我评分。三档是墨墨那套（认识 / 模糊 / 忘记），
@@ -281,6 +280,9 @@ data class Scheduling(val targetRecall: Double, val maxIntervalDays: Double)
  *
  * 单独抽出来是因为这一步最容易出错（考试日期过期、时区、空值），
  * 而它一旦错了，表现是"所有人的复习量都暴涨"这种全局症状。
+ *
+ * v3.0-B 起有两个入口：[forSettings]（全局口径，一个日期）与 [forSubject]（按学科，考试清单）。
+ * **算术只住在 [forSubject] 一处** —— 前者摊成一场全学科考试后分派过去，两边不可能各说一套。
  */
 object MemoryScheduler {
 
@@ -294,6 +296,26 @@ object MemoryScheduler {
     )
 
     /**
+     * 全局口径：取「最近那场考试」算一份 `Scheduling`（不看学科）。
+     *
+     * 签名一字不改 —— 它今天被 4 个调用点用（学习首页排期初始化、统计预测、复习提醒 worker，
+     * 以及错题侧的旧路径），那三处聚合视图**本来就只有一个数字**，不该按学科分裂。
+     * 实现收成分派到 [forSubject]：两个入口共用一套算术，杜绝"两处各说一套"。
+     *
+     * 单个日期在这里摊成一场**全学科**考试（`subjects` 空，窗口与冲刺值取 [ExamEntry] 的默认
+     * 30 天 / 0.95），与 `AppSettings.examList` 对旧键的合成同一个形状 —— 两处形状不一样，
+     * 就是这套改造最忌讳的"两个入口各说一套"。
+     *
+     * 摊过去之后有两处与旧算式不同，都是 v3.0-B T3 有意改的，不是漏网：
+     *  1. 考试**当天**：旧代码 `days <= 0` 把它当作"没填"（0.9 / 36 天），现在是最紧的一档
+     *     （1 天 horizon → 间隔地板 3 天，retention 由 ramp 打满）。整套功能要的就是"临考越来越严"，
+     *     旧那天的宽松是"只有一个全局日期、背后没有 ramp"的副作用，不是设计。
+     *  2. **手动档 + 窗口内**：旧代码对手动档完全不看考试日；现在 ramp 在临窗 30 天里把
+     *     `RELAXED`(0.80) / `STANDARD`(0.88) 线性抬向冲刺值。只抬不降，`AUTO` 与 `STRICT` 在这段
+     *     里 base 本就等于 0.95，数值分毫不动。
+     * 其余各档逐值不变：没填（`examEpochDay <= 0`）、已过期、窗口外（剩余 >30 天）都不进 ramp，
+     * 而 horizon 与旧算式同一个天数（由 [ExamPolicy.nearestExamDaysLeft] 给出，不再自己减日期）。
+     *
      * @param examEpochDay `AppSettings.examEpochDay`，0 表示没填
      * @param today        今天的本地日期（由调用方给，测试里可注入）
      */
@@ -303,23 +325,51 @@ object MemoryScheduler {
         today: LocalDate,
         params: MemoryParams = MemoryParams(),
     ): Scheduling {
+        val exams = if (examEpochDay > 0L) listOf(ExamEntry(name = ExamEntry.DEFAULT_NAME, epochDay = examEpochDay)) else emptyList()
+        return forSubject(strictness = strictness, exams = exams, subject = null, today = today, params = params)
+    }
+
+    /**
+     * v3.0-B：某个学科这一轮生效的调度参数 = 「考试 horizon」+「临窗 ramp」。
+     *
+     * 三段决定，顺序不许换（`ExamPolicyTest` / `MemorySchedulerTest` 分别钉着）：
+     *  1. **horizon**：这个学科有没有还没考的未来考试（[ExamPolicy.nearestExamDaysLeft]，**含当天**）。
+     *     没有（或 `subject` 传 null 而清单里全是关联学科考试）就退回"要保持半年"那条默认，
+     *     于是**英语不会被数学的考试日拖紧** —— 文档「非关联学科不受影响」的字面落地。
+     *  2. **base**：`manual ?: targetRecallFor(horizon)`，与旧 `forSettings` 同一式子。
+     *  3. **ramp**：[ExamPolicy.effectiveRetention] 在窗口内把 base 线性抬到冲刺值，封顶 0.97。
+     *     只抬不降，所以 `STRICT`（0.95）不会被一场低冲刺值的考试反过来放松。
+     *
+     * `maxIntervalDays` **不进 ramp**：它量的是"这门记忆最多该隔多久"，锚在考试剩余天数上
+     * （经验带 ≈1/5 保持期）。目标保留率变严会自动让排出的间隔变短，不需要再削上限；
+     * 两头一起收等于对同一个约束罚两次。
+     *
+     * horizon 上那道 `coerceAtLeast(1)` 是必须的，不是防御性装饰：[ExamPolicy.nearestExamDaysLeft]
+     * 考试当天返回 0，而 [MemoryModel.targetRecallFor] 与 [MemoryModel.maxIntervalDaysFor] 拿到 0
+     * 都走"无信息"分支（当作没有考试，后者直接给 365 天上限）。0 天原样喂过去，症状是**最紧急的
+     * 那一天反而成为最宽松的一档** —— 复习量在考前爆掉，正是这个功能要修的事。ramp 不受影响：
+     * 它读的是 `exams` 里真实的剩余天数，当天照样打满。
+     */
+    fun forSubject(
+        strictness: ReviewStrictness,
+        exams: List<ExamEntry>,
+        subject: String?,
+        today: LocalDate,
+        params: MemoryParams = MemoryParams(),
+    ): Scheduling {
         val manual = STRICTNESS_TARGET[strictness]
-        val days = if (examEpochDay > 0L) {
-            // 考试已经过了就当作没填：拿过去的日期会算出负保持期，把间隔压成 3 天
-            ChronoUnit.DAYS.between(today, LocalDate.ofEpochDay(examEpochDay)).toInt()
-        } else {
-            0
-        }
-        if (days <= 0) {
-            // 没填/已考完：用默认准确率，但间隔上限仍按"半年保持期"收着，
+        val days = ExamPolicy.nearestExamDaysLeft(subject, today, exams)?.coerceAtLeast(1)
+        if (days == null) {
+            // 没填/已考完/这门科不沾这场考试：用默认准确率，但间隔上限仍按"半年保持期"收着，
             // 否则一个 h=2000 天的老词会被排到一年后，等于永久消失
             return Scheduling(
                 targetRecall = manual ?: params.defaultTargetRecall,
                 maxIntervalDays = MemoryModel.maxIntervalDaysFor(DEFAULT_RETENTION_DAYS, params),
             )
         }
+        val base = manual ?: MemoryModel.targetRecallFor(days, params)
         return Scheduling(
-            targetRecall = manual ?: MemoryModel.targetRecallFor(days, params),
+            targetRecall = ExamPolicy.effectiveRetention(subject, today, exams, base),
             maxIntervalDays = MemoryModel.maxIntervalDaysFor(days, params),
         )
     }
