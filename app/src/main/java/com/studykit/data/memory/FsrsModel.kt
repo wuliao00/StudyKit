@@ -37,6 +37,18 @@ object FsrsModel {
     const val MAX_INTERVAL_FALLBACK = 365.0
     const val TEN_MINUTES_IN_DAYS = 10.0 / 1440.0
 
+    /**
+     * ⛔ **全仓唯一的稳定度夹取**：null/非有限（含 ±Inf 与 NaN）/≤0 一律落到地板
+     * [MIN_STABILITY_FLOOR]，正数封顶 [MAX_STABILITY]。
+     *
+     * 修 v3.0-A T9 之前这段规则有三份镜像（这里、`FsrsKernel` 私有那份、`FsrsModelCore` 私有那份），
+     * 谁单独改都不会被发现；现在三处都直委托本函数，"推理用的夹取""回测用的夹取"
+     * "遗忘曲线用的夹取"结构上是同一个函数。同值性由 `CardRecallCurveTest.稳定度夹取全仓只有一份`
+     * 在 NaN/负/零/超上限四种输入上钉住。
+     */
+    fun sanitizeStability(raw: Double?): Double =
+        if (raw == null || !raw.isFinite() || raw <= 0.0) MIN_STABILITY_FLOOR else raw.coerceAtMost(MAX_STABILITY)
+
     /** v6 把 decay 变成可学习参数 `w[20]`（py-fsrs 默认 0.1542）；`DECAY = −w[20]` */
     fun decay(w: DoubleArray): Double = -w[20]
 

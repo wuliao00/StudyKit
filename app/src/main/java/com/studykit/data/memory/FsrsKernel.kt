@@ -99,8 +99,8 @@ class FsrsKernel(private val w: DoubleArray = FsrsModel.DEFAULT_PARAMS) : Schedu
         )
     }
 
-    private fun sanitizeStability(raw: Double?): Double =
-        if (raw == null || !raw.isFinite() || raw <= 0.0) MIN_STABILITY_FLOOR else raw.coerceAtMost(MAX_STABILITY)
+    /** ⛔ 直委托 [FsrsModel.sanitizeStability]（全仓唯一那份夹取）；这里只留内核内部的调用名。 */
+    private fun sanitizeStability(raw: Double?): Double = FsrsModel.sanitizeStability(raw)
 
     /** 与 MemoryModel.clampDifficulty 同口径：脏值（含 NaN）回 1.0，不会把 NaN 带进公式 */
     private fun sanitizeDifficulty(raw: Double): Double =
@@ -112,8 +112,9 @@ class FsrsKernel(private val w: DoubleArray = FsrsModel.DEFAULT_PARAMS) : Schedu
         val DECAY = -DECAY_PARAM
         /** 由 decay 反推：`0.9^(1/DECAY) − 1`（v5 曾固定 19/81，v6 随 decay 参数化） */
         val FACTOR = 0.9.pow(1.0 / DECAY) - 1.0
-        const val MIN_STABILITY_FLOOR = 0.001 // 对齐 py-fsrs STABILITY_MIN
-        const val MAX_STABILITY = 36500.0
+        /** ⛔ 稳定性地板/封顶只有一份事实源（[FsrsModel]），这里留个别名给既有调用点，别再抄第二份数值 */
+        const val MIN_STABILITY_FLOOR = FsrsModel.MIN_STABILITY_FLOOR
+        const val MAX_STABILITY = FsrsModel.MAX_STABILITY
         /** 非有限上限的兜底：与 MemoryParams.absoluteMaxIntervalDays 同值——"排太远≈永久消失"是在位者解释过的保险丝 */
         const val MAX_INTERVAL_FALLBACK = 365.0
         const val TEN_MINUTES_IN_DAYS = 10.0 / 1440.0

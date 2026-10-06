@@ -186,9 +186,8 @@ object FsrsModelCore : BacktestCore {
         return BacktestState(nextS, FsrsModel.nextDifficulty(w, d, g))
     }
 
-    /** 与 [com.studykit.data.memory.FsrsKernel] 同式的 stability 兜底。 */
-    private fun sanitize(raw: Double): Double =
-        if (!raw.isFinite() || raw <= 0.0) FsrsModel.MIN_STABILITY_FLOOR else raw.coerceAtMost(FsrsModel.MAX_STABILITY)
+    /** ⛔ 直委托 [FsrsModel.sanitizeStability]（全仓唯一那份夹取，与推理/遗忘曲线同一个函数）。 */
+    private fun sanitize(raw: Double): Double = FsrsModel.sanitizeStability(raw)
 }
 
 /**
