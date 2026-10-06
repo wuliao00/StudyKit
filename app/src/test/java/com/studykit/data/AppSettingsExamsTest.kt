@@ -9,9 +9,12 @@ import org.junit.Test
 /**
  * v3.0-B 考试清单的设置层往返。
  *
- * 钉两件事：① 脏值只该让**那一条**退回默认，绝不打垮 `fromMap`（与 `AppSettingsTest` 同一条纪律）；
+ * 钉三件事：① 脏值只该让**那一条**退回默认，绝不打垮 `fromMap`（与 `AppSettingsTest` 同一条纪律）；
  * ② 旧版只有一个 `exam_epoch_day` 的用户，升级后必须看到**一模一样**的行为 ——
- * 所以 `examList` 在清单为空时从旧键合成一场全学科考试，`examEpochDayEffective` 回原值。
+ * 所以 `examList` 在清单为空时从旧键合成一场全学科考试，`examEpochDayEffective` 回原值；
+ * ③ 评审 C4 补的边界闸门：优先级（清单非空时旧键说了不算）、字段级字面量（0.98 / 0 天原样往返、
+ * 缺字段 = 未指定 = 构造默认）、布尔开关**双向**、降序清单 —— 专防「取 first() 而不是 minBy」
+ * 「缺键退到类型零值」这一类实现变异。
  *
  * 沿用 Task 1 立下的约定：**期望值一律写字面量**，不引用 `ExamEntry.DEFAULT_*` 这类生产常量 ——
  * 常量被改时测试会跟着一起改，闸门就形同虚设。双精度那条必须带 delta。
@@ -112,5 +115,73 @@ class AppSettingsExamsTest {
         val s = AppSettings.fromMap(mapOf("exams_json_v9" to "[]"))
         assertTrue(s.exams.isEmpty())
         assertEquals(0, s.examLimitMinutes)
+    }
+
+    // ---- 评审 C4：优先级与边界闸门 ----
+
+    @Test
+    fun `优先级闸门：库里有旧键而非空清单也在时一切以清单为准`() {
+        // 把 examList 改成「优先读 examEpochDay」的实现能骗过上面所有既有用例，这条就是拦它的
+        val map = AppSettings(examEpochDay = 20_500L, exams = sample).toMap()
+        val s = AppSettings.fromMap(map)
+        assertEquals(2, s.examList.size)                                   // 旧键不掺和，清单原样两条
+        assertEquals(20_600L, s.examEpochDayEffective)                     // 清单里最早的 20600，不是旧键的 20500
+        val today = LocalDate.ofEpochDay(20_550L)
+        assertEquals("期末考", s.examForCountdown(today)?.name)            // 也不是旧键合成的那场「考试」
+    }
+
+    @Test
+    fun `比政策上限高的零点九八原样往返不被存储层吞`() {
+        // 期望值钉 0.98 这个字面量：封顶 0.97 是 ExamPolicy（Task 1）的事，
+        // 存储层要是顺手 coerce 到 0.97，被吞的就是用户填的数据本身。
+        val high = listOf(ExamEntry("期末考", 20_600L, emptyList(), 0.98, 30))
+        val back = AppSettings.fromMap(AppSettings(exams = high).toMap()).exams
+        assertEquals(0.98, back.first().rSprint, 1e-9)
+    }
+
+    @Test
+    fun `零天窗口原样往返不被当成缺省`() {
+        // 0 = 「只在考试当天抬」，是一个有语义的配置；和「没写这个字段」（30 天）不是一回事
+        val day0 = listOf(ExamEntry("期末考", 20_600L, emptyList(), 0.95, 0))
+        val back = AppSettings.fromMap(AppSettings(exams = day0).toMap()).exams
+        assertEquals(0, back.first().windowDays)
+    }
+
+    @Test
+    fun `缺 windowDays 字段的条目回默认三十天而不是类型零值`() {
+        // C1：optInt 缺键给 0，而 0 合法在区间内 —— 不显式给默认就会把「未指定」解成「只在当天抬」。
+        // 缺字段必须与 ExamEntry 构造默认同一口径，否则同一场考试因写入路径不同而行为不同。
+        val one = AppSettings.examsFromJson("""[{"name":"期末考","epochDay":20600,"rSprint":0.94}]""")
+        assertEquals(1, one.size)
+        assertEquals(0.94, one[0].rSprint, 1e-9)
+        assertEquals(30, one[0].windowDays)                                 // 缺字段 -> 构造默认，字面量 30
+        val bare = AppSettings.examsFromJson("""[{"name":"期末考","epochDay":20600}]""")
+        assertEquals(0.95, bare[0].rSprint, 1e-9)                           // rSprint 缺键同口径
+        assertEquals(30, bare[0].windowDays)
+    }
+
+    @Test
+    fun `暂停计时开关真与假两个方向都往返`() {
+        // 既有的那条只写了 false，false->false 是条同义反复；照 AppSettingsTest 的双向口径补齐
+        assertEquals(
+            true,
+            AppSettings.fromMap(AppSettings(examPauseCountsTime = true).toMap()).examPauseCountsTime,
+        )
+        assertEquals(
+            false,
+            AppSettings.fromMap(AppSettings(examPauseCountsTime = false).toMap()).examPauseCountsTime,
+        )
+    }
+
+    @Test
+    fun `清单降序排列时照样取最早一天和最近未过的一场`() {
+        // fixture 全升序时 first() 和 minBy 给同一个数，变异体测不出来；这条故意把晚的放前面
+        val desc = listOf(
+            ExamEntry("四级", 20_700L, emptyList(), 0.95, 30),
+            ExamEntry("期末考", 20_600L, emptyList(), 0.95, 30),
+        )
+        val s = AppSettings(exams = desc)
+        assertEquals(20_600L, s.examEpochDayEffective)                      // 取 min，不是取第一条的 20700
+        assertEquals("期末考", s.examForCountdown(LocalDate.ofEpochDay(20_550L))?.name)
     }
 }

@@ -6,7 +6,6 @@ import com.studykit.data.memory.FsrsModel
 import com.studykit.data.memory.ReviewStrictness
 import java.time.LocalDate
 import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 
 /** 主题选择。[SYSTEM] 沿用系统的 `isSystemInDarkTheme()`，另两档是用户硬指定。 */
@@ -245,7 +244,9 @@ data class AppSettings(
 
     /**
      * 旧签名保留：按**今天**取该倒计时的那一场（调用点：`StudyHomeScreen` 的倒计时行、
-     * `SettingsScreen` 的考试日格与严格度说明，都在显示层）。
+     * `SettingsScreen` 的考试日格与严格度说明）。别把后半句划成「纯显示」：`SettingsScreen`
+     * 那一格（约 L286）不只读它，还经 `setExamDate` 往回写 `examEpochDay` —— 所以这个旧键今天
+     * 有**一个活的写入点**，不是零个；要等 Task 9 把单日期框换成清单编辑器，这条写路径才被取代。
      *
      * ⚠️ 它内部读 `LocalDate.now()`（旧实现是纯 `ofEpochDay`，不读时钟）。所以它是**显示层**属性：
      * 排期路径不许调它 —— 要可测的语义就直调 [examForCountdown] 显式注入 today，要"那一天本身"
@@ -485,6 +486,11 @@ data class AppSettings(
          *
          * 丢掉而不是纠正日期：一个不认识的 epochDay 没法猜用户想要哪天。反过来 rSprint/windowDays/name
          * 都能退回一个**说得通的默认值**（0.95 / 30 天 / 「考试」），所以条目本身留下。
+         *
+         * ⚠️ 缺字段必须**显式**取 `ExamEntry` 的构造默认，不能靠类型零值兜底：`optInt` 缺键给 0，
+         * 而 0 在窗口里是个**有语义的配置**（只在考试当天抬），不是「没说」。存进来的条目没写这个
+         * 字段 = 未指定，未指定就得和构造默认说同一件事（30 天）——否则同一场考试，走编辑器写行还是
+         * 走别的路径写行，行为会分叉。编辑器真写的 0 原样保留，和缺省是两回事。
          */
         internal fun examsFromJson(raw: String): List<ExamEntry> {
             if (raw.isBlank()) return emptyList()
@@ -507,13 +513,18 @@ data class AppSettings(
                                         }
                                     }
                                 },
-                                rSprint = o.optDouble("rSprint").takeIf { it in EXAM_SPRINT_RANGE } ?: ExamEntry.DEFAULT_R_SPRINT,
-                                windowDays = o.optInt("windowDays").takeIf { it in EXAM_WINDOW_RANGE } ?: ExamEntry.DEFAULT_WINDOW_DAYS,
+                                // 带默认值的 getter：缺键 = 未指定 = 构造默认（见上方 KDoc）；区间照旧，越界仍退默认
+                                rSprint = o.optDouble("rSprint", ExamEntry.DEFAULT_R_SPRINT)
+                                    .takeIf { it in EXAM_SPRINT_RANGE } ?: ExamEntry.DEFAULT_R_SPRINT,
+                                windowDays = o.optInt("windowDays", ExamEntry.DEFAULT_WINDOW_DAYS)
+                                    .takeIf { it in EXAM_WINDOW_RANGE } ?: ExamEntry.DEFAULT_WINDOW_DAYS,
                             ),
                         )
                     }
                 }
-            } catch (e: JSONException) {
+            } catch (e: Exception) {
+                // 兜底放宽到 Exception：这一列可能来自手改过的备份恢复，org.json 在那种输入下
+                // 未必只抛 JSONException，而这里的硬约束是「fromMap 永不抛」（同 StudyViewModel.parseOptions）
                 emptyList()
             }
         }
