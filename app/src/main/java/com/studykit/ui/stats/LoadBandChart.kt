@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.studykit.data.memory.DayBand
+import com.studykit.data.memory.ForecastCfg
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.theme.AppTheme
 import kotlin.math.roundToInt
@@ -37,6 +38,13 @@ import kotlin.math.roundToInt
  * 空态永远走不到，看板上"有排期的词 0"和"第 1 天预计 N 项，超过每日容量"还能同屏出现。
  * 本仓**没有**"每日复习容量"这个设置。真要加，得先立一个概念（它和复习政策有关，不是 UI 能定的），
  * 用 `dailyWordGoal` 乘个系数派生一个出来只是把同一个谎换个写法。所以这里只描述，不判超载。
+ *
+ * ## 图注不许断言「这两个数谁大」（本轮改的就是这句）
+ * 上一版图注写着「这里的项数会比「有排期的词」那个数大」。那是假话：`plannedCount` 是**整个库**已排期
+ * 的词数（取 `observeScheduledTimestamps` 的长度），而带子的 mean 是**某一天**要处理的项数——库一大
+ * 那个总数就赢，那句话只在词库比一天的量还小时成立。图注因此只说「两把尺」，谁大谁小留给读的人。
+ * 同一行里「每张新词约 N 次」的 N 也不再写死，取 [ForecastCfg.DEFAULT_LEARNING_PER_NEW]：
+ * 文案印的数字与预测真正用的那个数分叉时，图上就多出一句关于自己算法的假话。
  *
  * ## 画法沿用 [RetentionChart] 的既有约定
  * `Canvas` + `AppTheme.colors`，横轴线性取 `bands.size` 天、纵轴 `0..max(mean+sd)` 上浮 15%，
@@ -124,8 +132,11 @@ fun LoadBandChart(bands: List<DayBand>, modifier: Modifier = Modifier) {
         Text(
             text = "实线是那天预计要处理的项数，阴影是它的波动范围（±1 个标准差）。" +
                 "带子里除了已排期的到期复习，还含两笔：忘了的卡按返工概率摊到之后几天，" +
-                "以及设置里「每日新词」目标随后产生的学习步（每张新词约 2.5 次）。" +
-                "所以这里的项数会比「有排期的词」那个数大，一张卡都还没背时也不会是零。",
+                "以及设置里「每日新词」目标随后产生的学习步" +
+                "（每张新词约 ${ForecastCfg.DEFAULT_LEARNING_PER_NEW} 次）。" +
+                "它和上方「有排期的词」不是同一把尺：这里数的是一天里要处理多少项，" +
+                "那里数的是整个库已排期的词一共多少，谁大谁小都不说明问题。" +
+                "一张卡都还没背时，这条带也不会是零。",
             style = texts.caption,
             color = colors.secondaryText,
         )

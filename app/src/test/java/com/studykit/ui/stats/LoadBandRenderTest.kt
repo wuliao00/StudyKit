@@ -42,7 +42,9 @@ import org.robolectric.annotation.GraphicsMode
  * 整张图**只有一条** `contentDescription`（逐日节点会让读屏把同一张图念十四遍），而它必须带真数：
  * 窗口长度、峰值在第几天、那天预计多少项。同一组数字另外还有一行**看得见**的文字（横轴没有刻度，
  * 只剩描述里的数字就等于把数只给读屏用户，与本仓 ForecastBars 的约定相反）。画法（实线/阴影各是什么）
- * 与"比词数大的原因"写在图下那行 caption 里——它是普通文字，读屏照念，看得见的和听得见的各拿一半。
+ * 与「这里和上方那个词数是两把尺」的交代写在图下那行 caption 里——它是普通文字，读屏照念，
+ * 看得见的和听得见的各拿一半。caption **不**比较两个数的大小（那条假话由
+ * [说明文字不断言两个数谁大] 挡着）。
  *
  * provider 与「一个测试一次 setContent」沿用 [com.studykit.ui.optimize.CalibrateRenderTest]：
  * `AppSettings(glass = OFF, reduceMotion = true)` 里的 `reduceMotion` 让 `waitForIdle()` 等得到。
@@ -102,8 +104,8 @@ class LoadBandRenderTest {
     }
 
     /**
-     * caption 必须交代带子里装了什么，否则数字读不出意义：项数比「有排期的词」大，
-     * 是因为除了到期复习还含每日新词目标带来的学习步。这句话是本节存在的理由。
+     * caption 必须交代带子里装了什么，否则数字读不出意义：项数除了到期复习还含每日新词目标带来的
+     * 学习步。这句话是本节存在的理由。
      */
     @Test
     fun 说明文字点出带子含到期复习与新词学习步() {
@@ -115,6 +117,47 @@ class LoadBandRenderTest {
         composeRule.onNodeWithText("每日新词", substring = true).assertExists()
         composeRule.onNodeWithText("学习步", substring = true).assertExists()
         composeRule.onNodeWithText("有排期的词", substring = true).assertExists()
+    }
+
+    /**
+     * ⛔ caption 不许断言「这两个数谁大」——上面那组 substring 检查对这句假话是**盲的**
+     * （"会比「有排期的词」那个数大"里每个关键词都在），所以这一条专治它。
+     *
+     * 旧图注写着「这里的项数会比「有排期的词」那个数大」。那是假话：`plannedCount` 是**整个库**
+     * 已排期的词数，而带子的 mean 是**某一天**要处理的项数——库一大那个总数就赢，那句话只对
+     * 词库比一天的量还小的用户成立。图注现在只说两把尺，比大小留给读的人。
+     */
+    @Test
+    fun 说明文字不断言两个数谁大() {
+        composeRule.setContent {
+            StatsHost { LoadBandChart(bands = bands(3.0)) }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("会比", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("那个数大", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("不是同一把尺", substring = true).assertExists()
+    }
+
+    /**
+     * 整条 caption 逐字钉住，其中「每张新词约 N 次」的 N **取预测用的那个常量**
+     * （[ForecastCfg.DEFAULT_LEARNING_PER_NEW]）而不是视图里的字面量：文案里那个数字与
+     * `DueForecast` 真正拿去算的那个一旦分叉，图上就印着一句关于自己算法的假话。
+     */
+    @Test
+    fun 说明文字整句取自预测用的那些量() {
+        composeRule.setContent {
+            StatsHost { LoadBandChart(bands = bands(3.0)) }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(
+            "实线是那天预计要处理的项数，阴影是它的波动范围（±1 个标准差）。" +
+                "带子里除了已排期的到期复习，还含两笔：忘了的卡按返工概率摊到之后几天，" +
+                "以及设置里「每日新词」目标随后产生的学习步" +
+                "（每张新词约 ${ForecastCfg.DEFAULT_LEARNING_PER_NEW} 次）。" +
+                "它和上方「有排期的词」不是同一把尺：这里数的是一天里要处理多少项，" +
+                "那里数的是整个库已排期的词一共多少，谁大谁小都不说明问题。" +
+                "一张卡都还没背时，这条带也不会是零。",
+        ).assertExists()
     }
 
     /**
