@@ -1,9 +1,13 @@
 package com.studykit.data
 
 import androidx.compose.runtime.Immutable
+import com.studykit.data.memory.ExamEntry
 import com.studykit.data.memory.FsrsModel
 import com.studykit.data.memory.ReviewStrictness
 import java.time.LocalDate
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 
 /** 主题选择。[SYSTEM] 沿用系统的 `isSystemInDarkTheme()`，另两档是用户硬指定。 */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
@@ -26,7 +30,11 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * 保留项的消费点：[themeMode] → `StudyKitTheme`；[glass] → `ui/material/Glass.kt`；
  * [reduceMotion] → 彩带 / 错峰入场 / 按压缩放；[nickname] → `HabitExporter.buildShareText` 抬头；
  * [dailyWordGoal] → 学习首页今日进度；[reminderEveryHours] → `ReminderScheduler`；
- * [examEpochDay] → 学习首页倒计时行；[lastDictFailure] → 设置页诊断段（只是显示，不参与逻辑）；
+ * [examEpochDay] → 学习首页倒计时行（v3.0-B 起它经由 [examList] 合成进来，不再是唯一真值）；
+ * [exams] → 同一格的"哪一场"与排期看的那天（[examForCountdown] / [examEpochDayEffective]，消费点在
+ * `ExamPolicy` 与首页/统计/提醒那条链上，v3.0-B Task 3 起逐个接上）；
+ * [examLimitMinutes] / [examPauseCountsTime] → 套卷计时的截止时刻（v3.0-B Task 5）；
+ * [lastDictFailure] → 设置页诊断段（只是显示，不参与逻辑）；
  * [recallBeforeGrade] → `ui/study/RecallGate.kt` 的闸门判定（`CardStudyScreen` 读它，
  * 关掉之后滑动与三档自评**完全**退回旧行为，不留半截拦截）；
  * [recallGateHintSeen] → 同一条闸门的「第一次拦下你」说明（`CardStudyScreen` 读、
@@ -51,6 +59,18 @@ data class AppSettings(
     val reminderEveryHours: Int = DEFAULT_REMINDER_HOURS,
     /** 考试日，存 `LocalDate.toEpochDay()`；0 表示未设置（epochDay 0 = 1970-01-01，不可能被当考试日） */
     val examEpochDay: Long = 0L,
+    /**
+     * 考试清单（v3.0-B）。空 = 没设过考试；旧版那个 `examEpochDay` 通过 [examList] 合成进来。
+     *
+     * 它是**一项设置**而不是一张表：全仓 8 个读点本来就住在 `AppSettings` 上，另开表会把
+     * 「考试日」拆成两处真值（计划 D2）。一条记录 = `name|epochDay|subjects|rSprint|windowDays`，
+     * 序列化见 [examsToJson]。
+     */
+    val exams: List<ExamEntry> = emptyList(),
+    /** 套卷限时（分钟）；0 = 不限时（默认，与 v2.7~v2.9 的既有模考行为逐值一致） */
+    val examLimitMinutes: Int = 0,
+    /** 暂停期间要不要继续扣限时。false（默认）= 暂停把截止时刻往后推，与真实考场「pause 即停表」一致 */
+    val examPauseCountsTime: Boolean = false,
     /**
      * 复习严格度。AUTO = 由考试日期反推（越远的目标越宽松），
      * 其余三档是把目标准确率钉死。默认 AUTO：不填考试日的用户不该被一个写死的数字对待。
@@ -193,9 +213,46 @@ data class AppSettings(
         ThemeMode.DARK -> true
     }
 
-    /** 考试日；未设置返回 null。设置页与首页共用，避免两处各写一遍 `0L` 的语义 */
+    /**
+     * 真正参与排期/显示的考试清单。
+     *
+     * `exams` 为空而旧键 `exam_epoch_day` 有值时，合成一场**全学科**考试：v2.9 那个全局日期
+     * 影响所有卡的排期，升级后不能悄悄变成「只管几科」。反过来一旦清单非空，旧键就此失去话语权
+     * （`toMap` 仍原样写回它，降级/备份恢复时旧版本还认）。
+     */
+    val examList: List<ExamEntry>
+        get() = if (exams.isNotEmpty()) exams else if (examEpochDay > 0L) {
+            listOf(ExamEntry(name = ExamEntry.DEFAULT_NAME, epochDay = examEpochDay))
+        } else {
+            emptyList()
+        }
+
+    /** 排期与倒计时看的那一天：清单里最早那场；没有考试 = 0L（`MemoryScheduler` 的「没设考试」哨兵值） */
+    val examEpochDayEffective: Long
+        get() = examList.minByOrNull { it.epochDay }?.epochDay ?: 0L
+
+    /**
+     * 首页倒计时那一格该显示哪场：**优先还没考的最近一场**，全考完才退回「最后考掉的那场」，
+     * 让「考试已过 N 天」这句继续说得出。取最早一场会把它顶掉，屏幕上永远挂着一次六月的考试。
+     */
+    fun examForCountdown(today: LocalDate): ExamEntry? {
+        val list = examList
+        if (list.isEmpty()) return null
+        val todayEpoch = today.toEpochDay()
+        return list.filter { it.epochDay >= todayEpoch }.minByOrNull { it.epochDay }
+            ?: list.maxByOrNull { it.epochDay }
+    }
+
+    /**
+     * 旧签名保留：按**今天**取该倒计时的那一场（调用点：`StudyHomeScreen` 的倒计时行、
+     * `SettingsScreen` 的考试日格与严格度说明，都在显示层）。
+     *
+     * ⚠️ 它内部读 `LocalDate.now()`（旧实现是纯 `ofEpochDay`，不读时钟）。所以它是**显示层**属性：
+     * 排期路径不许调它 —— 要可测的语义就直调 [examForCountdown] 显式注入 today，要"那一天本身"
+     * 就用 [examEpochDayEffective]。
+     */
     val examDate: LocalDate?
-        get() = if (examEpochDay == 0L) null else runCatching { LocalDate.ofEpochDay(examEpochDay) }.getOrNull()
+        get() = examForCountdown(LocalDate.now())?.let { runCatching { LocalDate.ofEpochDay(it.epochDay) }.getOrNull() }
 
     fun toMap(): Map<String, String> = linkedMapOf(
         KEY_THEME to themeMode.name,
@@ -205,6 +262,9 @@ data class AppSettings(
         KEY_WORD_GOAL to dailyWordGoal.toString(),
         KEY_REMINDER_HOURS to reminderEveryHours.toString(),
         KEY_EXAM_DAY to examEpochDay.toString(),
+        KEY_EXAMS to examsToJson(exams),
+        KEY_EXAM_LIMIT_MIN to examLimitMinutes.toString(),
+        KEY_EXAM_PAUSE_COUNTS to examPauseCountsTime.toString(),
         KEY_REVIEW_STRICTNESS to reviewStrictness.name,
         KEY_DISCLAIMER_VERSION to disclaimerVersion.toString(),
         KEY_ONBOARDING_SEEN to onboardingSeen.toString(),
@@ -241,6 +301,9 @@ data class AppSettings(
         const val KEY_WORD_GOAL = "daily_word_goal"
         const val KEY_REMINDER_HOURS = "reminder_every_hours"
         const val KEY_EXAM_DAY = "exam_epoch_day"
+        const val KEY_EXAMS = "exams_json"
+        const val KEY_EXAM_LIMIT_MIN = "exam_limit_minutes"
+        const val KEY_EXAM_PAUSE_COUNTS = "exam_pause_counts_time"
         const val KEY_REVIEW_STRICTNESS = "review_strictness"
         const val KEY_SNAKE_BEST = "snake_best"
         const val KEY_DISCLAIMER_VERSION = "disclaimer_version"
@@ -281,6 +344,17 @@ data class AppSettings(
         /** 能接受考试日的区间：2000-01-01 至 2100-01-01 */
         val EXAM_DAY_RANGE = LocalDate.of(2000, 1, 1).toEpochDay()..LocalDate.of(2100, 1, 1).toEpochDay()
 
+        /** 套卷限时上限：10 小时，够装下一场研究生入学考试 */
+        val EXAM_LIMIT_RANGE = 0..600
+        /** 冲刺窗口天数上限：一年 */
+        val EXAM_WINDOW_RANGE = 0..365
+        /**
+         * 冲刺目标保留率可存范围。上限给到 0.99 而不是政策的 0.97：
+         * 存储层只管"这像不像个保留率"，封顶是 `ExamPolicy` 的事（两个阈值一掺和，
+         * 用户填 0.98 会被存储层悄悄改成 0.95，那是数据被吞，不是被约束）。
+         */
+        val EXAM_SPRINT_RANGE = 0.50..0.99
+
         /** 「一天」的开始小时：0~5（再大就不是熬夜而是作息颠倒了） */
         val DAY_BOUNDARY_RANGE = 0..5
         const val DEFAULT_DAY_BOUNDARY_HOUR = 0
@@ -310,6 +384,12 @@ data class AppSettings(
                     ?: defaults.reminderEveryHours,
                 examEpochDay = map[KEY_EXAM_DAY]?.toLongOrNull()?.takeIf { it != 0L && it in EXAM_DAY_RANGE }
                     ?: defaults.examEpochDay,
+                // 清单：整串读不通才退回空表，脏字段只让那一项退回默认（见 examsFromJson）
+                exams = examsFromJson(map[KEY_EXAMS] ?: ""),
+                examLimitMinutes = map[KEY_EXAM_LIMIT_MIN]?.toIntOrNull()?.takeIf { it in EXAM_LIMIT_RANGE }
+                    ?: defaults.examLimitMinutes,
+                examPauseCountsTime = map[KEY_EXAM_PAUSE_COUNTS]?.toBooleanStrictOrNull()
+                    ?: defaults.examPauseCountsTime,
                 reviewStrictness = map[KEY_REVIEW_STRICTNESS]
                     ?.let { raw -> ReviewStrictness.entries.firstOrNull { it.name == raw } }
                     ?: defaults.reviewStrictness,
@@ -376,6 +456,66 @@ data class AppSettings(
                 // 干跑报告：缺键退回默认（空串 = 从没跑过）；超长掐掉，口径同 lastDictFailure
                 lastCalibrateReport = map[KEY_CALIBRATE_REPORT]?.take(400) ?: defaults.lastCalibrateReport,
             )
+        }
+
+        /**
+         * 清单 -> JSON 数组。字段名写全（`name`/`epochDay`/...）不缩写：这一列会被
+         * 「设置导出/恢复」带着走，人眼看得懂的备份比省 30 字节重要。
+         */
+        internal fun examsToJson(exams: List<ExamEntry>): String {
+            val arr = JSONArray()
+            for (e in exams) {
+                val subjects = JSONArray()
+                e.subjects.forEach { subjects.put(it) }
+                arr.put(
+                    JSONObject()
+                        .put("name", e.name)
+                        .put("epochDay", e.epochDay)
+                        .put("subjects", subjects)
+                        .put("rSprint", e.rSprint)
+                        .put("windowDays", e.windowDays),
+                )
+            }
+            return arr.toString()
+        }
+
+        /**
+         * JSON -> 清单，**逐条**容错：日期越界或整条读不通的丢掉，字段脏的（保留率、窗口、学科数组）
+         * 那一项退回默认。整串读不通才退回空表 —— 与 `fromMap` 「脏值只打垮那一项」同一条纪律。
+         *
+         * 丢掉而不是纠正日期：一个不认识的 epochDay 没法猜用户想要哪天。反过来 rSprint/windowDays/name
+         * 都能退回一个**说得通的默认值**（0.95 / 30 天 / 「考试」），所以条目本身留下。
+         */
+        internal fun examsFromJson(raw: String): List<ExamEntry> {
+            if (raw.isBlank()) return emptyList()
+            return try {
+                val arr = JSONArray(raw)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val day = o.optLong("epochDay")
+                        if (day !in EXAM_DAY_RANGE) continue
+                        val subjects = o.optJSONArray("subjects")
+                        add(
+                            ExamEntry(
+                                name = o.optString("name").take(40).ifBlank { ExamEntry.DEFAULT_NAME },
+                                epochDay = day,
+                                subjects = buildList {
+                                    if (subjects != null) {
+                                        for (j in 0 until subjects.length()) {
+                                            subjects.optString(j).trim().take(20).takeIf { it.isNotEmpty() }?.let { add(it) }
+                                        }
+                                    }
+                                },
+                                rSprint = o.optDouble("rSprint").takeIf { it in EXAM_SPRINT_RANGE } ?: ExamEntry.DEFAULT_R_SPRINT,
+                                windowDays = o.optInt("windowDays").takeIf { it in EXAM_WINDOW_RANGE } ?: ExamEntry.DEFAULT_WINDOW_DAYS,
+                            ),
+                        )
+                    }
+                }
+            } catch (e: JSONException) {
+                emptyList()
+            }
         }
     }
 }
