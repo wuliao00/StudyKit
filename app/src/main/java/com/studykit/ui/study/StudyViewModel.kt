@@ -398,14 +398,17 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             // v2.9 Task 6 双写 review_log：这一次"已评分复习"追加进事件流，排在上面的状态写
             // （applyReview）与历史写（recordGradedReview）之后——先状态后历史，中间被杀只丢一条日志、
             // 下次复习时刻仍对。富字段这里全部现成：rating=内核档位 1..4、elapsedDays=喂内核的 Δt(gapDays)、
-            // scheduledDays=刚排出去的间隔(days)、state=评分前那份卡状态(0New/1Learn/2Review/3Relearn，
+            // scheduledDays=**后向**口径（这次评分**之前**那份排期，即 [word] 快照上的「到期 − lastReviewAt」，
+            // 见 ReviewLog.scheduledDays 的 KDoc；T2.5 之前这里误传 `days`=刚排出去的间隔，相对本卡历史串行
+            // 一格，已由 log_schema_ver=2 划界）、state=评分前那份卡状态(0New/1Learn/2Review/3Relearn，
             // 稳定度为空即首评→New0)、durationMs=翻面到按分的毫秒(没传记 0)、self_conf=信心 ordinal+1(没选记 null)。
+            // 取的是 [word] 这一份**评分前**的行快照（`days` 与 nextReviewAt 都是这次才算出来的，不能拿它们当上次排期）。
             reviewLogRepository.recordGradedReview(
                 cardKind = ReviewLog.KIND_WORD,
                 cardId = word.id,
                 rating = rating.ordinal + 1,
                 elapsedDays = gapDays,
-                scheduledDays = days,
+                scheduledDays = ReviewLog.prevScheduledDays(word.lastReviewAt, word.nextReviewAt),
                 state = if (before.stability == null) 0 else before.cardState.ordinal + 1,
                 durationMs = reactionMs ?: 0L,
                 origin = "word",

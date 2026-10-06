@@ -105,10 +105,11 @@ class DueForecastAccuracyTest {
      *
      * **为什么不按 brief 那样直接反解「切点前最后一行的 `scheduledDays`」**：合成器把每一行的
      * `scheduledDays` 记成**促成这次复习的那个间隔**（= 上次复习后的稳定度 `S_{k-1}`，见
-     * `SynthLog.kt:92-112`，与 py-fsrs 的 `review_log.scheduled_days` 同口径），而 app 落库的是
-     * 「这次评分刚排出去的间隔」（`StudyViewModel.kt:395`）。按 brief 取 `S_{k-1}` 会系统性地把
-     * 到期日提前（`S` 在涨），实测把 MAE 抬到 5.8 天，且让负荷带 274/400 张卡堆在第 0 格——那是
-     * 出题口径的错，不是预测的错。这里改成重放，切点前的信息就够，不吃未来。
+     * `SynthLog.kt:92-112`，与 py-fsrs 的 `review_log.scheduled_days` 同口径；app 的词/摘评分点
+     * 自 v3.0-A T2.5 起也统一到这一口径，`log_schema_ver=2`，此前词侧落的是「这次刚排出去的间隔」）。
+     * 两种读法都反解不出切点上的 `S_k`——这一列讲的是**上一次**排了多长，切点要的却是**这一次**排出去
+     * 的多长。按 brief 取 `S_{k-1}` 会系统性地把到期日提前（`S` 在涨），实测把 MAE 抬到 5.8 天，且让
+     * 负荷带 274/400 张卡堆在第 0 格——那是出题口径的错，不是预测的错。这里改成重放，切点前的信息就够，不吃未来。
      */
     private fun stateAt(hist: List<ReviewLog>, cutTs: Long): ForecastCard? {
         var s = 0.0

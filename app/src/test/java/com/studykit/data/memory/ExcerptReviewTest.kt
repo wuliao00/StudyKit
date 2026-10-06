@@ -4,6 +4,7 @@ import com.studykit.data.entity.Excerpt
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,22 +12,31 @@ import org.junit.Test
 /**
  * 检索式书摘排期的纯逻辑单测（v2.7 计划 B Task 18）。
  *
- * 钉三件事：
+ * 钉四件事：
  *  1. `kernelStateOf(excerpt)` 从只有 stability 一维的行里推出正确的卡生命周期；
  *  2. `ExcerptReview.schedule` 走真内核（FSRS / 半衰期）产出「S 变硬、reviewCount+1、下一次在未来」；
- *  3. 超纠正 min-only：SURE×未忆起只把时刻往前拉，且 recalled 时 SURE 完全不改变排期。
+ *  3. 超纠正 min-only：SURE×未忆起只把时刻往前拉，且 recalled 时 SURE 完全不改变排期；
+ *  4. v3.0-A T2.5：结果里的 `prevScheduledDays` 是**后向**口径（这次自评**之前**那份到期偏移，
+ *     与 `elapsed` 同为 createdAt 锚点），供 `review_log.scheduled_days` 直接落库。
+ *     它不等于「这次刚排出去的间隔」—— 书摘侧原来因为没回传而恒记 0.0，那种行同样不可用。
  */
 class ExcerptReviewTest {
 
     private val now = 1_700_000_000_000L
+    private val dayMs = TimeUnit.DAYS.toMillis(1)
 
-    private fun excerpt(stability: Double? = null, reviewCount: Int = 0) = Excerpt(
+    private fun excerpt(
+        stability: Double? = null,
+        reviewCount: Int = 0,
+        nextReviewAt: Long = 0L,
+    ) = Excerpt(
         uuid = "e-1",
         bookId = 1L,
         content = "摘录",
         createdAt = now - TimeUnit.DAYS.toMillis(3),
         stability = stability,
         reviewCount = reviewCount,
+        nextReviewAt = nextReviewAt,
     )
 
     // ── kernelStateOf(excerpt) ────────────────────────────────────────────
@@ -71,6 +81,39 @@ class ExcerptReviewTest {
             FsrsKernel(), excerpt(reviewCount = 4), ReviewGrade.VAGUE, conf = null, now = now,
         )
         assertEquals(5, r.reviewCount)
+    }
+
+    // ── prevScheduledDays：给 review_log.scheduled_days 的后向口径（T2.5）────
+
+    @Test
+    fun `自评回传的是评分前那份到期偏移，不是这次刚排出去的间隔`() {
+        val createdAt = now - TimeUnit.DAYS.toMillis(3)
+        // 上一次自评把到期排在「建摘后第 2 天」，比 now 早 1 天（迟到的复习）
+        val e = excerpt(stability = 12.0, reviewCount = 2, nextReviewAt = createdAt + TimeUnit.DAYS.toMillis(2))
+        val r = ExcerptReview.schedule(FsrsKernel(), e, ReviewGrade.RECALL, conf = null, now = now)
+
+        // 后向：这一列必须就是「评分前那份计划间隔」，与同一行 elapsed（距建摘 3 天）同锚点
+        assertEquals(2.0, r.prevScheduledDays, 1e-9)
+        // 前向对照值 = 这次刚排出去的到期偏移。它才是旧写法/错写法会落进去的数，必须与上面不同，
+        // 否则这条断言对两种口径都成立、就成了空转。
+        val justScheduledDays = (r.nextReviewAt - createdAt) / dayMs.toDouble()
+        assertNotEquals("后向值不能等于这次刚排出去的间隔", r.prevScheduledDays, justScheduledDays, 1e-9)
+        assertTrue("这次确实排出了更远的到期（=$justScheduledDays 天）", justScheduledDays > r.prevScheduledDays)
+    }
+
+    @Test
+    fun `未启用（next_review_at=0 哨兵）的书摘首评回传 0 不造间隔`() {
+        val r = ExcerptReview.schedule(FsrsKernel(), excerpt(), ReviewGrade.RECALL, conf = null, now = now)
+        assertEquals("0 是「从没排过期」的哨兵，不能折算成 −N 天", 0.0, r.prevScheduledDays, 1e-9)
+        assertTrue("但这一次评分确实排出了到期", r.nextReviewAt > now)
+    }
+
+    @Test
+    fun `到期早于锚点的脏行折算成 0 不给负数`() {
+        val createdAt = now - TimeUnit.DAYS.toMillis(3)
+        val e = excerpt(stability = 12.0, reviewCount = 1, nextReviewAt = createdAt - TimeUnit.DAYS.toMillis(1))
+        val r = ExcerptReview.schedule(FsrsKernel(), e, ReviewGrade.RECALL, conf = null, now = now)
+        assertEquals(0.0, r.prevScheduledDays, 1e-9)
     }
 
     // ── 超纠正 min-only ───────────────────────────────────────────────────

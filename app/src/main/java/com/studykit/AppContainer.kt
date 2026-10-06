@@ -16,11 +16,16 @@ import com.studykit.optimize.NativeFsrsTrainer
 
 /**
  * 手动依赖注入容器：持有数据库与全部仓储实例。
- * 由 [StudyKitApp] 在启动时初始化。
+ *
+ * 由 [StudyKitApp] 在启动时初始化（生产走 [Context] 那一个构造子，拿进程单例的 [AppDatabase]）。
+ * 数据库改成构造子参数只有一个目的：单测（Robolectric）能整只容器换成一次性内存库。
+ * 不加这层的话，`AppDatabase.instance` 那个进程单例会跨用例存活，而 Robolectric 每个用例都会
+ * 拆掉 SQLite 影子连接 —— 第二个用例起就会撞 `Illegal connection pointer`（Room 缓存的编译语句
+ * 指着已经死掉的连接）。本仓无 Hilt，注入就停在容器这一层（同 [fsrsTrainer] 那条评论）。
  */
-class AppContainer(context: Context) {
+class AppContainer(val database: AppDatabase) {
 
-    val database: AppDatabase = AppDatabase.getInstance(context)
+    constructor(context: Context) : this(AppDatabase.getInstance(context))
 
     val wordRepository: WordRepository = WordRepository(database.wordDao())
 

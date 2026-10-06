@@ -325,14 +325,16 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
                 // rating=档位映射、self_conf 同背词口径；elapsed 取与 ExcerptReview.schedule 同一的
                 // (now − createdAt)（同一个 now、同一行 before 快照，不另算一套）；state 由行上的
                 // stability 推出（kernelStateOf(excerpt)，空→首评 New0，否则 REVIEW）。
-                // scheduled/duration 未从 schedule 回传 / 未采集 → 按 Step 0 默认记 0。
+                // scheduled 走 [ExcerptReviewResult.prevScheduledDays]：**后向**口径（这次自评之前那份
+                // 到期偏移，锚点同为 createdAt），T2.5 之前这里因为「schedule 没回传间隔」记 0.0，
+                // 现在由 schedule 一并算好回传，站点不复算。duration 仍未采集 → 记 0。
                 val beforeState = kernelStateOf(excerpt)
                 reviewLogRepository.recordGradedReview(
                     cardKind = ReviewLog.KIND_EXCERPT,
                     cardId = excerpt.id,
                     rating = grade.toKernelRating().ordinal + 1,
                     elapsedDays = (now - excerpt.createdAt).coerceAtLeast(0L) / TimeUnit.DAYS.toMillis(1).toDouble(),
-                    scheduledDays = 0.0,
+                    scheduledDays = result.prevScheduledDays,
                     state = if (beforeState.stability == null) 0 else beforeState.cardState.ordinal + 1,
                     durationMs = 0L,
                     origin = "excerpt",

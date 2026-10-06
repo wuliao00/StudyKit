@@ -425,6 +425,9 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
             // self_conf 与背词同口径。错题没有 last_review_at，反推「距上次评分」的算术全藏在
             // MistakeScheduling.grade 内部——双写不复算它（免得与调度器分叉）→ elapsed/scheduled 记 0；
             // 重做路径未采集作答耗时 → duration 记 0。
+            // 这两列**成对**记 0 才是不变式的要点：[ReviewLog.scheduledDays] 是后向口径，与同一行的
+            // elapsedDays 配一对（「计划多久 vs 实际多久」）。既然这一路拿不到真实 Δt、只能记 0，
+            // 那么只把 scheduled 单独补成"刚排出去的间隔"反而会把这一列串成前向 —— 要补就两列一起补。
             val beforeState = kernelStateFor(kernel, mistake)
             reviewLogRepository.recordGradedReview(
                 cardKind = ReviewLog.KIND_MISTAKE,

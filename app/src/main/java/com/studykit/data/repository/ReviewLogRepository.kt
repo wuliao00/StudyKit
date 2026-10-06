@@ -20,6 +20,11 @@ import com.studykit.data.entity.ReviewLog
  * 每个调用点能拿到什么、缺什么默认成什么（0 / 每会话 id），都在调用点注释里逐条登记，
  * 语义（rating 1..4、self_conf=Confidence.ordinal+1 或 null、state=0New/1Learn/2Review/3Relearn）
  * 在这一层由 [ReviewLogWriteTest] 钉死。[ocrConf] 暂留 NULL（spec §阶段8 预留列，OCR 入卡置信属后续增强）。
+ *
+ * **`scheduled_days` 的口径不在这一层**：本方法照原样落调用点传来的数，前向还是后向它看不出来。
+ * 后向口径（`ReviewLog.scheduledDays` 的 KDoc 与 `ReviewLog.prevScheduledDays` 那一式）由
+ * `ReviewLogScheduledDaysWriterTest`（在 test 源集，本层不引用它）钉在**真评分点**上：起 ViewModel、
+ * 读回落库的那一行。新写的行统一带 [ReviewLog.CURRENT_SCHEMA_VER]=2；v1 老行是混合口径，回放时按这一列认。
  */
 class ReviewLogRepository(private val reviewLogDao: ReviewLogDao) {
 

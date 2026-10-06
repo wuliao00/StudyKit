@@ -1,6 +1,7 @@
 package com.studykit.data.memory
 
 import com.studykit.data.entity.Excerpt
+import com.studykit.data.entity.ReviewLog
 import java.util.concurrent.TimeUnit
 
 /**
@@ -46,11 +47,20 @@ fun kernelStateOf(excerpt: Excerpt): KernelState = KernelState(
     cardState = if (excerpt.stability == null) CardState.LEARNING else CardState.REVIEW,
 )
 
-/** 一次书摘自评排完要落回去的那三列。纯值，不落库、不碰 Android。 */
+/**
+ * 一次书摘自评排完要落回去的那三列，外加一条给事件流的账。纯值，不落库、不碰 Android。
+ *
+ * [prevScheduledDays] 是 `review_log.scheduled_days` 的**后向口径**（这次自评**之前**那份排期），
+ * 不是 [nextReviewAt] 所代表的那份新排期。书摘行没有 `last_review_at`，[ExcerptReview.schedule]
+ * 的 `elapsed` 锚点本来就是 `createdAt`，所以这一列同样按「到期 − createdAt」折算，
+ * 与 [com.studykit.data.entity.ReviewLog.scheduledDays] 的 KDoc 同式（共用
+ * [com.studykit.data.entity.ReviewLog.prevScheduledDays]）；`next_review_at = 0` 的未启用/首评行记 0.0。
+ */
 data class ExcerptReviewResult(
     val stability: Double?,
     val reviewCount: Int,
     val nextReviewAt: Long,
+    val prevScheduledDays: Double,
 )
 
 object ExcerptReview {
@@ -60,7 +70,8 @@ object ExcerptReview {
     /**
      * 评一次分出新排期。与 `StudyViewModel.gradeCard` 同一套内核调用序，只是：
      *  - 锚点用 [Excerpt.createdAt]（书摘没有 last-review 时间戳，间隔按「距建摘」折算，见下 KDoc），
-     *  - 只回写 stability / reviewCount / nextReviewAt 三列。
+     *  - 只回写 stability / reviewCount / nextReviewAt 三列（结果里的 [ExcerptReviewResult.prevScheduledDays]
+     *    不落 `excerpts` 表，是给 `review_log.scheduled_days` 的那一份**评分前**的排期）。
      *
      * 诚实口径：`excerpts` 不带 `last_review_at`，所以重复复习的 gapDays 量的是「距当初建摘」而非
      * 「距上次复习」——这是「不为一个入口动 schema」这条约束换来的近似，写死在这里而不是偷偷算。
@@ -92,6 +103,9 @@ object ExcerptReview {
             stability = after.stability,
             reviewCount = excerpt.reviewCount + 1,
             nextReviewAt = nextReviewAt,
+            // 后向口径：取【评分前】那份行快照上的到期（`excerpt.nextReviewAt`，不是刚算出的 nextReviewAt），
+            // 锚点与本行 elapsed 同为 createdAt。上面 `days` 是这次刚排出去的间隔，写进这一列就串行一格。
+            prevScheduledDays = ReviewLog.prevScheduledDays(excerpt.createdAt, excerpt.nextReviewAt),
         )
     }
 }

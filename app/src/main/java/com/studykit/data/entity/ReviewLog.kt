@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey
  *
  * 与各卡自己那张"当前状态"表（`word_reviews` 等）不同，这张表记录每一次评分动作的**完整快照**：
  * 评了什么卡（[cardKind]+[cardId]）、什么时候（[ts]）、打了什么分（[rating] 1..4）、
- * 距上次多少天（[elapsedDays]）、模型上次排了多久（[scheduledDays]、用于反推预测召回）、
+ * 距上次多少天（[elapsedDays]）、**上次**排了多久（[scheduledDays]，后向口径，用于反推预测召回）、
  * 当时处于什么状态（[state] 0New/1Learn/2Review/3Relearn）、作答耗时（[durationMs]）……
  * 优化器（Task 7 LogPacker→Task 9 FsrsLearner）只读这张表，按 `(card_kind, card_id, ts)`
  * 分组升序重放每个人的记忆曲线。
@@ -43,9 +43,24 @@ data class ReviewLog(
     val ts: Long,
     /** FSRS 口径评分 1..4（Again/Hard/Good/Easy） */
     val rating: Int,
-    /** 距该卡上次复习的真实经过天数（模型自变量 Δt） */
+    /** 距该卡上次复习的真实经过天数（模型自变量 Δt）；锚点见 [ReviewLog.prevScheduledDays]，与本行 [scheduledDays] 同一个 */
     @ColumnInfo(name = "elapsed_days") val elapsedDays: Double,
-    /** 评分那一刻模型为该卡排的计划间隔天数（用于事后反推预测召回率） */
+    /**
+     * **后向口径**：这次评分**之前**该卡被排出去的那段计划间隔（天）。
+     *
+     * 一句话定义：`到期时刻 − 本行 elapsed 的锚点`，两个数都出自**评分前**那一份行快照，
+     * 所以 `scheduledDays − elapsedDays` 恰好是「这次比计划早（正）/ 迟（负）几天」，
+     * 事后反推预测召回 `recall(w, S, elapsed)` 时才拿得到对的 Δt（[com.studykit.data.memory.DueForecast]
+     * 的朴素基线用的就是这一式）。等价说法：第 k 行的这一列 == 第 k−1 行那次评分刚排出去的间隔。
+     *
+     * 与 py-fsrs 的 `review_log.scheduled_days`、[com.studykit.optimize.SynthLog] 同一条约定
+     * （后者每行记的正是"促成这次复习的那个间隔"，见 `SynthLog.kt` 的 `tSched`）。
+     *
+     * **不要**写"这次评分刚排出去的间隔"（前向）。那会把整列相对该卡自己的历史串行一格，
+     * 还会让同一行里 `elapsedDays`（出自评分前）与 `scheduledDays`（出自评分后）配错对。
+     * 表是 append-only、没有回填路径，两种口径混在一列里就再也分不干净 —— v2.9 的词侧就犯过这个错，
+     * 从此由 [ReviewLog.CURRENT_SCHEMA_VER]=2 划界（v1 老行是混合口径）。推导式统一走 [ReviewLog.prevScheduledDays]。
+     */
     @ColumnInfo(name = "scheduled_days") val scheduledDays: Double,
     /** 评分前该卡所处的 FSRS 状态：0New 1Learn 2Review 3Relearn */
     val state: Int,
@@ -61,7 +76,7 @@ data class ReviewLog(
     @ColumnInfo(name = "session_id") val sessionId: String,
     /** 是否补打卡/改期写入：0 正常，1 补录（Lally 2010：补录不断签但单独标识） */
     @ColumnInfo(name = "is_makeup") val isMakeup: Int,
-    /** 本行的日志结构版本，日后字段演进时据此判别老行（当前 =1） */
+    /** 本行的日志结构版本，日后字段/语义演进时据此判别老行（当前 =[ReviewLog.CURRENT_SCHEMA_VER]=2） */
     @ColumnInfo(name = "log_schema_ver") val logSchemaVer: Int,
 ) {
     companion object {
@@ -71,7 +86,40 @@ data class ReviewLog(
         const val KIND_MISTAKE = "mistake"
         const val KIND_EXCERPT = "excerpt"
 
-        /** 当前事件流 schema 版本 */
-        const val CURRENT_SCHEMA_VER = 1
+        private const val DAY_MS = 24L * 3_600_000L
+
+        /**
+         * 当前事件流 schema 版本 —— **改的是列的语义，不是列**：表结构没动（Room 仍 v8、零迁移），
+         * 老行靠这一列认。
+         *
+         * v1 → v2（v3.0-A T2.5）：`scheduled_days` 从这一版起四处评分点**统一为后向口径**
+         * （「这次评分之前该卡被排出去的计划间隔」，见 [ReviewLog.scheduledDays] 的 KDoc）。
+         * v1 的老行是**混合口径**：词侧（`StudyViewModel.gradeCard`）记的是「这次刚排出去的间隔」
+         * （前向，相对本卡历史串行一格）、书摘侧恒 0.0（间隔没从 `ExcerptReview` 回传）、
+         * 练习与错题两侧恒 0.0（self-consistent，本就没这两维）、只有 [com.studykit.optimize.SynthLog]
+         * 一直是后向。表 append-only、无回填路径，所以两版会长期共存。
+         *
+         * 消费侧规则：**只有 `logSchemaVer >= 2` 的行可以信 `scheduled_days`**（按卡回放、反推预测召回、
+         * 负荷/到期基线都算）；v1 行要么把这一列当不可用，要么自己从前一行的到期重建。
+         * `elapsed_days` / `rating` / `state` 两版同义，不受这次改口径影响。
+         */
+        const val CURRENT_SCHEMA_VER = 2
+
+        /**
+         * 把「评分前那一份行快照」折成 [ReviewLog.scheduledDays]（后向口径）——四处评分点**共用这同一个式**，
+         * 免得两处各写一遍算出两个数（词侧当年的错就不是算错而是取错列）。
+         *
+         * @param anchorAt 本行 `elapsedDays` 的锚点：词/错题是 `last_review_at`（首评为 null），
+         *                 书摘只有 `created_at`（表没有 last_review_at，`ExcerptReview` 的 KDoc 已登记这笔近似）。
+         * @param dueAt    评分**前**行上的到期时刻（`next_review_at`）；`<= 0` 是"从没排过/未启用"哨兵。
+         * @return 到期减锚点的天数；没有上次排期可言（首评、哨兵）与脏数据（到期早于锚点）一律 0.0，
+         *         与 [com.studykit.optimize.SynthLog] 的首评行同口径，不凭空造间隔。
+         */
+        fun prevScheduledDays(anchorAt: Long?, dueAt: Long): Double =
+            if (anchorAt == null || dueAt <= 0L) {
+                0.0
+            } else {
+                (dueAt - anchorAt).coerceAtLeast(0L) / DAY_MS.toDouble()
+            }
     }
 }

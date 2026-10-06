@@ -8,6 +8,24 @@
 > 本节只记账开发期间的订正与增量，完整的 v3.0-A 特性清单在发版批次一并补。
 
 ### 修复
+- **`review_log.scheduled_days` 四处评分点统一到后向口径**（v3.0-A T2.5）：实体 KDoc 写的是「模型**上次**排了多久」
+  （py-fsrs `review_log.scheduled_days` 同式），但 v2.9 落库时**词侧传的是 `days`=这次评分刚排出去的间隔**，
+  于是那一列相对该卡自己的历史整体串行一格，且同一行里 `elapsed_days`（出自评分前）与 `scheduled_days`
+  （出自评分后）配错对；书摘侧则因 `ExcerptReview` 没回传间隔而恒记 0.0。表 append-only、没有回填路径，
+  现在不改以后就永远混着两种口径。改法：新增唯一推导式 `ReviewLog.prevScheduledDays(锚点, 评分前的到期)`
+  （词侧锚点 `last_review_at`、书摘侧 `created_at`，与各自 `elapsed_days` 同一个锚点，所以
+  `scheduled − elapsed` 就是「比计划早/迟几天」），词侧直接取 `gradeCard` 手上那份**评分前**的 `Word` 快照、
+  书摘侧由 `ExcerptReview.schedule` 一并算好回传（`ExcerptReviewResult.prevScheduledDays`），两处站点都不复算；
+  练习与错题两列仍成对记 0（本来就拿不到真实 Δt，只补一列反而会把这一列串成前向）。
+  **没有第二套算式**，Room schema 仍 v8、零迁移。**划界靠 `log_schema_ver`：1→2**——v1 老行是混合口径，
+  消费侧（按卡回放、反推预测召回、到期/负荷基线）只可信任 `logSchemaVer >= 2` 那些行的这一列。
+  证据：`ReviewLogScheduledDaysWriterTest` 真起两处 ViewModel + Room 读回落库那一行（改前实测落的是
+  24.60 / 首评 2.3065 / 摘侧 0.0，改后 5.0 / 0.0 / 9.0），`ReviewLogScheduledDaysConventionTest` 用
+  `FsrsModel` 独立重放逐行验「第 k 行的这一列 == 第 k−1 次排出去的间隔」并钉住前向对照值逐个不相等，
+  `ExcerptReviewTest` 钉回传值。FSRS 算术零改动、无新依赖。顺带开一处测试接缝：`AppContainer` 改成收
+  `AppDatabase`（`Context` 构造子原样保留）、`StudyKitApp.createContainer()` 可覆写，让 Robolectric 用例
+  能把整只容器换成一次性内存库——进程单例跨用例存活 + 每用例拆 SQLite 影子连接会撞
+  `Illegal connection pointer`。生产装配路径一行没变。
 - **删掉 `KernelHub.forId(id)` 单参重载，把 v2.9 的活跃 FSRS 参数真正接进排期与显示**（承接下一节末条订正）：
   取内核只剩一条签名 `forId(id, settings)`，编译器从此强制每个调用点把手上那份 `AppSettings` 整份交出来，
   忘交就编译不过——留警告或留默认值都会让下一个调用点再忘一次。同时撤掉 `TomorrowForecast.of` 与
