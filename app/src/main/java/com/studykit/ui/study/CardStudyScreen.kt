@@ -343,6 +343,14 @@ fun CardStudyScreen(
                         // 传 conf 之后 A-T9 那条 Hypercorrection 侧信道与 confidence 落库才真正被喂到（Task 11 只做 UI 接线）。
                         onGrade = { grade -> viewModel.gradeCard(grade, conf = conf) },
                     )
+                    // ── v3.0-A Task 9：底部「这条记忆还会留多久」折叠区（默认收起）──
+                    // 复用按钮那同一份 Scheduling（targetRecall/maxIntervalDays）：
+                    // 到期标记与调度器同式（⛔），口径也必须与本页预览同源。
+                    RecallCurveSection(
+                        word = current,
+                        scheduling = scheduling,
+                        elapsedDays = elapsedDaysOf(current),
+                    )
                 }
             }
         }
@@ -1011,6 +1019,14 @@ private fun SessionSummary(
 private const val ONE_DAY_MS = 86400000L
 
 /**
+ * 这张卡"已经拖了多久"的真实天数（距上次评分；从没评过按加入学习那天，与 `gradeCard` 的锚点同一口径）。
+ * 评分按钮预览与遗忘曲线折叠区（v3.0-A T9）**共用这一个数**：两处各算一套锚点就会分家。
+ */
+internal fun elapsedDaysOf(word: Word): Double =
+    (System.currentTimeMillis() - (word.lastReviewAt ?: word.createdAt))
+        .coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
+
+/**
  * 三个评分档，各自印出"点它之后这个词会排到多久以后"。
  *
  * 抄的是墨墨真机上最有效的一处设计：它的按钮写着 `认识 · 35 天后`、`模糊 · 今日/4 天后`、
@@ -1043,8 +1059,8 @@ private fun GradeRow(
     val texts = AppTheme.texts
     val previewKernel = KernelHub.forId(AppTheme.settings.schedulingKernel)
     // 预览必须用这个词**真实已拖的时间**：拿理想排期算，overdue 的词会印出比实际短得多的间隔
-    val gapDays = (System.currentTimeMillis() - (word.lastReviewAt ?: word.createdAt))
-        .coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
+    // （锚点与遗忘曲线折叠区共用 [elapsedDaysOf]，两处不许各算一套）
+    val gapDays = elapsedDaysOf(word)
     val before = kernelStateFor(previewKernel, word)
     // 三档各跑一遍"评一次 → 该排几天"，与 gradeCard 逐字同序；
     // conf 现在恒为 null（采集信心是计划 B 的 ConfidencePill），侧信道不改这里的间隔，
