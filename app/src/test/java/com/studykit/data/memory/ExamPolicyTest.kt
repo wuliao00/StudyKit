@@ -12,6 +12,8 @@ import org.junit.Test
  *
  * 钉的是文档 L1887-1888 那四条 ⛔ 一票否决：边界取值、窗口外、非关联学科、0.97 上限。
  * 全部用固定日期夹具（`TODAY`），不读系统时钟。
+ * ⛔ 用例的期望值一律写**字面量**、不引生产常量：期望值若读 `MAX_EFFECTIVE_RETENTION`，
+ * 有人把常量改成 0.99 时测试会跟着一起移，闸门就永远测不到闸本身。
  */
 class ExamPolicyTest {
 
@@ -56,7 +58,8 @@ class ExamPolicyTest {
     @Test
     fun `硬闸 0 点 97 上限：冲刺值 0 点 99 也只到 0 点 97`() {
         val e = exam(day = 0L, sprint = 0.99)
-        assertEquals(ExamPolicy.MAX_EFFECTIVE_RETENTION, ExamPolicy.effectiveRetention("数学", TODAY, listOf(e), 0.80), 1e-9)
+        // 字面量 0.97 而不是 MAX_EFFECTIVE_RETENTION：常量被改成 0.99 时这条必须红，不能跟着移
+        assertEquals(0.97, ExamPolicy.effectiveRetention("数学", TODAY, listOf(e), 0.80), 1e-9)
     }
 
     @Test
@@ -119,6 +122,29 @@ class ExamPolicyTest {
         assertEquals(4, ExamPolicy.nearestExamDaysLeft("数学", TODAY, listOf(far, near, other)))
         assertEquals(1, ExamPolicy.nearestExamDaysLeft("英语", TODAY, listOf(far, near, other)))
         assertNull(ExamPolicy.nearestExamDaysLeft("物理", TODAY, listOf(far, near, other)))
+    }
+
+    @Test
+    fun `nearestExamDaysLeft 考试当天返回 0 而不是 null`() {
+        // 与 effectiveRetention 的 left=0→sprint 对齐：当天是最紧急的一天，horizon 不许把它丢掉
+        val today = exam(day = 0L)
+        val future = exam(day = 6L)
+        assertEquals(0, ExamPolicy.nearestExamDaysLeft("数学", TODAY, listOf(future, today)))
+        assertEquals(0, ExamPolicy.nearestExamDaysLeft("数学", TODAY, listOf(today)))
+    }
+
+    @Test
+    fun `subjects 全空白串等于空列表 = 全学科`() {
+        // 旧存储字符串合成的 ExamEntry 会切出 listOf("")：必须按全学科处理，
+        // 否则症状是「全局考试悄悄不再影响任何卡」，静默且查不出来
+        val blank = exam(day = 0L, subjects = listOf(""), sprint = 0.95)
+        val spaced = exam(day = 0L, subjects = listOf("  "), sprint = 0.95)
+        assertTrue(ExamPolicy.linksSubject(blank, "英语"))
+        assertTrue(ExamPolicy.linksSubject(spaced, "英语"))
+        assertTrue(ExamPolicy.linksSubject(blank, null))
+        assertEquals(0.95, ExamPolicy.effectiveRetention("英语", TODAY, listOf(blank), 0.80), 1e-9)
+        assertEquals(0.95, ExamPolicy.effectiveRetention(null, TODAY, listOf(spaced), 0.80), 1e-9)
+        assertEquals(0, ExamPolicy.nearestExamDaysLeft("英语", TODAY, listOf(blank)))
     }
 
     private companion object {
