@@ -2,6 +2,7 @@ package com.studykit.optimize
 
 import com.studykit.data.entity.ReviewLog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,6 +34,7 @@ class LogPackerTest {
         origin: String = "word",
         sessionId: String = "s1",
         isMakeup: Int = 0,
+        logSchemaVer: Int = ReviewLog.CURRENT_SCHEMA_VER,
     ) = ReviewLog(
         id = 0L,
         cardKind = cardKind,
@@ -46,7 +48,7 @@ class LogPackerTest {
         origin = origin,
         sessionId = sessionId,
         isMakeup = isMakeup,
-        logSchemaVer = ReviewLog.CURRENT_SCHEMA_VER,
+        logSchemaVer = logSchemaVer,
     )
 
     private val day = 86_400_000L
@@ -298,6 +300,49 @@ class LogPackerTest {
         assertEquals(listOf(0), packed.trainBounds.toList())
         assertEquals(listOf(0), packed.valBounds.toList())
         assertEquals(0, packed.nTrainTerms + packed.nValTerms)
+    }
+
+    // ============ log_schema_ver 门槛（CHANGELOG 那句「只可信任 >=2」的规则由这里落到代码）============
+
+    /**
+     * `scheduled_days` 从 `log_schema_ver=2` 起才是后向口径（`ReviewLog.CURRENT_SCHEMA_VER` 的 KDoc），
+     * v1 老行的那一列是**混合口径**（词侧记的是"这次刚排出去的间隔"、书摘/练习/错题侧恒 0.0），
+     * 与同一行的 `elapsed_days` 配不成一对。打包契约交的就是这一对，所以整行不喂优化器。
+     *
+     * 期望值写**字面量 2** 而不是取生产常量：常量哪天被改动时这条要红，而不是跟着一起漂。
+     */
+    @Test
+    fun `rows older than the trusted schema version are dropped by clean`() {
+        val rows = listOf(
+            log(ts = 0L, elapsedDays = 0.0, scheduledDays = 24.6, logSchemaVer = 1),
+            log(ts = day, elapsedDays = 5.0, scheduledDays = 5.0, logSchemaVer = 2),
+            log(ts = 2 * day, elapsedDays = 9.0, scheduledDays = 9.0, logSchemaVer = 2),
+        )
+        val cleaned = LogPacker.clean(rows)
+        assertEquals("v1 行整行剔除，剩下的两条都是 v2", 2, cleaned.size)
+        assertTrue("清洗结果里不许留任何 v1 行", cleaned.all { it.logSchemaVer >= 2 })
+    }
+
+    /**
+     * 端到端：v1 行的那个 `scheduledDays` 值**不会**出现在喂给 Rust JNI 的 float 流里。
+     *
+     * 两条 v1 行自己就能凑成一张"够 2 条 review"的卡（[LogPacker.items] 的短卡门槛拦不住它），
+     * 所以这一条测的确实是版本过滤而不是分组规则。今天的 Rust 侧把 `Rev.sched` 当契约字段而不参与
+     * 拟合（`fsrsjni/src/lib.rs` 顶部注释），但规则得由代码成立，不能靠对面那一行注释。
+     */
+    @Test
+    fun `untrusted scheduled days never reach the packed float stream`() {
+        val rows = listOf(
+            log(cardId = 1L, ts = 0L, elapsedDays = 0.0, scheduledDays = 24.6, logSchemaVer = 1),
+            log(cardId = 1L, ts = day, elapsedDays = 5.0, scheduledDays = 24.6, logSchemaVer = 1),
+            log(cardId = 2L, ts = 2 * day, elapsedDays = 5.0, scheduledDays = 5.0, logSchemaVer = 2),
+            log(cardId = 2L, ts = 3 * day, elapsedDays = 9.0, scheduledDays = 9.0, logSchemaVer = 2),
+        )
+        val packed = LogPacker.pack(rows)
+        val floats = packed.trainReviews.toList() + packed.valReviews.toList()
+        assertFalse("v1 行的 24.6 天不许进 JNI 那一段 float 流", floats.contains(24.6f))
+        assertEquals("只剩卡 2 那两条 review ⇒ 4 float × 1 卡", 8, floats.size)
+        assertEquals(1, packed.nTrainTerms + packed.nValTerms)
     }
 
     // ===================== helpers =====================

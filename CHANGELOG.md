@@ -7,18 +7,63 @@
 > 分支版，**尚未发版**：`versionName`/`versionCode` 仍停在 2.9.0/19，Room schema 仍为 v8。
 > 本节只记账开发期间的订正与增量，完整的 v3.0-A 特性清单在发版批次一并补。
 
+### 新增（负荷预告与记忆可视化）
+- **14 天负荷带**：`data/memory/DueForecast.kt`（纯函数、零 Android）把「已排期卡集」按稳定度**反解**到期日，
+  再叠上返工尾巴与每日新词的学习步，产出逐日 `mean ± sd`；`ui/stats/LoadBandChart.kt` 画成一条带，
+  配一行**看得见**的峰值数字与一条带同样数字的读屏描述。装配层 `ui/stats/ForecastCards.kt` 一次读三张表
+  （词 / 练习 / 书摘）并**只求值一次**，看板与提醒数的是同一批卡。两个政策数（`retention` 与
+  `maxIntervalDays`）都是 `ForecastCfg` 的**必填**项、都取 `MemoryScheduler.forSettings` 那份 `Scheduling`。
+- **提醒决策三档**：`data/memory/ReminderPolicy.kt`（跌破线 > 堆积 > 到期）接到 `worker/ReminderWorker.kt`，
+  通知那两行字由决策选、三档都不成立才退回旧的到期直陈。**零到期日不再一刀切静音**（堆积与跌破放行，
+  只有到期档留在旧闸后）。`ReminderScheduler` 用 `setInitialDelay` 把提醒相位对齐到历史复习的众数整点，
+  **不**申请精确闹钟（计划偏差 D4）。
+- **记忆看板另加两块**：稳定性全景 log2 分箱（`ui/stats/StabilityBins.kt`，下闭上开、与 durability 同分母口径）
+  与复习热力图 52×7（`ui/stats/ReviewHeatmapLogic.kt` + `ReviewHeatmapSection.kt`，等级按非零日分位数）。
+- **单卡 R 曲线**：`ui/study/CardRecallCurve.kt` 挂到背词页与错题详情。到期标记**直委托**调度器那个反解式
+  （`FsrsModel.nextIntervalDays`，`maxIntervalDays` 必填），轴/点/话统一以「今天」为原点；
+  ⛔ 一致性由 `CardRecallCurveTest` 逐值钉（曲线上的到期标记 ≡ 调度器会给的间隔）。
+- **算法侧的三道精度门**（`DueForecastAccuracyTest`）：逐卡 vs 排期日 MAE ≤1 天且自洽语料**逐格相等**、
+  逐卡 vs 实际到达日**不劣于**排期基线（+0.5 天容差）、负荷带峰值日 vs 调度最忙日相差 ≤1 天；
+  每道门各带一条"非零真值样本量"哨兵，防止成绩全来自逾期夹取。
+- 无新依赖、无新色值、Room 仍 v8（只做只读 `@Query`，`viz_cache` 表按计划偏差 D1 明确不做）。
+
+### 已知边界（诚实记账）
+- **负荷带是按当前状态反解的，不读落库的到期时刻**。`DueForecast` 故意不吃 `Word.nextReviewAt`：那一列只反映
+  **上一次评分**排出的结果，用户今天多评一轮，后面十几天会整体重排，读它等于把"今天没练"这件事看不见。
+  代价是：带子说第 N 天有 12 项，而 App 的今日队列由那份**已落库**的排期决定——两边在"刚改过严格度/内核、
+  还没重新排完"的那一刻可以不等（同一件事在提醒侧那条边界里也记着，见本节末条）。这是设计口径，不是 bug，
+  但读它的人要知道自己看的是"照这个练法会堆成什么样"，不是"已经排好的日程表"。
+- **热力图只数两路复习流水**：`word_reviews.reviewed_at` 与 `practice_records.at`。书摘侧**没有**"每次复习"的
+  流水表（`book_reviews` 是书评不是复习记录），错题侧的复习记录不在这两条流里，所以格子**不等于**
+  "今天的全部学习量"——只背摘录的日子会是空的。同理，两侧的历史深度受既有两条全量时间戳查询约束，
+  未来日与零复习日都画得出来，但"某天只读了书摘"不会点亮。
+- **"不劣于排期基线"那道门是回归护栏，不是"预测打赢基线"的证据**。`SynthLog` 给每张卡的实际复习时刻叠了
+  `U(0.7,1.6)` 的用户迟到噪声，`E|f−1|=0.25` ⇒ 实际到达日离它自己的排期日恒有约 `0.25·S` 天（窗内 ≈5.6 天），
+  这一项与预测质量无关。所以文档那句「日均 MAE ≤1 天」在这份语料上**不可满足**，改按两种读法各成一道门：
+  对排期日取绝对门（≤1 天 + 自洽语料逐格相等）、对实际到达日取**相对**门。相对门绿了只说明"负荷带没有
+  比直接相信落库排期更差"，**不**说明它更好——真要有那句"更好"，得先有真实语料（`word_reviews.p_at_review`）。
+- **提醒的三档与 App 的今日列表是两把尺**（整枝评审把措辞改诚实的那处）：三档数的都是"按稳定度反解
+  出来的那批卡"（含书摘、按当前内核与严格度），而 `ReminderWorker` 那道「今日无到期」闸读的是两条 SQL
+  （词要 `next_review_at > 0 AND <= now`、错题要 `review_at IS NOT NULL`，书摘不在里面）。
+  两个数**可以不等**，因此到期档的标题写「N 项按现在的状态该复习了」而**不**写「N 项今天到期」。
+
 ### 修复
 - **`review_log.scheduled_days` 四处评分点统一到后向口径**（v3.0-A T2.5）：实体 KDoc 写的是「模型**上次**排了多久」
   （py-fsrs `review_log.scheduled_days` 同式），但 v2.9 落库时**词侧传的是 `days`=这次评分刚排出去的间隔**，
   于是那一列相对该卡自己的历史整体串行一格，且同一行里 `elapsed_days`（出自评分前）与 `scheduled_days`
   （出自评分后）配错对；书摘侧则因 `ExcerptReview` 没回传间隔而恒记 0.0。表 append-only、没有回填路径，
   现在不改以后就永远混着两种口径。改法：新增唯一推导式 `ReviewLog.prevScheduledDays(锚点, 评分前的到期)`
-  （词侧锚点 `last_review_at`、书摘侧 `created_at`，与各自 `elapsed_days` 同一个锚点，所以
-  `scheduled − elapsed` 就是「比计划早/迟几天」），词侧直接取 `gradeCard` 手上那份**评分前**的 `Word` 快照、
+  （词侧锚点 `last_review_at`、书摘侧 `created_at`），词侧直接取 `gradeCard` 手上那份**评分前**的 `Word` 快照、
   书摘侧由 `ExcerptReview.schedule` 一并算好回传（`ExcerptReviewResult.prevScheduledDays`），两处站点都不复算；
   练习与错题两列仍成对记 0（本来就拿不到真实 Δt，只补一列反而会把这一列串成前向）。
   **没有第二套算式**，Room schema 仍 v8、零迁移。**划界靠 `log_schema_ver`：1→2**——v1 老行是混合口径，
-  消费侧（按卡回放、反推预测召回、到期/负荷基线）只可信任 `logSchemaVer >= 2` 那些行的这一列。
+  消费侧（按卡回放、反推预测召回、到期/负荷基线）**只可信任 `logSchemaVer >= 2` 那些行的这一列**。
+  这条规则**本轮起由代码成立**：`optimize/LogPacker` 新增 `TRUSTED_SCHEDULED_DAYS_MIN_VER = 2`，
+  `clean()` 把低于它的行**整行剔除**，于是那一列不可能再被打包进喂给 Rust JNI 的四 float 流
+  （`LogPackerTest` 两条钉住：清洗结果不留 v1 行、打包流里查不到 v1 那个 24.6 的值）。
+  代价如实写在这里：v2.9 就在用的设备，那批 v1 记录不进校准语料，`FsrsGate` 的 term<1000 门因此更晚过；
+  而今天的 Rust 侧还不参与拟合（`fsrsjni/src/lib.rs` 顶部注释——`Rev.sched` 是 JNI 契约字段、非 test 构建不读），
+  所以这一步买的是"以后真读时不踩"，不是当下的精度。**此前这句规则只写在注释里、无人执行**。
   证据：`ReviewLogScheduledDaysWriterTest` 真起两处 ViewModel + Room 读回落库那一行（改前实测落的是
   24.60 / 首评 2.3065 / 摘侧 0.0，改后 5.0 / 0.0 / 9.0），`ReviewLogScheduledDaysConventionTest` 用
   `FsrsModel` 独立重放逐行验「第 k 行的这一列 == 第 k−1 次排出去的间隔」并钉住前向对照值逐个不相等，

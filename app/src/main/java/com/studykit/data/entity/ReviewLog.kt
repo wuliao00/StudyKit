@@ -43,15 +43,27 @@ data class ReviewLog(
     val ts: Long,
     /** FSRS 口径评分 1..4（Again/Hard/Good/Easy） */
     val rating: Int,
-    /** 距该卡上次复习的真实经过天数（模型自变量 Δt）；锚点见 [ReviewLog.prevScheduledDays]，与本行 [scheduledDays] 同一个 */
+    /**
+     * 距该卡上次复习的真实经过天数（模型自变量 Δt）。锚点**按来源不同**：词是
+     * `last_review_at ?: createdAt`（首评那次没有 `last_review_at`，退回加入学习那天，否则 Δt=0
+     * 会让第一次评分的加固量归零）、书摘只有 `created_at`；练习与错题两路拿不到真实 Δt，记 0.0。
+     *
+     * ⚠️ 它与本行 [scheduledDays] 的锚点**不是同一个**：那一列的锚点只认「评分前那份行上的上次复习时刻」
+     * （[ReviewLog.prevScheduledDays] 遇 null 直接回 0.0），所以词的**首评行**是
+     * `elapsedDays > 0` 而 `scheduledDays = 0.0`——两个数各自讲的是"经过多久"与"上次排了多久"，
+     * 首评那行本来就没有"上次"可言。
+     */
     @ColumnInfo(name = "elapsed_days") val elapsedDays: Double,
     /**
      * **后向口径**：这次评分**之前**该卡被排出去的那段计划间隔（天）。
      *
-     * 一句话定义：`到期时刻 − 本行 elapsed 的锚点`，两个数都出自**评分前**那一份行快照，
-     * 所以 `scheduledDays − elapsedDays` 恰好是「这次比计划早（正）/ 迟（负）几天」，
+     * 一句话定义：`到期时刻 − 上次复习时刻`，两个数都出自**评分前**那一份行快照。锚点是那一行的
+     * 上次复习时刻（词 `last_review_at`、书摘只有 `created_at`），**没有** `?: created_at` 那层回退
+     * ——回退只属于本行 [elapsedDays] 的锚点（词侧首评），见那条 KDoc。所以在词与书摘那些行上
+     * `scheduledDays − elapsedDays` 恰好是「这次比计划早（正）/ 迟（负）几天」，
      * 事后反推预测召回 `recall(w, S, elapsed)` 时才拿得到对的 Δt（[com.studykit.data.memory.DueForecast]
      * 的朴素基线用的就是这一式）。等价说法：第 k 行的这一列 == 第 k−1 行那次评分刚排出去的间隔。
+     * 词与书摘之外的两路（练习、错题）拿不到这两个时刻，`elapsedDays` 与这一列**成对**记 0.0。
      *
      * 与 py-fsrs 的 `review_log.scheduled_days`、[com.studykit.optimize.SynthLog] 同一条约定
      * （后者每行记的正是"促成这次复习的那个间隔"，见 `SynthLog.kt` 的 `tSched`）。
@@ -59,7 +71,8 @@ data class ReviewLog(
      * **不要**写"这次评分刚排出去的间隔"（前向）。那会把整列相对该卡自己的历史串行一格，
      * 还会让同一行里 `elapsedDays`（出自评分前）与 `scheduledDays`（出自评分后）配错对。
      * 表是 append-only、没有回填路径，两种口径混在一列里就再也分不干净 —— v2.9 的词侧就犯过这个错，
-     * 从此由 [ReviewLog.CURRENT_SCHEMA_VER]=2 划界（v1 老行是混合口径）。推导式统一走 [ReviewLog.prevScheduledDays]。
+     * 从此由 [ReviewLog.CURRENT_SCHEMA_VER]=2 划界（v1 老行是混合口径）。词与书摘两处评分点统一走
+     * [ReviewLog.prevScheduledDays] 这一式（练习/错题拿不到这两个时刻，见上面那句成对记 0.0）。
      */
     @ColumnInfo(name = "scheduled_days") val scheduledDays: Double,
     /** 评分前该卡所处的 FSRS 状态：0New 1Learn 2Review 3Relearn */
@@ -106,11 +119,20 @@ data class ReviewLog(
         const val CURRENT_SCHEMA_VER = 2
 
         /**
-         * 把「评分前那一份行快照」折成 [ReviewLog.scheduledDays]（后向口径）——四处评分点**共用这同一个式**，
-         * 免得两处各写一遍算出两个数（词侧当年的错就不是算错而是取错列）。
+         * 把「评分前那一份行快照」折成 [ReviewLog.scheduledDays]（后向口径）。
          *
-         * @param anchorAt 本行 `elapsedDays` 的锚点：词/错题是 `last_review_at`（首评为 null），
-         *                 书摘只有 `created_at`（表没有 last_review_at，`ExcerptReview` 的 KDoc 已登记这笔近似）。
+         * **只有两处**评分点走这一式——词（`StudyViewModel.gradeCard`，锚点 `word.lastReviewAt`）与书摘
+         * （`ExcerptReview.schedule` → [com.studykit.data.memory.ExcerptReviewResult.prevScheduledDays]，
+         * 锚点 `excerpt.createdAt`），
+         * 免得两处各写一遍算出两个数（词侧当年的错就不是算错而是取错列）。
+         * **练习与错题不走这里**：那两路既没有 `last_review_at` 也没有可用的到期偏移，`elapsed_days` 与
+         * `scheduled_days` **成对**记 0.0（`MistakeViewModel.gradeRedo` / `StudyViewModel.selectOption`）——
+         * 只把 scheduled 那一列单独补成"刚排出去的间隔"反而会把这一列串回前向。
+         *
+         * @param anchorAt 评分**前**那份行上的"上次复习时刻"：词是 `last_review_at`（首评为 null ⇒
+         *                 本式回 0.0；这与同行 `elapsedDays` 的锚点不同，那一列首评退回 `created_at`，
+         *                 见 [ReviewLog.elapsedDays] 的 KDoc），书摘只有 `created_at`
+         *                 （表没有 last_review_at，`ExcerptReview` 的 KDoc 已登记这笔近似）。
          * @param dueAt    评分**前**行上的到期时刻（`next_review_at`）；`<= 0` 是"从没排过/未启用"哨兵。
          * @return 到期减锚点的天数；没有上次排期可言（首评、哨兵）与脏数据（到期早于锚点）一律 0.0，
          *         与 [com.studykit.optimize.SynthLog] 的首评行同口径，不凭空造间隔。
