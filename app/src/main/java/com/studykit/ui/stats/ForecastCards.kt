@@ -106,7 +106,8 @@ object ForecastCards {
      * ```
      * val cards = ForecastCards.of(words, mistakes, excerpts, now)   // 只此一次
      * val bands = DueForecast.forecast(cards.toForecastCards(), cfg, w)
-     * val decision = ReminderPolicy.decide(cards.toForecastCards(), bands, retention, todayReviewed, w)
+     * val decision = ReminderPolicy.decide(cards.toForecastCards(), bands, retention, todayReviewed,
+     *     maxIntervalDays, w)
      * ```
      * `toForecastCards()` 是对同一个列表的纯投影，多调一次无妨；**`of` 一次都不许多调**。
      */

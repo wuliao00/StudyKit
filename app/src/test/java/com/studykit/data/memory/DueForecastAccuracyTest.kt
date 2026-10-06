@@ -58,8 +58,22 @@ class DueForecastAccuracyTest {
     /** 预测侧唯一的参数向量：三道门的**预测**（重放 + 反解 + 负荷带）都只吃它，即 app 的活跃参数。 */
     private val w = FsrsModel.DEFAULT_PARAMS
 
-    /** 只谈已排卡片的到期时机：新词流入与学习步关掉，免得把「今天进多少张」的假设混进精度账。 */
-    private val cfg = ForecastCfg(horizonDays = horizon, retention = retention, newPerDay = 0, learningPerNew = 0.0)
+    /**
+     * 只谈已排卡片的到期时机：新词流入与学习步关掉，免得把「今天进多少张」的假设混进精度账。
+     *
+     * 上限取 [ForecastCfg.MAX_INTERVAL_DAYS_UNSCOPED]（3650 天）而不是某份 `Scheduling`：本文件测的是
+     * **记账**（反解→取整→摊派→窗边界），语料出自合成器自己那份 365 天政策上限（见
+     * [synthScheduleCapDays]），没有考试日期可问。取大值等于「不额外夹一道」，
+     * 让恒等式 `intervalDays(w, stabilityFromScheduled(t, w), R) ≡ t` 保持成立——
+     * 真政策上限怎么夹，由 `DueForecastTest` 那三条专门盯。
+     */
+    private val cfg = ForecastCfg(
+        horizonDays = horizon,
+        retention = retention,
+        maxIntervalDays = ForecastCfg.MAX_INTERVAL_DAYS_UNSCOPED,
+        newPerDay = 0,
+        learningPerNew = 0.0,
+    )
 
     /** 生成器给排期间隔夹的政策上限（`SynthLog.kt:55` 的私有常量，值 365 天）；撞上它时记录值不再等于稳定度。 */
     private val synthScheduleCapDays = 365.0
@@ -88,9 +102,10 @@ class DueForecastAccuracyTest {
      * 计划间隔 → 稳定度的反解，即 [FsrsModel.nextIntervalDays] 的解析逆。
      * **全文件唯一一处**，三个测试都经 [replays] 走它，不许各写一遍反解。
      *
-     * 因为是解析逆，`intervalDays(w, stabilityFromScheduled(t, w), R) ≡ t` 是**恒等式**，任意 `R` 都成立
-     * （不是「因为 retention == 0.9」——那句旧话错了因果）。只有三处夹取能让它不成立：[DueForecast] 的
-     * `REVERSE_CAP_DAYS`（3650 天）、生成器的 365 天政策上限（见 [synthScheduleCapDays]）、以及
+     * 因为是解析逆，`intervalDays(w, stabilityFromScheduled(t, w), R, cap) ≡ t` 对**任意** `R` 都成立
+     * （不是「因为 retention == 0.9」——那句旧话错了因果）。只有三处夹取能让它不成立：传进去的
+     * 政策上限 [cfg]（本文件取 3650 天的 [ForecastCfg.MAX_INTERVAL_DAYS_UNSCOPED]，等于不额外夹）、
+     * 生成器的 365 天政策上限（见 [synthScheduleCapDays]）、以及
      * `nextIntervalDays` 把 `target` 夹进 `[0.5, 0.99]` 而本反解不夹。写成一般式而不是化简成
      * `scheduledDays`，就是为了让这些真发生时这条仍是对的。
      */
@@ -158,7 +173,9 @@ class DueForecastAccuracyTest {
         logs.groupBy { it.cardKind to it.cardId }.mapNotNull { (_, hist) ->
             val card = stateAt(hist, cutTs) ?: return@mapNotNull null
             val next = hist.filter { it.ts > cutTs }.minByOrNull { it.ts } ?: return@mapNotNull null
-            val planned = DueForecast.intervalDays(w, stabilityFromScheduled(next.scheduledDays), retention)
+            val planned = DueForecast.intervalDays(
+                w, stabilityFromScheduled(next.scheduledDays), retention, cfg.maxIntervalDays,
+            )
             Replayed(
                 card = card,
                 planDay = maxOf(0, (planned - card.elapsedDays).roundToInt()),

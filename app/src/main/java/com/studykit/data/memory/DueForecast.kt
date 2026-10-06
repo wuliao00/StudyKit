@@ -17,10 +17,19 @@ data class ForecastCfg(
     val horizonDays: Int = HORIZON_DAYS,
     /** 目标保留率，来自 `Scheduling.targetRecall`，**不要**在这里写死默认值——那会悄悄分叉调度政策。 */
     val retention: Double,
+    /**
+     * 间隔上限（天），来自 `Scheduling.maxIntervalDays`，与 [retention] 同一条纪律：**必填**。
+     *
+     * 它由考试日期推（`MemoryModel.maxIntervalDaysFor`：无考试日 36 天、考前 20 天只有 4 天），
+     * 而调度器排每张卡时都套了这个上限。预测侧不套的话，凡是自然间隔超过上限的卡都会被带子
+     * 排到**更晚**（甚至整个甩出 14 天窗），而 App 其实把它们排到了**更早**——考前那两周于是
+     * 系统性地**少报**。同一份上限还喂给 [ReminderPolicy] 的堆积与到期两档，理由相同。
+     */
+    val maxIntervalDays: Double,
     /** 每日新词 intake（`AppSettings.dailyWordGoal`）。 */
     val newPerDay: Int = 20,
     /** 每张新词随后产生的学习步次数。 */
-    val learningPerNew: Double = 2.5,
+    val learningPerNew: Double = DEFAULT_LEARNING_PER_NEW,
     /** 学习步 / 返工在「当天起 +0..+2」三天的摊派权重，和应为 1。 */
     val inflowW: DoubleArray = defaultInflow(),
 ) {
@@ -33,6 +42,24 @@ data class ForecastCfg(
          * 的不再是同一次预测。上一轮就同时在两处写过 `14`，靠 KDoc 里一句「同值」维持——没人执行。
          */
         const val HORIZON_DAYS: Int = 14
+
+        /**
+         * 每张新词随后产生的学习步次数——[ForecastCfg.learningPerNew] 的默认值。
+         *
+         * 提到常量是因为**视图也要念它**（[com.studykit.ui.stats.LoadBandChart] 的图注）：写死在文案里的
+         * 那个数字与预测实际用的那个数分叉时，图上就印着一句关于自己算法的假话。
+         */
+        const val DEFAULT_LEARNING_PER_NEW: Double = 2.5
+
+        /**
+         * 「没有政策上下文」时用的反解上限（天）：⛔ 它**不是** [ForecastCfg.maxIntervalDays] 的默认值，
+         * 也不许出现在生产调用点——有考试日/严格度可问的调用点必须交 `Scheduling.maxIntervalDays`。
+         *
+         * 存在的理由只有两类：纯数学面（合成语料的精度门要的是反解恒等式，不是某份排期政策）与测试夹具。
+         * 与 [com.studykit.ui.study.CardRecallCurve] 那份 `DEFAULT_MAX_INTERVAL_DAYS` 同值、同一条纪律
+         * （那边是 T9 为了同一个理由把上限改成必填的）。
+         */
+        const val MAX_INTERVAL_DAYS_UNSCOPED: Double = 3650.0
     }
 }
 
@@ -52,8 +79,14 @@ data class DayBand(val dayIndex: Int, val mean: Double, val sd: Double)
  * ## 为什么不吃落库的到期时刻（`Word.nextReviewAt`）
  * 落库的到期时刻只反映**上一次评分**排出来的结果；用户今天多评一轮，后面十几天会整体重排。
  * 所以这里由 `S` 与目标保留率**反解**出「还有几天到期」，再叠上已流逝天数：
- * `remain = intervalDays(w, S, R) - elapsed`。这样「今天没练」会如实变成「明天堆积」。
+ * `remain = intervalDays(w, S, R, maxIntervalDays) - elapsed`。这样「今天没练」会如实变成「明天堆积」。
  * 也正因为如此，[ForecastCard] 不预留 `dueAt` 字段——留着就是穿过整条计划的死数据。
+ *
+ * ## 反解用的两个政策数都来自调度器，一个都不许自己定
+ * [ForecastCfg.retention] 与 [ForecastCfg.maxIntervalDays] 都取自 `MemoryScheduler.forSettings` 的那份
+ * `Scheduling`（两者皆**必填**）。上限尤其容易被漏：`S=30` 的卡在考前 20 天只会被排到**第 4 天**
+ * （上限 `max(3, 20×0.2)=4`），带子若按 30 天放它，就会把它排到更晚、甚至甩出窗外——
+ * 于是负荷带与提醒在考前那两周**系统性少报**。这条纪律与 T9 把 `maxIntervalDays` 改成必填同源。
  *
  * ## 三件质量来源
  * 1. **到期本事件**：`mean[d0] += 1`，确定性 → 不贡献方差。
@@ -67,12 +100,17 @@ data class DayBand(val dayIndex: Int, val mean: Double, val sd: Double)
  */
 object DueForecast {
 
-    /** 反解上限：给足，让夹取只由调用方的政策上限决定，而不是被 365 天兜底截断。 */
-    private const val REVERSE_CAP_DAYS = 3650.0
-
-    /** 给定 S 与目标保留率，反解「上次复习后第几天到期」。与调度器同一个函数，口径不分叉。 */
-    fun intervalDays(w: DoubleArray, stabilityDays: Double, retention: Double): Double =
-        FsrsModel.nextIntervalDays(w, stabilityDays, retention, REVERSE_CAP_DAYS)
+    /**
+     * 给定 S 与目标保留率，反解「上次复习后第几天到期」。与调度器同一个函数、**同一个上限**，
+     * 两头都不分叉：`maxIntervalDays` 交调度器那份 `Scheduling.maxIntervalDays`，
+     * 带子才会把考前被压短的卡放在 App 真正排它们的那一天。
+     */
+    fun intervalDays(
+        w: DoubleArray,
+        stabilityDays: Double,
+        retention: Double,
+        maxIntervalDays: Double,
+    ): Double = FsrsModel.nextIntervalDays(w, stabilityDays, retention, maxIntervalDays)
 
     fun forecast(cards: List<ForecastCard>, cfg: ForecastCfg, w: DoubleArray = FsrsModel.DEFAULT_PARAMS): List<DayBand> {
         val n = cfg.horizonDays.coerceAtLeast(1)
@@ -83,7 +121,10 @@ object DueForecast {
         val p = (1.0 - cfg.retention).coerceIn(0.0, 1.0)
         for (card in cards) {
             if (!card.stabilityDays.isFinite() || card.stabilityDays <= 0.0) continue
-            val remain = max(0.0, intervalDays(w, card.stabilityDays, cfg.retention) - card.elapsedDays)
+            val remain = max(
+                0.0,
+                intervalDays(w, card.stabilityDays, cfg.retention, cfg.maxIntervalDays) - card.elapsedDays,
+            )
             val d0 = remain.roundToInt()
             if (d0 >= n) continue
             mean[d0] += 1.0

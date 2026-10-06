@@ -133,7 +133,9 @@ internal const val FALLBACK_TITLE = "今日复习"
  *    排过的错题进不了到期列表却就在预测卡集里），而书摘（第三张表）**根本不喂给这道闸**。
  *    于是"只有书摘跌破线"、"只有没手动排过的错题跌破线"这类运行，两类皆 0 而跌破档成立——照样被闸打死。
  *  - [AlertKind.DUE_NOW] 维持原行为：它按定义是"有东西到期"的直陈升级版，
- *    列表为空时那句"N 项今天到期"是在催一批 App 里找不到的人。
+ *    列表为空时那句「N 项按现在的状态该复习了」是在催一批 App 里找不到的人。
+ *    它数的仍是**反解出来的那批卡**（含书摘、按当前内核与严格度），与这两条 SQL 的长度**可以不等**——
+ *    文案因此刻意说"按现在的状态"，不冒充列表计数（[com.studykit.data.memory.ReminderPolicy] 类 KDoc 的 ⚠️）。
  * 所以这里只把 DUE_NOW 那一档留在闸后，另两档放行。
  */
 internal fun reminderCopy(
@@ -286,7 +288,7 @@ class ReminderWorker(
         )
         // "不发"在这里收口，两种情形（逐条见 [reminderCopy] 的零到期日规则）：
         //  ① 两类皆 0 且没有决策——旧行为，一字未改；
-        //  ② 两类皆 0 且决策是 DUE_NOW——列表本就空，那句"N 项今天到期"催的是 App 里找不到的一批人。
+        //  ② 两类皆 0 且决策是 DUE_NOW——列表本就空，那句「N 项按现在的状态该复习了」催的是 App 里找不到的一批人。
         // 跌破线 / 堆积这两档在 ①② 之外照发：那正是它们存在的理由。
         val copy = reminderCopy(decision, fallbackText, nothingDueToday) ?: return Result.success().also {
             val reason = if (decision?.kind == AlertKind.DUE_NOW) "到期直陈档今日无到期内容" else "今日无可催的档"
@@ -333,8 +335,10 @@ class ReminderWorker(
      * 仓储一半走库好读。
      *
      * ## 两个数只有一个来源
-     * 目标保留率走 [MemoryScheduler.forSettings] 的 `Scheduling.targetRecall`（写死 0.9 等于
-     * 在提醒侧另起一份排期政策），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
+     * 目标保留率与间隔上限都走 [MemoryScheduler.forSettings] 的那份 `Scheduling`（`targetRecall` /
+     * `maxIntervalDays`）：写死 0.9 等于在提醒侧另起一份排期政策，漏掉上限是另起第二份——考前 20 天
+     * 调度器只把卡排到第 4 天，预测侧按 30 天数就会把这两周数少。FSRS 参数走 `settings.fsrsActiveParams`，
+     * 没校准过时才取发布默认。
      * 时钟只读一次：`today` 与 `dayStart` 都从同一个 [now] 推，免得跨过零点那一次调用里
      * 「今天」和「今天零点」不是同一天。
      */
@@ -370,6 +374,9 @@ class ReminderWorker(
                 // 两处各写一份字面量时，通知那句"后天会堆到 N 项"和看板上那座峰可能不是同一段未来
                 horizonDays = ForecastCfg.HORIZON_DAYS,
                 retention = sched.targetRecall,
+                // 上限与看板/评分按钮同一份 `Scheduling`：漏了它，考前被压到 4 天的卡在通知里仍按
+                // 30 天算「还有多久到期」，堆积档也照同一个错数（见 ForecastCfg.maxIntervalDays 的 KDoc）
+                maxIntervalDays = sched.maxIntervalDays,
                 newPerDay = settings.dailyWordGoal,
                 // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
             ),
@@ -380,6 +387,7 @@ class ReminderWorker(
             bands = bands,
             retention = sched.targetRecall,
             todayReviewed = todayReviewed,
+            maxIntervalDays = sched.maxIntervalDays,
             w = w,
         )
     }

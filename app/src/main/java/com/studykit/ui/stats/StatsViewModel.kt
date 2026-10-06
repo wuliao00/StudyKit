@@ -48,8 +48,10 @@ data class StatsUiState(
      * （"接下来 7 天原本排了多少"），`loadBand` 由稳定度反解到期日（"照这个练法会堆成什么样"），
      * 所以今天不练，只有后者会如实把明天的量顶上去。口径见 [DueForecast] 的类 KDoc。
      *
-     * **mean 里除了到期复习还有学习步**（`newPerDay × learningPerNew`，见 [ForecastCfg]）：它就是会比
-     * 词数大。上一版为此在这里递了一个 `capacityPerDay = settings.dailyWordGoal` 给图当对照线，
+     * **mean 里除了到期复习还有学习步**（`newPerDay × learningPerNew`，见 [ForecastCfg]），零卡用户也照样
+     * 有一条非零的带。**但别拿它跟 [plannedCount] 比大小**：这里是**某一天**要处理的项数，那里是
+     * **整个库**已排期的词数，两把尺（见 [LoadBandChart] 的图注）。上一版为此在这里递了一个
+     * `capacityPerDay = settings.dailyWordGoal` 给图当对照线，
      * 而 `dailyWordGoal` 是每日**新词**目标、不是复习容量，那个比较天天成立、提示常亮，已删（T6 修复轮）。
      */
     val loadBand: List<DayBand> = emptyList(),
@@ -130,8 +132,9 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * [StabilityBins.bin] 的同一道判据在这里是**幂等的安全网**，不是第二套口径。
      *
      * ## 两个数只有一个来源
-     * 目标保留率走 [MemoryScheduler.forSettings] 的 `targetRecall`（写死 0.9 等于在看板另起一份
-     * 排期政策，与提醒侧同一条纪律），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
+     * 目标保留率与间隔上限走 [MemoryScheduler.forSettings] 的那份 `Scheduling`（`targetRecall` /
+     * `maxIntervalDays`；两个都**必填**、都无默认值——写死 0.9 或漏掉上限，等于在看板另起一份排期政策，
+     * 与提醒侧同一条纪律），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
      * `settings.dailyWordGoal` 在这里只进 [ForecastCfg.newPerDay] 一个地方：它说的是"每天进几个新词"，
      * 带子因此含这些新词产生的学习步。**不许**把它当每日复习容量再递一份给 UI 画对照线——
      * 那个比较恒真、超载提示常亮，上一轮就是这么写的，已删（见 [LoadBandChart] 类 KDoc）。
@@ -164,6 +167,9 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                     // 与提醒侧同一个常量：两处各写一份 14 时，通知和看板就不是在同一段未来里读数
                     horizonDays = ForecastCfg.HORIZON_DAYS,
                     retention = sched.targetRecall,
+                    // 上限同样取这一份 `Scheduling`：漏了它，考前被调度器压到 4 天的卡会按自然间隔
+                    // 排到更晚甚至出窗，负荷带于是**少报**接下来这两周（见 ForecastCfg.maxIntervalDays）
+                    maxIntervalDays = sched.maxIntervalDays,
                     newPerDay = settings.dailyWordGoal,
                     // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
                 ),
