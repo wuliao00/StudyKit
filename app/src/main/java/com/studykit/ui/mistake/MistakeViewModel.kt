@@ -113,7 +113,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     private val container = (application as StudyKitApp).container
     private val repository = container.mistakeRepository
 
-    // 排期要读设置里的两项：活跃内核 id（[KernelHub.forId]）与严格度/考试日
+    // 排期要读设置里的两项：活跃内核（id **连同** fsrsActiveParams，经 [KernelHub.forId] 双参口径）
+    // 与严格度/考试日
     // （`MemoryScheduler.forSettings`），与 `StudyViewModel.gradeCard` 同源同一个内核
     private val settingsRepository = container.settingsRepository
 
@@ -393,7 +394,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val mistake = repository.getById(id) ?: return@launch
             val settings = settingsRepository.current()
-            val kernel = KernelHub.forId(settings.schedulingKernel)
+            // 整份设置交给 hub：v2.9 的活跃 FSRS 参数就住在这里，只交 id 等于把它丢掉
+            val kernel = KernelHub.forId(settings.schedulingKernel, settings)
             val sched = MemoryScheduler.forSettings(
                 strictness = settings.reviewStrictness,
                 examEpochDay = settings.examEpochDay,

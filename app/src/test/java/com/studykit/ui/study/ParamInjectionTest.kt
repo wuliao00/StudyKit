@@ -14,9 +14,14 @@ import org.junit.Test
  *
  * 这里不是单测 `FsrsKernel(w)` 的构造，而是从**设置层**（`AppSettings.fsrsActiveParams`）出发，
  * 经全仓唯一的取核入口 [KernelHub.forId] 拿到内核，再看它对同一份卡状态排出的间隔：
- *  - `fsrsActiveParams = null` → 用 [FsrsModel.DEFAULT_PARAMS]，排出的间隔与今天（旧签名
- *    `forId(id)` 那条缓存的默认内核）**逐比特一致**——注入不改变"没训练过"的人的行为；
+ *  - `fsrsActiveParams = null` → 用 [FsrsModel.DEFAULT_PARAMS]，排出的间隔与"没采纳过"的设置
+ *    **逐比特一致**——注入不改变"没训练过"的人的行为；
  *  - `fsrsActiveParams = 改过的 21 数组` → 排出的间隔**确实不同**。
+ *
+ * **这一层绿不等于用户收到了校准值。** v2.9 就是这个教训：这三条当时全绿，而全部生产调用点走的
+ * 是只认 id 的单参 `forId(id)`，那份向量一步都没进调度器。"调用点确实把整份设置交给了 hub"
+ * 由 [ActiveParamsEndToEndTest]（背词/错题/提醒/首页四路）与
+ * [GradePreviewCalibrationRenderTest]（评分按钮那一屏）钉住，单参重载也已删除（v3.0-A T2.6）。
  *
  * 之所以喂 [KernelState] 后只看 `nextIntervalDays` 就够证明"生效"：该函数只经 `decay(w) = -w[20]`
  * 与 `factor(w) = 0.9^(1/decay)-1` 用到参数（`raw = s/factor·(dr^(1/decay)-1)`）。**注意 target 不能取
@@ -34,14 +39,14 @@ class ParamInjectionTest {
 
     @Test
     fun `null 活跃参数走默认参数_与今天逐值一致`() {
-        val today = interval(KernelHub.forId("FSRS"))
+        val today = interval(KernelHub.forId("FSRS", AppSettings()))
         val viaSettings = interval(KernelHub.forId("FSRS", AppSettings(fsrsActiveParams = null)))
         assertEquals(today, viaSettings, 1e-12)
     }
 
     @Test
     fun `改过的活跃参数真的改变了排期`() {
-        val today = interval(KernelHub.forId("FSRS"))
+        val today = interval(KernelHub.forId("FSRS", AppSettings()))
         // 故意偏离默认：动 w[20]（decay）——它是 nextIntervalDays 唯一读到的参数维；
         // 顺带动 w[0]/w[2]（首评稳定度）证明整条向量都被换掉，而不只是默认对象被复用。
         val altered = FsrsModel.DEFAULT_PARAMS.copyOf()

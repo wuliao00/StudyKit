@@ -1041,15 +1041,17 @@ internal fun elapsedDaysOf(word: Word): Double =
  * 灰的方式沿用 [AppButton] 那副禁用态 —— 文字退到 `secondaryText`，不另造一档颜色、
  * 不加 alpha，`clickable(enabled = false)` 本身就不吃事件也不画 ripple。
  *
- * 预览走的是**活跃内核**（设置里那一个，经 [KernelHub.forId]）：与 `StudyViewModel.gradeCard`
- * 同一条 `review → nextIntervalDays` 通路、同一个 `kernelStateFor` 取状态。这不是优化，是
- * 必须的：印在按钮上的数字与点下去真排出的间隔只要有一处各算一套，用户当场就会看见它骗人
+ * 预览走的是**活跃内核**（设置里那一个，连同 `fsrsActiveParams`，经 [KernelHub.forId] 的双参口径）：
+ * 与 `StudyViewModel.gradeCard` 同一条 `review → nextIntervalDays` 通路、同一个 `kernelStateFor` 取状态。
+ * 这不是优化，是必须的：印在按钮上的数字与点下去真排出的间隔只要有一处各算一套，用户当场就会看见它骗人
  * （v2.6 时这一行直接叫 `MemoryModel.preview`，那一头只有一个内核所以不会分家）。
+ * v3.0-A T2.6 之前这里只把 `settings.schedulingKernel` 交给 hub、没把整份设置交出去，于是采纳过的
+ * 校准参数进不了按钮；单参重载已从 [KernelHub] 删掉，拿不到设置就编译不过。
  * 读设置用 [AppTheme.settings] 而不加形参：页面早就在同一份 CompositionLocal 上读闸门那两项，
  * 为这一个数字新开一条参数链会把"设置从哪来"再拆成两套。
  */
 @Composable
-private fun GradeRow(
+internal fun GradeRow(
     word: Word,
     scheduling: Scheduling,
     enabled: Boolean,
@@ -1057,7 +1059,8 @@ private fun GradeRow(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val previewKernel = KernelHub.forId(AppTheme.settings.schedulingKernel)
+    val settings = AppTheme.settings
+    val previewKernel = KernelHub.forId(settings.schedulingKernel, settings)
     // 预览必须用这个词**真实已拖的时间**：拿理想排期算，overdue 的词会印出比实际短得多的间隔
     // （锚点与遗忘曲线折叠区共用 [elapsedDaysOf]，两处不许各算一套）
     val gapDays = elapsedDaysOf(word)

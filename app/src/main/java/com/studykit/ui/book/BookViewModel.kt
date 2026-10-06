@@ -300,7 +300,8 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 评一次书摘：走活跃内核重排 stability / reviewCount / nextReviewAt。
-     * 与 `StudyViewModel.gradeCard` 同一把尺子（KernelHub 现取内核），但只回写书摘那三列。
+     * 与 `StudyViewModel.gradeCard` 同一把尺子（KernelHub 按**整份设置**现取内核，含活跃 FSRS 参数），
+     * 但只回写书摘那三列。
      * 信心档（conf）只在 SURE×未忆起 时叠一条超纠正提前，其余一律不干预（见 [ExcerptReview]）。
      */
     fun gradeExcerptReview(excerptId: Long, grade: ReviewGrade, conf: Confidence?) {
@@ -309,7 +310,9 @@ class BookViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val excerpt = repository.getExcerpt(excerptId) ?: return@launch
                 val now = System.currentTimeMillis()
-                val kernel = KernelHub.forId(settingsRepository.current().schedulingKernel)
+                val settings = settingsRepository.current()
+                // 整份设置交给 hub：v2.9 的活跃 FSRS 参数住在那里，只交 id 等于把它丢掉
+                val kernel = KernelHub.forId(settings.schedulingKernel, settings)
                 val result = ExcerptReview.schedule(kernel, excerpt, grade, conf, now)
                 repository.updateExcerpt(
                     excerpt.copy(

@@ -35,7 +35,7 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * `StudyViewModel.markFlipTipSeen` 写，每次安装只出现一次；口径与 recallGateHintSeen 一致）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
  * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
- * [schedulingKernel] → 排期算哪个内核，消费点在 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（均经 `KernelHub.forId`，A-T9）；写侧是设置页「排期与练习」的二选一（计划 B Task 20，首个可切换的生产入口）；
+ * [schedulingKernel] → 排期算哪个内核，消费点在 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（均经 `KernelHub.forId`，A-T9）；写侧是设置页「排期与练习」的二选一（计划 B Task 20，首个可切换的生产入口）。调用点交的是**整份** `AppSettings`（不只是这一项 id），于是 [fsrsActiveParams] 与它同时生效（v3.0-A T2.6）；
  * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen` 的 `ConfidenceRow`，采集 UI 已在计划 B Task 11-12 落地、设置页也能关（计划 B Task 20）；关掉即 conf 恒 null、confidence 列落 NULL（这一句说的是"关掉"那一侧的落库口径，不代表开关还没生效）。
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
@@ -166,6 +166,10 @@ data class AppSettings(
      * null = 从没校准过（首装 / 恢复默认）→ [com.studykit.ui.study.KernelHub] 用
      * [com.studykit.data.memory.FsrsModel.DEFAULT_PARAMS]，行为与今天逐比特一致；
      * 非 null = 采纳了个性化参数，消费点在 [com.studykit.ui.study.KernelHub] 据此构造 `FsrsKernel(w)`。
+     *
+     * **v3.0-A T2.6 补上的一句话**：v2.9 时这句"据此构造"只在单测层为真——所有生产调用点当时走的是
+     * 只认 id 的单参 `KernelHub.forId(id)`。那条重载已删，取内核必须把整份 `AppSettings` 交进去，
+     * 于是背词/错题/书摘的排期、评分按钮预览、明日预告与复习提醒读的都是这一项。
      *
      * 存法与脏值口径：以逗号拼接的字符串存（[toMap]），读回时**要么 21 项全数字，要么一律 null**
      * （长度≠21 或含非数字都当脏值丢弃，绝不用残缺数组喂调度器）——这条纪律与其余每一项

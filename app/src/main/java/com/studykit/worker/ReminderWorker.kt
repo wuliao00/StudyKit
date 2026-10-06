@@ -51,7 +51,9 @@ private val ONE_DAY_MS: Long = TimeUnit.DAYS.toMillis(1)
  * 同一个"脏 h 行留在分母"）。两处唯一实质差别是取值时刻：那一格拿的是"各自明天到期时"，
  * 这里是"现在"（这批词已经到期了）。两个时刻平均出的百分比会差很多，但那是口径本身，不是算法分家。
  *
- * @param kernel **活跃内核**，由调用方从设置里取（[KernelHub.forId]）；默认回 FSRS 只为保住既有调用点。
+ * @param kernel **活跃内核**，由调用方把手上那份设置整份交给 [KernelHub.forId] 取（id + `fsrsActiveParams`）。
+ *   这里**没有**默认值：v3.0-A T2.6 之前它默认 `KernelHub.forId(null)`，等于给"忘了传"留了一条
+ *   悄悄退回发布默认参数的路，而这条通知里的百分比必须与评分按钮上那行同源。
  *   不许拿行上的 `words.kernel` 列逐行挑内核：那一列是"上一次谁原生写了这行"的审计戳，
  *   用户切了内核之后，它会把一批词拆成两条曲线去读，而通知里那句"还记得 X%"必须与
  *   评分按钮上那行同源（spec §2.1；`KernelHub` 的 KDoc）。
@@ -67,7 +69,7 @@ private val ONE_DAY_MS: Long = TimeUnit.DAYS.toMillis(1)
 internal fun dueRetentionPercent(
     words: List<Word>,
     now: Long,
-    kernel: SchedulingKernel = KernelHub.forId(null),
+    kernel: SchedulingKernel,
 ): Int? {
     if (words.isEmpty()) return null
     // 至少得有一个可信的 h，否则算出来的数来路不明（全脏时逐条会是 0 ⇒ 平均 0%）
@@ -274,11 +276,12 @@ class ReminderWorker(
             mistakeCount = dueMistakes.size,
             wordCount = dueWords.size,
             // 与上面那批词同一个列表、同一个 now，不重查也不配对。
-            // 内核从设置取：worker 手上就有 container.settingsRepository，不需要拿 rows.kernel 做例外
+            // 内核从**整份设置**取（含 v2.9 活跃 FSRS 参数）：worker 手上就有 container.settingsRepository，
+            // 不需要拿 rows.kernel 做例外，也没有理由只交一个 id
             retentionPercent = dueRetentionPercent(
                 dueWords,
                 now,
-                KernelHub.forId(settings.schedulingKernel),
+                KernelHub.forId(settings.schedulingKernel, settings),
             ),
         )
         // "不发"在这里收口，两种情形（逐条见 [reminderCopy] 的零到期日规则）：

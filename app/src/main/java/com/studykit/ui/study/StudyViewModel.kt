@@ -32,7 +32,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.zip
 import kotlinx.coroutines.launch
@@ -200,19 +199,23 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     // 明日那一格取的是 `observeScheduledMemoryRows()` 一条 SQL 里的那几个字段：
     // 词数与保留率必须出自同一批行，所以这里不能退回 `observeScheduledTimestamps()` +
     // `observeHalfLifeDays()` 两次查询再配对（理由见那条投影查询的 KDoc）。
-    // 活跃内核 id 也进 combine：设置页切了内核，这一格必须**当场**按新内核重算，
-    // 不能等下一次数据变化才跟上 —— 切内核不会写 words 表，只挂数据的流根本不会重发。
+    // 活跃内核**连同它的参数**一起进 combine：设置页切了内核、或采纳了一份新校准参数，这一格必须
+    // **当场**按新的重算，不能等下一次数据变化才跟上 —— 切内核与采纳都不会写 words 表，
+    // 只挂数据的流根本不会重发（v3.0-A T2.6：采纳曾经没有任何显示出口，就是漏在这一行只认 id）。
     val homeState: StateFlow<StudyHomeUiState> = combine(
         wordRepository.observeAll(),
         mistakeRepository.observeUnmasteredCount(),
         wordRepository.observeReviewTimestamps(),
         questionRepository.observePracticeTimestamps(),
         wordRepository.observeScheduledMemoryRows()
-            // 只跟踪内核 id 这一件事：换主题/改玻璃都不该重算整页首页（A-T9 双审 Minor）
-            .zip(settingsRepository.settings.map { it.schedulingKernel }.distinctUntilChanged()) { rows, kernelId ->
-                rows to kernelId
-            },
-    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, (scheduled, kernelId) ->
+            // 只跟踪与排期有关的两项（内核 id + 活跃参数）：换主题/改玻璃不该重算整页首页（A-T9 双审 Minor）
+            .zip(
+                settingsRepository.settings.distinctUntilChanged { old, new ->
+                    old.schedulingKernel == new.schedulingKernel &&
+                        old.fsrsActiveParams.contentEquals(new.fsrsActiveParams)
+                },
+            ) { rows, settings -> rows to settings },
+    ) { words, unmasteredMistakes, reviewTimestamps, practiceTimestamps, (scheduled, settings) ->
         val now = System.currentTimeMillis()
         // zone/today 各取一次：既用于「今日 0 点」也用于连续天数锚点，避免跨零点时两者不一致
         val zone = ZoneId.systemDefault()
@@ -222,7 +225,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         // 「明天」的区间按本地日切，不用 SQL 的 date()（不吃时区）；
         // 这一格只算一次，词数和保留率都从它来
         val tomorrow = TomorrowForecast.of(
-            scheduled, TomorrowForecast.window(zone, today), KernelHub.forId(kernelId),
+            scheduled,
+            TomorrowForecast.window(zone, today),
+            KernelHub.forId(settings.schedulingKernel, settings),
         )
         StudyHomeUiState(
             // 判据从「未掌握且到期」改成「有排期且到期」：见 WordDao.getDueForReview 的注释
@@ -314,9 +319,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val sched = _scheduling.value
-            // 内核每轮会话现取，且与评分按钮预览同一个来源（AppTheme.settings.schedulingKernel）：
+            // 内核每轮会话现取，且与评分按钮预览同一个来源（同一份 AppSettings：id + 活跃参数）：
             // 按钮上印的间隔与点下去真排出的间隔不能分家（KernelHub 的 KDoc）
-            val kernel = KernelHub.forId(settingsRepository.current().schedulingKernel)
+            val settings = settingsRepository.current()
+            val kernel = KernelHub.forId(settings.schedulingKernel, settings)
             val before = kernelStateFor(kernel, word)
             // 从没复习过的词拿"加入学习"那天当锚点：Δt=0 会让第一次评分的加固量归零
             // （成功支里 (1−p)^0.970 在 p=1 时被夹到 1e-3，间隔效应直接消失）

@@ -2,6 +2,26 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [未发布] - v3.0-A 开发中（负荷预告与可视化）
+
+> 分支版，**尚未发版**：`versionName`/`versionCode` 仍停在 2.9.0/19，Room schema 仍为 v8。
+> 本节只记账开发期间的订正与增量，完整的 v3.0-A 特性清单在发版批次一并补。
+
+### 修复
+- **删掉 `KernelHub.forId(id)` 单参重载，把 v2.9 的活跃 FSRS 参数真正接进排期与显示**（承接下一节末条订正）：
+  取内核只剩一条签名 `forId(id, settings)`，编译器从此强制每个调用点把手上那份 `AppSettings` 整份交出来，
+  忘交就编译不过——留警告或留默认值都会让下一个调用点再忘一次。同时撤掉 `TomorrowForecast.of` 与
+  `ReminderWorker.dueRetentionPercent` 上 `kernel = KernelHub.forId(null)` 的形参默认值，理由相同：
+  那个默认值是给「忘了传」留的暗门。`settings = null` 从此只有一种读法——**还没读到设置**（首帧），
+  退回发布默认参数；它不再是「这个调用点不参与校准」的开关。六条生产路径（背词评分、评分按钮预览、
+  错题重做、书摘复习、明日预告、复习提醒）逐个改完，与既有直读 `fsrsActiveParams` 的两处显示
+  （`CardRecallCurve` / `StatsViewModel`）并成同一份向量。首页那一格的流跟踪从「只跟内核 id」改成
+  「内核 id + 活跃参数」双字段 `distinctUntilChanged`：原先它只认 id，**采纳一份新校准参数它根本不会重算**
+  （要等下一次数据变化才跟上，而参数本身是那份数的输入），现在换向量当场重算。
+  新增两枚端到端守卫：`ActiveParamsEndToEndTest`（背词/错题/提醒/首页四路，各断言「换向量 ⇒ 数跟着换」，
+  含夹具自检与「没采纳过逐比特不变」证人）与 `GradePreviewCalibrationRenderTest`（Robolectric 真组合一次
+  `GradeRow`，断言按钮上印的间隔 ≡ `gradeCard` 那条算术排出的间隔）。FSRS 算术零改动，无新依赖、无新色值。
+
 ## [2.9.0] - 2026-10-05
 
 换代版：排期内核在 v2.8 的 FSRS v6 之上补上**端侧个性化校准**——用自己的复习记录把 21 个参数重训一遍、过门槛才换核。
@@ -23,6 +43,19 @@
 - **带存量数据的真机覆盖升级本轮未验**：v7→v8 的 `review_log` 迁移只有 CI 里 `Migration7To8Test`（`MigrationTestHelper`）这一条机检证据；验收机因上述签名不符只能卸载重装（等价于全新库），**没有**在装着旧数据的机器上跑过一次 `adb install -r` 的存量迁移。下次拿到同钥匙签的旧版本机器时补这一验。
 - **无独立第三方与 Anki 逐比特对拍**：v6 数值口径 = **官方 py-fsrs 6.3.2 预言机**（`docs/evidence/fsrs6-golden.json`，承自 v2.8），本机无 Anki 桌面端，不声称 = Anki 逐比特结果。
 - **无纸质畸变照片**：本版无 OCR 改动，不涉及真实畸变/透视/光照纸质照片输入。
+- **【2026-10-06 订正】「训练参数真正回流到调度器」在 v2.9 只到单测层，没接进生产路径**：上面新增那节里的
+  「参数快照 keep-5 + `fsrsActiveParams` 注入生效」一条写的是**过度承诺**，此处如实更正（原句保留不改）。
+  v2.9 给 `ui/study/KernelHub` 加的是**双参重载** `forId(id, settings)`，而**单参 `forId(id)` 一并留着**
+  ——它只认内核 id、不看 `fsrsActiveParams`。全部生产调用点当时留着的正是那一条单参：背词评分
+  （`StudyViewModel.gradeCard`）、评分按钮预览（`CardStudyScreen.GradeRow`）、错题重做
+  （`MistakeViewModel`）、书摘复习（`BookViewModel.gradeExcerptReview`）、明日预告（`TomorrowForecast`）与
+  复习提醒（`ReminderWorker.dueRetentionPercent`）。于是**真机上用户采纳的那 21 维向量一步都没有进调度器**，
+  排期与显示仍按发布默认参数算。`ParamInjectionTest` 那三条当时全绿，因为它们直接从设置层调双参口径，
+  测的是「给定这份设置，hub 会不会造出带参数的核」——**测不到「调用点有没有把手上那份设置交出来」**，
+  而漏的正是后半句。这不是纯文档问题：v2.9 之后陆续有显示路径改成直读 `settings.fsrsActiveParams`
+  （单卡 R 曲线 `CardRecallCurve`、稳定性全景 `StatsViewModel`），到本条订正前一刻，采纳过参数的用户屏幕上
+  已经**同时**看到两套数——曲线与分箱按校准向量、按钮与真实排期按默认参数，
+  正落在 `KernelHub` 类注释写成否决级的那条约定上。由 **v3.0-A** 这一线收口，见上一节。
 
 ## [2.8.0] - 2026-10-04
 

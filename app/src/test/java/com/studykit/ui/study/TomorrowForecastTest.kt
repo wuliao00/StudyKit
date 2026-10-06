@@ -1,5 +1,6 @@
 package com.studykit.ui.study
 
+import com.studykit.data.AppSettings
 import com.studykit.data.dao.ScheduledMemoryRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +32,13 @@ class TomorrowForecastTest {
         date.atTime(hour, minute).toInstant(utc).toEpochMilli()
 
     private val DAY_MS = 24L * 60 * 60 * 1000
+
+    /**
+     * 这一格读的是**哪一份内核**由调用方决定（v3.0-A T2.6：`TomorrowForecast.of` 的 `kernel`
+     * 形参不再有 `KernelHub.forId(null)` 那个默认值）。这里要的是"用户没采纳过任何校准"那一份，
+     * 所以经全仓唯一的取核入口取，而不是在这里自己新建内核——免得测试与页面读两条路。
+     */
+    private val defaultKernel = KernelHub.forId("FSRS", AppSettings())
 
     /**
      * 造一条已排期的词：[reviewedDaysBeforeDue] 是"到期时刻往前多少天复习的"，
@@ -77,7 +85,7 @@ class TomorrowForecastTest {
             row(dueAt = stamp(dayAfter, 23, 0), halfLifeDays = 0.02, reviewedDaysBeforeDue = 30.0),
             row(dueAt = stamp(today, 1, 0), halfLifeDays = 0.02, reviewedDaysBeforeDue = 30.0),
         )
-        val load = TomorrowForecast.of(rows, TomorrowForecast.window(utc, today))
+        val load = TomorrowForecast.of(rows, TomorrowForecast.window(utc, today), defaultKernel)
         assertEquals(3, load.wordCount)
         assertEquals(3, load.sampledCount)
         assertEquals(67, load.predictedRecallPercent)
@@ -107,7 +115,7 @@ class TomorrowForecastTest {
             row(dueAt = stamp(dayAfter, 6, 0), halfLifeDays = 5.0, reviewedDaysBeforeDue = 1.0),    // 窗口外
         )
         val window = TomorrowForecast.window(utc, today)
-        val load = TomorrowForecast.of(rows, window)
+        val load = TomorrowForecast.of(rows, window, defaultKernel)
 
         // ① 词数就是"落在明天那一格里的行数"，独立算一遍对照
         assertEquals(rows.count { it.nextReviewAt in window }, load.wordCount)
@@ -165,7 +173,7 @@ class TomorrowForecastTest {
                 createdAt = stamp(tomorrow) - 2 * DAY_MS,
             ),
         )
-        val load = TomorrowForecast.of(rows, TomorrowForecast.window(utc, today))
+        val load = TomorrowForecast.of(rows, TomorrowForecast.window(utc, today), defaultKernel)
         assertEquals(1, load.wordCount)
         assertEquals(50, load.predictedRecallPercent)
     }
@@ -175,7 +183,7 @@ class TomorrowForecastTest {
     @Test
     fun an_empty_day_counts_zero_words() {
         val rows = listOf(row(dueAt = stamp(today, 12, 0), halfLifeDays = 3.0, reviewedDaysBeforeDue = 1.0))
-        val load = TomorrowForecast.of(rows, TomorrowForecast.window(utc, today))
+        val load = TomorrowForecast.of(rows, TomorrowForecast.window(utc, today), defaultKernel)
         assertEquals(0, load.wordCount)
         assertEquals(0, load.sampledCount)
         assertEquals("明天没有排期", tomorrowLine(load))

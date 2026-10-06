@@ -74,8 +74,10 @@ object TomorrowForecast {
      * - 锚点用 [ScheduledMemoryRow.anchorAt]（`lastReviewAt ?: createdAt`），
      *   与 `StudyViewModel.gradeCard` 同一个口径，别让从没复习过的词算出 Δt=0 ⇒ 100%。
      *
-     * @param kernel **活跃内核**（设置里那一个，经 [KernelHub.forId] 取），默认回 FSRS ——
-     *              这一格是读数，不是排期，但读的是哪条曲线必须和用户刚切的内核一致。
+     * @param kernel **活跃内核**（设置里那一个，连同 `fsrsActiveParams`，经 [KernelHub.forId] 的双参口径取）。
+     *              这里**没有**默认值（v3.0-A T2.6 撤掉了原先的 `KernelHub.forId(null)`）：
+     *              这一格是读数，不是排期，但读的是哪条曲线、哪一份参数必须和用户刚切的内核、刚采纳的
+     *              向量一致；留一个默认值等于给"忘了传"留一条悄悄退回发布默认参数的路。
      *              不许从行上的 `kernel` 列挑（那是审计戳，见 [KernelHub]）。
      *              投影里 `fsrsStability` 为 null（新词、`MIGRATION_6_7` 没回填的老行）时，
      *              [recallForDisplay] 会退回 `half_life_days` 那条镜像曲线而不是拿空状态
@@ -84,7 +86,7 @@ object TomorrowForecast {
     fun of(
         rows: List<ScheduledMemoryRow>,
         range: LongRange,
-        kernel: SchedulingKernel = KernelHub.forId(null),
+        kernel: SchedulingKernel,
     ): TomorrowLoad {
         val tomorrow = rows.filter { it.nextReviewAt in range }
         val probabilities = tomorrow.map { row ->

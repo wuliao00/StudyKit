@@ -214,7 +214,8 @@ data class RecallCurvePlacement(
  *  - 图上的时间原点只有**一个**（今天）：横轴、今天线、交点、文案里的数全从
  *    [CardRecallCurve.placement] 一处取（修复轮的 Important 就断在这儿，见其 KDoc）；
  *  - FSRS 参数向量的取法与看板/提醒侧同一约定（`settings.fsrsActiveParams` 非空用它，
- *    没校准过才取发布默认）；评分按钮预览那侧走 [KernelHub.forId] 单参口径，未注入校准参数时两者同源。
+ *    没校准过才取发布默认）；评分按钮预览那侧走 [KernelHub.forId] 的**双参**口径（同一份
+ *    `AppSettings`），两者读的就是同一份向量（v3.0-A T2.6：按钮那侧曾经只交 id，两处会各说一套）。
  *
  * 空态：新卡（`fsrsStability == null`，FSRS 还没写过这条）没有曲线可画 —— 如实说明，
  * 不拿地板稳定度画一条"看着像"的线（[com.studykit.data.memory.recallForDisplay] 的
@@ -236,9 +237,10 @@ fun RecallCurveSection(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val kernel = KernelHub.forId(AppTheme.settings.schedulingKernel)
+    val settings = AppTheme.settings
+    val kernel = KernelHub.forId(settings.schedulingKernel, settings)
     if (kernel.id != "FSRS") return
-    val w = AppTheme.settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS
+    val w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS
 
     var expanded by rememberSaveable { mutableStateOf(false) }
     // 摆位（含到期标记）一次算完：非空即"有曲线可画"，展开分支里不用再判 null 后硬取

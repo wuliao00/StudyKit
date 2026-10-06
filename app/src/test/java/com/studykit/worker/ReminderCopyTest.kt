@@ -1,6 +1,8 @@
 package com.studykit.worker
 
+import com.studykit.data.AppSettings
 import com.studykit.data.entity.Word
+import com.studykit.ui.study.KernelHub
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,6 +34,14 @@ class ReminderCopyTest {
     private val dayMs: Long = TimeUnit.DAYS.toMillis(1)
     private val now: Long = 1_760_000_000_000L
 
+    /**
+     * 内核由调用方给（v3.0-A T2.6：[dueRetentionPercent] 的 `kernel` 形参撤掉了
+     * `KernelHub.forId(null)` 那个默认值，"忘了传"不再能悄悄退回发布默认参数）。
+     * 这里要的是「用户没采纳过校准」那一份，仍经全仓唯一的取核入口取——与 `ReminderWorker`
+     * 生产路径同一条，测试不自建第二份内核。
+     */
+    private val defaultKernel = KernelHub.forId("FSRS", AppSettings())
+
     /** 只给到影响保留率的字段，其余走实体默认值 */
     private fun word(
         halfLifeDays: Double,
@@ -52,26 +62,26 @@ class ReminderCopyTest {
     /** Δt = 2 天、h = 2 天 ⇒ 2^(-1) = 50%，一个词时就是它自己 */
     @Test
     fun `到期词的预测保留率按半衰期曲线算`() {
-        assertEquals(50, dueRetentionPercent(listOf(word(2.0, now - 2 * dayMs)), now))
+        assertEquals(50, dueRetentionPercent(listOf(word(2.0, now - 2 * dayMs)), now, defaultKernel))
     }
 
     /** Δt = 1 天、h = 2 天 ⇒ 2^(-0.5) = 0.7071 ⇒ 71%：四舍五入，不是截断 */
     @Test
     fun `保留率四舍五入取整`() {
-        assertEquals(71, dueRetentionPercent(listOf(word(2.0, now - 1 * dayMs)), now))
+        assertEquals(71, dueRetentionPercent(listOf(word(2.0, now - 1 * dayMs)), now, defaultKernel))
     }
 
     /** 从没复习过的词锚点退回建卡时刻，免得算出 Δt=0 ⇒ 100%（与 TomorrowForecast 同一句约定） */
     @Test
     fun `未复习过的词用建卡时刻当锚点`() {
-        assertEquals(50, dueRetentionPercent(listOf(word(3.0, lastReviewAt = null, createdAt = now - 3 * dayMs)), now))
+        assertEquals(50, dueRetentionPercent(listOf(word(3.0, lastReviewAt = null, createdAt = now - 3 * dayMs)), now, defaultKernel))
     }
 
     /** 平均的是概率不是半衰期：0.5 与 0.7071 平均 ⇒ 60% */
     @Test
     fun `一批词取概率的算术平均`() {
         val words = listOf(word(2.0, now - 2 * dayMs), word(2.0, now - 1 * dayMs))
-        assertEquals(60, dueRetentionPercent(words, now))
+        assertEquals(60, dueRetentionPercent(words, now, defaultKernel))
     }
 
     /**
@@ -82,26 +92,26 @@ class ReminderCopyTest {
     fun `半衰期不可用的词仍然占一个分母位置`() {
         // 0.7071 + 0.0（h≤0 时曲线回 0）再平均 ⇒ 35%
         val words = listOf(word(2.0, now - 1 * dayMs), word(0.0, now - 1 * dayMs))
-        assertEquals(35, dueRetentionPercent(words, now))
+        assertEquals(35, dueRetentionPercent(words, now, defaultKernel))
     }
 
     /** 没有词就没有百分比：0 个词时不许印 0% */
     @Test
     fun `词集为空时不给保留率`() {
-        assertNull(dueRetentionPercent(emptyList(), now))
+        assertNull(dueRetentionPercent(emptyList(), now, defaultKernel))
     }
 
     /** 整批都不可信时宁可整段不提，也不印一个来路不明的数（0% 或假的 100% 都不行） */
     @Test
     fun `整批半衰期不可信时宁可不提保留率`() {
         val dirty = listOf(word(0.0, now), word(-1.0, now), word(Double.NaN, now))
-        assertNull(dueRetentionPercent(dirty, now))
+        assertNull(dueRetentionPercent(dirty, now, defaultKernel))
     }
 
     /** 时钟漂移（此刻早于锚点）按 Δt=0 处理，不给出超过 100% 的把握 */
     @Test
     fun `锚点在未来也不许算出超过百分之百`() {
-        val percent = dueRetentionPercent(listOf(word(2.0, now + 5 * dayMs)), now)
+        val percent = dueRetentionPercent(listOf(word(2.0, now + 5 * dayMs)), now, defaultKernel)
         assertEquals(100, percent)
     }
 

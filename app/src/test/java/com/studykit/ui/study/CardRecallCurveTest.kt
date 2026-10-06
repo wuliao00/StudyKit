@@ -1,5 +1,6 @@
 package com.studykit.ui.study
 
+import com.studykit.data.AppSettings
 import com.studykit.data.memory.CardState
 import com.studykit.data.memory.FsrsModel
 import com.studykit.data.memory.KernelRating
@@ -43,7 +44,7 @@ class CardRecallCurveTest {
 
     @Test
     fun `到期标记与调度器给的间隔逐值相等`() {
-        val kernel = KernelHub.forId("FSRS")
+        val kernel = KernelHub.forId("FSRS", AppSettings())
         // 40000.0 越过了 FsrsModel.MAX_STABILITY：这一档才真正扫到"封顶"那条支
         // （内核与曲线原先各拿一份 MAX_STABILITY，现在共用 FsrsModel 那一份，谁换回私有夹取就红）
         for (s in listOf(0.5, 1.0, 2.3, 7.0, 33.0, 120.0, 900.0, FsrsModel.MAX_STABILITY, 40000.0)) {
@@ -59,7 +60,7 @@ class CardRecallCurveTest {
 
     @Test
     fun `到期标记与调度器在任意排期上限下逐值相等`() {
-        val kernel = KernelHub.forId("FSRS")
+        val kernel = KernelHub.forId("FSRS", AppSettings())
         // 上限一端扫到 40000（比稳定度封顶还高）：只有把 cap 放开到那儿，S=40000 那档才真正
         // 把"封顶 36500"这条支暴露出来 —— 3650 的排期上限会把夹没夹顶的两个结果一起压成 3650，
         // 所以只加 S=40000、不加 40000 的 cap，扫描对封顶漂移仍然是绿的（修复轮踩到的坑）。
@@ -83,7 +84,7 @@ class CardRecallCurveTest {
 
     @Test
     fun `脏稳定度与未评分卡走同一夹取`() {
-        val kernel = KernelHub.forId("FSRS")
+        val kernel = KernelHub.forId("FSRS", AppSettings())
         for (s in listOf(0.0, -4.0, Double.NaN)) {
             val sched = kernel.nextIntervalDays(reviewState(s), KernelRating.GOOD, 0.9, 3650.0)
             assertEquals("S=$s", sched, CardRecallCurve.dueMarkerDays(w, s, 0.9, 3650.0), 0.0)
@@ -96,7 +97,7 @@ class CardRecallCurveTest {
 
     @Test
     fun `AGAIN 是调度器的十分钟专支不在相等性主张内`() {
-        val kernel = KernelHub.forId("FSRS")
+        val kernel = KernelHub.forId("FSRS", AppSettings())
         val schedAgain = kernel.nextIntervalDays(reviewState(7.0), KernelRating.AGAIN, 0.9, 3650.0)
         assertEquals(FsrsModel.TEN_MINUTES_IN_DAYS, schedAgain, 0.0)
         assertNotEquals(schedAgain, CardRecallCurve.dueMarkerDays(w, 7.0, 0.9, 3650.0), 0.0)
@@ -230,7 +231,7 @@ class CardRecallCurveTest {
     @Test
     fun `稳定度夹取全仓只有一份`() {
         val cap = CardRecallCurve.DEFAULT_MAX_INTERVAL_DAYS
-        val kernel = KernelHub.forId("FSRS")
+        val kernel = KernelHub.forId("FSRS", AppSettings())
         val cases: List<Pair<Double?, Double>> = listOf(
             null to FsrsModel.MIN_STABILITY_FLOOR,
             0.0 to FsrsModel.MIN_STABILITY_FLOOR,
