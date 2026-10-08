@@ -177,6 +177,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      * 本轮生效的调度参数（目标准确率 + 间隔上限），跟着设置页的考试日期与严格度走。
      *
      * 卡片页要拿它算"按这个按钮会排到几天后"并直接印在按钮上，所以是 StateFlow 而不是内部变量。
+     *
+     * v3.0-B：读的是**清单生效**的那一天（`examEpochDayEffective`），旧单日期键只在清单为空时通过合成那条起作用。
      */
     private val _scheduling = MutableStateFlow(
         MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, LocalDate.now()),
@@ -188,7 +190,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             settingsRepository.settings.collect { s ->
                 _scheduling.value = MemoryScheduler.forSettings(
                     strictness = s.reviewStrictness,
-                    examEpochDay = s.examEpochDay,
+                    examEpochDay = s.examEpochDayEffective,
                     today = LocalDate.now(),
                 )
             }

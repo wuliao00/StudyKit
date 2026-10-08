@@ -135,6 +135,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 目标保留率与间隔上限走 [MemoryScheduler.forSettings] 的那份 `Scheduling`（`targetRecall` /
      * `maxIntervalDays`；两个都**必填**、都无默认值——写死 0.9 或漏掉上限，等于在看板另起一份排期政策，
      * 与提醒侧同一条纪律），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
+     * v3.0-B：考试那一天读的是**清单生效**的那一天（`examEpochDayEffective`），
+     * 旧单日期键只在清单为空时通过合成那条起作用。
      * `settings.dailyWordGoal` 在这里只进 [ForecastCfg.newPerDay] 一个地方：它说的是"每天进几个新词"，
      * 带子因此含这些新词产生的学习步。**不许**把它当每日复习容量再递一份给 UI 画对照线——
      * 那个比较恒真、超载提示常亮，上一轮就是这么写的，已删（见 [LoadBandChart] 类 KDoc）。
@@ -151,7 +153,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
         val sched = MemoryScheduler.forSettings(
             strictness = settings.reviewStrictness,
-            examEpochDay = settings.examEpochDay,
+            examEpochDay = settings.examEpochDayEffective,
             today = today,
         )
         val cards = ForecastCards.of(

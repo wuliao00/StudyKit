@@ -339,6 +339,8 @@ class ReminderWorker(
      * `maxIntervalDays`）：写死 0.9 等于在提醒侧另起一份排期政策，漏掉上限是另起第二份——考前 20 天
      * 调度器只把卡排到第 4 天，预测侧按 30 天数就会把这两周数少。FSRS 参数走 `settings.fsrsActiveParams`，
      * 没校准过时才取发布默认。
+     * v3.0-B：考试那一天读的是**清单生效**的那一天（`examEpochDayEffective`），
+     * 旧单日期键只在清单为空时通过合成那条起作用。
      * 时钟只读一次：`today` 与 `dayStart` 都从同一个 [now] 推，免得跨过零点那一次调用里
      * 「今天」和「今天零点」不是同一天。
      */
@@ -352,7 +354,7 @@ class ReminderWorker(
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val sched = MemoryScheduler.forSettings(
             strictness = settings.reviewStrictness,
-            examEpochDay = settings.examEpochDay,
+            examEpochDay = settings.examEpochDayEffective,
             today = today,
         )
         val w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS

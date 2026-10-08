@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.data.memory.ExamPolicy
 import com.studykit.tips.StudyTips
 import com.studykit.tips.TipEvent
 import com.studykit.ui.bulkimport.BulkEntries
@@ -63,7 +64,6 @@ import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
 
 /**
  * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
@@ -337,19 +337,28 @@ private fun TodayHeroCard(
         },
         supporting = {
             Column {
-                // 考试倒计时来自设置（未设置时整行不存在，不显示"还剩 0 天"那种废话）
-                AppTheme.settings.examDate?.let { exam ->
-                    val days = ChronoUnit.DAYS.between(LocalDate.now(), exam)
-                    Text(
-                        text = when {
-                            days > 0 -> "距考试还有 $days 天"
-                            days == 0L -> "今天考试"
-                            else -> "考试已过 ${-days} 天"
-                        },
-                        style = texts.caption,
-                        color = if (days in 0..7) colors.warningInk else colors.secondaryText,
+                // 考试倒计时来自设置（未设置时整行不存在，不显示"还剩 0 天"那种废话）。
+                // v3.0-B：哪一场由清单决定（`AppSettings.examForCountdown`），整句话由 [countdownLine] 给。
+                // 那句「冲刺保留 X%」用的 base 就是排期路径上的同一个数
+                // （[schedulingForSubject] 取的那份 `targetRecall`），页面这边不许再猜一份 —— 印出来的保留率
+                // 与实际排期用的不一样，和「设置里存的与实际排的分家」是同一类事故。
+                // 位置 / 字号 / 配色 / 与火焰徽章之间那条 Spacer 全部保持原样，只换文本来源。
+                val settings = AppTheme.settings
+                val today = LocalDate.now()
+                settings.examForCountdown(today)?.let { exam ->
+                    val line = countdownLine(
+                        exam,
+                        today,
+                        schedulingForSubject(settings, null, today).targetRecall,
                     )
-                    if (streakDays > 0) Spacer(Modifier.height(AppTheme.space.sm))
+                    if (line != null) {
+                        Text(
+                            text = line,
+                            style = texts.caption,
+                            color = if (ExamPolicy.daysLeft(exam, today) in 0..7) colors.warningInk else colors.secondaryText,
+                        )
+                        if (streakDays > 0) Spacer(Modifier.height(AppTheme.space.sm))
+                    }
                 }
                 if (streakDays > 0) FlameBadge(days = streakDays)
             }
