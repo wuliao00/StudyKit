@@ -136,7 +136,7 @@ internal fun occlusionColumns(shapesJson: String): OcclusionColumns {
  *   就不该长得像罩子（实底 lightbox）。松手后那一块换成实底，用户看得懂"这下真的盖住了"。
  *
  * 无图时整块不该出现 —— 由调用方保证（`MistakeCaptureScreen` 里那张照片可用才渲染这一块），
- * 参数类型也是非空 [File]：没有照片就没有可拖的画布，这个类型层面就不成立。
+ * 而参数类型是非空 [File]：**没有照片就连可拖的画布都构造不出来**，这条不靠判断，靠类型。
  */
 @Composable
 internal fun OcclusionEditor(
