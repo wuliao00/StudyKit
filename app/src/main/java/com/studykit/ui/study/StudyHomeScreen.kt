@@ -339,26 +339,24 @@ private fun TodayHeroCard(
             Column {
                 // 考试倒计时来自设置（未设置时整行不存在，不显示"还剩 0 天"那种废话）。
                 // v3.0-B：哪一场由清单决定（`AppSettings.examForCountdown`），整句话由 [countdownLine] 给。
-                // 那句「冲刺保留 X%」用的 base 就是排期路径上的同一个数
-                // （[schedulingForSubject] 取的那份 `targetRecall`），页面这边不许再猜一份 —— 印出来的保留率
-                // 与实际排期用的不一样，和「设置里存的与实际排的分家」是同一类事故。
-                // 位置 / 字号 / 配色 / 与火焰徽章之间那条 Spacer 全部保持原样，只换文本来源。
+                // 评审 1 之后页面**不做任何调度查表**：只交严格度与清单，base 与那一次 ramp
+                // 都在 countdownLine 里取 `MemoryScheduler.baseTargetRecall`（排期侧同一个实现）。
+                // 旧形状传的是 `schedulingForSubject(...).targetRecall` —— 已 ramp 的输出再 ramp，
+                // 屏幕印的是"ramp 的 ramp"（RELAXED + 全学科考试 10 天：调度 90%，屏幕 93%）。
+                // `line == null` 与 `exam == null` 恒同步（契约在 countdownLine），第二个判空只为
+                // 取色时的 daysLeft 智能转换（评审 5：删掉了 `?.let` 套 `if (line != null)` 的双层死枝）。
+                // 位置 / 字号 / 配色 / 与火焰徽章之间那条 Spacer 全部保持原样，只换参数。
                 val settings = AppTheme.settings
                 val today = LocalDate.now()
-                settings.examForCountdown(today)?.let { exam ->
-                    val line = countdownLine(
-                        exam,
-                        today,
-                        schedulingForSubject(settings, null, today).targetRecall,
+                val exam = settings.examForCountdown(today)
+                val line = countdownLine(exam, today, settings.reviewStrictness, settings.examList)
+                if (line != null && exam != null) {
+                    Text(
+                        text = line,
+                        style = texts.caption,
+                        color = if (ExamPolicy.daysLeft(exam, today) in 0..7) colors.warningInk else colors.secondaryText,
                     )
-                    if (line != null) {
-                        Text(
-                            text = line,
-                            style = texts.caption,
-                            color = if (ExamPolicy.daysLeft(exam, today) in 0..7) colors.warningInk else colors.secondaryText,
-                        )
-                        if (streakDays > 0) Spacer(Modifier.height(AppTheme.space.sm))
-                    }
+                    if (streakDays > 0) Spacer(Modifier.height(AppTheme.space.sm))
                 }
                 if (streakDays > 0) FlameBadge(days = streakDays)
             }

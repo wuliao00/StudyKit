@@ -9,7 +9,7 @@ import com.studykit.data.memory.DayBand
 import com.studykit.data.memory.DueForecast
 import com.studykit.data.memory.ForecastCfg
 import com.studykit.data.memory.FsrsModel
-import com.studykit.data.memory.MemoryScheduler
+import com.studykit.ui.study.schedulingForSubject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -132,11 +132,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * [StabilityBins.bin] 的同一道判据在这里是**幂等的安全网**，不是第二套口径。
      *
      * ## 两个数只有一个来源
-     * 目标保留率与间隔上限走 [MemoryScheduler.forSettings] 的那份 `Scheduling`（`targetRecall` /
+     * 目标保留率与间隔上限走 [schedulingForSubject] 排期的那一份 `Scheduling`（`targetRecall` /
      * `maxIntervalDays`；两个都**必填**、都无默认值——写死 0.9 或漏掉上限，等于在看板另起一份排期政策，
      * 与提醒侧同一条纪律），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
-     * v3.0-B：考试那一天读的是**清单生效**的那一天（`examEpochDayEffective`），
-     * 旧单日期键只在清单为空时通过合成那条起作用。
+     * v3.0-B 评审 2：这一路是**库级**视图（全库逐卡反解），走学科缝的 `subject = null` 那一侧
+     * （[schedulingForSubject]，与学习首页 `_scheduling` 同一个数、同一条 ramp 规则）；
+     * 旧形状 `forSettings(examEpochDayEffective, ...)` 学科盲——一场只绑数学的考试会把看板也抬上去。
+     * `maxIntervalDays` 语义不变：它由同一个 `forSubject` 按同一 horizon 给出，只是清单里非全学科的
+     * 考试从此不再拖紧这一路。
      * `settings.dailyWordGoal` 在这里只进 [ForecastCfg.newPerDay] 一个地方：它说的是"每天进几个新词"，
      * 带子因此含这些新词产生的学习步。**不许**把它当每日复习容量再递一份给 UI 画对照线——
      * 那个比较恒真、超载提示常亮，上一轮就是这么写的，已删（见 [LoadBandChart] 类 KDoc）。
@@ -151,11 +154,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         val now = System.currentTimeMillis()
         // 不用 LocalDate.ofInstant(...)——那是 Java 9 的静态方法，API 26 的 java.time 里没有
         val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
-        val sched = MemoryScheduler.forSettings(
-            strictness = settings.reviewStrictness,
-            examEpochDay = settings.examEpochDayEffective,
-            today = today,
-        )
+        val sched = schedulingForSubject(settings, null, today)
         val cards = ForecastCards.of(
             words = words,
             mistakes = mistakes,

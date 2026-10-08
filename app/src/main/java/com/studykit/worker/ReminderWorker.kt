@@ -24,7 +24,6 @@ import com.studykit.data.memory.AlertKind
 import com.studykit.data.memory.DueForecast
 import com.studykit.data.memory.ForecastCfg
 import com.studykit.data.memory.FsrsModel
-import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReminderDecision
 import com.studykit.data.memory.ReminderPolicy
 import com.studykit.data.memory.SchedulingKernel
@@ -33,6 +32,7 @@ import com.studykit.data.memory.recallForDisplay
 import com.studykit.ui.stats.ForecastCards
 import com.studykit.ui.stats.toForecastCards
 import com.studykit.ui.study.KernelHub
+import com.studykit.ui.study.schedulingForSubject
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -335,12 +335,13 @@ class ReminderWorker(
      * 仓储一半走库好读。
      *
      * ## 两个数只有一个来源
-     * 目标保留率与间隔上限都走 [MemoryScheduler.forSettings] 的那份 `Scheduling`（`targetRecall` /
+     * 目标保留率与间隔上限都走 [schedulingForSubject] 的那份 `Scheduling`（`targetRecall` /
      * `maxIntervalDays`）：写死 0.9 等于在提醒侧另起一份排期政策，漏掉上限是另起第二份——考前 20 天
      * 调度器只把卡排到第 4 天，预测侧按 30 天数就会把这两周数少。FSRS 参数走 `settings.fsrsActiveParams`，
      * 没校准过时才取发布默认。
-     * v3.0-B：考试那一天读的是**清单生效**的那一天（`examEpochDayEffective`），
-     * 旧单日期键只在清单为空时通过合成那条起作用。
+     * v3.0-B 评审 2：提醒是对**全库**的判断，走学科缝的 `subject = null` 那一侧（与看板、词卡评分
+     * 同一个数）；旧形状 `forSettings(examEpochDayEffective, ...)` 学科盲——一场只绑数学的考试会把
+     * 提醒也抬严。`maxIntervalDays` 语义不变：同一个 `forSubject` 按同一 horizon 给出，不随本次替换漂移。
      * 时钟只读一次：`today` 与 `dayStart` 都从同一个 [now] 推，免得跨过零点那一次调用里
      * 「今天」和「今天零点」不是同一天。
      */
@@ -352,11 +353,7 @@ class ReminderWorker(
         val zone = ZoneId.systemDefault()
         // 不用 LocalDate.ofInstant(...)——那是 Java 9 的静态方法，API 26 的 java.time 里没有
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
-        val sched = MemoryScheduler.forSettings(
-            strictness = settings.reviewStrictness,
-            examEpochDay = settings.examEpochDayEffective,
-            today = today,
-        )
+        val sched = schedulingForSubject(settings, null, today)
         val w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS
         // 「今天练过吗」只数词卡流水（口径见那条查询的 KDoc：练习与书摘检索不在 word_reviews 里）
         val todayReviewed = container.database.wordDao()

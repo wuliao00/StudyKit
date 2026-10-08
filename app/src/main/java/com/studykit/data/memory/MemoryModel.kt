@@ -281,8 +281,10 @@ data class Scheduling(val targetRecall: Double, val maxIntervalDays: Double)
  * 单独抽出来是因为这一步最容易出错（考试日期过期、时区、空值），
  * 而它一旦错了，表现是"所有人的复习量都暴涨"这种全局症状。
  *
- * v3.0-B 起有两个入口：[forSettings]（全局口径，一个日期）与 [forSubject]（按学科，考试清单）。
- * **算术只住在 [forSubject] 一处** —— 前者摊成一场全学科考试后分派过去，两边不可能各说一套。
+ * v3.0-B 起有两个入口：[forSubject]（按学科，考试清单——**生产唯一口径**，经
+ * `schedulingForSubject` 组合）与 [forSettings]（全局口径，一个日期；留作旧语义的锚，
+ * 见其 KDoc）。**算术只住在 [forSubject] 一处** —— 前者摊成一场全学科考试后分派过去，
+ * 两边不可能各说一套；「base」那一步再单独住 [baseTargetRecall]，显示侧与排期侧共用。
  */
 object MemoryScheduler {
 
@@ -296,10 +298,35 @@ object MemoryScheduler {
     )
 
     /**
+     * 「base 目标保留率」的**单一实现**（v3.0-B 评审 1）：`manual ?: (days?.let { targetRecallFor(it) } ?: default)`。
+     *
+     * 它就是 [forSubject] 三段决定里的第 2 段，抽出来是因为显示侧（`ui/study/countdownLine`）
+     * 也需要同一个数：上一版让页面把 `forSubject` 的**输出**（已 ramp）当 base 传进 ramp，
+     * 屏幕上印的是 ramp 的 ramp。抽成这一个函数之后，"base 是什么"全仓只有一份答案，
+     * 页面先取 base、自己 ramp **一次**，与调度器不可能分家。
+     *
+     * @param days 考试 horizon（天）；null = 这个口径下没有未来考试，退回 [MemoryParams.defaultTargetRecall]
+     */
+    fun baseTargetRecall(
+        strictness: ReviewStrictness,
+        days: Int?,
+        params: MemoryParams = MemoryParams(),
+    ): Double {
+        val manual = STRICTNESS_TARGET[strictness]
+        return manual ?: (days?.let { MemoryModel.targetRecallFor(it, params) } ?: params.defaultTargetRecall)
+    }
+
+    /**
      * 全局口径：取「最近那场考试」算一份 `Scheduling`（不看学科）。
      *
-     * 签名一字不改 —— 它今天被 4 个调用点用（学习首页排期初始化、统计预测、复习提醒 worker，
-     * 以及错题侧的旧路径），那三处聚合视图**本来就只有一个数字**，不该按学科分裂。
+     * **v3.0-B 评审 2 之后的处境**：生产调用点已全部改走 [forSubject] / `schedulingForSubject`
+     * （学科口径，`subject = null` 那条缝），本函数留作「单一全局考试日」这一旧语义的锚，
+     * 被 `MemorySchedulerTest` 的等价用例钉着 —— **不要删**，也不要再往生产里接新调用点。
+     *
+     * 同一份学科绑定的清单下，本函数与 `forSubject(subject = null)` **故意**给出不同的数：
+     * 前者学科盲（任何一场考试日都抬所有卡，v2.9 的原语义），后者是 v3.0-B 规则
+     * （只有关联学科为空的考试才抬没有学科的卡，见 [ExamPolicy.linksSubject] 与计划偏差 D5）。
+     *
      * 实现收成分派到 [forSubject]：两个入口共用一套算术，杜绝"两处各说一套"。
      *
      * 单个日期在这里摊成一场**全学科**考试（`subjects` 空，窗口与冲刺值取 [ExamEntry] 的默认
@@ -336,7 +363,8 @@ object MemoryScheduler {
      *  1. **horizon**：这个学科有没有还没考的未来考试（[ExamPolicy.nearestExamDaysLeft]，**含当天**）。
      *     没有（或 `subject` 传 null 而清单里全是关联学科考试）就退回"要保持半年"那条默认，
      *     于是**英语不会被数学的考试日拖紧** —— 文档「非关联学科不受影响」的字面落地。
-     *  2. **base**：`manual ?: targetRecallFor(horizon)`，与旧 `forSettings` 同一式子。
+     *  2. **base**：[baseTargetRecall]（`manual ?: targetRecallFor(horizon)`）—— 单一实现，
+     *     显示侧（`ui/study/countdownLine`）取的是同一个函数，不是第二份算式。
      *  3. **ramp**：[ExamPolicy.effectiveRetention] 在窗口内把 base 线性抬到冲刺值，封顶 0.97。
      *     只抬不降，所以 `STRICT`（0.95）不会被一场低冲刺值的考试反过来放松。
      *
@@ -363,19 +391,17 @@ object MemoryScheduler {
         today: LocalDate,
         params: MemoryParams = MemoryParams(),
     ): Scheduling {
-        val manual = STRICTNESS_TARGET[strictness]
         val days = ExamPolicy.nearestExamDaysLeft(subject, today, exams)?.coerceAtLeast(1)
         if (days == null) {
             // 没填/已考完/这门科不沾这场考试：用默认准确率，但间隔上限仍按"半年保持期"收着，
             // 否则一个 h=2000 天的老词会被排到一年后，等于永久消失
             return Scheduling(
-                targetRecall = manual ?: params.defaultTargetRecall,
+                targetRecall = baseTargetRecall(strictness, null, params),
                 maxIntervalDays = MemoryModel.maxIntervalDaysFor(DEFAULT_RETENTION_DAYS, params),
             )
         }
-        val base = manual ?: MemoryModel.targetRecallFor(days, params)
         return Scheduling(
-            targetRecall = ExamPolicy.effectiveRetention(subject, today, exams, base),
+            targetRecall = ExamPolicy.effectiveRetention(subject, today, exams, baseTargetRecall(strictness, days, params)),
             maxIntervalDays = MemoryModel.maxIntervalDaysFor(days, params),
         )
     }

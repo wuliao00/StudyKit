@@ -83,8 +83,9 @@ data class DayBand(val dayIndex: Int, val mean: Double, val sd: Double)
  * 也正因为如此，[ForecastCard] 不预留 `dueAt` 字段——留着就是穿过整条计划的死数据。
  *
  * ## 反解用的两个政策数都来自调度器，一个都不许自己定
- * [ForecastCfg.retention] 与 [ForecastCfg.maxIntervalDays] 都取自 `MemoryScheduler.forSettings` 的那份
- * `Scheduling`（两者皆**必填**）。上限尤其容易被漏：`S=30` 的卡在考前 20 天只会被排到**第 4 天**
+ * [ForecastCfg.retention] 与 [ForecastCfg.maxIntervalDays] 都取自调度器排期的那一份 `Scheduling`
+ * （v3.0-B 评审 2 起，看板与提醒两条路都由 `schedulingForSubject(subject = null)` 给；两者皆**必填**）。
+ * 上限尤其容易被漏：`S=30` 的卡在考前 20 天只会被排到**第 4 天**
  * （上限 `max(3, 20×0.2)=4`），带子若按 30 天放它，就会把它排到更晚、甚至甩出窗外——
  * 于是负荷带与提醒在考前那两周**系统性少报**。这条纪律与 T9 把 `maxIntervalDays` 改成必填同源。
  *

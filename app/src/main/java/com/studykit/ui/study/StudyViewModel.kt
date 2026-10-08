@@ -11,9 +11,7 @@ import com.studykit.data.entity.Word
 import com.studykit.data.memory.Confidence
 import com.studykit.data.memory.Hypercorrection
 import com.studykit.data.memory.KernelRating
-import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReviewGrade
-import com.studykit.data.memory.ReviewStrictness
 import com.studykit.data.memory.Scheduling
 import com.studykit.data.memory.fsrsDifficultyFromHalfLife
 import com.studykit.data.memory.halfDifficultyFromFsrs
@@ -174,25 +172,25 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 本轮生效的调度参数（目标准确率 + 间隔上限），跟着设置页的考试日期与严格度走。
+     * 本轮生效的调度参数（目标准确率 + 间隔上限），跟着设置页的考试清单与严格度走。
      *
      * 卡片页要拿它算"按这个按钮会排到几天后"并直接印在按钮上，所以是 StateFlow 而不是内部变量。
      *
-     * v3.0-B：读的是**清单生效**的那一天（`examEpochDayEffective`），旧单日期键只在清单为空时通过合成那条起作用。
+     * v3.0-B 评审 2：词卡没有学科列，这条库级口径走**学科缝的 null 那一侧**
+     * （`schedulingForSubject(s, null, ...)` → `MemoryScheduler.forSubject(subject = null)`）——
+     * 计划偏差 D5 与「非关联学科恒 base」的 ⛔ 闸都要求：只有关联学科为空的那场考试才抬词卡。
+     * 旧形状 `forSettings(examEpochDayEffective, ...)` 是学科盲的：一场只绑数学的考试会把词卡
+     * 一起 ramp，而首页那行（同一条缝选的数）不认它，屏幕与评分器就此各排一套（评审发现 2）。
      */
     private val _scheduling = MutableStateFlow(
-        MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, LocalDate.now()),
+        schedulingForSubject(null, null, LocalDate.now()),
     )
     val scheduling: StateFlow<Scheduling> = _scheduling
 
     init {
         viewModelScope.launch {
             settingsRepository.settings.collect { s ->
-                _scheduling.value = MemoryScheduler.forSettings(
-                    strictness = s.reviewStrictness,
-                    examEpochDay = s.examEpochDayEffective,
-                    today = LocalDate.now(),
-                )
+                _scheduling.value = schedulingForSubject(s, null, LocalDate.now())
             }
         }
     }
