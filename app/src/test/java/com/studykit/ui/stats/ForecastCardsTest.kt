@@ -10,6 +10,7 @@ import com.studykit.data.memory.ForecastCard
 import com.studykit.data.memory.ForecastCfg
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.ui.study.schedulingForSubject
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -43,6 +44,17 @@ import java.time.LocalDate
  *     「今天绿、改了 FSRS 默认参数就红」的脆测试，而它想钉的其实是三件与预测本身无关的事——
  *     **只跑一遍、跑的是 ramp 后那份 retention、流入参数照抄页面那份**。预测本身的正确性由
  *     `DueForecastAccuracyTest` 的 MAE 门锁在外面，不在这里重跑一遍。
+ *
+ * ## 修复轮 1（评审 F1/F2/F5）加的几条
+ *  1. **闸门两边的算法**（F1）：`base` 必须**保住 horizon、只去掉 ramp**（`nearestExamDaysLeft` +
+ *     `baseTargetRecall`，与 `ui/study/ExamCountdown.kt` 同一个配方）。上一版拿「没有考试」那份当基线，
+ *     于是 shipped 默认档 `AUTO` 两边都在说谎：明天考时 0.90 < 0.95 让它空响，300 天后考时
+ *     0.90 > 0.786 让真被抬的那一场不响。两条新用例一边一个方向钉住。
+ *  2. **旧单日期合成**（F2）：只设 `examEpochDay` 的那一种设置必须仍然进闸门两侧；清单非空时旧键
+ *     失去话语权，所以 `ramped` 那份只写 `exams` 一个字段（上一版那句没被钉住的 `examEpochDay = 0L`
+ *     随 base 改道一起删掉了）。
+ *  3. **断言自己得能红**（F5）：`inflowW` 改为对字面量数组比（`cfgBase` 换成一份与默认值不同的权重，
+ *     否则 `copy()` 传的是同一个引用，`contentEquals` 恒真）；另外补了科目名带空白/大小写的那条筛子集路径。
  */
 class ForecastCardsTest {
 
@@ -250,8 +262,17 @@ class ForecastCardsTest {
      * 页面那份 `ForecastCfg` 的替身。`retention` 与 `maxIntervalDays` 是涌量**允许换掉**的两个字段，
      * 其余（窗口、每日新词、学习步、摊派权重）必须原样照抄 —— 流入参数一分叉，读出来的「涌」
      * 就有一部分是新词造成的而不是 ramp 造成的（测试因此逐字段钉它）。
+     *
+     * `inflowW` 这里交的是**一份与默认值不同的显式数组**（0.6/0.25/0.15，和为 1）而不是留默认参：
+     * [ForecastCfg.inflowW] 的默认值是 `defaultInflow()`，而 `copy()` 传的是**同一个数组引用**，
+     * 于是「照抄页面那份」用 `contentEquals` 对 cfgBase 自己比会恒真（两边本来就是同一个对象），
+     * 实现换成新建一份默认数组也不会红。改成对字面量数组比，它才真的能失败。
      */
-    private val cfgBase = ForecastCfg(retention = 0.80, maxIntervalDays = 36.0)
+    private val cfgBase = ForecastCfg(
+        retention = 0.80,
+        maxIntervalDays = 36.0,
+        inflowW = doubleArrayOf(0.6, 0.25, 0.15),
+    )
 
     /** 假预测器：平的带，峰 = 中位 = 20 → 读数 1.0 */
     private val flat: (List<ForecastCard>, ForecastCfg) -> List<DayBand> =
@@ -284,7 +305,13 @@ class ForecastCardsTest {
         assertEquals(cfgBase.horizonDays, seen[0].horizonDays)
         assertEquals(cfgBase.newPerDay, seen[0].newPerDay)
         assertEquals(cfgBase.learningPerNew, seen[0].learningPerNew, 1e-9)
-        assertTrue("摊派权重也得照抄页面那份", cfgBase.inflowW.contentEquals(seen[0].inflowW))
+        // 摊派权重逐位钉**字面量数组**（不钉 cfgBase 自己，见上面那段说明）
+        assertArrayEquals(
+            "摊派权重也得照抄页面那份",
+            doubleArrayOf(0.6, 0.25, 0.15),
+            seen[0].inflowW,
+            1e-9,
+        )
         // 换掉的那两个：retention 见上，上限按 horizon=1 给 max(3, 1×0.2)=3.0（手算，不读被测实现）
         assertEquals(3.0, seen[0].maxIntervalDays, 1e-9)
         assertEquals(5.0, state.ratio!!, 1e-9)            // 峰 100 / 中位 20
@@ -330,6 +357,157 @@ class ForecastCardsTest {
         assertTrue(calls.isEmpty())
         assertNull(state.ratio)
         assertFalse(state.warn)
+    }
+
+    /**
+     * ** shipped 默认档（AUTO）+ 明天那场：闸门必须关**。
+     *
+     * AUTO 是 `AppSettings.reviewStrictness` 的默认值，也就是绝大多数用户的档。这一档下
+     * horizon=1 天本来就把 base 推到 `MemoryModel.targetRecallFor` 的顶端 0.95（≤60 天都是 0.95），
+     * 而那场考试的冲刺值也是 0.95 —— ramp 一分没抬，闸门该关着。
+     * 上一版的 base 是**没有考试**时那份（`defaultTargetRecall` = 0.90），于是 0.95 > 0.90 判成"被抬了"，
+     * 屏幕对着一句「目标保留率被提到冲刺值」报警，而统计页那张图本来就在按 0.95 画（两边同一份 cfg，
+     * 所谓"重跑"什么都没变）。这条就是拦这个假话。
+     */
+    @Test
+    fun `严格度默认档明天那场不报警，基线本就等于冲刺值`() {
+        val calls = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.AUTO,
+            // 全学科、明天考、窗 30 天、冲刺 0.95：AUTO 的 base（horizon=1）就是 0.95
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2026, 10, 7).toEpochDay(), emptyList(), 0.95, 30)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> calls += cfg; spiky(cs, cfg) },
+        )
+        assertTrue("AUTO 加明天那场什么都没抬，不该跑预测", calls.isEmpty())
+        assertNull(state.ratio)
+        assertFalse(state.warn)
+    }
+
+    /**
+     * **AUTO 的反面：ramp 真抬了的时候闸门必须开**（与上面那条成对，防「一律不报警」把功能做死）。
+     *
+     * 窗 365 天、300 天后考：horizon=300 → AUTO 的 base = `targetRecallFor(300)` = 0.95 − 0.05×5 = **0.75**
+     * （`coerceIn(0.75, 0.95)` 的下沿）；ramp = 0.75 + (0.95 − 0.75) × (1 − 300/365) = **0.7856164…**（手算）。
+     * 上一版的 base 取的是「没有考试」那份 0.90，于是 0.786 ≤ 0.90 → 闸门关着，这条**真**被抬了的
+     * 考试永远不响 —— 与上一条正好相反方向的同一个谎。上限按 horizon=300 给 `max(3, min(300×0.2, 365))` = 60.0。
+     */
+    @Test
+    fun `严格度默认档三百天后那场确实被抬了，闸门打开`() {
+        val seen = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.AUTO,
+            // 2026-10-06 + 300 天 = 2027-08-02（手算，remainingDays 必须是 300）
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2027, 8, 2).toEpochDay(), emptyList(), 0.95, 365)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> seen += cfg; spiky(cs, cfg) },
+        )
+        assertEquals("ramp 真抬了 0.75 → 0.786，该跑一遍预测", 1, seen.size)
+        assertEquals(0.7856164, seen[0].retention, 1e-4)
+        assertEquals(60.0, seen[0].maxIntervalDays, 1e-9)
+        assertEquals(5.0, state.ratio!!, 1e-9)
+        assertTrue(state.warn)
+        // 报警归给哪一科：这一场是全学科那场，所以署名是 ExamEntry.DEFAULT_NAME 那个「考试」
+        // （视图那行开头念它，见 com.studykit.ui.stats.LoadBandSection）；带学科的署名由下面筛子集那条钉
+        assertEquals("考试", state.subject)
+    }
+
+    /**
+     * 评审 F2 那条「旧键合成」的守卫：**只设旧 `exam_epoch_day`、`exams` 留空**的那一种设置
+     * （v2.9 升上来的老用户全是这个形状，也是 [AppSettings.examList] 会凭空合成一场全学科考试的那一种）。
+     *
+     * 上一版算 base 时会 `copy(exams = emptyList(), examEpochDay = 0L)` 摊掉合成，其中
+     * `examEpochDay = 0L` 那半句是承重的（删掉它 base 就被合成那场重新 ramp）。现在 base 不再走设置副本，
+     * 而是 `nearestExamDaysLeft(subject, today, settings.examList)` + `baseTargetRecall` —— 合成那场
+     * **本来就该被算进 horizon**，所以那半句抑制随之删掉了。这条钉的是删掉之后仍然成立的两件事：
+     *  1. 合成的那场照样进闸门（RELAXED base=0.80 手动档、ramp=0.80+0.15×(29/30)=0.945 → 跑一遍）；
+     *  2. horizon 走的是那场考试日（明天 → 上限 `max(3, 1×0.2)` = 3.0，不是「无考试」那档 36.0/73 天）。
+     * 旧键一旦被谁从闸门里抹掉，这条立刻红（老用户的涌量预警静默失效就是原 bug 的另一半）。
+     */
+    @Test
+    fun `只有旧考试日那份设置时也进闸门两侧`() {
+        val seen = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.RELAXED,
+            examEpochDay = LocalDate.of(2026, 10, 7).toEpochDay(),
+            // exams 故意留空：这一份只能靠 examList 从旧键合成那场全学科考试（默认窗 30 / 冲刺 0.95）
+        )
+        assertTrue("夹具必须是「清单为空、旧键有值」那种形状", settings.exams.isEmpty())
+        assertEquals(1, settings.examList.size)
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> seen += cfg; spiky(cs, cfg) },
+        )
+        assertEquals(1, seen.size)
+        assertEquals(0.945, seen[0].retention, 1e-3)
+        assertEquals(3.0, seen[0].maxIntervalDays, 1e-9)
+        assertEquals(5.0, state.ratio!!, 1e-9)
+        assertTrue(state.warn)
+    }
+
+    /**
+     * 评审 F2 的另一半：清单**非空**时旧键失去话语权（`AppSettings.examList` 的口径写在 `Settings.kt`），
+     * 所以 `ramped` 那一份只需 `copy(exams = listOf(exam))`，不必再连 `examEpochDay` 一起清。
+     *
+     * 夹具故意让两个来源打架：旧键说明天考、清单说 300 天后考。冲刺那一份读的必须是清单里那场
+     * （retention 0.7856164、上限 60.0）——旧键若渗进去，horizon 变成 1 天、ramp 打满 0.95，
+     * 这条的期望值立刻对不上。把 `copy(exams = listOf(exam))` 写成 `copy()` 是这条会拦住的改动。
+     */
+    @Test
+    fun `清单非空时旧键不再说话，冲刺那份只读这一场`() {
+        val seen = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.AUTO,
+            examEpochDay = LocalDate.of(2026, 10, 7).toEpochDay(),
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2027, 8, 2).toEpochDay(), emptyList(), 0.95, 365)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> seen += cfg; spiky(cs, cfg) },
+        )
+        assertEquals(1, seen.size)
+        assertEquals(0.7856164, seen[0].retention, 1e-4)
+        assertEquals(60.0, seen[0].maxIntervalDays, 1e-9)
+        assertTrue(state.warn)
+    }
+
+    /**
+     * 科目名两边都得掐首尾空白、且忽略大小写（与 `ExamPolicy.linksSubject` 同口径，评审 F3 那条）。
+     * 库里 `mistakes.subject` 是用户手输的，`SELECT DISTINCT` 出来带空格是常态；
+     * 漏掉掐边不报错，症状是「这一科的卡一张都筛不到、预警对它静默失效」——功能整块消失。
+     */
+    @Test
+    fun `科目名带首尾空白或大小写不一时照样筛到卡`() {
+        val seen = mutableListOf<ForecastCfg>()
+        val cards = List(40) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学 ") } +
+            List(40) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "ENGLISH ") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.RELAXED,
+            // 考试那边写的是 " 数学 " 与全小写 english，卡那边是尾随空格 + 全大写：两边都要能对上
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2026, 10, 7).toEpochDay(), listOf(" 数学 ", "english"), 0.95, 30)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> seen += cfg; spiky(cs, cfg) },
+        )
+        assertEquals("两科各跑一遍，一科都不许被空白或大小写挡在门外", 2, seen.size)
+        assertEquals(0.945, seen[0].retention, 1e-3)
+        assertEquals(0.945, seen[1].retention, 1e-3)
+        assertEquals("报警归给掐过边的那一科", "数学", state.subject)
+        assertTrue(state.warn)
     }
 
     @Test

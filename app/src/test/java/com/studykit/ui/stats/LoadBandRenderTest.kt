@@ -49,8 +49,9 @@ import org.robolectric.annotation.GraphicsMode
  * provider 与「一个测试一次 setContent」沿用 [com.studykit.ui.optimize.CalibrateRenderTest]：
  * `AppSettings(glass = OFF, reduceMotion = true)` 里的 `reduceMotion` 让 `waitForIdle()` 等得到。
  *
- * ## v3.0-B Task 7 追加的三行
- * 负荷带下面那行考前涌量预警：给了过阈值的读数时它在，恰好 2.0 与 `null`（没有读数）时它不在。
+ * ## v3.0-B Task 7 追加的四行
+ * 负荷带下面那行考前涌量预警：给了过阈值的读数时它在，恰好 2.0 与 `null`（没有读数）时它不在，
+ * 而且它开头点名的就是 `SprintSurgeState.subject` 那一科（评审 F3 之后这个字段才有了生产读者）。
  * 这两件事纯函数侧都答不了——`SprintSurgeTest` 只认识 `DayBand`，`ForecastCardsTest` 只认读到几个数，
  * 而「VM 那份字段有没有落到屏幕上」只有真组合一次才看得见。为此 section 本体是
  * [LoadBandSection]（`internal`，与 `ReviewHeatmapSection` / `StabilityPanoramaSection` 同一手法），
@@ -281,8 +282,29 @@ class LoadBandRenderTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText("复习量会涨", substring = true).assertExists()
+        // 开头点了科名（评审 F3）：文档 L1895 那句仍然原样跟在后面，一个字没动
+        composeRule.onNodeWithText("「数学」 考前这段时间", substring = true).assertExists()
         // 那一行是**加**在图下面的，不是替掉图：带子的可见数字行必须还在
         composeRule.onNodeWithText("最忙的是第 3 天，预计 30 项。").assertExists()
+    }
+
+    /**
+     * 评审 F3：`SprintSurgeState.subject` 必须有生产读者，屏幕上那一句得说清是哪一科在涌
+     * （一门绑两科的考试报警时，文档那句里的「这科」否则没有着落）。
+     *
+     * 反向守卫写在同一条里：科名换成英语时「英语」在、「数学」不许还在——前缀若被写死成一个
+     * 科名，上面那两条断言都是绿的，只有这一条会红。
+     */
+    @Test
+    fun 报警那行点名的是哪一科() {
+        composeRule.setContent {
+            StatsHost {
+                LoadBandSection(bands = bands(10.0, spikeAt = 2), surge = SprintSurgeState("英语", 3.5))
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("「英语」 考前这段时间", substring = true).assertExists()
+        composeRule.onNodeWithText("「数学」", substring = true).assertDoesNotExist()
     }
 
     /**

@@ -222,6 +222,14 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
  * 文案住在 [SprintSurge.warningLine] 这个纯函数里，不在这里现写：本仓把屏幕上那句话都放进纯函数，
  * 好让单测逐字钉住（`MistakeScheduling` / `RedoFlow` 同一条约定）。颜色取现成的 `warningInk`
  * （本族文字专用色，压白卡 5.60:1），不新增色值、不加新的 section。
+ *
+ * ## 开头那个「科名」（v3.0-B 评审 F3）
+ * [SprintSurgeState.subject] 在 F3 之前**没有生产读者**，而 [SprintSurge.warningLine] 那句里
+ * 「这科卡片的目标保留率被提到冲刺值」其实没说是哪一科——一门绑两科的考试报警时，用户读到的是
+ * 一句没有着落的「这科」。所以这里在文档 L1895 那句**前面**加上直角引号包住的科名：
+ * 那句话一个字都不改（`warningLine` 仍然逐字等于文档，`SprintSurgeTest` 钉着），只是多了个收件人。
+ * 空白科名不画前缀（`ratio != null` 时 [sprintSurgeFor] 给的必然是掐过边的科名或
+ * [com.studykit.data.memory.ExamEntry.DEFAULT_NAME]，这一支只是不替「没有名字」编一个）。
  */
 @Composable
 internal fun LoadBandSection(
@@ -236,8 +244,9 @@ internal fun LoadBandSection(
         LoadBandChart(bands = bands)
         if (ratio != null && surge.warn) {
             Spacer(Modifier.height(AppTheme.space.xs))
+            val label = surge.subject
             Text(
-                text = SprintSurge.warningLine(ratio),
+                text = (if (label.isBlank()) "" else "「$label」 ") + SprintSurge.warningLine(ratio),
                 style = texts.caption,
                 color = colors.warningInk,
             )
