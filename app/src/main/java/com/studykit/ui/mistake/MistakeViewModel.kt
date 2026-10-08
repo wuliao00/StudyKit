@@ -8,12 +8,12 @@ import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.ReviewLog
 import com.studykit.data.memory.Confidence
-import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReviewGrade
 import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.toKernelRating
 import com.studykit.data.memory.toStorageInt
 import com.studykit.ui.study.KernelHub
+import com.studykit.ui.study.schedulingForSubject
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
@@ -114,8 +114,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     private val repository = container.mistakeRepository
 
     // 排期要读设置里的两项：活跃内核（id **连同** fsrsActiveParams，经 [KernelHub.forId] 双参口径）
-    // 与严格度/考试日
-    // （`MemoryScheduler.forSettings`），与 `StudyViewModel.gradeCard` 同源同一个内核
+    // 与严格度/考试清单
+    // （`schedulingForSubject`，v3.0-B T4 起按这条错题的学科取参数），与 `StudyViewModel.gradeCard` 同源同一个内核
     private val settingsRepository = container.settingsRepository
 
     // 提示阶梯与同考点变式都只吃「题目」这一维数据（subject 驱提示、concept_tag 驱变式），
@@ -372,7 +372,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
      * 重做后评一次分（v2.7 计划 B Task 14；spec §6 错题排期接管）。
      *
      * 结构照抄 `StudyViewModel.gradeCard` 的内核段：内核每轮现取（[KernelHub.forId]，与按钮预览同源），
-     * 调度参数与词侧同一份 `MemoryScheduler.forSettings`，算术全在 [MistakeScheduling.grade]（纯函数，
+     * 调度参数走 [schedulingForSubject]（全仓唯一的组合点，按这条错题的学科取参数，v3.0-B T4），
+     * 算术全在 [MistakeScheduling.grade]（纯函数，
      * 逐条钉在 `MistakeSchedulingTest`），这一层只负责"读行 → 算 → 写回"。算法写回的就是
      * [Mistake.reviewAt] 那一列，与上面的手动覆盖同一个列，下游零特判。
      *
@@ -396,11 +397,7 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
             val settings = settingsRepository.current()
             // 整份设置交给 hub：v2.9 的活跃 FSRS 参数就住在这里，只交 id 等于把它丢掉
             val kernel = KernelHub.forId(settings.schedulingKernel, settings)
-            val sched = MemoryScheduler.forSettings(
-                strictness = settings.reviewStrictness,
-                examEpochDay = settings.examEpochDay,
-                today = LocalDate.now(),
-            )
+            val sched = schedulingForSubject(settings, mistake.subject, LocalDate.now())
             // ① 先状态：内核评分写回 mistakes（review_at 与计数器）
             repository.update(
                 MistakeScheduling.grade(

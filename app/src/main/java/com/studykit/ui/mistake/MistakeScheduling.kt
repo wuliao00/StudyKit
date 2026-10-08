@@ -68,7 +68,8 @@ internal object MistakeScheduling {
      * @param kernel **活跃内核**，由调用方经 `KernelHub.forId(settings.schedulingKernel, settings)` 取
      *               （id **连同** `fsrsActiveParams`，v3.0-A T2.6），不在这里读设置：
      *               保持本函数零 Android 依赖、可在 JVM 单测里直取。
-     * @param sched  与词侧同一份 `MemoryScheduler.forSettings(...)` 结果（目标准确率、间隔上限），
+     * @param sched  与词侧同源、但按这条错题的学科取参数（`schedulingForSubject`，v3.0-B T4）的
+     *               结果（目标准确率、间隔上限），
      *               所以用户把复习调严时，错题也跟着变密，两套记忆不会各排一套。
      * @param now    本次评分时刻（毫秒）；测试注入，生产传 `System.currentTimeMillis()`。
      */
