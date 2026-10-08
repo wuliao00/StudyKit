@@ -52,6 +52,14 @@ data class MockSession(
      * 可加列、无 DEFAULT（Room 对可空列的既有约定，以 9.json 为准）。
      */
     @ColumnInfo(name = "paused_at") val pausedAt: Long? = null,
+    /**
+     * 开卷那一刻这张卷子跑的是哪个限时档（分钟，0 = 不限时）——**只写不读**的审计痕迹。
+     *
+     * 留着它的理由不是"以后可能要读"，而是**旧行不该被新设置重新解释**：截止时刻 `deadline_ts`
+     * 是从这一档限时推出来的，用户后来把限时从 90 改成 30，历史那一行仍然属于"在 90 分钟档下作答"
+     * 的那一场；没了这一列，那份记录就只剩下一个无法说明自己是怎么来的 `deadline_ts`。
+     * schema 冻在 v9，这一列不删也不动。
+     */
     @ColumnInfo(name = "limit_min") val limitMin: Int = 0,
     val state: Int = 0,
     val result: String? = null,

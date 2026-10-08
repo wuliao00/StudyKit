@@ -5,7 +5,10 @@ package com.studykit.data.memory
  *
  * 文档点名的是「WorkloadSimulator 峰值/中位 >2」。本仓没有那个类，但它存在等价物：
  * v3.0-A 的 [DueForecast.forecast] 就是那台模拟器（负荷带 = 每天要还的卡数分布）。
- * 所以这里只做一个纯读数函数，Task 7 把同一批关联学科的卡按 base / ramped 各跑一遍预测喂进来。
+ * 所以这里只做一个纯读数函数：Task 7 拿**冲刺保留率**把同一批关联学科的卡**重跑一遍**负荷带，
+ * 把那一份 bands 喂进来。**只跑这一遍** —— 没有第二份"自然排期"的预测作对照，闸门那边比的只是
+ * 两个目标保留率（见 `ui/stats/ForecastCards.kt` 的 `sprintSurgeFor`）。因此 [peakMedianRatio]
+ * 说的是**同一次冲刺排期自己**挤出来的尖峰，不是"比不冲刺时多了 N 倍"。
  *
  * 零 Android、零时钟、零 Room。
  */

@@ -1,6 +1,7 @@
 package com.studykit.ui.mistake
 
 import com.studykit.data.entity.Mistake
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,10 +32,16 @@ class OcclusionTest {
 
     @Test
     fun `空表写出的是空对象形状而不是空串`() {
-        assertEquals("{}", "{}")            // 迁移默认值就是这四个字符，别改
+        val written = shapesToJson(emptyList())
+        // 上一版这里写的是 assertEquals("{}", "{}") —— 两边都是字面量，永远绿，什么都没测。
+        // 现在钉的是**编解码器自己**的输出：空表写出去是一个 JSON 对象，里面带一个空的 shapes 数组。
+        assertTrue("空表也要写成对象串，不能退成空串或裸数组：$written", written.startsWith("{") && written.endsWith("}"))
+        assertEquals(0, JSONObject(written).getJSONArray("shapes").length())
+        assertEquals(emptyList<OcclusionShape>(), shapesFromJson(written))
+        // 库里那一列的 DEFAULT 就是 `{}` 这四个字符（`mistakes.extra`，9.json 与 Migration8To9Test 钉着），
+        // 它对编解码器是同一件事：读成空清单，而不是崩、也不是读不出
         assertEquals(emptyList<OcclusionShape>(), shapesFromJson("{}"))
         assertEquals(emptyList<OcclusionShape>(), shapesFromJson(""))
-        assertEquals(0, shapesFromJson(shapesToJson(emptyList())).size)
     }
 
     @Test

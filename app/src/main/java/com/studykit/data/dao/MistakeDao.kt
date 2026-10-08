@@ -62,7 +62,7 @@ interface MistakeDao {
     @Query("UPDATE mistakes SET mastered = 1 WHERE id = :id")
     suspend fun markMastered(id: Long)
 
-    // ── 逐次重做历史（v2.7 计划 B Task 15；表 + 索引自 v7 就在，schema 冻结在 v7，这里只补 DAO）──
+    // ── 逐次重做历史（v2.7 计划 B Task 15；表 + 索引自 v7 就在，这里只补 DAO，没动过表）──
     // 一个 DAO 可以管多张实体的表：`mistake_redos` 与 mistakes 同库，读写放这儿最省事，
     // 也让「先写 mistakes 状态、再写这条历史」在同一个 VM 协程里挨着发生（顺序纪律见 Repository.insertRedo 的 KDoc）。
 

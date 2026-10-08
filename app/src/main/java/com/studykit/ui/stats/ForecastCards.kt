@@ -207,7 +207,11 @@ data class SprintSurgeState(
 }
 
 /**
- * 拿 ramp 之后的目标保留率把那批卡的负荷带重跑一遍，读峰值与中位（文档 L1891）。
+ * 拿 ramp 之后的目标保留率把那批卡的负荷带**重跑一遍**，读峰值与中位（文档 L1891）。
+ *
+ * **只跑这一遍**：闸门比的 `base` 只是一个目标保留率**读数**（[MemoryScheduler.baseTargetRecall] 的返回值），
+ * 不会为它再预测一次。所以 [SprintSurge.peakMedianRatio] 交出来的倍数是**冲刺排期那一条曲线自己**的
+ * 峰值/中位，不是「相对自然排期涨了几倍」—— CHANGELOG 涌量预警那一条写的就是这件事，两处口径要一致。
  *
  * 为什么是重跑而不是解析式估：`DueForecast` 里每张卡的到期日是 `nextIntervalDays`
  * **反解**出来的，retention 一变整条分布就平移 —— 想手估峰值就得把那次反解重抄一遍，
@@ -240,6 +244,7 @@ data class SprintSurgeState(
  *  - `base` = **保住 horizon、只去掉 ramp** 的那一份，即 [MemoryScheduler.baseTargetRecall]
  *    交上 [ExamPolicy.nearestExamDaysLeft] 算出的同一个 horizon——这正是 `ui/study/ExamCountdown.kt`
  *    用的配方，也是 `MemoryScheduler.forSubject` 内部的前两段（horizon → base），第 3 段 ramp 不给它。
+ *    base 这一侧**只算一个数**，不为它跑第二条负荷带 —— 本函数只有冲刺那一份会进 [forecast]（一次）。
  *    horizon 必须留着：它就是调度器真正拿去算 base 的那个天数，摘掉它等于换了另一个用户的口径。
  *    原样拿整份清单算出来的那份**不能**当 base（它已含这一场的 ramp，单场考试的用户两边恒等、
  *    闸门永远关着）。
