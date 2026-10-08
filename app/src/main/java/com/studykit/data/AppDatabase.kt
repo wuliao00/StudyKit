@@ -417,6 +417,12 @@ abstract class AppDatabase : RoomDatabase() {
          * 「普通错题、无遮挡」—— 这是计划里的 ⛔ 硬闸：迁移不许改变任何既有列的语义，
          * 也不许丢行（纯加表 + 带默认值的加列，一句 UPDATE/DELETE 都没有）。
          * `deadline_ts`/`result` 可空且无 DEFAULT：NULL 就是"不限时"/"未交卷"，不能拿 0 冒充。
+         *
+         * **v9 就地改过一次（评审 F1）**：`mock_sessions` 的建表语句里多了 `paused_at`（可空、无
+         * DEFAULT，同一口径）。这一版**从未发布过** —— 发布分支停在 2.9.0 / versionCode 19 / schema v8，
+         * `8.json` 与 `9.json` 都不在 origin/main 上，所以没有任何存量设备持有 v9 那张表。
+         * 折进这一版而不是另起 v10：加一轮 `ALTER TABLE` 迁移只会给"从来没有过旧行"的表造一段
+         * 没人跑得过的代码路径，而 8→9 那条 CREATE TABLE 本来就要跟着改。
          */
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -432,6 +438,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "`cursor` INTEGER NOT NULL, " +
                         "`start_ts` INTEGER NOT NULL, " +
                         "`deadline_ts` INTEGER, " +
+                        "`paused_at` INTEGER, " +
                         "`limit_min` INTEGER NOT NULL, " +
                         "`state` INTEGER NOT NULL, " +
                         "`result` TEXT, " +

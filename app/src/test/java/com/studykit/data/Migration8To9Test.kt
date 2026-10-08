@@ -18,8 +18,12 @@ import org.robolectric.annotation.Config
  *    （uuid/source/subject/title/content/note/mastered/created_at）必须写全，否则红得像迁移写坏了、其实是夹具无效；
  * 2) 迁移产物 `mock_sessions` 建表列**逐字**取自 `app/schemas/com.studykit.data.AppDatabase/9.json`
  *    （`${TABLE_NAME}` 换成真实表名）—— 差一个 `NOT NULL`/DEFAULT 就红，不再等真机撞运气；
+ *    评审 F1 那轮把 `paused_at`（暂停起点）**折进这一版本的 CREATE TABLE** 而不是另起 v10：
+ *    v9 从未发布（origin/main 仍在 versionCode 19 / schema v8），没有存量用户行需要 `ALTER TABLE`，
+ *    就地补进建表语句是干净的，代价只有一条：本用例的期望列集合要跟着加一列；
  * 3) ⛔ 旧错题行零丢失，且新列 `kind=0`/`extra='{}'` 读回来就是「普通错题、无遮挡」（计划硬闸）；
- * 4) 新表能写能读，`deadline_ts`/`result` 未填保持 NULL（不限时 = 截止时刻为空）。
+ * 4) 新表能写能读，`deadline_ts`/`result`/`paused_at` 未填保持 NULL（不限时 = 截止时刻为空、
+ *    没在暂停中 = 暂停起点为空 —— 两样都不能拿 0 冒充）。
  *
  * 环境钉 `sdk = [34]`：与本仓所有 Robolectric 用例同规矩（见 [Migration6To7Test] 注释）。
  */
@@ -60,7 +64,7 @@ class Migration8To9Test {
             "mock_sessions 的列集合必须与实体逐一对应",
             setOf(
                 "id", "uuid", "syncStatus", "subject", "exam_name", "question_ids", "answers", "cursor",
-                "start_ts", "deadline_ts", "limit_min", "state", "result", "created_at",
+                "start_ts", "deadline_ts", "paused_at", "limit_min", "state", "result", "created_at",
             ),
             cols.toSet(),
         )
@@ -77,16 +81,23 @@ class Migration8To9Test {
         assertEquals(1, row.getInt(1))
         assertEquals("⛔ 旧卡迁移后必须是 kind=0（普通）", 0, row.getInt(2))
         assertEquals("⛔ 旧卡默认无遮挡", "{}", row.getString(3))
-        // 5) 新表能写能读，NULL 列保持 NULL（不限时 = deadline_ts 为空）
+        // 5) 新表能写能读，NULL 列保持 NULL（不限时 = deadline_ts 为空、没暂停 = paused_at 为空）
         db.execSQL(
             "INSERT INTO mock_sessions (uuid, subject, exam_name, question_ids, answers, cursor, start_ts, " +
                 "limit_min, state, created_at) VALUES ('s1','数学','期末考','[1,2]','{}',0,1000,45,1,1000)",
         )
-        val s = db.query("SELECT subject, state, deadline_ts, result FROM mock_sessions WHERE uuid='s1'").also { it.moveToFirst() }
+        val s = db.query("SELECT subject, state, deadline_ts, result, paused_at FROM mock_sessions WHERE uuid='s1'")
+            .also { it.moveToFirst() }
         assertEquals("数学", s.getString(0))
         assertEquals(1, s.getInt(1))
         assertTrue("不限时时 deadline_ts 应为 NULL", s.isNull(2))
         assertTrue("未交卷时 result 应为 NULL", s.isNull(3))
+        assertTrue("没在暂停中时 paused_at 应为 NULL（不能拿 0 冒充 1970 年暂停）", s.isNull(4))
+        // 6) 暂停起点写进去就读得回来（评审 F1：跨进程恢复靠这一列补回停表那一段）
+        db.execSQL("UPDATE mock_sessions SET state = 2, paused_at = 777000 WHERE uuid = 's1'")
+        val p = db.query("SELECT state, paused_at FROM mock_sessions WHERE uuid='s1'").also { it.moveToFirst() }
+        assertEquals(2, p.getInt(0))
+        assertEquals(777_000L, p.getLong(1))
         db.close()
     }
 

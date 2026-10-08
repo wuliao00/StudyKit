@@ -50,12 +50,13 @@ class MockSessionDaoTest {
     }
 
     /** 一条正在作答的会话；state=1（run）按字面量写，与被测常量无关 */
-    private fun session(state: Int = 1, deadlineTs: Long? = null) = MockSession(
+    private fun session(state: Int = 1, deadlineTs: Long? = null, pausedAt: Long? = null) = MockSession(
         subject = "数学",
         examName = "期末考",
         questionIds = "[7,8,9]",
         state = state,
         deadlineTs = deadlineTs,
+        pausedAt = pausedAt,
     )
 
     @Test
@@ -103,5 +104,21 @@ class MockSessionDaoTest {
         // 对照组：填了值就要原样读回，证明上一条的 null 是列真允许空、不是写丢了
         val id2 = db.mockSessionDao().insert(session(deadlineTs = 123456L))
         assertEquals(123456L, db.mockSessionDao().getById(id2)?.deadlineTs)
+    }
+
+    /**
+     * 评审 F1 —— 暂停起点是**库里的一列**，不是内存里的一个数。
+     *
+     * 没有它，跨进程恢复只能把暂停当作"就在恢复这一刻发生"，于是「继续作答」的下一 tick 直接
+     * 自动交卷，整段停表被悄悄吃掉（默认 `examPauseCountsTime = false`，暂停本该停表）。
+     * 这一条钉的是那列能存能读、且没暂停时确实是 NULL —— NULL 必须留着，因为 0 会被读成
+     * 「1970 年就暂停了」，那是凭空造出 55 年停表。
+     */
+    @Test
+    fun `暂停起点随会话行往返，没暂停时保持为空`() = runBlocking {
+        val pausedId = db.mockSessionDao().insert(session(state = 2, pausedAt = 777_000L))
+        assertEquals("暂停起点要原样读回", 777_000L, db.mockSessionDao().getById(pausedId)?.pausedAt)
+        val plainId = db.mockSessionDao().insert(session())
+        assertNull("没在暂停中的行不该有一个凭空造出来的暂停起点", db.mockSessionDao().getById(plainId)?.pausedAt)
     }
 }

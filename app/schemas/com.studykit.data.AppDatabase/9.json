@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "241a868d6d04da1680ab44975c112469",
+    "identityHash": "3ce3c5fbfee67cc85e80bc7a8e853cb5",
     "entities": [
       {
         "tableName": "words",
@@ -1573,7 +1573,7 @@
       },
       {
         "tableName": "mock_sessions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uuid` TEXT NOT NULL, `syncStatus` INTEGER NOT NULL DEFAULT 0, `subject` TEXT NOT NULL, `exam_name` TEXT NOT NULL, `question_ids` TEXT NOT NULL, `answers` TEXT NOT NULL, `cursor` INTEGER NOT NULL, `start_ts` INTEGER NOT NULL, `deadline_ts` INTEGER, `limit_min` INTEGER NOT NULL, `state` INTEGER NOT NULL, `result` TEXT, `created_at` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `uuid` TEXT NOT NULL, `syncStatus` INTEGER NOT NULL DEFAULT 0, `subject` TEXT NOT NULL, `exam_name` TEXT NOT NULL, `question_ids` TEXT NOT NULL, `answers` TEXT NOT NULL, `cursor` INTEGER NOT NULL, `start_ts` INTEGER NOT NULL, `deadline_ts` INTEGER, `paused_at` INTEGER, `limit_min` INTEGER NOT NULL, `state` INTEGER NOT NULL, `result` TEXT, `created_at` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -1637,6 +1637,12 @@
             "notNull": false
           },
           {
+            "fieldPath": "pausedAt",
+            "columnName": "paused_at",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
             "fieldPath": "limitMin",
             "columnName": "limit_min",
             "affinity": "INTEGER",
@@ -1693,7 +1699,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '241a868d6d04da1680ab44975c112469')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3ce3c5fbfee67cc85e80bc7a8e853cb5')"
     ]
   }
 }
