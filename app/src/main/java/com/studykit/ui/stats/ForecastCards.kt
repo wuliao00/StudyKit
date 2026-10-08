@@ -234,8 +234,9 @@ data class SprintSurgeState(
  * 也不在这里自己 `baseTargetRecall(strictness, 剩余天数)`：那要先把考试日换算成 horizon，
  * 等于在 UI 层抄第二份排期算术（`SubjectScheduling` 那道缝存在的理由就是不许可）。
  *
- * 零 Android、零 Room、零时钟（`today` 由调用方给）；`cards` 是个 supplier 而不是列表，
- * 因为清单为空时调用方连装配都不必做。
+ * 零 Android、零 Room、零时钟（`today` 由调用方给）。`cards` 是 supplier 而不是列表：考试清单为空时
+ * 本函数一次都不读它，将来挂在首页那一类「没有卡集在手」的调用点因此能整段跳过装配。统计页这一路
+ * 卡集本来就要给那张图装配，所以那一侧省下来的只是「再查一次 DAO」——那正是求值一次契约禁止的。
  */
 internal fun sprintSurgeFor(
     settings: AppSettings,
