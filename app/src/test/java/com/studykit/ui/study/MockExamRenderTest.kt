@@ -6,9 +6,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.entity.Question
@@ -38,6 +41,10 @@ import org.robolectric.annotation.GraphicsMode
  *
  * 只渲染这两段内部 Composable、不渲染整屏：整屏要 [StudyViewModel]（背后是 Room），
  * JVM 侧起不来；而"反馈在不在"这件事全部住在这两段里。
+ *
+ * 考卷与成绩页都是**长滚动列**：折叠线以下的节点要先 `onNode(hasScrollAction()).performScrollToNode(...)`
+ * 再断言可见 / 点击 —— 没滚到位的节点，`assertIsDisplayed` 与 `performClick` 都会以「看不见」为由
+ * 失败，那不是被测行为不对。只需要「在树上出现过」的那些（本文件对「交卷」的老口径）仍用 `assertExists`。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -147,6 +154,97 @@ class MockExamRenderTest {
     }
 
     @Test
+    fun 无遮挡的作答页不出现待批改提示() {
+        // 待批改那一栏只在成绩页出现：作答页提前告诉用户"这几题没答"，等于把交卷前的
+        // 空缺当成反馈漏出去（延迟反馈承诺的另一半）
+        composeRule.setContent {
+            ExamHost(
+                question = question,
+                selected = null,
+                showResult = false,
+                onAnswer = {},
+                remainingLabel = "44:10",
+            )
+        }
+        composeRule.onNodeWithText("下面哪个数最大？").assertIsDisplayed()
+        composeRule.onNodeWithText("待批改", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("判了", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun 结果页把未答的题列进待批改而不判成错() {
+        // 20 题只答 1 题（且答对）：待批改那一栏出现 19 题，分数栏的分母是"判了 1 题"，
+        // 屏幕不许出现「答对 1 / 20 题」那种把空白当答错的百分比（R2）。
+        val paper = List(20) { question.copy(id = (it + 1).toLong()) }
+        composeRule.setContent {
+            ExamHost(
+                question = question,
+                selected = question.answerIndex,
+                showResult = true,
+                onAnswer = {},
+                resultQuestions = paper,
+                resultAnswers = mapOf(question.id to MockExamState.Answer(question.answerIndex, correct = true)),
+                pendingGrading = paper.filter { it.id != question.id },
+            )
+        }
+        composeRule.onNodeWithText("答对 1 / 1 题").assertIsDisplayed()
+        composeRule.onNodeWithText("判了 1 题 · 未答 19 题").assertIsDisplayed()
+        // 待批改那一栏在判词卡之下（折叠线以下）：先把它滚进可视区再断言可见。
+        // 两句各滚一次：`performScrollToNode` 只把目标滚到视口边上，紧跟其后的那一行仍会在折叠线外
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("待批改 19 题"))
+        composeRule.onNodeWithText("待批改 19 题").assertIsDisplayed()
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("这些题交卷时是空的，判不了"))
+        composeRule.onNodeWithText("这些题交卷时是空的，判不了").assertIsDisplayed()
+        // 旧分母（整卷题数）不能再出现在树上
+        composeRule.onNodeWithText("答对 1 / 20 题").assertDoesNotExist()
+        // 未答 ≠ 答错：一题没判错就不许出现"错了 N 道"那句
+        composeRule.onNodeWithText("错了", substring = true).assertDoesNotExist()
+        // 这一卷是用户自己交的，不是时间到
+        composeRule.onNodeWithText("时间到，已自动交卷").assertDoesNotExist()
+    }
+
+    @Test
+    fun 自动交卷的结果页标注时间到() {
+        composeRule.setContent {
+            ExamHost(
+                question = question,
+                selected = 0,                       // 答案下标是 1 → 判错
+                showResult = true,
+                onAnswer = {},
+                autoSubmitted = true,
+            )
+        }
+        composeRule.onNodeWithText("时间到，已自动交卷").assertIsDisplayed()
+        composeRule.onNodeWithText("答对 0 / 1 题").assertIsDisplayed()
+    }
+
+    @Test
+    fun 答错的题给出建卡出口并带上学科() {
+        val wrong = List(2) { question.copy(id = (it + 1).toLong()) }
+        val picked = mutableListOf<String>()
+        composeRule.setContent {
+            ExamHost(
+                question = question,
+                selected = 0,
+                showResult = true,
+                onAnswer = {},
+                resultQuestions = wrong,
+                resultAnswers = wrong.associate { it.id to MockExamState.Answer(0, correct = false) },
+                onGoCapture = { picked.add(it) },
+            )
+        }
+        // 建卡那一行在分数卡之下、折叠线附近：先滚进可视区，否则 isDisplayed 与 performClick
+        // 只会以"看不见"为由失败（那不是被测行为不对）
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("去拍这几道"))
+        composeRule.onNodeWithText("错了 2 道，去建卡？（拍照 → 预览 → 确认）").assertIsDisplayed()
+        composeRule.onNodeWithText("去拍这几道").performClick()
+        composeRule.waitForIdle()
+        assertEquals("恰好一次，且带的是答错那些题的学科", listOf("数学"), picked)
+        // 0 题未答时不该有"待批改 0 题"这种空栏
+        composeRule.onNodeWithText("待批改", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun 恢复提示只给继续与丢弃两个出口() {
         var resumed = 0
         var discarded = 0
@@ -209,6 +307,9 @@ private fun ResumeHost(
 /**
  * 测试宿主：交卷前渲染考卷、交卷后渲染结果，二者共用同一份主题 provider。
  * `selected` / `showResult` 由测试类字段驱动重组（一次 `setContent` 内换屏的唯一姿势）。
+ *
+ * 结果页那三个参数（[resultQuestions] / [resultAnswers] / [pendingGrading]）默认给"既有用例的那一卷"
+ * —— 单题、判词按 `selected` 现算、没有待批改 —— 这样 T12 之前那条用例一个字都不用改。
  */
 @Composable
 private fun ExamHost(
@@ -218,6 +319,11 @@ private fun ExamHost(
     onAnswer: (Int) -> Unit,
     remainingLabel: String? = null,
     paused: Boolean = false,
+    resultQuestions: List<Question> = emptyList(),
+    resultAnswers: Map<Long, MockExamState.Answer>? = null,
+    pendingGrading: List<Question> = emptyList(),
+    autoSubmitted: Boolean = false,
+    onGoCapture: (String) -> Unit = {},
 ) {
     CompositionLocalProvider(
         LocalAppTheme provides AppThemeVals(
@@ -227,14 +333,18 @@ private fun ExamHost(
         ),
     ) {
         if (showResult) {
+            val questions = resultQuestions.ifEmpty { listOf(question) }
             ExamResultBody(
-                questions = listOf(question),
-                results = mapOf(
+                questions = questions,
+                results = resultAnswers ?: mapOf(
                     question.id to MockExamState.Answer(
                         selected = selected,
                         correct = selected == question.answerIndex,
                     ),
                 ),
+                pendingGrading = pendingGrading,
+                autoSubmitted = autoSubmitted,
+                onGoCapture = onGoCapture,
                 onBack = {},
             )
         } else {

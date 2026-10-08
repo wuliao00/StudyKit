@@ -37,6 +37,10 @@ import org.robolectric.annotation.Config
  *    —— 拿 0 冒充"肯定不记得"会触发 FSRS 超纠正，必须留空（实体 KDoc 同口径）。
  * 3) **先状态后历史**：日志写在状态写之后。协程里状态写一抛，日志那行根本执行不到 → 库中零行
  *    （与 `applyReview → recordGradedReview`、`grade → insertRedo` 那条纪律同一条，见 [stateThrowsThenNoLogRow]）。
+ * 4) **套卷交卷那一行与练习侧同形状**（v3.0-B T12，计划 D8：`KIND_PRACTICE` + `self_conf` 留空 +
+ *    `elapsed`/`scheduled`/`duration` 成对 0）—— 见 [套卷交卷那条路径写的行与练习侧同形状]。
+ *    第五个写入点（`StudyViewModel.submitMockExam`）本身要起 VM + Room，本文件不新建那套脚手架，
+ *    该路径的落库由真机取证覆盖（缺口点名在 task-10-12 报告里）。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -134,6 +138,45 @@ class ReviewLogWriteTest {
         // rating 各自自洽：practice 判对 → GOOD(3)，mistake 忘记 → AGAIN(1)
         assertEquals(1, rows.first { it.cardKind == ReviewLog.KIND_MISTAKE }.rating)
         assertEquals(3, rows.first { it.cardKind == ReviewLog.KIND_PRACTICE }.rating)
+    }
+
+    /**
+     * v3.0-B T12（计划 D8）—— **套卷交卷**那条路径往 `review_log` 写的那一行，形状必须与练习侧
+     * 逐列一致：`card_kind=practice`、`origin=practice`、`self_conf` 留空（交卷时没有信心采集，
+     * 拿 0 冒充"肯定不记得"会去触发 FSRS 超纠正）、`elapsed` / `scheduled` / `duration` **成对** 0
+     * （模考不进 FSRS 状态机、没有逐卡 Δt，只把其中一列填 0 会被 LogPacker 读成"另一列的间隔存在"）、
+     * `state=0`（New）、`rating` 由对错映射（判对 GOOD3 / 判错 AGAIN1）。
+     *
+     * 这条**只钉 helper 那一层的形状**，不声称测了 `StudyViewModel.submitMockExam`：那要起 ViewModel
+     * + Room 的脚手架，本任务不新建（缺口在 task-10-12 报告里点名，由真机清单覆盖）。
+     * 与 [四类评分点各写一行 kind 与 origin 一一对应] 的分工是：那条证明四类写得出，这条证明
+     * 模考这条**新写路径所依赖的那一组默认值**落得下来。
+     */
+    @Test
+    fun `套卷交卷那条路径写的行与练习侧同形状`() = runBlocking {
+        reviewLog.recordGradedReview(
+            cardKind = ReviewLog.KIND_PRACTICE,
+            cardId = 77L,
+            rating = KernelRating.AGAIN.ordinal + 1,     // 判错 → AGAIN(1)，与 selectOption 同一映射
+            elapsedDays = 0.0,
+            scheduledDays = 0.0,
+            state = 0,
+            durationMs = 0L,
+            origin = "practice",
+            selfConf = null,
+            sessionId = "sess-mock",
+        )
+        val row = db.reviewLogDao().getAllSince().single { it.cardId == 77L }
+        assertEquals(ReviewLog.KIND_PRACTICE, row.cardKind)
+        assertEquals("practice", row.origin)
+        assertEquals(1, row.rating)
+        assertNull("交卷没有信心采集，self_conf 必须留空", row.selfConf)
+        assertEquals("三列必须成对为 0", 0.0, row.elapsedDays, 1e-9)
+        assertEquals("三列必须成对为 0", 0.0, row.scheduledDays, 1e-9)
+        assertEquals("三列必须成对为 0", 0L, row.durationMs)
+        assertEquals(0, row.state)
+        assertEquals("sess-mock", row.sessionId)
+        assertEquals(ReviewLog.CURRENT_SCHEMA_VER, row.logSchemaVer)
     }
 
     /**

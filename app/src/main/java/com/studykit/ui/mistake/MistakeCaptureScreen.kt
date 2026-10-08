@@ -71,12 +71,21 @@ fun MistakeCaptureScreen(
     autoExtract: Boolean,
     onBack: () -> Unit,
     onSaved: () -> Unit,
+    initialSubject: String = "",
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val pending by viewModel.pendingCapture.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
-    var selectedSubject by rememberSaveable { mutableStateOf("") }
+    var selectedSubject by rememberSaveable { mutableStateOf(initialSubject) }
+    // 路由参数只在**首次组合**时喂进 rememberSaveable，之后参数变了它不会自己重读：
+    // 这一枚是考后「去拍这几道」带过来的学科（v3.0-B T12），补一次同步，免得从成绩页换科时
+    // 预选停在上一科上。非空才覆盖：空白串是"没带学科"，不是"把已选的清空"。
+    LaunchedEffect(initialSubject) {
+        if (initialSubject.isNotBlank() && initialSubject != selectedSubject) {
+            selectedSubject = initialSubject
+        }
+    }
     var newSubject by rememberSaveable { mutableStateOf("") }
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }

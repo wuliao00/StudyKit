@@ -135,10 +135,29 @@ data class MockExamUiState(
     val total: Int get() = questions.size
     val current: Question? get() = questions.getOrNull(index)
     val answeredCount: Int get() = answers.size
+
+    /**
+     * **判过**的题数（v3.0-B T12，R2）：交卷后 = [results] 的条数，未答的那些在 [toGrade] 里、
+     * 压根没有判词。分数的分母用它，不用 [total]。
+     */
+    val gradedCount: Int get() = results.size
+
+    /** 判过的题里对了几题（交卷前恒 0） */
     val correctCount: Int
-        get() = if (submitted) questions.count { results[it.id]?.correct == true } else 0
+        get() = if (submitted) results.values.count { it.correct } else 0
+
+    /** 答**错**的题数（不是"没答的 + 答错的"）—— 结果页那句「错了 N 道，去建卡」用它 */
+    val wrongCount: Int
+        get() = if (submitted) gradedCount - correctCount else 0
+
+    /**
+     * 正确率。分母是 [gradedCount]（判过的题），**不是** [total]。
+     *
+     * 这不是措辞问题而是诚实问题：20 题只答 1 题、且答对，旧口径会印「5%」——那是把 19 个
+     * 没发生过的作答当成 19 次遗忘，屏幕上那个数字会在用户自己的记忆水平上撒一个难看的谎。
+     */
     val accuracyPercent: Int
-        get() = if (total == 0) 0 else correctCount * 100 / total
+        get() = if (gradedCount == 0) 0 else correctCount * 100 / gradedCount
 }
 
 /**
@@ -899,44 +918,77 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 交卷：先用 [MockExamState] 把整卷一次性算成每题 (selected, correct) 并同步翻起 submitted
-     *（页面当场跳成绩页），再把已作答的题走**与练习同一条落库路径**写练习记录（conf=null），
-     * 答错的题走现成 [addMistakeIfAbsent] 幂等入错题本（priority 取 [MistakeIntake]，conf=null → 普通档 0）。
+     * 交卷。`auto = true` = 时间到自动交（结果页顶那句"时间到，已自动交卷"要出来，R3）。
      *
-     * 双写只发生一次：模考作答从不碰 [selectOption]，本方法又有 `if (submitted) return` 终态锁，
-     * 未作答的题压根不进落库循环，因此不会出现记录或错题的二次入库。
+     * 四步顺序不许换（与 [gradeCard] 的「先状态后历史」同一条理由：中间被杀只丢一条日志，
+     * 下次复习时刻仍对；R8）：
+     *  ① 纯算分（[submitOutcome]，未答的题出待批改队列而不是判成错）+ UI 终态同步冻结；
+     *  ② 会话落库（`state=DONE` + `result` 摘要 + `answers`/`cursor` 定格）——走
+     *     [commitMockSession] 的**同步**那一支，不挤进 400ms 防抖：② 必须排在 ③④ 之前，
+     *     用防抖的话顺序会反过来（行在 400ms 后才落，练习记录已经先写完了）；
+     *  ③ 每题写 `practice_records`（既有 `submitAnswer`，答错的幂等入错题本）；
+     *  ④ 每题双写 `review_log`。
      *
-     * [auto] = 时间到自动交（R3），只影响 `autoSubmitted` 这一位与结果页那句标注。
-     * 待批改队列、`result` 摘要与 `review_log` 双写在 T12 接上。
+     * ④ 是这一笔补的洞（计划 D8）：v2.9 起 `review_log` 是校准器的唯一训练流，
+     * 而模考答过的题只进了 `practice_records` —— 在训练流里它们从来没发生过。
+     * 口径照 [selectOption]（练习侧）那一处逐列抄：`rating` 由对错映射（判对 GOOD3 / 判错 AGAIN1，
+     * 且对错取 `submitAnswer` 的返回值 —— 与练习侧同一份真值，不取机器那份），
+     * `elapsed`/`scheduled`/`duration` **成对** 0（模考不进 FSRS 状态机，没有逐卡 Δt），
+     * `state=0` New，`selfConf=null`（交卷时没有信心采集，不拿 0 冒充"肯定不记得"），
+     * `origin="practice"`、同一个 [sessionId]。
+     *
+     * 未作答的题（`out.toGrade`）**一步都不写**：没人给出过选择，写下去就是拿 0 冒充一次作答，
+     * 而且是在校准器的训练流里冒充。
      */
     fun submitMockExam(auto: Boolean = false) {
         val state = _mockExam.value
         if (!state.started || state.submitted) return
         val answerKey = state.questions.associate { it.id to it.answerIndex }
         val answerCount = state.questions.firstOrNull()?.let { parseOptions(it.optionsJson).size } ?: 0
-        val machine = MockExamState(
+        // ① 算分：判分算术仍然只在 MockExamState 那一处（R1），这里只把未答的摘出去
+        val out = submitOutcome(
             questionIds = state.questions.map { it.id },
-            answerCount = answerCount,
+            selections = state.answers,
             answerKey = answerKey,
+            answerCount = answerCount,
         )
-        state.answers.forEach { (questionId, selected) -> machine.answer(questionId, selected) }
-        val results = machine.submit()
-        // 先冻结 UI 终态（同步），成绩页立刻能读 results；落库在下面的协程里异步补
-        _mockExam.value = state.copy(submitted = true, results = results, autoSubmitted = auto)
-        val answered = state.questions.filter { state.answers.containsKey(it.id) }
+        // 先冻结 UI 终态（同步），成绩页立刻能读 results / toGrade；落库在下面那一个协程里按序补
+        _mockExam.value = state.copy(
+            submitted = true,
+            results = out.graded,
+            toGrade = out.toGrade,
+            autoSubmitted = auto,
+        )
+        val questionsById = state.questions.associateBy { it.id }
         viewModelScope.launch {
+            // ② 会话行定格（终态写，不等防抖）
             commitMockSession {
                 it.copy(
                     state = encodePhase(MockPhase.DONE),
                     answers = encodeAnswers(state.answers),
                     cursor = state.index,
+                    result = encodeExamResult(out, autoSubmitted = auto),
                 )
             }
-            answered.forEach { question ->
-                val selected = state.answers.getValue(question.id)
+            // ③④ 逐题：练习记录 → 事件流
+            out.graded.forEach { (questionId, verdict) ->
+                val selected = verdict.selected ?: return@forEach
+                val question = questionsById[questionId] ?: return@forEach
                 // 与练习同一 submitAnswer，只是 conf 传 null（模考不采集信心 → confidence 落 NULL）
-                val correct = questionRepository.submitAnswer(question.id, selected)
+                val correct = questionRepository.submitAnswer(questionId, selected)
                 if (!correct) addMistakeIfAbsent(question, conf = null)
+                reviewLogRepository.recordGradedReview(
+                    cardKind = ReviewLog.KIND_PRACTICE,
+                    cardId = questionId,
+                    rating = if (correct) KernelRating.GOOD.ordinal + 1 else KernelRating.AGAIN.ordinal + 1,
+                    elapsedDays = 0.0,
+                    scheduledDays = 0.0,
+                    state = 0,
+                    durationMs = 0L,
+                    origin = "practice",
+                    selfConf = null,
+                    sessionId = sessionId,
+                )
             }
         }
     }

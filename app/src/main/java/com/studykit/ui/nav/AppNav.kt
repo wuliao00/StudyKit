@@ -1,5 +1,6 @@
 package com.studykit.ui.nav
 
+import android.net.Uri
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -174,8 +175,11 @@ object MistakeRoutes {
     const val LIST = "mistake"
     const val DETAIL = "mistake/detail/{mistakeId}"
     // `auto` 只有分享收件会置真：拍照那条路不该被自动识别抢跑（用户往往正要自己敲标题）。
-    const val CAPTURE = "mistake/capture?auto={auto}"
-    fun capture(fromShare: Boolean = false) = "mistake/capture?auto=$fromShare"
+    // `subject`（v3.0-B T12）是考后「去拍这几道」带过去的那一科 —— 录入页据此预选学科，
+    // 用户少点一次，也不会把数学的错题拍成英语。中文要 encode：查询串里放裸的汉字不可靠。
+    const val CAPTURE = "mistake/capture?auto={auto}&subject={subject}"
+    fun capture(fromShare: Boolean = false, subject: String = "") =
+        "mistake/capture?auto=$fromShare&subject=${Uri.encode(subject)}"
     fun detail(mistakeId: Long) = "mistake/detail/$mistakeId"
 }
 
@@ -520,6 +524,13 @@ fun AppNav(
                         studyViewModel.resetMockExam()
                         navController.popBackStack()
                     },
+                    // 考后「去拍这几道」（v3.0-B T12，文档 L1897）：带着答错那些题的学科去录入页，
+                    // 那一科已经替用户选好。模考会话的状态留在 VM 里，回来时仍在。
+                    onGoCapture = { subject ->
+                        navController.navigate(MistakeRoutes.capture(fromShare = false, subject = subject)) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
             composable(StudyRoutes.WORD_CREATE) {
@@ -623,11 +634,16 @@ fun AppNav(
             }
             composable(
                 route = MistakeRoutes.CAPTURE,
-                arguments = listOf(navArgument("auto") { type = NavType.BoolType; defaultValue = false }),
+                arguments = listOf(
+                    navArgument("auto") { type = NavType.BoolType; defaultValue = false },
+                    // v3.0-B T12：考后「去拍这几道」把那一科带过来，录入页预选学科
+                    navArgument("subject") { type = NavType.StringType; defaultValue = "" },
+                ),
             ) { entry ->
                 MistakeCaptureScreen(
                     viewModel = mistakeViewModel,
                     autoExtract = entry.arguments?.getBoolean("auto") ?: false,
+                    initialSubject = entry.arguments?.getString("subject").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onSaved = { navController.popBackStack() },
                 )
