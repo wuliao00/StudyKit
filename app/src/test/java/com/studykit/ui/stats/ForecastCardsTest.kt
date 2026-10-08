@@ -1,10 +1,21 @@
 package com.studykit.ui.stats
 
+import com.studykit.data.AppSettings
 import com.studykit.data.dao.ScheduledExcerptRow
 import com.studykit.data.dao.ScheduledMemoryRow
 import com.studykit.data.entity.Mistake
+import com.studykit.data.memory.DayBand
+import com.studykit.data.memory.ExamEntry
+import com.studykit.data.memory.ForecastCard
+import com.studykit.data.memory.ForecastCfg
+import com.studykit.data.memory.ReviewStrictness
+import com.studykit.ui.study.schedulingForSubject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 /**
  * Task 5（v3.0-A）装配层的单测：纯 JVM、无 runner、不碰 Room —— [ForecastCards.of] 收的是
@@ -24,6 +35,14 @@ import org.junit.Test
  *
  * 书摘入参用的是 [ScheduledExcerptRow] 投影（`BookDao.observeScheduledExcerpts` 的返回类型），
  * 不是 `Excerpt` 实体——所以这里压根不碰 Room，也不需要实体构造器。
+ *
+ * ## v3.0-B Task 7 追加的两组
+ *  1. **学科进了卡集合**：涌量预警是在这批卡上按 `subject` 筛子集的，所以装配层必须把错题那一列带下来
+ *     （词与书摘没有学科列，恒为空串 = 只被全学科那场抬，计划偏差 D5）。
+ *  2. [sprintSurgeFor]：预测器与调度缝都是**注入**的。用真 `DueForecast` 写断言会得到一条
+ *     「今天绿、改了 FSRS 默认参数就红」的脆测试，而它想钉的其实是三件与预测本身无关的事——
+ *     **只跑一遍、跑的是 ramp 后那份 retention、流入参数照抄页面那份**。预测本身的正确性由
+ *     `DueForecastAccuracyTest` 的 MAE 门锁在外面，不在这里重跑一遍。
  */
 class ForecastCardsTest {
 
@@ -185,11 +204,171 @@ class ForecastCardsTest {
         assertEquals(5.0, forecast[1].elapsedDays, 1e-9)
     }
 
-    private fun mistake(stability: Double?, createdAt: Long = now, reviewAt: Long? = null) = Mistake(
+    // ---- v3.0-B Task 7 Step 0：学科跟着卡集合走 ----
+
+    /**
+     * 错题那一列是**唯一**能带进预测的学科（`words` 只有 `source_list_id`、`excerpts` 归属书），
+     * 所以词与书摘恒为空串。空串不是"忘了填"：它在 [sprintSurgeFor] 那一侧读作
+     * 「这张卡不属于任何一科」，只会被 `subjects` 为空的那场考试抬 —— 计划偏差 D5 的字面落地。
+     *
+     * 断的是装配顺序（word → mistake → excerpt，就是 [ForecastCards.of] 那三条分支的顺序），
+     * 不是 `sorted()`：计划原文写的是 `listOf("", "数学", "")` 却又调了 `.sorted()`，
+     * 而排完序真值是 `["", "", "数学"]` —— 那条断言自相矛盾、按原文写必红。钉顺序既保住同样的字面值，
+     * 又顺带把「三条分支各产一条、不重排」这件本文件已经在钉的事再钉一次。
+     */
+    @Test
+    fun `错题卡片带上学科，词与书摘为空串`() {
+        val cards = ForecastCards.of(
+            words = listOf(row(stability = 4.0, lastReviewAt = now - 2 * day, createdAt = now - 20 * day)),
+            mistakes = listOf(mistake(stability = 8.0, subject = "数学")),
+            excerpts = listOf(excerpt(stability = 6.0)),
+            now = now,
+        )
+        assertEquals(listOf("", "数学", ""), cards.map { it.subject })
+    }
+
+    /**
+     * 学科必须在 `toForecastCards()` 这一步也带过去。漏掉它不报错、不崩溃：症状是
+     * 「涌量预警从此只对全学科那一场说话」——因为 [sprintSurgeFor] 筛的是 `ForecastCard.subject`，
+     * 而那是它唯一能认出学科的字段。上面那条钉的是装配层，这一条钉投影层，两层各钉一次。
+     */
+    @Test
+    fun `投影到预测输入时学科字段一起走，不在这里丢掉`() {
+        val cards = ForecastCards.of(
+            words = listOf(row(lastReviewAt = now - day, createdAt = now - day)),
+            mistakes = listOf(mistake(stability = 4.0, subject = "数学"), mistake(stability = 5.0, subject = "英语")),
+            excerpts = listOf(excerpt(stability = 6.0)),
+            now = now,
+        )
+        assertEquals(listOf("", "数学", "英语", ""), cards.map { it.subject })
+        assertEquals(listOf("", "数学", "英语", ""), cards.toForecastCards().map { it.subject })
+    }
+
+    // ---- v3.0-B Task 7：涌量读数 ----
+
+    /**
+     * 页面那份 `ForecastCfg` 的替身。`retention` 与 `maxIntervalDays` 是涌量**允许换掉**的两个字段，
+     * 其余（窗口、每日新词、学习步、摊派权重）必须原样照抄 —— 流入参数一分叉，读出来的「涌」
+     * 就有一部分是新词造成的而不是 ramp 造成的（测试因此逐字段钉它）。
+     */
+    private val cfgBase = ForecastCfg(retention = 0.80, maxIntervalDays = 36.0)
+
+    /** 假预测器：平的带，峰 = 中位 = 20 → 读数 1.0 */
+    private val flat: (List<ForecastCard>, ForecastCfg) -> List<DayBand> =
+        { _, _ -> (0 until 14).map { DayBand(it, 20.0, 2.0) } }
+
+    /** 假预测器：最后一天堆到 100 → 峰 100 / 中位 20 = 5.0 */
+    private val spiky: (List<ForecastCard>, ForecastCfg) -> List<DayBand> =
+        { _, _ -> (0 until 14).map { DayBand(it, if (it == 13) 100.0 else 20.0, 2.0) } }
+
+    @Test
+    fun `硬闸 ramp 生效时按冲刺保留率重跑预测并报警`() {
+        val seen = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.RELAXED,
+            // 明天考、窗 30 天、冲刺 0.95：RELAXED base=0.80 -> ramp 后 0.80+0.15*(29/30)=0.945
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2026, 10, 7).toEpochDay(), emptyList(), 0.95, 30)),
+        )
+        val state = sprintSurgeFor(
+            settings = settings,
+            cards = { cards },
+            cfgBase = cfgBase,
+            today = LocalDate.of(2026, 10, 6),
+            scheduleOf = { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> seen += cfg; if (cfg.retention > 0.85) spiky(cs, cfg) else flat(cs, cfg) },
+        )
+        assertEquals("只该按 ramp 后那份保留率跑一遍", 1, seen.size)
+        assertEquals(0.945, seen[0].retention, 1e-3)
+        // 流入参数必须与统计页那份一模一样，否则"涌"里掺的是新词而不是 ramp
+        assertEquals(cfgBase.horizonDays, seen[0].horizonDays)
+        assertEquals(cfgBase.newPerDay, seen[0].newPerDay)
+        assertEquals(cfgBase.learningPerNew, seen[0].learningPerNew, 1e-9)
+        assertTrue("摊派权重也得照抄页面那份", cfgBase.inflowW.contentEquals(seen[0].inflowW))
+        // 换掉的那两个：retention 见上，上限按 horizon=1 给 max(3, 1×0.2)=3.0（手算，不读被测实现）
+        assertEquals(3.0, seen[0].maxIntervalDays, 1e-9)
+        assertEquals(5.0, state.ratio!!, 1e-9)            // 峰 100 / 中位 20
+        assertTrue(state.warn)
+    }
+
+    @Test
+    fun `没有关联学科的那场不跑第二遍，也不报警`() {
+        val calls = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "英语") }
+        val settings = AppSettings(
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2026, 10, 16).toEpochDay(), listOf("数学"), 0.95, 30)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> calls += cfg; flat(cs, cfg) },
+        )
+        assertTrue(calls.isEmpty())     // 没 ramp 就不该跑预测：白跑一遍是要付的 CPU
+        assertNull(state.ratio)
+        assertFalse(state.warn)
+    }
+
+    /**
+     * 「清单里有考试，但那场没把这一科的保留率抬上去」——窗口外的考试就是这个形状。
+     * 这条钉的是上面那条 `continue` 的另一半：上一版拿**已经带 ramp** 的那份 `Scheduling` 当 base 比，
+     * 于是单场考试的夹具上两边恒等、永远不跑（涌量预警在最典型的那一种用户身上静默失效）。
+     */
+    @Test
+    fun `保留率没被抬上去的那场不跑预测`() {
+        val calls = mutableListOf<ForecastCfg>()
+        val cards = List(60) { ForecastCard(stabilityDays = 3.0 + it, elapsedDays = 2.0 + it / 3.0, subject = "数学") }
+        val settings = AppSettings(
+            reviewStrictness = ReviewStrictness.RELAXED,
+            // 100 天后考、窗只有 30 天：ramp 不在生效区间，retention 与「清单为空」那次一模一样
+            exams = listOf(ExamEntry("期末考", LocalDate.of(2027, 1, 14).toEpochDay(), emptyList(), 0.95, 30)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> calls += cfg; spiky(cs, cfg) },
+        )
+        assertTrue(calls.isEmpty())
+        assertNull(state.ratio)
+        assertFalse(state.warn)
+    }
+
+    @Test
+    fun `清单为空时不预测涌量`() {
+        var ran = false
+        val state = sprintSurgeFor(
+            AppSettings(), { List(10) { ForecastCard(3.0, 2.0, "数学") } }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { _, _ -> ran = true; emptyList() },
+        )
+        assertFalse(ran)
+        assertFalse(state.warn)
+        assertEquals("", state.subject)
+    }
+
+    @Test
+    fun `一科都筛不出来时不报警`() {
+        val cards = List(60) { ForecastCard(3.0 + it, 2.0, "物理") }
+        val settings = AppSettings(
+            exams = listOf(ExamEntry("考", LocalDate.of(2026, 10, 16).toEpochDay(), listOf("数学"), 0.95, 30)),
+        )
+        val state = sprintSurgeFor(
+            settings, { cards }, cfgBase, LocalDate.of(2026, 10, 6),
+            { s, sub, t -> schedulingForSubject(s, sub, t) },
+            forecast = { cs, cfg -> spiky(cs, cfg) },
+        )
+        assertFalse(state.warn)
+    }
+
+    private fun mistake(
+        stability: Double?,
+        createdAt: Long = now,
+        reviewAt: Long? = null,
+        subject: String = "数学",
+    ) = Mistake(
         uuid = "u",
         // `Mistake.source` 是 NOT NULL 且**无默认值**（entity/Mistake.kt:16），计划里的 helper 漏了它
         source = Mistake.SOURCE_WORD,
-        subject = "数学",
+        subject = subject,
         title = "t",
         content = "c",
         fsrsStability = stability,

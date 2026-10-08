@@ -10,6 +10,16 @@ data class ForecastCard(
     val stabilityDays: Double,
     /** 距上次复习多少天。 */
     val elapsedDays: Double,
+    /**
+     * 这张卡属于哪一科；**空串 = 没有学科归属**（词卡与书摘都是这种，见
+     * [com.studykit.ui.stats.ForecastCards.of] 的口径差异一节）。
+     *
+     * 带默认值是因为这个字段对 [DueForecast.forecast] 本身**无用**（负荷带只问"那天多少项"），
+     * 加它是为了 v3.0-B 的涌量预警能在同一批卡上按科筛子集，而不必新查一次 DAO。
+     * 位置放在最后、且有默认值：v3.0-A 已有的全部位置构造（`ForecastCard(3.0, 2.0)`）照旧编译，
+     * `DueForecastTest` / `DueForecastAccuracyTest` 的夹具一条都不用改。
+     */
+    val subject: String = "",
 )
 
 /** 负荷带预测的政策参数。 */

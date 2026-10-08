@@ -1,10 +1,18 @@
 package com.studykit.ui.stats
 
+import com.studykit.data.AppSettings
 import com.studykit.data.dao.ScheduledExcerptRow
 import com.studykit.data.dao.ScheduledMemoryRow
 import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Mistake
+import com.studykit.data.memory.DayBand
+import com.studykit.data.memory.DueForecast
+import com.studykit.data.memory.ExamEntry
 import com.studykit.data.memory.ForecastCard
+import com.studykit.data.memory.ForecastCfg
+import com.studykit.data.memory.Scheduling
+import com.studykit.data.memory.SprintSurge
+import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 /**
@@ -35,6 +43,12 @@ data class ScheduledCard(
     val kind: String,
     val stabilityDays: Double,
     val elapsedDays: Double,
+    /**
+     * 学科，取自 `mistakes.subject`；词与书摘**没有这一列**，那两条分支留的是默认空串。
+     * v3.0-B Task 7 加它不是为了画图，是因为涌量预警要在这批已装配好的卡上按科筛子集
+     * （见 [sprintSurgeFor]）——另查一次 DAO 就会违反下面那条「求值一次」契约。
+     */
+    val subject: String = "",
 )
 
 /**
@@ -119,15 +133,19 @@ object ForecastCards {
     ): List<ScheduledCard> = buildList {
         for (word in words) {
             val s = word.fsrsStability.usable() ?: continue
+            // subject 走默认的空串：`words` 没有学科列（只有 source_list_id），不是漏了一个字段。
+            // 空串在涌量预警那一侧读作「不属于任何一科」，只会被 subjects 为空的那场考试抬（计划 D5）。
             add(ScheduledCard(KIND_WORD, s, elapsed(word.anchorAt, now)))
         }
         for (mistake in mistakes) {
             val s = mistake.fsrsStability.usable() ?: continue
             // 错题侧没有 last_review_at 列，createdAt 是唯一锚点——口径见类 KDoc
-            add(ScheduledCard(KIND_MISTAKE, s, elapsed(mistake.createdAt, now)))
+            // subject 是三张表里唯一非空的那一列：v3.0-B 的 per-subject ramp 就是靠它筛到卡的。
+            add(ScheduledCard(KIND_MISTAKE, s, elapsed(mistake.createdAt, now), mistake.subject))
         }
         for (excerpt in excerpts) {
             val s = excerpt.stability.usable() ?: continue
+            // 同词卡：`excerpts` 归属的是书，没有学科列，留空串
             add(ScheduledCard(KIND_EXCERPT, s, elapsed(excerpt.createdAt, now)))
         }
     }
@@ -160,9 +178,113 @@ object ForecastCards {
  * 在这一步丢掉：负荷带答的是「一天多少项」，不区分来源；要看来源就得自己回到 `of` 的结果，
  * 但**目前无人这么做**（Task 7 的分箱收的是 `List<Double>`，没有来源维度，见 [ScheduledCard.kind] 的说明）。
  *
+ * `subject` **不许**在这一步丢掉（与 kind 相反）：[sprintSurgeFor] 筛子集用的就是 `ForecastCard.subject`，
+ * 漏掉它不报错，症状是「涌量预警从此只认全学科那一场」。这条由
+ * `投影到预测输入时学科字段一起走，不在这里丢掉` 钉着。
+ *
  * 写成**顶层扩展**而不是 `ForecastCards` 的成员扩展：成员扩展要求每个调用点都套一层
  * `with(ForecastCards) { … }`，而 Task 4/6 要写的本来就是 `ForecastCards.of(…).toForecastCards()`
  * 这一行管道。同一文件、同一个包，import 成本为零。
  */
 fun List<ScheduledCard>.toForecastCards(): List<ForecastCard> =
-    map { ForecastCard(it.stabilityDays, it.elapsedDays) }
+    map { ForecastCard(it.stabilityDays, it.elapsedDays, it.subject) }
+
+/** 一场考试对它关联学科造成的涌量读数（v3.0-B T7）。 */
+data class SprintSurgeState(
+    /** 报警归给哪一科；全学科那一场报的是 [ExamEntry.DEFAULT_NAME]，没有读数时是第一个带学科的卡 */
+    val subject: String,
+    /** 峰值/中位；null = **没有读数**（格子不够或中位为 0），不等于「没有涌量」 */
+    val ratio: Double? = null,
+) {
+    /** 判据只住在 [SprintSurge.shouldWarn] 一处（严格大于 2.0），这里不重述一遍阈值 */
+    val warn: Boolean get() = SprintSurge.shouldWarn(ratio)
+}
+
+/**
+ * 拿 ramp 之后的目标保留率把那批卡的负荷带重跑一遍，读峰值与中位（文档 L1891）。
+ *
+ * 为什么是重跑而不是解析式估：`DueForecast` 里每张卡的到期日是 `nextIntervalDays`
+ * **反解**出来的，retention 一变整条分布就平移 —— 想手估峰值就得把那次反解重抄一遍，
+ * 而「重抄一遍调度算术」正是本仓反复踩的那个坑（v3.0-A T2.6）。文档点名的 `WorkloadSimulator`
+ * 本仓没有，[DueForecast.forecast] 就是它的等价物（计划偏差 D4），所以这里复用、不另造第二个预测器。
+ *
+ * 跑预测用的 `ForecastCfg` 从调用方那份 `cfgBase` copy 出来，只换 `retention` 与 `maxIntervalDays`：
+ * 流入参数（`newPerDay`/`learningPerNew`/`inflowW`/`horizonDays`）一旦与统计页那张图用的
+ * 不一致，读出来的涌就有一部分是新词造成的、而不是 ramp 造成的。这条不变式由测试里
+ * `horizonDays/newPerDay/learningPerNew 相等 + inflowW 逐位相等` 那四行钉住；被换掉的那个上限
+ * 则钉成手算的 3.0（horizon=1 → `max(3, 1×0.2)`），因为上限**必须**跟着冲刺排期走——
+ * 漏了它，考前被调度器压到 3 天的卡会按自然间隔排到更晚甚至出窗，涌量于是**少报**，
+ * 与 [ForecastCfg.maxIntervalDays] 里写的是同一条纪律。
+ *
+ * `scheduleOf` 与 `forecast` 都是注入的：前者让本函数零 ViewModel，后者让测试能钉住
+ * 「只跑一遍、跑的是冲刺保留率、流入参数照抄页面那份」这三件事（用真预测器写断言会得到一条
+ * 依赖默认参数的脆测试）。
+ *
+ * 一场考试只管它那几门：`subjects` 为空 = 全学科那一场，取全部卡；有关联学科时逐科算，
+ * **报警取最凶的那一科**（首页只会看到一句提醒）。
+ *
+ * ## 「ramp 真的抬上去了才重跑」这句怎么判
+ * 比较的两边都必须问**同一道缝**，只是交不同的清单：
+ *  - `ramped` = 把这一场单独当唯一考试算一份；清单里若还有别的考试在窗内，
+ *    `ExamPolicy.effectiveRetention` 的 max 会把两场的效果掺在一起，读数就不再是「这一场会涌」。
+ *  - `base` = 把清单**清空**再算一份，拿到的就是没有被任何 ramp 碰过的基线。
+ *
+ * 原样拿整份清单算出来的那份**不能**当 base：它已经含这一场的 ramp，单场考试的用户两边恒等，
+ * 于是闸门永远关着——症状是「涌量预警对绝大多数用户（清单里只有一场）静默不响」。
+ * 也不在这里自己 `baseTargetRecall(strictness, 剩余天数)`：那要先把考试日换算成 horizon，
+ * 等于在 UI 层抄第二份排期算术（`SubjectScheduling` 那道缝存在的理由就是不许可）。
+ *
+ * 零 Android、零 Room、零时钟（`today` 由调用方给）；`cards` 是个 supplier 而不是列表，
+ * 因为清单为空时调用方连装配都不必做。
+ */
+internal fun sprintSurgeFor(
+    settings: AppSettings,
+    cards: () -> List<ForecastCard>,
+    cfgBase: ForecastCfg,
+    today: LocalDate,
+    scheduleOf: (AppSettings, String?, LocalDate) -> Scheduling,
+    forecast: (List<ForecastCard>, ForecastCfg) -> List<DayBand> = DueForecast::forecast,
+): SprintSurgeState {
+    val exams = settings.examList
+    if (exams.isEmpty()) return SprintSurgeState(subject = "")
+    val all = cards()
+    if (all.isEmpty()) return SprintSurgeState(subject = "")
+    // 「这一场都没存在过」那份设置：同一道缝问第二次，拿到的就是 ramp 之前的基线
+    val noExamSettings = settings.onlyExams(emptyList())
+    var worst: SprintSurgeState? = null
+    for (exam in exams) {
+        // 与 ExamPolicy.linksSubject 同一条「空白 = 全学科」口径（v3.0-B 评审 F3）：
+        // listOf("") 不能当成一门真实学科，否则那一场永远筛不到卡、预警静默失效。
+        val subjects = exam.subjects.map { it.trim() }.filter { it.isNotEmpty() }
+        val linked: List<String?> = if (subjects.isEmpty()) listOf(null) else subjects
+        for (subject in linked) {
+            // 逐科筛，不是「这场关联的所有卡」：一门绑两科的考试要给两科各读一次数。
+            // 掐首尾空白 + 忽略大小写与 linksSubject 同口径（那边两边都掐）。
+            val subset = if (subject == null) {
+                all
+            } else {
+                all.filter { it.subject.trim().equals(subject, ignoreCase = true) }
+            }
+            if (subset.size < 2) continue   // 一张卡谈不上「堆成山」，白跑一遍预测
+            val ramped = scheduleOf(settings.onlyExams(listOf(exam)), subject, today)
+            val base = scheduleOf(noExamSettings, subject, today)
+            if (ramped.targetRecall <= base.targetRecall) continue   // ramp 没真的抬上去就别跑预测
+            val cfgRamp = cfgBase.copy(retention = ramped.targetRecall, maxIntervalDays = ramped.maxIntervalDays)
+            val ratio = SprintSurge.peakMedianRatio(forecast(subset, cfgRamp))
+            val cur = worst
+            if (ratio != null && (cur == null || ratio > (cur.ratio ?: 0.0))) {
+                worst = SprintSurgeState(subject = subject ?: ExamEntry.DEFAULT_NAME, ratio = ratio)
+            }
+        }
+    }
+    return worst ?: SprintSurgeState(subject = all.firstOrNull { it.subject.isNotEmpty() }?.subject ?: "")
+}
+
+/**
+ * 把「参与排期的考试」换成 [list]，其余设置原样。
+ *
+ * 两个字段都得写：[AppSettings.examList] 在 `exams` 为空时还会把旧键 [AppSettings.examEpochDay]
+ * 合成一场全学科考试，只清 `exams` 的话旧键会偷偷把闸门顶开（base 与 ramped 又变成同一份数）。
+ * 住在这里是因为 [sprintSurgeFor] 的两个读数都靠它，而它属于「摊设置」这层口径。
+ */
+private fun AppSettings.onlyExams(list: List<ExamEntry>): AppSettings = copy(exams = list, examEpochDay = 0L)

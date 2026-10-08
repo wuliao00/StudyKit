@@ -42,6 +42,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.data.memory.DayBand
+import com.studykit.data.memory.SprintSurge
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.SectionHeader
@@ -109,7 +111,7 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
         SectionHeader(title = "接下来两周的负荷")
         Spacer(Modifier.height(AppTheme.space.md))
         AppCard(modifier = Modifier.fillMaxWidth()) {
-            LoadBandChart(bands = state.loadBand)
+            LoadBandSection(bands = state.loadBand, surge = state.sprintSurge)
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))
@@ -200,6 +202,46 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
         Spacer(Modifier.height(AppTheme.space.md))
         RetentionCard(state.retention)
         Spacer(Modifier.height(AppTheme.space.xl))
+    }
+}
+
+/**
+ * 「接下来两周的负荷」那一节：负荷带本体 + 考前涌量预警那一行（v3.0-B Task 7）。
+ *
+ * 图的画法、图注、读屏描述全在 [LoadBandChart]，这一层一个字都没改；它只多干一件事——
+ * 读到涌量时在那张图下面补一句人话。与 `ReviewHeatmapSection` / `StabilityPanoramaSection`
+ * 同样是 `internal` 的整节，为的是这一行能被无 ViewModel 的渲染测试真组合一次
+ * （[com.studykit.ui.stats.LoadBandRenderTest]），而不是只活在整页里、只有真机才看得见。
+ *
+ * ## 那一行为什么既判 `warn` 又判空
+ * [SprintSurgeState.warn] 里已经含「ratio 非 null 且严格大于 2.0」两道判定（住在
+ * [SprintSurge.shouldWarn]，此处不重述阈值）。这里的显式判空只为让编译器把非空那一份交给文案函数
+ * （不给 `!!`）——顺手也就堵死「把 null 当 0 渲染」那条路：那句会印成「峰值约是中位的 0.0 倍」，
+ * 而 null 的本意是**没有读数**（格子不够 / 中位为 0），不是"涌量为零"。
+ *
+ * 文案住在 [SprintSurge.warningLine] 这个纯函数里，不在这里现写：本仓把屏幕上那句话都放进纯函数，
+ * 好让单测逐字钉住（`MistakeScheduling` / `RedoFlow` 同一条约定）。颜色取现成的 `warningInk`
+ * （本族文字专用色，压白卡 5.60:1），不新增色值、不加新的 section。
+ */
+@Composable
+internal fun LoadBandSection(
+    bands: List<DayBand>,
+    surge: SprintSurgeState,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val ratio = surge.ratio
+    Column(modifier = modifier.fillMaxWidth()) {
+        LoadBandChart(bands = bands)
+        if (ratio != null && surge.warn) {
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Text(
+                text = SprintSurge.warningLine(ratio),
+                style = texts.caption,
+                color = colors.warningInk,
+            )
+        }
     }
 }
 

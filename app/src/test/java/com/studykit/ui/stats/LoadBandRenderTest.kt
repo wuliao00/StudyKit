@@ -48,6 +48,13 @@ import org.robolectric.annotation.GraphicsMode
  *
  * provider 与「一个测试一次 setContent」沿用 [com.studykit.ui.optimize.CalibrateRenderTest]：
  * `AppSettings(glass = OFF, reduceMotion = true)` 里的 `reduceMotion` 让 `waitForIdle()` 等得到。
+ *
+ * ## v3.0-B Task 7 追加的三行
+ * 负荷带下面那行考前涌量预警：给了过阈值的读数时它在，恰好 2.0 与 `null`（没有读数）时它不在。
+ * 这两件事纯函数侧都答不了——`SprintSurgeTest` 只认识 `DayBand`，`ForecastCardsTest` 只认读到几个数，
+ * 而「VM 那份字段有没有落到屏幕上」只有真组合一次才看得见。为此 section 本体是
+ * [LoadBandSection]（`internal`，与 `ReviewHeatmapSection` / `StabilityPanoramaSection` 同一手法），
+ * 图的画法与 [LoadBandChart] 一个字都没动。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -252,6 +259,59 @@ class LoadBandRenderTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithContentDescription(
             "未来 7 天复习负荷带：峰值在第 1 天，预计 3 项；实线是每天的期望项数，阴影是它的波动范围。",
+        ).assertExists()
+    }
+
+    // ---- v3.0-B Task 7：负荷带下面那行涌量预警 ----
+
+    /**
+     * 给了过阈值的读数时，那句话必须**真的画在负荷带下面**。
+     *
+     * [SprintSurgeTest] 钉的是文案形状（含那个一位小数的倍数），`ForecastCardsTest` 钉的是读数怎么算，
+     * 两边都回答不了「VM 递上来了、屏幕上却没有这一行」——接线漏一拍不报错，用户看到的还是那条
+     * 平平的带子，考前什么都不记得。这里只断那句人话在不在（`substring`）：整句里那个小数点
+     * 取的是设备 locale，把它写进本文件的断言会得到一条换语言就红的渲染测试。
+     */
+    @Test
+    fun 报警那行在给出涌量读数时出现() {
+        composeRule.setContent {
+            StatsHost {
+                LoadBandSection(bands = bands(10.0, spikeAt = 2), surge = SprintSurgeState("数学", 3.5))
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("复习量会涨", substring = true).assertExists()
+        // 那一行是**加**在图下面的，不是替掉图：带子的可见数字行必须还在
+        composeRule.onNodeWithText("最忙的是第 3 天，预计 30 项。").assertExists()
+    }
+
+    /**
+     * 反向守卫之一：恰好 2.0 不响。阈值是**严格大于**（文档给的是「>2」），
+     * 写成 `>=` 会让每一个"峰正好是中位两倍"的用户天天看到这句警告。
+     */
+    @Test
+    fun 读数恰好两倍时没有那一行() {
+        composeRule.setContent {
+            StatsHost { LoadBandSection(bands = bands(10.0, spikeAt = 2), surge = SprintSurgeState("数学", 2.0)) }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("复习量会涨", substring = true).assertDoesNotExist()
+    }
+
+    /**
+     * 反向守卫之二：`ratio = null` 时也没有那一行。null 的意思是**没有读数**（格子不够 / 中位为 0），
+     * 不是"没有涌量"，更不是"涌量为 0 倍"——把 null 当 0 渲染会印出一句「峰值约是中位的 0.0 倍」的假话。
+     */
+    @Test
+    fun 没有读数时没有那一行() {
+        composeRule.setContent {
+            StatsHost { LoadBandSection(bands = bands(10.0, spikeAt = 2), surge = SprintSurgeState("数学")) }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("复习量会涨", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(
+            "未来 ${ForecastCfg.HORIZON_DAYS} 天复习负荷带：" +
+                "峰值在第 3 天，预计 30 项；实线是每天的期望项数，阴影是它的波动范围。",
         ).assertExists()
     }
 

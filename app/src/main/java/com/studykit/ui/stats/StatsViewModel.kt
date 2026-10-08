@@ -22,7 +22,8 @@ import java.time.ZoneId
 
 /**
  * 看板一屏要画的全部数字。算法都在 [MemoryHealth]（分桶/曲线/按日聚合）、
- * [ForecastCards] + [DueForecast]（负荷带）与 [RetentionBuckets]（延迟后测）里，这里只做组合。
+ * [ForecastCards] + [DueForecast]（负荷带）、[sprintSurgeFor] + [SprintSurgeState]（涌量读数）
+ * 与 [RetentionBuckets]（延迟后测）里，这里只做组合。
  */
 data class StatsUiState(
     val durability: List<DurabilityBucket> = emptyList(),
@@ -75,19 +76,33 @@ data class StatsUiState(
      * 这句话由视图的 caption 说给用户。等级与占位口径见 [ReviewHeatmapLogic]。
      */
     val heatmap: List<HeatCell> = emptyList(),
+    /**
+     * 考前涌量预警的读数（v3.0-B Task 7，文档 L1891）：负荷带那批卡按**冲刺保留率**重跑一遍之后的
+     * 峰值/中位，取最凶的那一科。
+     *
+     * 与 [loadBand] 的关系要写清楚：这一份**不是**那张图，而是同一批卡在另一个保留率下的影子。
+     * `loadBand` 用的是页面上那份 `Scheduling`（学科无关的那一侧，`subject = null`），
+     * 这一份额外把考试清单里每一场按它自己的学科 ramp 之后重算一次，于是它读的是
+     * 「临窗把目标保留率抬上去之后，这科会堆成什么样」。判据（严格大于 2.0）与文案都在
+     * [com.studykit.data.memory.SprintSurge]，这一层只递读数；`ratio = null` 意思是**没有读数**，
+     * 视图不许把它读成「没有涌量」而照样报警。
+     */
+    val sprintSurge: SprintSurgeState = SprintSurgeState(""),
 )
 
 /**
- * [StatsViewModel.loadVizFlow] 一次装配的两个产物：负荷带 + 稳定度分箱。
+ * [StatsViewModel.loadVizFlow] 一次装配的三个产物：负荷带 + 稳定度分箱 + 涌量读数。
  *
- * 之所以打包成一个类型而不是两条 Flow：两条就要各调一次 [ForecastCards.of]，而那是
+ * 之所以打包成一个类型而不是三条 Flow：三条就要各调一次 [ForecastCards.of]，而那是
  * **求值一次契约**禁止的（[ForecastCards.of] 的 KDoc：多调一次不是"多算一遍"而是"多取一次快照"，
- * 中间只要有一次评分落库，两张图数的就不是同一批卡，而且不报错）。
+ * 中间只要有一次评分落库，两张图数的就不是同一批卡，而且不报错）。涌量这一路尤其吃这条契约——
+ * 它比较的是「同一批卡在两个保留率下的形状」，卡集换一批就等于在比两张不同的图。
  */
 private data class LoadViz(
     val bands: List<DayBand>,
     val bins: List<StabilityBin>,
     val usableCards: Int,
+    val surge: SprintSurgeState,
 )
 
 /**
@@ -124,9 +139,15 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      *
      * ## `ForecastCards.of` 在这一个 lambda 里只调一次（它的 KDoc 是求值一次契约）
      * 四个上游在同一次 combine 里各取到一份快照，`of` 调一次，结果**同时**喂
-     * [DueForecast.forecast] 与 [StabilityBins.bin]，于是带子的峰值与十二档数的是同一批卡。
+     * [DueForecast.forecast]、[StabilityBins.bin] 与 [sprintSurgeFor]，于是带子的峰值、十二档、
+     * 以及涌量那一行读的是同一批卡。
      * 多加一次调用不是"多算一遍"而是"多取一次快照"：两次之间只要有一次评分落库，
-     * 两张图就是半新半旧的卡集——而且不报错。这也是 [LoadViz] 打包两个产物而不是拆两条 Flow 的原因。
+     * 三个读数就是半新半旧的卡集——而且不报错。这也是 [LoadViz] 打包三个产物而不是拆三条 Flow 的原因。
+     *
+     * ## 涌量那一次重跑照抄这里的 `cfgBase` 与 `w`
+     * [sprintSurgeFor] 只被允许换 `retention` 与 `maxIntervalDays`（那两个才是 ramp 会动的量）。
+     * 窗口、每日新词、学习步、摊派权重、FSRS 参数都从这同一份对象带去：任何一处不一致，
+     * 「峰/中位」里就掺进了另一笔来源，而那行文案说的可是「复习量会涨」——它必须只涨在 ramp 上。
      *
      * `stabilityDays` 已在 [ForecastCards.of] 那侧滤过脏值（null / <=0 / 非有限整条丢弃），
      * [StabilityBins.bin] 的同一道判据在这里是**幂等的安全网**，不是第二套口径。
@@ -155,29 +176,40 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         // 不用 LocalDate.ofInstant(...)——那是 Java 9 的静态方法，API 26 的 java.time 里没有
         val today = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
         val sched = schedulingForSubject(settings, null, today)
+        val w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS
         val cards = ForecastCards.of(
             words = words,
             mistakes = mistakes,
             excerpts = excerpts,
             now = now,
+        ).toForecastCards()
+        // 负荷带那一份 cfg。涌量重跑用的**就是这一个对象**（只换 retention/maxIntervalDays）：
+        // 另起一份 ForecastCfg 就等于允许流入参数分叉，那时读出来的"涌"有一部分是新词造成的。
+        val cfgBase = ForecastCfg(
+            // 与提醒侧同一个常量：两处各写一份 14 时，通知和看板就不是在同一段未来里读数
+            horizonDays = ForecastCfg.HORIZON_DAYS,
+            retention = sched.targetRecall,
+            // 上限同样取这一份 `Scheduling`：漏了它，考前被调度器压到 4 天的卡会按自然间隔
+            // 排到更晚甚至出窗，负荷带于是**少报**接下来这两周（见 ForecastCfg.maxIntervalDays）
+            maxIntervalDays = sched.maxIntervalDays,
+            newPerDay = settings.dailyWordGoal,
+            // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
         )
         LoadViz(
-            bands = DueForecast.forecast(
-                cards.toForecastCards(),
-                ForecastCfg(
-                    // 与提醒侧同一个常量：两处各写一份 14 时，通知和看板就不是在同一段未来里读数
-                    horizonDays = ForecastCfg.HORIZON_DAYS,
-                    retention = sched.targetRecall,
-                    // 上限同样取这一份 `Scheduling`：漏了它，考前被调度器压到 4 天的卡会按自然间隔
-                    // 排到更晚甚至出窗，负荷带于是**少报**接下来这两周（见 ForecastCfg.maxIntervalDays）
-                    maxIntervalDays = sched.maxIntervalDays,
-                    newPerDay = settings.dailyWordGoal,
-                    // learningPerNew 取 ForecastCfg 声明的默认值：这里重述一遍就多了个可能分叉的地方
-                ),
-                w = settings.fsrsActiveParams ?: FsrsModel.DEFAULT_PARAMS,
-            ),
+            bands = DueForecast.forecast(cards, cfgBase, w = w),
             bins = StabilityBins.bin(cards.map { it.stabilityDays }),
             usableCards = cards.size,
+            surge = sprintSurgeFor(
+                settings = settings,
+                cards = { cards },
+                cfgBase = cfgBase,
+                today = today,
+                // 全仓唯一那道学科缝（v3.0-B T4）。涌量按科算参数时走它，与学习页/错题侧同一个口径
+                scheduleOf = { s, sub, t -> schedulingForSubject(s, sub, t) },
+                // w 也照抄页面那一份：校准过的用户若在这条路上退回发布默认参数，
+                // 两次跑出来的差就掺进了「哪套 FSRS 参数」这一笔，而读数想量的只有 ramp
+                forecast = { cs, cfg -> DueForecast.forecast(cs, cfg, w = w) },
+            ),
         )
     }.flowOn(Dispatchers.Default)
 
@@ -252,6 +284,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             stability = viz.bins,
             stabilityCardCount = viz.usableCards,
             heatmap = cells,
+            sprintSurge = viz.surge,
         )
     }
         .flowOn(Dispatchers.Default)
