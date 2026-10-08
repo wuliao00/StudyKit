@@ -93,7 +93,10 @@ data class ReviewLog(
     @ColumnInfo(name = "log_schema_ver") val logSchemaVer: Int,
 ) {
     companion object {
-        /** card_kind 取值域：与四处评分点（Task 6 双写）一一对应 */
+        /**
+         * card_kind 取值域：Task 6 那四处评分点与 v3.0-B T12 的套卷交卷（共五处写入点）落在这四个取值上 ——
+         * 套卷答过的题按 [KIND_PRACTICE] 写（与练习侧同一种卡、同一份口径），不新增第五个取值。
+         */
         const val KIND_WORD = "word"
         const val KIND_PRACTICE = "practice"
         const val KIND_MISTAKE = "mistake"
@@ -105,7 +108,7 @@ data class ReviewLog(
          * 当前事件流 schema 版本 —— **改的是列的语义，不是列**：表结构没动（Room 仍 v8、零迁移），
          * 老行靠这一列认。
          *
-         * v1 → v2（v3.0-A T2.5）：`scheduled_days` 从这一版起四处评分点**统一为后向口径**
+         * v1 → v2（v3.0-A T2.5）：`scheduled_days` 从这一版起（当时那）四处评分点**统一为后向口径**
          * （「这次评分之前该卡被排出去的计划间隔」，见 [ReviewLog.scheduledDays] 的 KDoc）。
          * v1 的老行是**混合口径**：词侧（`StudyViewModel.gradeCard`）记的是「这次刚排出去的间隔」
          * （前向，相对本卡历史串行一格）、书摘侧恒 0.0（间隔没从 `ExcerptReview` 回传）、

@@ -17,7 +17,10 @@ import com.studykit.data.entity.ReviewLog
 @Dao
 interface ReviewLogDao {
 
-    /** 追加一条评分事件；返回自增 id。调用点见 Task 6（四处评分点双写），一律在既有落库之后。 */
+    /**
+     * 追加一条评分事件；返回自增 id。调用点见 Task 6 那四处（背词/练习/错题重做/书摘自评），
+     * 加上 v3.0-B T12 的第五处（套卷交卷逐题），一律在既有落库之后。
+     */
     @Insert
     suspend fun insert(log: ReviewLog): Long
 

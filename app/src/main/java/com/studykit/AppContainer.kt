@@ -53,7 +53,8 @@ class AppContainer(val database: AppDatabase) {
     val settingsRepository: SettingsRepository = SettingsRepository(database.appSettingDao())
 
     /**
-     * `review_log` 事件流写入侧（v2.9 Task 6）：四处评分点在各自状态写之后追加一行。
+     * `review_log` 事件流写入侧（v2.9 Task 6）：五处评分点（v2.9 那四处 + v3.0-B 的套卷交卷）
+     * 在各自状态写之后追加一行。
      * 只持有 append-only 的 [ReviewLogDao]，没有改历史的路径（DAO 那侧由 `ReviewLogDaoTest` 反射钉死）。
      */
     val reviewLogRepository: ReviewLogRepository = ReviewLogRepository(database.reviewLogDao())

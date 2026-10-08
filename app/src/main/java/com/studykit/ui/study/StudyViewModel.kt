@@ -130,6 +130,16 @@ data class MockExamUiState(
     val nowTs: Long = 0L,
     val toGrade: List<Long> = emptyList(),
     val autoSubmitted: Boolean = false,
+    /**
+     * 这一次暂停的起点（评审 F1）：`resumeMockExam` 按它补回停表那一段，暂停卡上那句「剩余」也按它
+     * 预先演一遍恢复的结果。null = 没在暂停中。跨进程恢复时它来自 `mock_sessions.paused_at`。
+     */
+    val pausedAtTs: Long? = null,
+    /**
+     * 设置里的「暂停是否扣时」（`examPauseCountsTime`），开卷与恢复时各读一次，只喂暂停卡上那句读数。
+     * 恢复那一刻仍回库里读**当时**的值（用户可能在暂停期间改过设置），这一份不是判据、只是预览。
+     */
+    val pauseCountsTime: Boolean = false,
 ) {
     val started: Boolean get() = questions.isNotEmpty()
     val total: Int get() = questions.size
@@ -692,8 +702,11 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     /** 防抖落库那条唯一在途的写（R4）：新写来了先把还没起跑的那条取消 */
     private var mockSaveJob: Job? = null
 
-    /** 本次暂停的起点（`System.currentTimeMillis()`）；0 = 没在暂停中。恢复时用来推截止时刻 */
-    private var mockPausedAt: Long = 0L
+    /**
+     * 本次暂停的起点（与 `mock_sessions.paused_at` 那一列同一条真值，写库由 [pauseMockExam] 负责）；
+     * null = 没在暂停中。恢复时用来推截止时刻，跨进程恢复时它从库里那一列取回（评审 F1）。
+     */
+    private var mockPausedAt: Long? = null
 
     /**
      * 组一卷模拟卷并**立刻留下一行**（v3.0-B T11）：与 [startQuiz] 同一取数口径（该学科前
@@ -729,7 +742,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             )
             val id = mockSessionRepository.insert(row)
             mockSessionRow = row.copy(id = id)
-            mockPausedAt = 0L
+            mockPausedAt = null
             _mockExam.value = MockExamUiState(
                 subject = subject,
                 questions = questions,
@@ -737,6 +750,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 examName = row.examName,
                 deadlineTs = row.deadlineTs,
                 nowTs = now,
+                pauseCountsTime = settings.examPauseCountsTime,
             )
         }
     }
@@ -753,7 +767,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         mockSaveJob?.cancel()
         mockSaveJob = null
         mockSessionRow = null
-        mockPausedAt = 0L
+        mockPausedAt = null
         _mockExam.value = MockExamUiState()
     }
 
@@ -819,30 +833,60 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 暂停：状态置 PAUSED，截止时刻先不动。
+     * 暂停：状态置 PAUSED，并把暂停起点**连同这一行一起**落库（评审 F1）。
      *
      * 推不推截止是**恢复**那一刻才知道的事（要读 `examPauseCountsTime`、要算暂停了多久），
-     * 所以这里只记下暂停起点，`deadline_ts` 原样留着。
+     * 所以这里只记起点、`deadline_ts` 原样留着。但起点必须进库：只存在内存里的话，进程一死
+     * 就退化成"恢复那一刻才暂停"，整段停表被吃掉（见 `MockSession.pausedAt`）。
+     *
+     * 写走防抖那一条（400ms）：万一恰好卡在窗口里被杀，那一行留在 RUN、`paused_at` 留 null，
+     * 恢复时锚点不可信 ⇒ 不补时 —— 少给一段时间，但绝不白送，也不会当场把卷子判掉（那条兜底
+     * 见 [resumeMockExam]）。
      */
     fun pauseMockExam() {
         val state = _mockExam.value
         if (!state.started || state.submitted || state.paused) return
-        mockPausedAt = System.currentTimeMillis()
-        _mockExam.value = state.copy(paused = true, nowTs = mockPausedAt)
-        persistMockSession { it.copy(state = encodePhase(MockPhase.PAUSED)) }
+        val at = System.currentTimeMillis()
+        mockPausedAt = at
+        _mockExam.value = state.copy(paused = true, nowTs = at, pausedAtTs = at)
+        persistMockSession { it.copy(state = encodePhase(MockPhase.PAUSED), pausedAt = at) }
     }
 
-    /** 继续：按设置决定暂停那段扣不扣时（文档 L1883「暂停计时可配」） */
+    /**
+     * 继续：按设置决定暂停那段扣不扣时（文档 L1883「暂停计时可配」）。
+     *
+     * 起点取 [mockPausedAt]（跨进程恢复时它是库里 `paused_at` 那一列，经
+     * [pausedAnchorForRestore] 校验过可信度），于是**整段暂停**都补得回来 —— 包括停在
+     * 「上次那卷还没交」那张卡上的那一段时间：截止时刻在恢复这一刻才推，不在进页面时推，
+     * 因为用户可能在那张卡上坐着不动，进页面就推等于替他按下继续。
+     *
+     * ⛔ 恢复那一刻就已经过截止的，不许"悄悄"把卷子判掉（评审 F1 的界面守卫）。理由：
+     * 这张卡上的表针是**冻住**的（`LaunchedEffect` 的键含 `paused`，暂停中不 tick），
+     * 屏幕上写「剩余 00:00」而用户不知道按下去会发生什么；把他放进 RUN 更糟 —— 按下继续后
+     * 第一个 tick 就自动交卷，看上去像"这 App 把我卷子交了"。这里选**立刻按截止时刻交卷并标
+     * `autoSubmitted = true`**：走的就是时间到那条既有路径，成绩页顶上那句
+     * 「时间到，已自动交卷」就是这次判分的说明，判分不再是按下继续的那一瞬无声发生。
+     * 暂停卡上又是怎么提前写明剩余 00:00 的，见 [pausedRemainingLabel]。
+     */
     fun resumeMockExam() {
         val state = _mockExam.value
         if (!state.paused) return
         viewModelScope.launch {
             val counts = settingsRepository.current().examPauseCountsTime
             val now = System.currentTimeMillis()
-            val deadline = deadlineAfterResume(now, mockPausedAt, state.deadlineTs, counts)
-            mockPausedAt = 0L
-            _mockExam.value = state.copy(paused = false, deadlineTs = deadline, nowTs = now)
-            persistMockSession { it.copy(state = encodePhase(MockPhase.RUN), deadlineTs = deadline) }
+            val anchor = pausedAnchorForRestore(mockPausedAt, now)
+            val deadline = deadlineAfterResume(now, anchor, state.deadlineTs, counts)
+            mockPausedAt = null
+            if (isExpired(now, deadline)) {
+                // 先把"暂停"这个外观撤掉再交卷：交完要跳成绩页，屏幕上不该留着一张暂停卡
+                _mockExam.value = state.copy(paused = false, nowTs = now, pausedAtTs = null)
+                submitMockExam(auto = true)
+                return@launch
+            }
+            _mockExam.value = state.copy(paused = false, deadlineTs = deadline, nowTs = now, pausedAtTs = null)
+            persistMockSession {
+                it.copy(state = encodePhase(MockPhase.RUN), deadlineTs = deadline, pausedAt = null)
+            }
         }
     }
 
@@ -865,17 +909,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      * 而"最新那一卷"正是用户预期被续上的那一卷。仓储里那两个 `observeById` / `observeRecent`
      * 全计划无人调用，已随本任务删除 —— 死 API 不进发布包。
      *
-     * **已知代价（照实写）**：恢复时暂停起点只能取"现在"。库里没有 `paused_at` 那一列（T8 的表
-     * 没有它，补一列要一轮迁移），所以离开页面的那一段**不补回**剩余时间：10:00 暂停、10:40 回来，
-     * 截止时刻仍是 10:00 那份，用户少拿 40 分钟"停表"。宁可少给也不能白送 —— 反过来把离开的那段
-     * 也算进暂停，就等于允许"关掉 App 睡一觉再回来继续考"。要在跨进程死亡后也守住「暂停即停表」，
-     * 需要加 `paused_at` 列（后续任务）。
+     * **跨进程的暂停也补得回来（评审 F1）**：暂停起点落在 `mock_sessions.paused_at` 那一列，
+     * 这里把它经 [pausedAnchorForRestore] 校验后当锚点，**但不在此刻改截止时刻** —— 用户可能在
+     * 这张卡上坐着不动，起点要留到他真的按下「继续作答」那一刻才算（[resumeMockExam]）。
+     * 那一列为空（作答中崩的 RUN 行：钟本来就一直在跑）或不可信（时钟往回跳）时**不补时**：
+     * 宁可少给，白送时间等于允许「关掉 App 睡一觉再回来继续考」。
      *
      * 题库变了、题目取不到时**删行作废**（R9）：`question_ids` 里少一题就少一题的分数与解析，
      * 那种"半张卷"看着完整、其实是拿别人的空缺给用户判错，绝不显示。
      */
     fun loadActiveMockSession() {
         viewModelScope.launch {
+            // 先让上一条在途的防抖写闭嘴（评审 F6，口径同 [resetMockExam]）：不取消的话，
+            // "上一卷最后一次作答"的那一份快照可能在新一卷读回来**之后**才落库，
+            // 把新行的 answers/cursor 覆盖成旧卷的内容（一次瞬时错乱，之后靠下一次作答纠正回来）。
+            mockSaveJob?.cancel()
+            mockSaveJob = null
             val active = mockSessionRepository.observeActive()
                 .firstOrNull { decodePhase(it.state) != MockPhase.DONE }
             if (active == null) {
@@ -892,7 +941,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             val now = System.currentTimeMillis()
-            mockPausedAt = now
+            val anchor = pausedAnchorForRestore(active.pausedAt, now)
+            mockPausedAt = anchor
             mockSessionRow = active.copy(state = encodePhase(MockPhase.PAUSED))
             _mockExam.value = MockExamUiState(
                 subject = active.subject,
@@ -901,9 +951,11 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 index = active.cursor.coerceIn(0, questions.size - 1),
                 sessionId = active.id,
                 examName = active.examName,
-                deadlineTs = active.deadlineTs,
+                deadlineTs = active.deadlineTs,  // 原样读回：截止时刻的推移发生在「继续」那一刻
                 paused = true,
                 nowTs = now,
+                pausedAtTs = anchor,
+                pauseCountsTime = settingsRepository.current().examPauseCountsTime,
             )
         }
     }
@@ -920,14 +972,23 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 交卷。`auto = true` = 时间到自动交（结果页顶那句"时间到，已自动交卷"要出来，R3）。
      *
-     * 四步顺序不许换（与 [gradeCard] 的「先状态后历史」同一条理由：中间被杀只丢一条日志，
-     * 下次复习时刻仍对；R8）：
+     * 四步顺序不许换（R8：会话行 → 练习记录 → 事件流，与 [gradeCard] 的「先状态后历史」同一条方向）。
+     * 但**别把这条纪律读成"中间被杀只丢一条日志"**（评审 F3，这里照实写清楚死法）：
      *  ① 纯算分（[submitOutcome]，未答的题出待批改队列而不是判成错）+ UI 终态同步冻结；
-     *  ② 会话落库（`state=DONE` + `result` 摘要 + `answers`/`cursor` 定格）——走
+     *  ② 会话落库（`state=DONE` + `result` 摘要 + `answers`/`cursor` 定格 + `paused_at` 清空）——走
      *     [commitMockSession] 的**同步**那一支，不挤进 400ms 防抖：② 必须排在 ③④ 之前，
      *     用防抖的话顺序会反过来（行在 400ms 后才落，练习记录已经先写完了）；
      *  ③ 每题写 `practice_records`（既有 `submitAnswer`，答错的幂等入错题本）；
      *  ④ 每题双写 `review_log`。
+     *
+     * ②③④ 住在**同一个** `viewModelScope.launch` 里，所以进程死亡落点不同、后果不同：
+     * - 死在 ① 之后、那个协程起跑之前：**连 ② 的 DONE 都没落**。库里那一行仍是 RUN/PAUSED，
+     *   下次进模考页会照常问「上次那卷还没交」，用户重新交一次就能补齐 —— 可恢复，但刚才那一眼
+     *   成绩页是**没有落库的一次显示**（③④ 同样一条没写）。
+     * - 死在 ② 之后、③/④ 跑到一半：行已经是 DONE（不再被续上，也**没有重放路径**），
+     *   而练习记录与事件流只有前几题 —— 缺的那几条永久缺，校准器的训练流就此少了几次评分。
+     * 真正"只丢一条日志"的是**背词侧**那种形状（状态与日志分两次落库）；这一处做不到，
+     * 因为交卷要写的东西本来就不止两行。要收得更紧得把 ②③④ 包进一个 Room 事务，本切片不做。
      *
      * ④ 是这一笔补的洞（计划 D8）：v2.9 起 `review_log` 是校准器的唯一训练流，
      * 而模考答过的题只进了 `practice_records` —— 在训练流里它们从来没发生过。
@@ -968,6 +1029,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                     answers = encodeAnswers(state.answers),
                     cursor = state.index,
                     result = encodeExamResult(out, autoSubmitted = auto),
+                    pausedAt = null,
                 )
             }
             // ③④ 逐题：练习记录 → 事件流

@@ -73,6 +73,47 @@ internal fun remainingLabel(nowTs: Long, deadlineTs: Long?): String? {
 }
 
 /**
+ * 跨进程恢复时，暂停的起点该取哪一刻（评审 F1）。
+ *
+ * 库里那一列（`mock_sessions.paused_at`）就是为这一刻留的：没有它，恢复只能把**恢复的此刻**当暂停
+ * 起点，`deadlineAfterResume` 于是算出 `pausedFor = 0`，截止时刻被 `.coerceAtLeast(nowTs)` 夹到
+ * 「现在」—— 用户按下「继续作答」后的第一个 tick 就自动交卷，整段停表被悄悄吃掉。
+ *
+ * 只认**可信**的锚点，两种情形退回"此刻才暂停"（= 不补时）：
+ * - 那一列是 null：这一行不是暂停中被杀的（作答中崩了，钟本来就一直在跑），白送时间等于允许
+ *   「关掉 App 睡一觉再回来继续考」；
+ * - 那一列在现在之后：设备时钟往回跳过，那段"暂停时长"是负的 —— [deadlineAfterResume] 自己也会
+ *   把负当 0，这里先把锚点收回此刻，免得两个下限各说各话。
+ *
+ * 这一式只做"取哪个数"，**不写新的截止时刻算术**：补多少仍然只由 [deadlineAfterResume] 一处决定。
+ */
+internal fun pausedAnchorForRestore(rowPausedAt: Long?, nowTs: Long): Long =
+    rowPausedAt?.takeIf { it in 1L..nowTs } ?: nowTs
+
+/**
+ * 「上次那卷还没交」那张卡上念的剩余时间（评审 F1 的界面那一半）。
+ *
+ * 用暂停那一刻的读数、而不是屏幕冻结着的那个此刻：默认暂停即停表，所以「恢复时手里还剩多少」
+ * 与用户在外面待了多久**无关**（`deadline + (now - pausedAt) - now` 就是 `deadline - pausedAt`），
+ * 提前按 [deadlineAfterResume] 演一遍恢复那一刻会算出的截止时刻，再叫同一个读数函数 ——
+ * 于是卡上那个数和按下「继续作答」后表上那个数是同一份算术，不会出现"卡上写剩余 00:00、
+ * 续上之后却还剩 5 分钟"这种两头骗的显示。
+ *
+ * 暂停也扣时（`examPauseCountsTime=true`）时 [deadlineAfterResume] 原样返回截止时刻，读数就是
+ * 真实剩余 —— 已经跑到 00:00 也照实写 00:00：用户在这一格上看得见"这卷时间已经用完了"，
+ * 「继续作答」按下去的后果不是秘密（见 [StudyViewModel.resumeMockExam]）。
+ */
+internal fun pausedRemainingLabel(
+    nowTs: Long,
+    pausedAtTs: Long?,
+    deadlineTs: Long?,
+    pauseCountsTime: Boolean,
+): String? {
+    val anchor = pausedAnchorForRestore(pausedAtTs, nowTs)
+    return remainingLabel(nowTs, deadlineAfterResume(nowTs, anchor, deadlineTs, pauseCountsTime))
+}
+
+/**
  * 一次交卷的产出。
  *
  * - [graded]：答过的那些题的判词（出自 [MockExamState]，与练习/背词同一套算术）；
@@ -157,50 +198,22 @@ internal fun decodeAnswers(raw: String): Map<Long, Int> {
     }
 }
 
-internal fun encodeResults(results: Map<Long, MockExamState.Answer>): String {
-    val o = JSONObject()
-    results.forEach { (id, a) ->
-        o.put(id.toString(), JSONObject().put("s", a.selected ?: JSONObject.NULL).put("c", if (a.correct) 1 else 0))
-    }
-    return o.toString()
-}
-
-internal fun decodeResults(raw: String?): Map<Long, MockExamState.Answer> {
-    if (raw.isNullOrEmpty() || raw == "{}") return emptyMap()
-    return try {
-        val o = JSONObject(raw)
-        buildMap {
-            val keys = o.keys()
-            while (keys.hasNext()) {
-                val k = keys.next()
-                val id = k.toLongOrNull() ?: continue
-                val v = o.optJSONObject(k) ?: continue
-                val selected = if (v.isNull("s")) null else v.optInt("s", -1).takeIf { it >= 0 }
-                put(id, MockExamState.Answer(selected = selected, correct = v.optInt("c") == 1))
-            }
-        }
-    } catch (e: JSONException) {
-        emptyMap()
-    }
-}
-
 /**
- * 交卷摘要（`mock_sessions.result` 那一列的可读形状）。
+ * 交卷摘要（写进 `mock_sessions.result` 那一列的字节）。
  *
- * 只有分数与待批改清单，逐题判词住在 [encodeResults] 写的那一列：结果页要重画整卷时读后者，
- * 而"这卷考了多少分"这种一句话读数才值得单独留着。
+ * ⛔ 这一列**今天没有任何读侧**（评审 F2 的裁定）：`StudyViewModel.submitMockExam` 把它写下去，
+ * 而成绩页那一份分数/待批改/「时间到」全部来自**本次会话的内存状态**（`MockExamUiState`），
+ * 恢复路径 [StudyViewModel.loadActiveMockSession] 只读 `question_ids` 与 `answers` —— DONE 的行
+ * 会被 `observeActive()` 的 `state != 4` 滤掉，压根到不了屏幕上。所以这里只留写侧：
+ * 那一列的值是给**将来的同步/备份**留的底稿（`uuid` + `syncStatus` 同一动机），
+ * 不承诺任何"离开再回来还能看到这句标注"的界面行为 —— 以前那句承诺是假的（逐题判词的
+ * `encodeResults`/`decodeResults` 与摘要的 `decodeExamResult` 三个函数写完之后无人调用，
+ * 已随本轮删除；要恢复成绩页的历史清单，那时按新的读法一起补）。
  *
- * [autoSubmitted] 记的是"这一卷是钟替他按的交卷，不是他自己按的"（R3）。它必须落在行里而不是
- * 只落在界面上：结果页那句「时间到，已自动交卷」是**成绩的一部分**，一条只靠 toast 的标注在用户
- * 离开再回来时就没影了，而那时屏幕上仍然印着那个分数。
+ * [autoSubmitted] 记的是"这一卷是钟替他按的交卷，不是他自己按的"（R3）。它在**这一次**会话里
+ * 是真的有效读数（结果页那句「时间到，已自动交卷」从 `MockExamUiState` 读它），落库那一列只是
+ * 顺手留档，别把它当成跨进程的保证。
  */
-internal data class MockSummary(
-    val correctCount: Int,
-    val total: Int,
-    val toGrade: List<Long>,
-    val autoSubmitted: Boolean = false,
-)
-
 internal fun encodeExamResult(out: MockSubmission, autoSubmitted: Boolean = false): String =
     JSONObject()
         .put("correct", out.correctCount)
@@ -209,19 +222,3 @@ internal fun encodeExamResult(out: MockSubmission, autoSubmitted: Boolean = fals
         .put("toGrade", JSONArray().apply { out.toGrade.forEach { put(it) } })
         .put("auto", if (autoSubmitted) 1 else 0)
         .toString()
-
-/** 摘要读不通返回 null（宁缺一条分数，不显示一个 0 分的假成绩） */
-internal fun decodeExamResult(raw: String?): MockSummary? {
-    if (raw.isNullOrEmpty()) return null
-    val o = try { JSONObject(raw) } catch (e: JSONException) { return null }
-    if (!o.has("total")) return null
-    return MockSummary(
-        correctCount = o.optInt("correct"),
-        total = o.optInt("total"),
-        toGrade = o.optJSONArray("toGrade")?.let { arr ->
-            buildList { for (i in 0 until arr.length()) arr.optLong(i).takeIf { it > 0L }?.let { add(it) } }
-        } ?: emptyList(),
-        // 缺键（旧版本写下的行）读成 false：没有证据说那是自动交卷，就不能凭空标注「时间到」
-        autoSubmitted = o.optInt("auto") == 1,
-    )
-}

@@ -23,13 +23,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * v2.9 计划 Task 6 —— 四处评分点双写 `review_log` 的写入侧证据。
+ * v2.9 计划 Task 6 —— 评分点双写 `review_log` 的写入侧证据（v2.9 那四处 + v3.0-B T12 的第五处）。
  *
- * 为什么测**仓储级 helper**（[ReviewLogRepository.recordGradedReview]）而不是四个 ViewModel：
+ * 为什么测**仓储级 helper**（[ReviewLogRepository.recordGradedReview]）而不是那几个 ViewModel：
  * 本仓库既有测试文化一致回避直接驱动 `AndroidViewModel`（`KernelWiringTest`/`QuizConfidenceWiringTest`
- * 都写明"那是 Room + Robolectric 才跑得动，改测纯函数/仓储"）。四处评分点（word/practice/mistake/
- * excerpt）最终都收敛成对同一个 helper 的一次调用，字段映射（rating/self_conf/state）的**语义**在
- * helper 这一层钉死；各点"能拿到什么、缺什么用什么默认"在实现说明里逐条登记。
+ * 都写明"那是 Room + Robolectric 才跑得动，改测纯函数/仓储"）。五处评分点（word/practice/mistake/
+ * excerpt，加上套卷交卷也落进 practice）最终都收敛成对同一个 helper 的一次调用，字段映射
+ * （rating/self_conf/state）的**语义**在 helper 这一层钉死；各点"能拿到什么、缺什么用什么默认"在实现说明里逐条登记。
  *
  * 钉三件事：
  * 1) **每评一次分恰多一行**，且 `card_kind` / `origin` / `rating` 与该次评分自洽；四类各验一条。
@@ -39,8 +39,10 @@ import org.robolectric.annotation.Config
  *    （与 `applyReview → recordGradedReview`、`grade → insertRedo` 那条纪律同一条，见 [stateThrowsThenNoLogRow]）。
  * 4) **套卷交卷那一行与练习侧同形状**（v3.0-B T12，计划 D8：`KIND_PRACTICE` + `self_conf` 留空 +
  *    `elapsed`/`scheduled`/`duration` 成对 0）—— 见 [套卷交卷那条路径写的行与练习侧同形状]。
- *    第五个写入点（`StudyViewModel.submitMockExam`）本身要起 VM + Room，本文件不新建那套脚手架，
- *    该路径的落库由真机取证覆盖（缺口点名在 task-10-12 报告里）。
+ *    第五个写入点（`StudyViewModel.submitMockExam`）本身要起 VM + Room，本文件不新建那套脚手架；
+ *    那条路径**已经**有 VM 级证据（评审 F1 那轮补的 `MockSessionResumeWriterTest`：真起
+ *    `StudyViewModel` + 内存库，交卷后读回 `review_log` 那一行的 `card_kind`/`rating`/`self_conf`
+ *    与会话行的 `state=DONE`）。本文件仍只管 helper 那一层的字段语义。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])

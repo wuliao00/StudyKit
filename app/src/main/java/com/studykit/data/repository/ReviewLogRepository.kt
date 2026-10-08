@@ -6,10 +6,11 @@ import com.studykit.data.entity.ReviewLog
 /**
  * `review_log` 事件流的写入侧（v2.9 计划 Task 6）。
  *
- * 四处评分点（背词 [com.studykit.ui.study.StudyViewModel.gradeCard]、练习提交
+ * 五处评分点（背词 [com.studykit.ui.study.StudyViewModel.gradeCard]、练习提交
  * [com.studykit.ui.study.StudyViewModel.selectOption]、错题重做
  * [com.studykit.ui.mistake.MistakeViewModel.gradeRedo]、书摘自评
- * [com.studykit.ui.book.BookViewModel.gradeExcerptReview]）在**各自的既有状态写之后**
+ * [com.studykit.ui.book.BookViewModel.gradeExcerptReview]、套卷交卷
+ * [com.studykit.ui.study.StudyViewModel.submitMockExam]，v3.0-B T12 补的第 5 个）在**各自的既有状态写之后**
  * 收敛成对本方法的一次调用——先状态后历史那条纪律（同 `WordRepository.applyReview →
  * recordGradedReview`、`MistakeScheduling.grade → insertRedo`）：万一日志写之前进程被杀，
  * 后果只是"这一次评分没进事件流"，卡自己的状态仍是对的；反过来先写日志、状态没落，

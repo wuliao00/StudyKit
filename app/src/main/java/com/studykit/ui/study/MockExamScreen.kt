@@ -95,6 +95,16 @@ fun MockExamScreen(
     }
 
     val remaining = remainingLabel(state.nowTs, state.deadlineTs)
+    // 暂停卡上那句「剩余」另算一份：暂停中屏幕是冻住的（那一圈 tick 被 `paused` 键取消了），
+    // 直接拿 `remaining` 给，用户看到的是"截止时刻与冻结那一刻之差"——跨进程恢复时那是 00:00，
+    // 而按下继续后表上其实还剩几分钟。这里按恢复那一刻会同口径算出的截止时刻预先演一遍
+    // （纯函数 [pausedRemainingLabel]，算术仍然只在 `deadlineAfterResume` 那一处）。
+    val pausedRemaining = pausedRemainingLabel(
+        state.nowTs,
+        state.pausedAtTs,
+        state.deadlineTs,
+        state.pauseCountsTime,
+    )
     val sessionId = state.sessionId
 
     Column(
@@ -139,7 +149,7 @@ fun MockExamScreen(
                 if (state.paused) {
                     MockExamResumePrompt(
                         state = state,
-                        remainingLabel = remaining,
+                        remainingLabel = pausedRemaining,
                         onResume = { viewModel.resumeMockExam() },
                         onDiscard = { showDiscard = true },
                     )
@@ -265,6 +275,11 @@ private fun ExamSubjectPicker(
  *
  * 参数收的是 [MockExamUiState] 而不是 `MockSession`：那一行住在 VM 里，页面从来拿不到它，
  * 而这张卡要的五个读数（卷名、学科、已答、总量、剩余）状态里全有。
+ *
+ * [remainingLabel] 给的是**按下继续之后**会拿到的那份剩余（由纯函数 [pausedRemainingLabel] 演出来，
+ * 与 VM 恢复时用的是同一条算术），不是"冻结那一刻与截止时刻之差"。它是这张卡的守卫：
+ * 写「剩余 00:00」就是在告诉用户"继续下去这卷会按时间交卷"，而不是让他按下之后才发现卷子被悄悄判掉
+ * （[StudyViewModel.resumeMockExam] 在那一刻走的是 `autoSubmitted = true` 那条既有路径）。
  */
 @Composable
 internal fun MockExamResumePrompt(

@@ -276,17 +276,88 @@ class MockExamRenderTest {
         // 提示卡上没有交卷入口：暂停中的卷必须先选「继续」才谈得上交卷
         composeRule.onNodeWithText("交卷").assertDoesNotExist()
     }
+
+    /**
+     * ⛔ 评审 F1 的渲染守卫：那张卡得把"按下继续之后会剩下多少"写在脸上。
+     *
+     * 喂给卡片的读数由纯函数 [pausedRemainingLabel] 现算 —— 与 `StudyViewModel.resumeMockExam`
+     * 恢复时用的是同一条算术（同一个 `deadlineAfterResume`），于是屏幕上那个数和 VM 真正
+     * 算出来的截止时刻不可能分家。场景：10:00 暂停（那时还剩 5 分钟）、11:00 回到页面。
+     * 以前这里念的是**冻住的 00:00**（截止时刻与恢复时刻之差），而按下「继续作答」后的第一个
+     * tick 就把整卷判了 —— 判分无声发生，用户只知道自己"好像还没答就交卷了"。
+     */
+    @Test
+    fun 恢复提示念的是继续之后真正剩下的时间() {
+        val pausedAt = 1_000_000L                 // 暂停那一刻（库里 paused_at 的值）
+        val deadline = pausedAt + 5 * 60_000L      // 暂停时手里还剩 5 分钟
+        val back = pausedAt + 3_600_000L           // 一小时后才回到页面
+        composeRule.setContent {
+            ResumeHost(
+                state = MockExamUiState(
+                    subject = "数学",
+                    questions = listOf(question),
+                    examName = "期末考",
+                    deadlineTs = deadline,
+                    paused = true,
+                    nowTs = back,
+                    pausedAtTs = pausedAt,
+                ),
+                remainingLabel = pausedRemainingLabel(back, pausedAt, deadline, pauseCountsTime = false),
+                onResume = {},
+                onDiscard = {},
+            )
+        }
+        // 量具对照：这张卡没组合成功，后面那句就没有意义
+        composeRule.onNodeWithText("上次那卷还没交").assertIsDisplayed()
+        // 停表补得回来：卡上念 5 分钟，而不是冻在恢复那一刻的 00:00
+        composeRule.onNodeWithText("计时已停下，剩余 05:00").assertIsDisplayed()
+        composeRule.onNodeWithText("剩余 00:00").assertDoesNotExist()
+        // 这张卡仍然只有续与弃两个出口（评审 F1 没把"交卷"从这里漏出去）
+        composeRule.onNodeWithText("交卷").assertDoesNotExist()
+    }
+
+    /**
+     * 时间真的在外面跑完了（设置里"暂停也扣时"）：卡上照实念 00:00 —— 这句话就是那次判分的预告。
+     * 「继续作答」按下去走的是 `submitMockExam(auto = true)`，成绩页顶上印「时间到，已自动交卷」；
+     * 那一步在 VM 层由 `MockSessionResumeWriterTest` 钉死，这里钉的是**用户按之前看得见什么**。
+     */
+    @Test
+    fun 时间在外面跑完时恢复提示照实念零() {
+        val pausedAt = 1_000_000L
+        val deadline = pausedAt + 5 * 60_000L
+        val back = pausedAt + 3_600_000L
+        composeRule.setContent {
+            ResumeHost(
+                state = MockExamUiState(
+                    subject = "数学",
+                    questions = listOf(question),
+                    deadlineTs = deadline,
+                    paused = true,
+                    nowTs = back,
+                    pausedAtTs = pausedAt,
+                ),
+                remainingLabel = pausedRemainingLabel(back, pausedAt, deadline, pauseCountsTime = true),
+                onResume = {},
+                onDiscard = {},
+            )
+        }
+        composeRule.onNodeWithText("计时已停下，剩余 00:00").assertIsDisplayed()
+    }
 }
 
 /**
  * 恢复提示的测试宿主：把 [MockExamResumePrompt] 单独摆进主题里
  * （口径同 [MockExamBody] —— 整屏要 Room 背后的 [StudyViewModel]，JVM 侧起不来）。
+ *
+ * `remainingLabel` 默认给既有用例那句 "44:10"（别为了新用例去改老用例的期望），新用例传
+ * 纯函数现算出来的那一份，钉的就是"页面喂进卡片的是恢复后的读数"这一根线。
  */
 @Composable
 private fun ResumeHost(
     state: MockExamUiState,
     onResume: () -> Unit,
     onDiscard: () -> Unit,
+    remainingLabel: String? = "44:10",
 ) {
     CompositionLocalProvider(
         LocalAppTheme provides AppThemeVals(
@@ -297,7 +368,7 @@ private fun ResumeHost(
     ) {
         MockExamResumePrompt(
             state = state,
-            remainingLabel = "44:10",
+            remainingLabel = remainingLabel,
             onResume = onResume,
             onDiscard = onDiscard,
         )

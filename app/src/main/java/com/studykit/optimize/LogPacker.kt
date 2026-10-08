@@ -85,7 +85,8 @@ object LogPacker {
      * - **duration**：`durationMs > MAX_DURATION_MS` → 剔除（中断/挂机。文档允许"降权或剔除"，此处**选剔除**并在常量注释说明）；
      * - **连点去重**：同 `(cardKind, cardId)` 内、与上一条**已保留**行间隔 `< DUP_WINDOW_MS` → 丢弃后续（保留第一条）；
      * - **rating**：不在 1..4 → 夹断到边界（`copy(rating=…)` 修正后入列）；
-     * - **system 动作**：本表仅由 Task 6 的四处评分点写入，天然不含系统占位评分，无需过滤（文档 flags.bit0 在此无对应列）；
+     * - **system 动作**：本表仅由评分点写入（Task 6 那四处 + v3.0-B T12 的套卷交卷，共五处），
+     *   天然不含系统占位评分，无需过滤（文档 flags.bit0 在此无对应列）；
      * - **imported**：无对应列，按文档"保留"处理（ts 精度只影响 elapsed 取整，可接受）。
      *
      * 注意过滤次序：makeup/duration 先于去重，故被剔除的行不会成为去重锚点。
