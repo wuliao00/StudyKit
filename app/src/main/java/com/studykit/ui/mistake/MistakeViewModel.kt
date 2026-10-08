@@ -311,12 +311,25 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 保存拍照错题：压缩图片入 mistake_images/，Room 只存相对路径 */
     // 一次性门（终审 C4 的第六个入口）：图片压缩要跑几百毫秒，这段窗口里连点会插两条错题、
     // 也会 pop 两次。
     private val savingMistake = OneShotGate()
 
-    fun savePhotoMistake(subject: String, title: String, note: String, onSaved: () -> Unit) {
+    /**
+     * 保存拍照错题：压缩图片入 mistake_images/，Room 只存相对路径。
+     *
+     * [shapesJson] 是建卡编辑器那一串遮挡块（`ui.mistake.shapesToJson` 的产物，默认 `"{}"` = 没画）。
+     * 遮挡块与卡片类型是**成对**决定的（`occlusionColumns`，见那里的 ⛔ 那段）——
+     * 这里不重新拼一遍条件，因为「只写了 extra 却忘了 kind」的卡会静默没有遮挡，
+     * 而这条洞从库面上看不出来。脏串读不出块时退化成普通卡，不留一个空的遮挡卡。
+     */
+    fun savePhotoMistake(
+        subject: String,
+        title: String,
+        note: String,
+        shapesJson: String = "{}",
+        onSaved: () -> Unit,
+    ) {
         if (!savingMistake.tryEnter()) return
         val captured = _pendingCapture.value
         if (captured == null || captured.exists().not()) {
@@ -327,6 +340,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
         val finalSubject = subject.ifBlank { "未分类" }
         val finalTitle = title.ifBlank { "拍照错题" }
+        // kind 与 extra 在这一处一起定（纯函数 + 三条字面量断言钉着，见 OcclusionEditorTest）
+        val columns = occlusionColumns(shapesJson)
         viewModelScope.launch {
             try {
                 val relativePath = withContext(Dispatchers.IO) {
@@ -343,6 +358,8 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
                     title = finalTitle.trim(),
                     content = note.trim(),
                     imagePath = relativePath,
+                    kind = columns.kind,
+                    extra = columns.extra,
                 )
                 toast("错题已保存")
                 onSaved()

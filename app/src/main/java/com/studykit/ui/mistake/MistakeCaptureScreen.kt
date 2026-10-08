@@ -63,6 +63,15 @@ import com.studykit.ui.theme.AppTheme
  *
  * 四个表单字段（已选学科 / 新学科 / 标题 / 备注）一律 `rememberSaveable`：转屏不再吞掉已输入内容，
  * 与其余五个录入页（单词 / 题目 / 习惯 / 书籍 / 书摘·书评）同一条纪律（终审 C3）。
+ *
+ * ## 遮挡建卡（v3.0-B T16）
+ * 照片预览下面挂 [OcclusionEditor]：拖一笔就落一块遮挡，保存时把那串 JSON 交给
+ * [MistakeViewModel.savePhotoMistake]，`kind`/`extra` 成对写进 `mistakes`（写歪一次就是一张静默
+ * 没有遮挡的卡，所以这一步收在纯函数 `occlusionColumns` 里，三条字面量断言钉着）。
+ * 两样编辑器态存的都是**串**：工具档存枚举名、块列表存 JSON —— 后者是 `List<OcclusionShape>`
+ * 过不了 Bundle（sealed interface 的 ArrayList 救不回进程重建），存 JSON 串才建得回来。
+ * **没有可用照片就没有这一整块**（预览 + OCR + 编辑器同一个 `takeIf` 结论，见下面 `photo` 那一次）：
+ * 没图就没有可拖的画布，摆一个空编辑器只会让人对着空气划。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -89,6 +98,13 @@ fun MistakeCaptureScreen(
     var newSubject by rememberSaveable { mutableStateOf("") }
     var title by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
+    // 遮挡建卡的两个态都存**串**而不是对象（v3.0-B T16，R5）：
+    // - 工具档存枚举名（`EditorShape` 没有默认 Saver；读到认不出的串回矩形，见 [decodeEditorShape]）；
+    // - 块列表存 JSON 串而不是 `List<OcclusionShape>` —— sealed interface 的 ArrayList 过不了 Bundle，
+    //   字符串才救得回进程重建。派生态只在这一处：`shapesFromJson(shapesRaw)`，别再抄第二份。
+    var editorType by rememberSaveable { mutableStateOf(EditorShape.RECT.name) }
+    var shapesRaw by rememberSaveable(key = "occlusion") { mutableStateOf("{}") }
+    val shapes = shapesFromJson(shapesRaw)
     // 刻意用 remember 而不是上面四个字段的 rememberSaveable：这是"此刻有没有协程在跑"的瞬时标记，
     // 存进 bundle 的话，进程在识别途中被杀、恢复后会把按钮永久卡在「识别中…」且没人会再改它
     var extracting by remember { mutableStateOf(false) }
@@ -142,10 +158,14 @@ fun MistakeCaptureScreen(
             }
         }
         val previewShape = RoundedCornerShape(AppTheme.radius.lg)
-        if (captured != null && capturedExists) {
+        // 「有没有可用的照片」只在这一处判（`takeIf` 那一次）：预览、OCR 按钮、遮挡编辑器共用同一个结论，
+        // 于是照片半路被清掉时三样一起消失，不会留下「编辑器还在但预览是空的」那种半截态。
+        // 遮挡编辑器拿的是非空 `File`：没有照片就没有可拖的画布，这件事由类型负责（R7）。
+        val photo = captured?.takeIf { capturedExists }
+        if (photo != null) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
                 AsyncImage(
-                    model = captured,
+                    model = photo,
                     contentDescription = "拍照预览",
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
@@ -171,6 +191,17 @@ fun MistakeCaptureScreen(
                         }
                     }
                 },
+            )
+            Spacer(Modifier.height(AppTheme.space.md))
+            OcclusionEditor(
+                photo = photo,
+                shapes = shapes,
+                type = decodeEditorShape(editorType),
+                onTypeChange = { editorType = it.name },
+                // 三处回调都只改那一串 JSON：块列表本身不持有，派生只走上面 `shapesFromJson` 那一次
+                onAdd = { shapesRaw = shapesToJson(shapes + it) },
+                onUndo = { shapesRaw = shapesToJson(shapes.dropLast(1)) },
+                onClear = { shapesRaw = "{}" },
             )
         } else {
             Text(text = "未获取到照片，请返回重新拍照", style = texts.caption)
@@ -240,6 +271,8 @@ fun MistakeCaptureScreen(
                     subject = finalSubject,
                     title = title,
                     note = note,
+                    // 传的是那一串 JSON 本身（`kind`/`extra` 怎么配对由 VM 那一步的 occlusionColumns 负责）
+                    shapesJson = shapesRaw,
                     onSaved = onSaved,
                 )
             },

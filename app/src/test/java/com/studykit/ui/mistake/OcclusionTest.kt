@@ -96,12 +96,4 @@ class OcclusionTest {
     fun `kind 为 1 但 extra 脏：算普通卡而不是崩`() {
         assertTrue(occlusionShapes(mistake(kind = Mistake.KIND_OCCLUSION, extra = "{{{")).isEmpty())
     }
-
-    @Test
-    fun `中心点读数用于命中与提示`() {
-        assertEquals(0.3, OcclusionShape.Rect(0.1, 0.1, 0.5, 0.9).centerU, 1e-9)
-        // centerV 取的是 centerY（0.4），不是 centerX：两轴各读各的，读串了命中判定就落到照片外面
-        assertEquals(0.4, OcclusionShape.Ellipse(0.5, 0.4, 0.1, 0.2).centerV, 1e-9)
-        assertEquals(0.2, OcclusionShape.Polygon(listOf(NormalizedPoint(0.1, 0.0), NormalizedPoint(0.3, 0.0), NormalizedPoint(0.2, 0.3))).centerU, 1e-9)
-    }
 }

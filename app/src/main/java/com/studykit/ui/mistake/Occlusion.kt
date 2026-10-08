@@ -32,7 +32,12 @@ internal sealed interface OcclusionShape {
 
 internal data class NormalizedPoint(val x: Double, val y: Double)
 
-/** 短于这个比例的块多半是误触（照片长边 1600px 时约等于 3px） */
+/**
+ * 短于这个比例的块多半是误触（照片长边 1600px 时约等于 3px）。
+ *
+ * 写侧那道阈值（`ui.mistake.MIN_DRAG` = 1%）必须不低于这里，否则会画出「当场看得见、
+ * 重新读回来就没了」的块。
+ */
 private const val MIN_EXTENT = 0.005
 
 /** `t` 字段用的三个 token，与文档 L1884 一致；`poly` 不写成 `polygon`（文档拼法为准） */
@@ -41,20 +46,6 @@ private const val TYPE_ELLIPSE = "ellipse"
 private const val TYPE_POLY = "poly"
 
 private fun clamp01(v: Double): Double = if (v.isNaN()) 0.0 else v.coerceIn(0.0, 1.0)
-
-internal val OcclusionShape.centerU: Double
-    get() = when (this) {
-        is OcclusionShape.Rect -> (left + right) / 2
-        is OcclusionShape.Ellipse -> centerX
-        is OcclusionShape.Polygon -> points.sumOf { it.x } / points.size
-    }
-
-internal val OcclusionShape.centerV: Double
-    get() = when (this) {
-        is OcclusionShape.Rect -> (top + bottom) / 2
-        is OcclusionShape.Ellipse -> centerY
-        is OcclusionShape.Polygon -> points.sumOf { it.y } / points.size
-    }
 
 internal fun shapesToJson(shapes: List<OcclusionShape>): String {
     val arr = JSONArray()

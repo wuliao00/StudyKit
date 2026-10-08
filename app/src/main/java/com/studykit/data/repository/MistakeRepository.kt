@@ -36,6 +36,11 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
      * 默认 1=LEARNING。于是这道题要么由用户手动「覆盖排期」写进 `review_at`，要么等第一次重做评分
      * 由内核首评（`stability == null` 即 firstTime 支）写出第一次到期 —— 两条路写的是同一列。
      * 提醒侧 `getDueForReview` 带 `review_at IS NOT NULL`，所以刚入本的题不会被当成"到期"轰炸用户。
+     *
+     * [kind] 与 [extra] 是**成对**的两个参数（v3.0-B T16；成对产法见 `ui.mistake.occlusionColumns`，
+     * 建卡与详情页补画遮挡都从它取，别在调用点各自拼一次）：
+     * `kind` 是遮挡卡唯一的开关，只写 extra 不改 kind 的行会被读侧当普通错题，遮挡块躺在库里没人读。
+     * 两个都带默认值，所以既有的三个调用点一个字都不用改。
      */
     suspend fun add(
         source: String,
@@ -45,6 +50,8 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
         imagePath: String? = null,
         note: String = "",
         priority: Int = 0,
+        kind: Int = Mistake.KIND_BASIC,
+        extra: String = "{}",
     ): Long =
         mistakeDao.insert(
             Mistake(
@@ -56,6 +63,8 @@ class MistakeRepository(private val mistakeDao: MistakeDao) {
                 content = content,
                 note = note,
                 priority = priority,
+                kind = kind,
+                extra = extra,
             ),
         )
 
