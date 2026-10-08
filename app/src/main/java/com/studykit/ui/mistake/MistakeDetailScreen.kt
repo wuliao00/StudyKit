@@ -112,6 +112,15 @@ private fun sourceLabel(source: String): String = when (source) {
  * [MistakePhotoBlock] 里：罩子只在重做阶段挂着，点一次整层揭开，没有逐块点揭（猜错的代价是亮答案）。
  * 灯箱（[FullImageOverlay]）是同一段照片的第二条出口，读同一个判定，不许有第二条不设防的路。
  *
+ * ## 已经存下的照片也能补画遮挡（v3.0-B T17）
+ * 照片段现在由 [MistakePhotoSection] 这一格持有：可见时下面挂一颗入口钮（「在照片上画遮挡」/
+ * 「编辑遮挡（已 N 处）」，读的是**库里已存**的块数），按下去**在同一屏内嵌** [OcclusionEditor] ——
+ * 不新开路由：编辑对象就是这一屏已经拿着的那张图，新开一条 route 就得把 `File` 与草稿再传一遍，
+ * 于是多出第二份真值。草稿是本地态（一串 JSON，`null` 即不在编辑），「保存」交
+ * [MistakeViewModel.setOcclusion] 写库、「取消」丢弃。揭示与编辑的关系（点按全揭只归重做阶段那一屏、
+ * 编辑期间那个手势根本不存在、以及编辑器自己也要过 `imageVisible` 这道闸）写在 [MistakePhotoSection]
+ * 的注释里 —— 那三件事是本任务唯一的裁定，别在两处各说一套。
+ *
  * 阶段用 `rememberSaveable(mistakeId)` 存**阶段名串**：转屏/换屏不丢，换一道题（同一 entry 上
  * `mistakeId` 变了）不会把上一道题的展开态带过来；存档里读到认不出的串时
  * [decodeRedoPhase] 回到遮住那一侧，宁可让用户多点一次按钮。
@@ -162,6 +171,20 @@ fun MistakeDetailScreen(
     var restated by rememberSaveable(mistakeId) { mutableStateOf(false) }
     var graded by rememberSaveable(mistakeId) { mutableStateOf(false) }
     var showFullImage by remember { mutableStateOf(false) }
+    // 补画遮挡（v3.0-B T17）：草稿只存**那一串 JSON**，不存 `List<OcclusionShape>` ——
+    // sealed interface 的 ArrayList 过不了 Bundle，进程重建救不回已画的块（同一坑在建卡流记过，
+    // 见 `MistakeCaptureScreen` 的 `shapesRaw`）。`null` = **现在不在编辑**：这一位同时回答
+    // "在不在编辑"和"编辑的是哪几块"，于是「编辑器开着但草稿没了」那种假态构造不出来。
+    // 键在 mistakeId 上：换一道题不该把上一道题的草稿带过去。
+    var occlusionDraftRaw by rememberSaveable(mistakeId, key = "occlusionDraft") {
+        mutableStateOf<String?>(null)
+    }
+    // 工具档存的也是串（R4）：编辑器自己不私藏当前工具，重建后读到认不出的串回矩形
+    var occlusionTool by rememberSaveable(mistakeId, key = "occlusionTool") {
+        mutableStateOf(EditorShape.RECT.name)
+    }
+    // 派生只在这一处读一次（与建卡流同一条纪律，下面一律喂这一份，不再 `shapesFromJson` 第二遍）
+    val occlusionDraft = shapesFromJson(occlusionDraftRaw ?: "{}")
     // 学科对话框带的是**用户输入**，故开合与文本一起 saveable（终审 C3 的同类站点）：
     // 转屏后对话框还在、已输入的学科还在。删除确认与看图浮层不留输入，仍按瞬时态处理。
     var showSubjectDialog by rememberSaveable { mutableStateOf(false) }
@@ -344,12 +367,29 @@ fun MistakeDetailScreen(
                 )
             }
 
-            // ── 大图 ──────────────────────────────────────────────────────
+            // ── 大图 + 补画遮挡的入口（v3.0-B T17）─────────────────────────
             // 照片是与文字段并列的第二段，闸在 `redoGate.imageVisible`（v3.0-B T14）。
-            MistakePhotoBlock(
+            // 编辑态与全揭态在同一格里换班：编辑器在的时候照片段不组合（见 [MistakePhotoSection]）。
+            MistakePhotoSection(
                 imageFile = imageFile,
                 gate = redoGate,
                 shapes = shapes,
+                editing = occlusionDraftRaw != null,
+                draft = occlusionDraft,
+                editorType = decodeEditorShape(occlusionTool),
+                onTypeChange = { occlusionTool = it.name },
+                // 三处回调都只改那一串 JSON（与建卡流同一个写法）
+                onAdd = { occlusionDraftRaw = shapesToJson(occlusionDraft + it) },
+                onUndo = { occlusionDraftRaw = shapesToJson(occlusionDraft.dropLast(1)) },
+                onClear = { occlusionDraftRaw = shapesToJson(emptyList()) },
+                // 进编辑：草稿从**已存的那一份**起画；取消：丢草稿回 null；保存：交草稿给 VM，
+                // 撤到零块也走同一条（VM 那一步会把这对列退成 `KIND_BASIC` + `{}`）。
+                onStartEditing = { occlusionDraftRaw = shapesToJson(shapes) },
+                onCancelEditing = { occlusionDraftRaw = null },
+                onSave = { draft ->
+                    viewModel.setOcclusion(mistakeId, draft)
+                    occlusionDraftRaw = null
+                },
                 onOpenFullImage = { showFullImage = true },
             )
 
@@ -476,7 +516,12 @@ fun MistakeDetailScreen(
         // [MistakePhotoBlock]），这里再兜一道：万一灯箱开着时用户按了「重新遮住答案」，
         // 相位翻回 REDO 的下一帧组合就把它关掉（`showFullImage` 留着无害——它是瞬时态，
         // 再次进到对照阶段时才可能被读到）。
-        if (showFullImage && imageFile != null && redoGate.hasImage && redoGate.imageVisible) {
+        // 灯箱（[FullImageOverlay]）是同一段照片的第二条出口，读同一个判定，不许有第二条不设防的路。
+        // 编辑期间也不出（`occlusionDraftRaw == null`）：那会儿屏幕上摆的是编辑器里那张图，
+        // 再叠一层整幅原图等于给用户第二个"看到全部"的出口，而那块罩子他还没画完。
+        if (showFullImage && imageFile != null && redoGate.hasImage && redoGate.imageVisible &&
+            occlusionDraftRaw == null
+        ) {
             FullImageOverlay(file = imageFile, onDismiss = { showFullImage = false })
         }
     }
@@ -599,6 +644,96 @@ internal fun MistakePhotoBlock(
                 color = colors.secondaryText,
             )
         }
+    }
+}
+
+/**
+ * 照片那一段 + 补画遮挡的入口 + 内嵌编辑器（v3.0-B T17）。
+ *
+ * 抽成一个 internal composable 的原因与 [MistakePhotoBlock] 同一句：整屏要 [MistakeViewModel]
+ * （背后是 Room），JVM 侧起不来，只有这一小段能被渲染守卫钉住（`OcclusionRenderTest`）。
+ * 状态（草稿那串 JSON、工具档）仍由本页持有，这里只吃派生好的两份 —— 与建卡流同一个分工。
+ *
+ * ## 揭示与编辑的关系（T16 留给这一步裁定）
+ * 一格里只有一个人：**编辑器在，照片段就不组合**，于是
+ * - 「点按全揭」那个手势在编辑期间**不存在**（[OcclusionEditor] 里那份 [OcclusionImage] 本来也不带
+ *   回调，T17 把渲染层的"画罩子"与"挂手势"拆开之后，编辑态看得见自己盖的块、点不开它们）；
+ * - 全揭是**重做阶段那一屏**才有的出口，不是编辑器里的副作用；
+ * - 退出编辑时照片段重新组合，`revealedByTap` 回到初值 ⇒ 罩子落回去。宁可让用户多点一次，
+ *   也不让一次误触把刚盖好的答案重新亮出来。
+ *
+ * 第二道闸：编辑器渲染的是**没盖任何东西的原图**，所以它自己也得过 [RedoGate.imageVisible]。
+ * 重做阶段一块都没画时那张照片是整张扣着的（T14），那时允许打开编辑器就等于把刚封住的印刷答案
+ * 摊开给用户看 —— 洞就是这么开的。这一位是 `editing && gate.imageVisible`，不是 `editing`：
+ * 用户在编辑途中按「重新遮住答案」把相位翻回 REDO，编辑器当场让位给占位卡，草稿留着不动
+ * （再翻回 CHECK 时编辑器带着原草稿回来）。
+ *
+ * 「撤掉全部遮挡」不需要额外的钮：编辑器里的「撤销上一块」/「清空」把草稿降到零块，保存那一步
+ * 由 VM 把那对列退成 `KIND_BASIC` + `{}`（见 [MistakeViewModel.setOcclusion]）。
+ */
+@Composable
+internal fun MistakePhotoSection(
+    imageFile: File?,
+    gate: RedoGate,
+    shapes: List<OcclusionShape>,
+    editing: Boolean,
+    draft: List<OcclusionShape>,
+    editorType: EditorShape,
+    onTypeChange: (EditorShape) -> Unit,
+    onAdd: (OcclusionShape) -> Unit,
+    onUndo: () -> Unit,
+    onClear: () -> Unit,
+    onStartEditing: () -> Unit,
+    onCancelEditing: () -> Unit,
+    onSave: (List<OcclusionShape>) -> Unit,
+    onOpenFullImage: () -> Unit,
+) {
+    // 编辑器可挂载的那个非空句柄：`editing` 且照片此刻本就许可见，才把图交给编辑器
+    val editorPhoto = if (editing && gate.imageVisible) imageFile else null
+    if (editorPhoto != null) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        OcclusionEditor(
+            photo = editorPhoto,
+            shapes = draft,
+            type = editorType,
+            onTypeChange = onTypeChange,
+            onAdd = onAdd,
+            onUndo = onUndo,
+            onClear = onClear,
+        )
+        Spacer(Modifier.height(AppTheme.space.md))
+        // 保存/取消是这一格唯一的出口，两个都给：只写"保存"会让用户没法在不改动库的情况下退出去
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+            AppButton(
+                text = "保存",
+                onClick = { onSave(draft) },
+                modifier = Modifier.weight(1f),
+            )
+            AppButton(
+                text = "取消",
+                secondary = true,
+                onClick = onCancelEditing,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        return
+    }
+    MistakePhotoBlock(
+        imageFile = imageFile,
+        gate = gate,
+        shapes = shapes,
+        onOpenFullImage = onOpenFullImage,
+    )
+    // 入口只出现在**看得见这张照片**的时候（`imageVisible`）：照片整张扣着的重做阶段没有可编辑的
+    // 现场（上面那道闸同理），没照片的那一行更是连画布都构造不出来。文案读的是**库里已存**的块数，
+    // 不是草稿 —— 这颗钮说的是"现在这张照片盖了几处"，草稿还没保存不算数。
+    if (imageFile != null && gate.hasImage && gate.imageVisible) {
+        Spacer(Modifier.height(AppTheme.space.sm))
+        AppButton(
+            text = occlusionEntryLabel(gate.shapeCount),
+            secondary = true,
+            onClick = onStartEditing,
+        )
     }
 }
 

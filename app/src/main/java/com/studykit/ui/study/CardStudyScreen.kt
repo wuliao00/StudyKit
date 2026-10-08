@@ -1021,9 +1021,16 @@ private const val ONE_DAY_MS = 86400000L
 /**
  * 这张卡"已经拖了多久"的真实天数（距上次评分；从没评过按加入学习那天，与 `gradeCard` 的锚点同一口径）。
  * 评分按钮预览与遗忘曲线折叠区（v3.0-A T9）**共用这一个数**：两处各算一套锚点就会分家。
+ *
+ * `now` 带默认值（生产调用点不传，走真实墙上钟）只为给渲染守卫一个**锚点**：
+ * `GradePreviewCalibrationRenderTest` 要钉的是「按钮上印的数 ≡ 评分器会用的数」，
+ * 而它自己算期望值时也要读一次钟。两次 `System.currentTimeMillis()` 样本之间那点毫秒差
+ * 会顺着 FSRS 的算术挪到显示舍入的边界上（`formatIntervalLabel` 的 `.5` 档、以及那条
+ * `delta = 0.0` 的逐值比对），于是一条与本任务无关的断言偶发红。锚点交进来之后两边读的是
+ * 同一个数，脆的那一环就不存在了 —— 性质一分没松：期望值仍是**生产那条算术**算出来的。
  */
-internal fun elapsedDaysOf(word: Word): Double =
-    (System.currentTimeMillis() - (word.lastReviewAt ?: word.createdAt))
+internal fun elapsedDaysOf(word: Word, now: Long = System.currentTimeMillis()): Double =
+    (now - (word.lastReviewAt ?: word.createdAt))
         .coerceAtLeast(0L) / ONE_DAY_MS.toDouble()
 
 /**
@@ -1049,6 +1056,10 @@ internal fun elapsedDaysOf(word: Word): Double =
  * 校准参数进不了按钮；单参重载已从 [KernelHub] 删掉，拿不到设置就编译不过。
  * 读设置用 [AppTheme.settings] 而不加形参：页面早就在同一份 CompositionLocal 上读闸门那两项，
  * 为这一个数字新开一条参数链会把"设置从哪来"再拆成两套。
+ *
+ * `nowMs` 与 [elapsedDaysOf] 同理，是给渲染守卫的**时钟锚点**（默认值 = 真实墙上钟，生产调用点
+ * 一个都不传）：按钮上印的数与期望值必须出自同一次钟读，否则毫秒级的那点错位会挪到
+ * 「几天」这一档的舍入边界上，红一条与校准无关的断言。
  */
 @Composable
 internal fun GradeRow(
@@ -1056,6 +1067,7 @@ internal fun GradeRow(
     scheduling: Scheduling,
     enabled: Boolean,
     onGrade: (ReviewGrade) -> Unit,
+    nowMs: Long = System.currentTimeMillis(),
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -1063,7 +1075,7 @@ internal fun GradeRow(
     val previewKernel = KernelHub.forId(settings.schedulingKernel, settings)
     // 预览必须用这个词**真实已拖的时间**：拿理想排期算，overdue 的词会印出比实际短得多的间隔
     // （锚点与遗忘曲线折叠区共用 [elapsedDaysOf]，两处不许各算一套）
-    val gapDays = elapsedDaysOf(word)
+    val gapDays = elapsedDaysOf(word, nowMs)
     val before = kernelStateFor(previewKernel, word)
     // 三档各跑一遍"评一次 → 该排几天"，与 gradeCard 逐字同序；
     // conf 现在恒为 null（采集信心是计划 B 的 ConfidencePill），侧信道不改这里的间隔，

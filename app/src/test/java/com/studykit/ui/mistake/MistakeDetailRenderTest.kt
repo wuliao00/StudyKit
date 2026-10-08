@@ -170,4 +170,78 @@ class MistakeDetailRenderTest {
         // 核对阶段同一行：照片回到树上，这句提示也就该退场（imageVisible 为真）
         assertTrue(buildRedoGate("题干", "", RedoPhase.CHECK, hasImage = true).imageVisible)
     }
+
+    // ── v3.0-B T17：详情页补画遮挡 ────────────────────────────────────────
+    // 入口文案 + VM 那一步真正要写的那一对列。`MistakeViewModel.setOcclusion` 的函数体只有
+    // 「读行 → copy(这两列) → update」，VM 本身在 JVM 侧起不来（本仓无 VM 测试先例），
+    // 所以能钉的全在这里：给定编辑器那份形状列表，落库的 `kind`/`extra` 必须是哪一对。
+
+    @Test fun `遮挡入口的文案跟着块数换_零块说的是补画`() {
+        assertEquals("在照片上画遮挡", occlusionEntryLabel(0))
+        assertEquals("编辑遮挡（已 2 处）", occlusionEntryLabel(2))
+        // 零块不许写「已 0 处」：那读起来像编辑器坏了，而此刻确实一块都没盖
+        assertFalse(occlusionEntryLabel(0).contains("0"))
+        // 脏输入（负数）退回补画那句，不许拼出「已 -1 处」
+        assertEquals(occlusionEntryLabel(0), occlusionEntryLabel(-1))
+    }
+
+    @Test fun `补画遮挡写的那一对列由形状列表直接决定`() {
+        val drawn = listOf(
+            OcclusionShape.Rect(0.1, 0.2, 0.5, 0.6),
+            OcclusionShape.Ellipse(0.7, 0.8, 0.1, 0.05),
+        )
+        val columns = occlusionColumns(shapesToJson(drawn))
+        assertEquals(Mistake.KIND_OCCLUSION, columns.kind)
+        // 重新编码之后读回来还是画的那两块、还是那个顺序（草稿到库之间不许丢块、不许换位）
+        assertEquals(drawn, shapesFromJson(columns.extra))
+
+        val cleared = occlusionColumns(shapesToJson(emptyList()))
+        assertEquals(Mistake.KIND_BASIC, cleared.kind)
+        assertEquals("{}", cleared.extra)
+
+        // 撤干净之后这一行必须读成「没有遮挡」：`kind` 是唯一开关（T13），
+        // 留一个 kind=1 + 空 extra 的行就是最坏那一档 —— 页面承认遮挡却读到零块。
+        val row = Mistake(
+            id = 11L, uuid = "u11", source = Mistake.SOURCE_PHOTO, subject = "数学",
+            title = "撤掉遮挡", content = "题干", imagePath = "x.jpg",
+            kind = cleared.kind, extra = cleared.extra,
+        )
+        assertTrue(occlusionShapes(row).isEmpty())
+        // 退回普通错题的重做阶段：整张扣住（安全侧），而不是"遮了但什么都没盖"地把照片摊开
+        val gate = buildRedoGate(
+            content = row.content,
+            note = row.note,
+            phase = RedoPhase.REDO,
+            hasImage = true,
+            shapeCount = occlusionShapes(row).size,
+        )
+        assertFalse(gate.imageVisible)
+    }
+
+    @Test fun `画着两处时那一行读回来仍是两处且照片可见`() {
+        // 与上一条成对：补画成功之后同一行在重做阶段的可信状态
+        val drawn = listOf(
+            OcclusionShape.Rect(0.0, 0.4, 0.9, 0.55),
+            OcclusionShape.Polygon(
+                listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.4, 0.2), NormalizedPoint(0.2, 0.6)),
+            ),
+        )
+        val columns = occlusionColumns(shapesToJson(drawn))
+        val row = Mistake(
+            id = 12L, uuid = "u12", source = Mistake.SOURCE_PHOTO, subject = "数学",
+            title = "画好遮挡", content = "题干", imagePath = "x.jpg",
+            kind = columns.kind, extra = columns.extra,
+        )
+        assertEquals(2, occlusionShapes(row).size)
+        val gate = buildRedoGate(
+            content = row.content,
+            note = row.note,
+            phase = RedoPhase.REDO,
+            hasImage = true,
+            shapeCount = occlusionShapes(row).size,
+        )
+        // 用户已指明答案写在哪几块 ⇒ 重做阶段也敢看（这正是遮挡这块功能的用处）
+        assertTrue(gate.imageVisible)
+        assertTrue(gate.partiallyCovered)
+    }
 }

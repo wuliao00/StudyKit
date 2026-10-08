@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -95,6 +96,18 @@ internal fun imageEditorHint(): String = "拖拽添加遮挡；复习时先回�
 internal fun editorShapeCountLabel(count: Int): String =
     if (count == 0) "还没有遮挡块" else "已加 $count 处遮挡"
 
+/**
+ * 详情页那颗入口钮的文案（v3.0-B T17：给一张**已存下**的照片补画/改罩）。
+ *
+ * 块数写进文案是有意的：不点开编辑器也要知道这张照片现在盖了几处 —— 与 [editorShapeCountLabel]
+ * 同一族（那句在编辑器里说"已加 N 处"，这一句在页面上说"已 N 处"）。
+ * 零块的说法刻意不同：不许写「编辑遮挡（已 0 处）」，那读起来像有个空编辑器坏了，
+ * 而此刻的事实是"这张照片还没盖任何东西"，动词该是「画」而不是「编辑」。
+ * 负数（脏输入）与 0 同一句：文案函数不该拼出「已 -1 处」。
+ */
+internal fun occlusionEntryLabel(shapeCount: Int): String =
+    if (shapeCount <= 0) "在照片上画遮挡" else "编辑遮挡（已 $shapeCount 处）"
+
 /** 遮挡卡落库的那一对列（`mistakes.kind` + `mistakes.extra`） */
 internal data class OcclusionColumns(val kind: Int, val extra: String)
 
@@ -131,7 +144,10 @@ internal fun occlusionColumns(shapesJson: String): OcclusionColumns {
  * 三处刻意的形状：
  * - **`type` 由调用方持有**（[onTypeChange] 回传），编辑器自己不存：一个屏幕上的"当前工具"是页面态，
  *   进程重建后应与其它输入态一起恢复（`MistakeCaptureScreen` 存的是枚举名串）。
- * - **已定型的块用 [OcclusionImage] 画**，`onRevealAll` 不给（默认 null）⇒ 编辑时没有"点按全揭"那个手势。
+ * - **已定型的块用 [OcclusionImage] 画**：罩子画不画只看"有没有块、此刻该不该露出"，与手势无关
+ *   （T15 那版把两件事捆在同一个 flag 上，编辑器不给回调就连块都画不出来 —— 用户拖完只看见计数
+ *   那句变了，照片上什么都没有，等于没法判断自己盖对了地方没有）。`onRevealAll` 不给 ⇒
+ *   编辑时**没有**"点按全揭"那个手势：块还在画，一次误触就把刚盖好的罩子揭掉是帮倒忙。
  * - **拖拽中的预览是半透明 `warning` + `warningInk` 描边**（R3）：它还没被承诺成罩子，
  *   就不该长得像罩子（实底 lightbox）。松手后那一块换成实底，用户看得懂"这下真的盖住了"。
  *
@@ -154,6 +170,11 @@ internal fun OcclusionEditor(
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    // ⛔ 落块那一步必须读**最新那份**回调：`pointerInput` 的 block 只 key 在 `type`/`viewSize` 上，
+    // 加了一块并不会让它重开，直接闭包 `onAdd` 的话，第二笔拖拽拿到的是**第一次组合**时那份草稿 ——
+    // 前一块被后一块顶掉，库里真的只剩一块，而数量那句也照着少说一块（建卡流与 T17 的详情页编辑
+    // 都踩在这上面）。手法照 `ui/habit/SnakeBoard.kt` 的 `latest` 与 `CardStudyScreen` 的 `onGradeNow`。
+    val onAddNow by rememberUpdatedState(onAdd)
     // 拖拽中的那块先在本地算出来：Canvas 的 content 是带接收者的 lambda，里面不能非局部 return，
     // 所以"算不出就不画"这件事必须在进 Canvas 之前决定（这条坑写在注释里，免得下次又试）。
     val liveShape = remember(dragStart, dragCurrent, viewSize, type) {
@@ -201,7 +222,7 @@ internal fun OcclusionEditor(
                                     endU = b.x.toDouble() / s.width,
                                     endV = b.y.toDouble() / s.height,
                                     type = type,
-                                )?.let(onAdd)
+                                )?.let(onAddNow)
                             }
                             dragStart = null
                             dragCurrent = null

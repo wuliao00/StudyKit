@@ -51,6 +51,17 @@ import org.robolectric.annotation.GraphicsMode
  * 期望值取 [KernelHub.forId] 的双参口径 + 与 `gradeCard` 逐字同序的那条算术
  * （`kernelStateFor → review → nextIntervalDays`），钉的是「显示 ≡ 实排」这条同源关系，
  * 不是某个 FSRS 常量的当前值（那由 `FsrsModelParityTest` 挂 py-fsrs 6.3.2 预言机钉）。
+ *
+ * ## 时钟锚点（T17 收掉的那条脆断言）
+ * 本文件此前在四处各读一次 `System.currentTimeMillis()`（夹具的 `lastReviewAt`、`GradeRow` 内部、
+ * 期望值里的 `elapsedDaysOf`、以及那条 `delta = 0.0` 的逐值比对两侧）。两个样本之间那点毫秒差
+ * 会顺着 FSRS 的算术挪到显示舍入的边界（`formatIntervalLabel` 的 `.5` 档）与 `delta = 0.0` 这一档上，
+ * 于是**全量首跑偶发红、同一条命令二跑绿**（v3.0-B ledger 记在 Task 6+7 那条）。
+ * 现在整条链只有一个锚点 [ANCHOR_MS]：夹具按它铺、屏幕经 `GradeRow(nowMs =)` 读它、期望值经
+ * `elapsedDaysOf(word, ANCHOR_MS)` 读它 ⇒ 毫秒边界这个变量从算式里消失。
+ * **容差仍是 0.0**，这不是放宽而是收紧：两侧现在只有"参数不同"这一条能造成差异，
+ * 时钟那一条被锚点物理排除，`delta = 0.0` 才真的在比算术而不是比两次钟。
+ * 性质一分没动：断言的仍是「按钮上印的那个标签 == 评分器那条算术排出的天数格式化出来的标签」。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -80,7 +91,8 @@ class GradePreviewCalibrationRenderTest {
 
     /** FSRS 已原生写过的行；8 天稳定度配 90 天没碰，保留率落在中间地带，两个参数档才差得出来 */
     private fun word(): Word {
-        val now = System.currentTimeMillis()
+        // 锚点 ANCHOR_MS 而不是真实钟：这一行的 `lastReviewAt` 与屏幕/期望值那份"已经拖了多久"
+        // 必须出自同一个 now，否则差几毫秒就够把天数推到舍入边界上（见类注释那段）
         return Word(
             uuid = "calib-1",
             word = "ambivalent",
@@ -88,8 +100,8 @@ class GradePreviewCalibrationRenderTest {
             example = "",
             halfLifeDays = 8.0 * FSRS_HALF_OVER_S,
             difficulty = 3.0,
-            lastReviewAt = now - 90 * dayMs,
-            createdAt = now - 200 * dayMs,
+            lastReviewAt = ANCHOR_MS - 90 * dayMs,
+            createdAt = ANCHOR_MS - 200 * dayMs,
             fsrsStability = 8.0,
             fsrsDifficulty = 5.0,
             fsrsState = 2,
@@ -99,12 +111,13 @@ class GradePreviewCalibrationRenderTest {
 
     /**
      * 「点下去真排出去的那个数」：与 `StudyViewModel.gradeCard` 的内核段逐字同序，
-     * 内核由调用方经 [KernelHub.forId] 的**双参**口径给（含活跃参数）。
+     * 内核由调用方经 [KernelHub.forId] 的**双参**口径给（含活跃参数），
+     * 时间锚点与屏幕那一份同一个（[ANCHOR_MS]，见类注释）。
      */
     private fun scheduledDays(kernel: SchedulingKernel, word: Word, grade: ReviewGrade): Double {
         val rating = grade.toKernelRating()
         return kernel.nextIntervalDays(
-            kernel.review(kernelStateFor(kernel, word), elapsedDaysOf(word), rating, conf = null),
+            kernel.review(kernelStateFor(kernel, word), elapsedDaysOf(word, ANCHOR_MS), rating, conf = null),
             rating,
             sched.targetRecall,
             sched.maxIntervalDays,
@@ -114,7 +127,14 @@ class GradePreviewCalibrationRenderTest {
     private fun renderPreview(settings: AppSettings, word: Word) {
         composeRule.setContent {
             StudyHost(settings) {
-                GradeRow(word = word, scheduling = sched, enabled = true, onGrade = {})
+                GradeRow(
+                    word = word,
+                    scheduling = sched,
+                    enabled = true,
+                    onGrade = {},
+                    // 屏幕与期望值读同一个钟：这一行是那条脆断言的正身（见类注释那段）
+                    nowMs = ANCHOR_MS,
+                )
             }
         }
         composeRule.waitForIdle()
@@ -145,7 +165,7 @@ class GradePreviewCalibrationRenderTest {
         }
         // 「现在按下去，预计还记得 X%」那一行也必须读校准后的曲线（舍入口径与 GradeRow 同）
         val percent = (
-            recallForDisplay(kernel, kernelStateFor(kernel, word), elapsedDaysOf(word)) * 100
+            recallForDisplay(kernel, kernelStateFor(kernel, word), elapsedDaysOf(word, ANCHOR_MS)) * 100
             ).roundToInt()
         composeRule.onNode(hasText("现在按下去，预计还记得 $percent%")).assertExists()
     }
@@ -220,6 +240,14 @@ class GradePreviewCalibrationRenderTest {
         }
     }
 }
+
+/**
+ * 整条链路唯一的钟读锚点。是**常量**而不是 `System.currentTimeMillis()`：夹具、屏幕
+ * （`GradeRow(nowMs =)`）、期望值（`elapsedDaysOf(word, ANCHOR_MS)`）三处读的都是这一个数，
+ * 于是"两次钟读之间那点毫秒差"这个变量从算式里彻底消失，而这份期望值也不再随机器日期漂移。
+ * 具体是哪一天不参与任何算术（内核侧不读钟，`elapsedDaysOf` 只看差值），这里就当它是"今天"。
+ */
+private const val ANCHOR_MS = 1_780_000_000_000L
 
 /**
  * 一份与 [FsrsModel.DEFAULT_PARAMS] 可测地不同的「已采纳」向量：

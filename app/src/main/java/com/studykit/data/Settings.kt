@@ -243,14 +243,17 @@ data class AppSettings(
     }
 
     /**
-     * 旧签名保留：按**今天**取该倒计时的那一场（调用点：`StudyHomeScreen` 的倒计时行、
-     * `SettingsScreen` 的考试日格与严格度说明）。别把后半句划成「纯显示」：`SettingsScreen`
-     * 那一格（约 L286）不只读它，还经 `setExamDate` 往回写 `examEpochDay` —— 所以这个旧键今天
-     * 有**一个活的写入点**，不是零个；要等 Task 9 把单日期框换成清单编辑器，这条写路径才被取代。
+     * 旧签名保留：按**今天**取该倒计时的那一场。
      *
      * ⚠️ 它内部读 `LocalDate.now()`（旧实现是纯 `ofEpochDay`，不读时钟）。所以它是**显示层**属性：
      * 排期路径不许调它 —— 要可测的语义就直调 [examForCountdown] 显式注入 today，要"那一天本身"
      * 就用 [examEpochDayEffective]。
+     *
+     * 【v3.0-B T9 之后的实情】生产调用点已经**归零**：首页倒计时那行改成直接读
+     * `examForCountdown(today)`（连同 `countdownLine`），设置页那一格也被考试清单编辑器取代
+     * （`setExamDate` 随之删除，旧键 `exam_epoch_day` 唯一的活写点没了）。现在只有
+     * `AppSettingsTest` / `AppSettingsExamsTest` 还钉着它，留着的全部理由就是"旧单日期语义的
+     * 一行读法"—— 整枝评审若判定它不再需要，连那几条用例一起删。
      */
     val examDate: LocalDate?
         get() = examForCountdown(LocalDate.now())?.let { runCatching { LocalDate.ofEpochDay(it.epochDay) }.getOrNull() }

@@ -22,6 +22,21 @@ import com.studykit.ui.theme.AppTheme
 import java.io.File
 
 /**
+ * 罩子画不画（T17 与手势拆开的那一半）：有块、且此刻不该露出，就画。
+ * 与"能不能点揭"**无关** —— 编辑器不给全揭回调，块照样得画出来，否则用户看不见自己盖在哪。
+ */
+internal fun occlusionCoversPainted(shapeCount: Int, revealed: Boolean): Boolean =
+    shapeCount > 0 && !revealed
+
+/**
+ * 点按全揭那一层挂不挂：罩子正在画（否则没有东西可揭）**且**调用方真给了回调。
+ * 编辑态走 `hasRevealCallback = false` —— 一次误触把刚盖好的罩子揭掉是帮倒忙，
+ * 全揭只归重做阶段那一屏（裁定见 `MistakeDetailScreen.MistakePhotoSection` 的注释）。
+ */
+internal fun occlusionRevealTappable(shapeCount: Int, revealed: Boolean, hasRevealCallback: Boolean): Boolean =
+    occlusionCoversPainted(shapeCount, revealed) && hasRevealCallback
+
+/**
  * 照片 + 遮挡块 + 点按全揭（v3.0-B T15）。
  *
  * 渲染是**一个 Canvas**（文档 L1884「单 View 自绘，不引 SVG 库」）：图在下、罩在上，
@@ -34,8 +49,12 @@ import java.io.File
  * 罩子色取已有令牌 `AppTheme.colors.lightbox`（灯箱压暗那一档，两主题同为不透明黑）并**不加 alpha**：
  * 罩住就必须真的看不见，半透的罩子等于把答案压暗了继续给人看。这里没有新造色值。
  *
- * 手势层只在真有其事时存在：`shapes.isNotEmpty() && !revealed && onRevealAll != null`。
- * 没块可揭的照片不许带一个空转的点击层（那会让读屏用户去点一张不动的图）。
+ * 画罩子与挂手势是**两个判定**（[occlusionCoversPainted] / [occlusionRevealTappable]，T17 拆开）：
+ * 画不画只看"有没有块、此刻该不该露出"，挂不挂点按层才看有没有 [onRevealAll]。
+ * 捆着写的后果是编辑器（它刻意不给回调）连块都画不出来 —— 用户拖完只看见"已加 N 处"那句变了，
+ * 照片上什么都没盖，于是详情页补画遮挡这一步没法判断自己盖对了地方没有。
+ * 拆开之后编辑态看得见罩子、点不开罩子。没块可揭的照片也不许带一个空转的点击层
+ * （那会让读屏用户去点一张不动的图）。
  *
  * 圆角与发丝描边沿用图片卡那一口径（`radius.lg` + 1dp `divider`，与 `MistakeDetailScreen`
  * 的照片段、`MistakeCaptureScreen` 的预览段同一条），所以换掉 `AsyncImage` 之后页面分层不变。
@@ -53,9 +72,10 @@ internal fun OcclusionImage(
     photoDescription: String = "错题照片",
 ) {
     val colors = AppTheme.colors
-    // 局部 val：`covering` 为真时 onRevealAll 必然非空，但布尔推不出智能转换，用 ?.invoke() 兜住
+    // 局部 val：布尔推不出智能转换，`revealTappable` 为真时 onRevealAll 必然非空仍要再判一次
     val reveal = onRevealAll
-    val covering = shapes.isNotEmpty() && !revealed && reveal != null
+    val paintsCover = occlusionCoversPainted(shapes.size, revealed)
+    val revealTappable = occlusionRevealTappable(shapes.size, revealed, reveal != null)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -68,14 +88,19 @@ internal fun OcclusionImage(
             contentScale = ContentScale.FillWidth,
             modifier = Modifier.fillMaxWidth(),
         )
-        if (covering) {
-            Canvas(
-                modifier = Modifier
+        if (paintsCover) {
+            // 只有真挂得起"点按全揭"的那一层才带手势与读屏标签：编辑态那块是**给看的**罩子，
+            // 不是控件，给它一个"点按全揭"的标签等于骗读屏用户去点一个按不动的东西。
+            val coverModifier = if (revealTappable && reveal != null) {
+                Modifier
                     .matchParentSize()
                     // 这层就是那个"揭开"的控件：没有标签的可点 Canvas 对读屏是一处空白
                     .semantics { contentDescription = "遮住答案，点按全揭" }
-                    .pointerInput(shapes) { detectTapGestures { reveal?.invoke() } },
-            ) {
+                    .pointerInput(shapes) { detectTapGestures { reveal() } }
+            } else {
+                Modifier.matchParentSize()
+            }
+            Canvas(modifier = coverModifier) {
                 shapes.forEach { s ->
                     val r = shapePixelRect(s, size.width, size.height)
                     when (s) {

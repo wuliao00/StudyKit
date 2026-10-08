@@ -469,6 +469,28 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * 给一张已存下错题的照片补画/撤掉遮挡（v3.0-B T17）。
+     *
+     * `kind` 与 `extra` **成对**决定，且配对只走 [occlusionColumns] 那一处（不在这里再拼一次 `if`）：
+     * 形状空 → `KIND_BASIC` + `{}`（这张卡恢复成普通错题），非空 → `KIND_OCCLUSION` + 那份重新
+     * 编码的 JSON。留一个空的 `KIND_OCCLUSION` 是最坏的结果 —— 页面按 `kind` 承认遮挡、读到零块，
+     * 于是相信"答案已经盖好了"而实际一格都没盖（T13 那条「kind 是唯一开关」防的就是这一档）。
+     *
+     * 走 `repository.update(mistake.copy(...))`，与 [updateSubject] 同一写路径（`mistakes` 有
+     * `syncStatus`，整行更新才是这张表既有的改法）。
+     *
+     * 参数是 internal 的 [OcclusionShape]，所以这一条也是 internal：同模块的详情页照常调，
+     * 公开 API 不往外漏一个内部形状类型。
+     */
+    internal fun setOcclusion(id: Long, shapes: List<OcclusionShape>) {
+        viewModelScope.launch {
+            val mistake = repository.observeById(id).first() ?: return@launch
+            val columns = occlusionColumns(shapesToJson(shapes))
+            repository.update(mistake.copy(kind = columns.kind, extra = columns.extra))
+        }
+    }
+
+    /**
      * 标记已掌握（手动路径，spec §6：自动达成后用户仍可手动标记/取消）。
      *
      * 只改 `mastered` 一位：排期状态与连对计数留着不动 —— 手动划掉不该抹掉算法记的那份账，

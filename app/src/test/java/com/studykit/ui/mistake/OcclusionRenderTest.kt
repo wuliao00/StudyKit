@@ -28,6 +28,8 @@ import com.studykit.ui.theme.LocalAppTheme
 import com.studykit.ui.theme.buildAppTexts
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,16 +38,24 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * 遮挡渲染层（[OcclusionImage]）的守卫（v3.0-B T15）。
+ * 遮挡渲染层（[OcclusionImage] / [OcclusionEditor] / 详情页那一格 [MistakePhotoSection]）的守卫
+ * （v3.0-B T15 起，T16 接编辑器、T17 接详情页）。
  *
- * 三组用例各挡一种塌法：
+ * 各组用例各挡一种塌法：
  * - 前三个钉 [shapePixelRect]：它是「归一化的落库坐标」与「屏幕上那块罩子」之间**唯一**一处算术
  *   （R2：编辑器与渲染层共用它，谁都不许再抄一份）。宽高各走自己的轴这条必须单独钉 ——
  *   照片不是正方形，串了轴的话块会画歪，而库里那份 JSON 看不出任何异常。
+ * - 接一条钉「画罩子」与「点按全揭」是**两个判定**（T17 拆开；Canvas 画出来是像素、钉不住，
+ *   能钉的是那两个条件分别是谁）。
  * - 中间三个钉手势的存在性：有块才挂点按层（R1，全揭只有一次机会）、点一次恰好回调一次、
  *   没块与已揭开时那个节点**根本不该在树上**。
- * - 最后两个钉编辑器（T16）：真的拖一段就恰好落一块、块数那句跟着改，且编辑态**不带**"点按全揭"
- *   那个手势；当前工具是交回调用方的（R4），编辑器自己不私藏。
+ * - 接着四条钉编辑器（T16）：真的拖一段就恰好落一块、块数那句跟着改，且编辑态**不带**"点按全揭"
+ *   那个手势；当前工具是交回调用方的（R4），编辑器自己不私藏；连拖两笔必须落**两**块
+ *   （回调那份草稿得是最新的，否则后一块把前一块顶掉，T17 的详情页编辑直接踩在这上面）。
+ * - 最后五条钉详情页那一格（T17 的 [MistakePhotoSection]）：入口文案跟着已存块数换、进编辑态出
+ *   编辑器提示且没有全揭手势、保存交的是**草稿**那份、取消一次都不写，以及最要紧的一条 ——
+ *   重做阶段一块都没画时（照片本就整张扣着）**编辑器根本不许出现**，因为编辑器渲染的是没盖东西的
+ *   原图，在这里允许打开等于把 T14 刚封住的印刷答案重新摊开。
  *
  * 照片一律给 `File("nope.jpg")`：故意用不存在的文件。coil 加载失败只让图区空白，
  * 而遮挡层与手势是 Compose 自己的 `Canvas` + `pointerInput`，与像素能不能解码无关 ——
@@ -93,6 +103,23 @@ class OcclusionRenderTest {
         val r = shapePixelRect(OcclusionShape.Rect(0.0, 0.0, 1.0, 1.0), 300f, 100f)
         assertEquals(300f, r.right, 1e-3f)
         assertEquals(100f, r.bottom, 1e-3f)
+    }
+
+    @Test
+    fun `画罩子与能点揭是两个判定_编辑器那种调用只画不揭`() {
+        // 纯判定那两条（`OcclusionOverlay`）：渲染层里那块 Canvas 画不画是像素，钉不住；
+        // 但"画与揭分别由哪两个条件决定"钉得住 —— 把它们捆回一个 flag（T15 那版的写法）
+        // 这条立刻红，而红的那一句正是详情页编辑的死因：编辑器不给回调，于是连块都看不见。
+        assertTrue(occlusionCoversPainted(shapeCount = 2, revealed = false))
+        assertFalse(occlusionRevealTappable(shapeCount = 2, revealed = false, hasRevealCallback = false))
+        // 详情页重做阶段：同一对形状 + 给了全揭回调 ⇒ 既画也点得开
+        assertTrue(occlusionRevealTappable(shapeCount = 2, revealed = false, hasRevealCallback = true))
+        // 已经揭开 ⇒ 两件事一起停：罩子不许在摊开的照片上留着，也不许还吃点击
+        assertFalse(occlusionCoversPainted(shapeCount = 2, revealed = true))
+        assertFalse(occlusionRevealTappable(shapeCount = 2, revealed = true, hasRevealCallback = true))
+        // 没块就没有层，也就没有那个空转的点击层（读屏用户不该去点一张不动的图）
+        assertFalse(occlusionCoversPainted(shapeCount = 0, revealed = false))
+        assertFalse(occlusionRevealTappable(shapeCount = 0, revealed = false, hasRevealCallback = true))
     }
 
     @Test
@@ -148,6 +175,109 @@ class OcclusionRenderTest {
         composeTestRule.onNodeWithText("清空").assertDoesNotExist()
     }
 
+    @Test
+    fun `连拖两笔就落两块_第二次拿到的是最新那份草稿`() {
+        // 拖拽回调是从 `pointerInput` 里发出的，而那个 block 不跟手重开：不加
+        // `rememberUpdatedState` 的话，第二笔拿到的是**第一次组合**时那份草稿，
+        // 前一块被后一块顶掉 —— 数量那句会停在"已加 1 处遮挡"，而库里也确实只剩一块。
+        // 这条只有连拖两次才暴露，单次拖拽的用例（上面那条）抓不到。
+        showAt { Host { EditorHarness(onAdd = {}) } }
+        composeTestRule.onNodeWithContentDescription(DRAG_AREA).assertIsDisplayed()
+        injectDrag()
+        composeTestRule.onNodeWithText("已加 1 处遮挡").assertExists()
+        injectDrag()
+        composeTestRule.onNodeWithText("已加 2 处遮挡").assertExists()
+    }
+
+    // ── 详情页的补画入口 + 内嵌编辑器（T17）──────────────────────────────
+
+    @Test
+    fun `详情页入口按已存块数换文案，点它才进编辑`() {
+        var started = 0
+        showAt {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                SectionHarness(
+                    phase = RedoPhase.CHECK,
+                    saved = listOf(DRAFT_A, DRAFT_B),
+                    onStartEditing = { started++ },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText(occlusionEntryLabel(2)).assertExists()
+        // 文案必须真的跟着块数换（写死"在照片上画遮挡"的话这条就红了）
+        composeTestRule.onNodeWithText(occlusionEntryLabel(0)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(occlusionEntryLabel(2)).performClick()
+        assertEquals("入口只负责进编辑，不该顺手写库", 1, started)
+    }
+
+    @Test
+    fun `编辑态出现编辑器那句提示，且此时没有点按全揭那个手势`() {
+        var saved = 0
+        showAt {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                SectionHarness(
+                    phase = RedoPhase.REDO,
+                    saved = listOf(DRAFT_A, DRAFT_B),
+                    editing = true,
+                    onSave = { saved++ },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText(imageEditorHint()).assertExists()
+        // 编辑期间罩子照样画（用户要看的正是"我盖对地方没有"），但**点不开**：
+        // 一次误触把刚盖好的罩子揭掉是帮倒忙，全揭只归重做阶段那一屏。
+        composeTestRule.onNodeWithContentDescription("遮住答案，点按全揭").assertDoesNotExist()
+        composeTestRule.onNodeWithText("已加 2 处遮挡").assertExists()
+        // 编辑态不渲染照片段：那句"已遮 N 处，先回忆，点按全揭"与入口钮都该让位
+        composeTestRule.onNodeWithText(imageCoverHint(2)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(occlusionEntryLabel(2)).assertDoesNotExist()
+        composeTestRule.onNodeWithText("保存").performClick()
+        assertEquals("保存把这一份草稿交出去，一次就好", 1, saved)
+    }
+
+    @Test
+    fun `重做阶段一块都没画时编辑器根本不出现（那时打开就是把答案摊开）`() {
+        showAt {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                SectionHarness(
+                    phase = RedoPhase.REDO,
+                    saved = emptyList(),
+                    editing = true,
+                    draft = emptyList(),
+                )
+            }
+        }
+        // 这一屏的照片整张是扣住的（`imageCovered`）：编辑器渲染的是**没盖东西的原图**，
+        // 允许在这里打开就等于把 T14 刚封住的印刷答案重新摊开，所以编辑态自己也要过同一道闸。
+        composeTestRule.onNodeWithText(imageEditorHint()).assertDoesNotExist()
+        composeTestRule.onNodeWithText("整张照片扣住，重做后再看").assertIsDisplayed()
+        composeTestRule.onNodeWithText(occlusionEntryLabel(0)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `取消编辑不写库，草稿整份交给回调`() {
+        val drafts = mutableListOf<List<OcclusionShape>>()
+        var cancelled = 0
+        showAt {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                SectionHarness(
+                    phase = RedoPhase.CHECK,
+                    saved = listOf(DRAFT_A),
+                    editing = true,
+                    // 草稿比已存的多一块：交出去的必须是草稿，不是已存的那份
+                    draft = listOf(DRAFT_A, DRAFT_B),
+                    onSave = { drafts.add(it) },
+                    onCancelEditing = { cancelled++ },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("取消").performClick()
+        assertEquals("取消只是丢弃本地态，一次都不写", 0, drafts.size)
+        assertEquals(1, cancelled)
+        composeTestRule.onNodeWithText("保存").performClick()
+        assertEquals(listOf(listOf(DRAFT_A, DRAFT_B)), drafts)
+    }
+
     private fun showAt(block: @Composable () -> Unit) = composeTestRule.setContent { Host { block() } }
 
     /**
@@ -173,9 +303,13 @@ class OcclusionRenderTest {
 private const val DRAG_AREA = "遮挡绘制区，拖拽画一块"
 
 /**
- * 编辑器宿主：块列表由宿主持有（生产里是 `MistakeCaptureScreen` 的 `shapesRaw` 那一串），
- * 测试只往里看回调落了几块。渲染整块 [OcclusionEditor] 而不是只渲染画布 ——
- * 「拖一段 -> 计数那句跟着变」这条链只有整块在树上才成立。
+ * 编辑器宿主：草稿按**生产的形状**持有 —— 一串 JSON（建卡流的 `shapesRaw`、详情页的
+ * `occlusionDraftRaw` 都是这一位，因为 `List<OcclusionShape>` 过不了 Bundle），块列表是它的派生 val。
+ *
+ * 这个形状不是洁癖，而是这条量具**能不能红**的关键：`onAdd` 闭包拿的是派生出来的那个 val，
+ * 不是 state 本身。若渲染层发出的回调不是最新那一份（见 `OcclusionEditor` 的 `onAddNow`），
+ * 第二笔就会用第一次组合时的旧列表覆盖草稿 ⇒ 前一块被后一块顶掉；而用 `mutableStateOf<List>` 当草稿
+ * 的宿主测不出这件事（那种写法读 state 读到的是当下值）。
  *
  * 两种量具形状（都是为了绕开"假照片解不出像素"这件事，不改被测代码）：
  * - `bounded = true`：整块限高。Robolectric 的窗口只有约 320x470 像素，而 coil 没有 painter 时
@@ -193,18 +327,19 @@ private fun EditorHarness(
     onAdd: (OcclusionShape) -> Unit = {},
     bounded: Boolean = true,
 ) {
-    var shapes by remember { mutableStateOf(emptyList<OcclusionShape>()) }
+    var raw by remember { mutableStateOf("{}") }
+    val shapes = shapesFromJson(raw)
     val editor: @Composable () -> Unit = {
         EditorBody(
             shapes = shapes,
             type = type,
             onTypeChange = onTypeChange,
             onAdd = {
-                shapes = shapes + it
+                raw = shapesToJson(shapes + it)
                 onAdd(it)
             },
-            onUndo = { shapes = shapes.dropLast(1) },
-            onClear = { shapes = emptyList() },
+            onUndo = { raw = shapesToJson(shapes.dropLast(1)) },
+            onClear = { raw = "{}" },
         )
     }
     if (bounded) {
@@ -231,6 +366,46 @@ private fun EditorBody(
         onAdd = onAdd,
         onUndo = onUndo,
         onClear = onClear,
+    )
+}
+
+/** 两块固定的草稿形状：详情页那组用例只关心"交出去的是哪一份"，不关心几何（几何归纯层钉） */
+private val DRAFT_A = OcclusionShape.Rect(0.1, 0.2, 0.5, 0.4)
+private val DRAFT_B = OcclusionShape.Ellipse(0.6, 0.7, 0.1, 0.08)
+
+/**
+ * 详情页照片那一段的宿主（T17）。
+ *
+ * `gate` 走**生产**的 [buildRedoGate]，且 `shapeCount` 由 `saved.size` 喂进去 —— 页面上这两件事
+ * 本来就是同一个 `occlusionShapes(current)` 的两半（一半进判定、一半给渲染层），在这里分成两参数
+ * 喂就是假场景。编辑态的草稿由参数给定（生产里它是那一串 JSON 串），回调一律记进调用方的清单：
+ * VM 那一行 `setOcclusion` 起不来（本仓没有 VM 级先例），本文件钉到"把哪一份草稿交出去"为止。
+ */
+@Composable
+private fun SectionHarness(
+    phase: RedoPhase,
+    saved: List<OcclusionShape>,
+    editing: Boolean = false,
+    draft: List<OcclusionShape> = saved,
+    onSave: (List<OcclusionShape>) -> Unit = {},
+    onCancelEditing: () -> Unit = {},
+    onStartEditing: () -> Unit = {},
+) {
+    MistakePhotoSection(
+        imageFile = File("nope.jpg"),
+        gate = buildRedoGate("题干", "", phase, hasImage = true, shapeCount = saved.size),
+        shapes = saved,
+        editing = editing,
+        draft = draft,
+        editorType = EditorShape.RECT,
+        onTypeChange = {},
+        onAdd = {},
+        onUndo = {},
+        onClear = {},
+        onStartEditing = onStartEditing,
+        onCancelEditing = onCancelEditing,
+        onSave = onSave,
+        onOpenFullImage = {},
     )
 }
 
