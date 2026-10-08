@@ -6,6 +6,7 @@ import com.studykit.data.repository.BookRepository
 import com.studykit.data.repository.ContractRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
+import com.studykit.data.repository.MockSessionRepository
 import com.studykit.data.repository.QuestionRepository
 import com.studykit.data.repository.ReviewLogRepository
 import com.studykit.data.repository.SettingsRepository
@@ -45,6 +46,9 @@ class AppContainer(val database: AppDatabase) {
     val bookRepository: BookRepository = BookRepository(database.bookDao())
 
     val mistakeRepository: MistakeRepository = MistakeRepository(database.mistakeDao())
+
+    /** 套卷会话持久化（v3.0-B）：薄包装，逻辑全在 ViewModel/机器侧，这层只挡 Room */
+    val mockSessionRepository: MockSessionRepository = MockSessionRepository(database.mockSessionDao())
 
     val settingsRepository: SettingsRepository = SettingsRepository(database.appSettingDao())
 

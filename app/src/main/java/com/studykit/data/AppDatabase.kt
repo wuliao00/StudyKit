@@ -12,6 +12,7 @@ import com.studykit.data.dao.BookDao
 import com.studykit.data.dao.ContractDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
+import com.studykit.data.dao.MockSessionDao
 import com.studykit.data.dao.ParamSnapshotDao
 import com.studykit.data.dao.PracticeDao
 import com.studykit.data.dao.QuestionDao
@@ -28,6 +29,7 @@ import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Habit
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.MistakeRedo
+import com.studykit.data.entity.MockSession
 import com.studykit.data.entity.PracticeRecord
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.ReviewLog
@@ -55,10 +57,12 @@ import com.studykit.optimize.ParamSnapshot
         ChapterTest::class,
         ReviewLog::class,
         ParamSnapshot::class,
+        MockSession::class,
     ],
+    // v9：v3.0-B——套卷会话持久化（mock_sessions）+ 错题遮挡两列（kind/extra）
     // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -74,6 +78,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun contractDao(): ContractDao
     abstract fun reviewLogDao(): ReviewLogDao
     abstract fun paramSnapshotDao(): ParamSnapshotDao
+    abstract fun mockSessionDao(): MockSessionDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -401,6 +406,51 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 → v9（v3.0-B 计划 Task 8）：新表 `mock_sessions`（套卷持久化）+ `mistakes` 两列（遮挡卡）。
+         *
+         * 建表/建索引语句**逐字**取自 `app/schemas/com.studykit.data.AppDatabase/9.json`
+         * （exportSchema=true 产物，只把 `${TABLE_NAME}` 换成真实表名），由 [Migration8To9Test]
+         * 在 CI 里逐字校验（沿用 A-T7 那张网，schema 漂移不再是真机撞运气）。
+         *
+         * `mistakes` 两列都是 `NOT NULL DEFAULT`（kind=0、extra='{}'），旧行自动落到
+         * 「普通错题、无遮挡」—— 这是计划里的 ⛔ 硬闸：迁移不许改变任何既有列的语义，
+         * 也不许丢行（纯加表 + 带默认值的加列，一句 UPDATE/DELETE 都没有）。
+         * `deadline_ts`/`result` 可空且无 DEFAULT：NULL 就是"不限时"/"未交卷"，不能拿 0 冒充。
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `mock_sessions` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`uuid` TEXT NOT NULL, " +
+                        "`syncStatus` INTEGER NOT NULL DEFAULT 0, " +
+                        "`subject` TEXT NOT NULL, " +
+                        "`exam_name` TEXT NOT NULL, " +
+                        "`question_ids` TEXT NOT NULL, " +
+                        "`answers` TEXT NOT NULL, " +
+                        "`cursor` INTEGER NOT NULL, " +
+                        "`start_ts` INTEGER NOT NULL, " +
+                        "`deadline_ts` INTEGER, " +
+                        "`limit_min` INTEGER NOT NULL, " +
+                        "`state` INTEGER NOT NULL, " +
+                        "`result` TEXT, " +
+                        "`created_at` INTEGER NOT NULL" +
+                        ")",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_mock_sessions_created_at` " +
+                        "ON `mock_sessions` (`created_at`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_mock_sessions_state` " +
+                        "ON `mock_sessions` (`state`)",
+                )
+                db.execSQL("ALTER TABLE `mistakes` ADD COLUMN `kind` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `mistakes` ADD COLUMN `extra` TEXT NOT NULL DEFAULT '{}'")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -414,7 +464,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                        MIGRATION_7_8,
+                        MIGRATION_7_8, MIGRATION_8_9,
                     )
                     .addCallback(SeedCallback)
                     .build()

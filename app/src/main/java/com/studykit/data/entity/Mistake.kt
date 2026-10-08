@@ -32,10 +32,21 @@ data class Mistake(
     @ColumnInfo(name = "review_count", defaultValue = "0") val reviewCount: Int = 0,
     /** 1=高置信错题（超纠正置顶，spec §2.3）；0=普通 */
     @ColumnInfo(name = "priority", defaultValue = "0") val priority: Int = 0,
+    /**
+     * 卡片类型（v3.0-B，文档 §3.3 的 `kind`）：0 普通、1 图片遮挡。
+     *
+     * 长在 `mistakes` 而不是文档假设的 `cards` 上：本仓没有统一卡片表，
+     * 而四张可复习的表里**只有错题真的存着图片**（计划 D1）。
+     */
+    @ColumnInfo(name = "kind", defaultValue = "0") val kind: Int = KIND_BASIC,
+    /** 类型附带的结构化数据；遮挡卡形如 `{"shapes":[...]}`，默认空对象 */
+    @ColumnInfo(name = "extra", defaultValue = "{}") val extra: String = "{}",
 ) {
     companion object {
         const val SOURCE_WORD = "word"
         const val SOURCE_PRACTICE = "practice"
         const val SOURCE_PHOTO = "photo"
+        const val KIND_BASIC = 0
+        const val KIND_OCCLUSION = 1
     }
 }
