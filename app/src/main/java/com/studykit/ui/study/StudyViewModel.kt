@@ -236,7 +236,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      * v3.0-B 评审 2：词卡没有学科列，这条库级口径走**学科缝的 null 那一侧**
      * （`schedulingForSubject(s, null, ...)` → `MemoryScheduler.forSubject(subject = null)`）——
      * 计划偏差 D5 与「非关联学科恒 base」的 ⛔ 闸都要求：只有关联学科为空的那场考试才抬词卡。
-     * 旧形状 `forSettings(examEpochDayEffective, ...)` 是学科盲的：一场只绑数学的考试会把词卡
+     * 旧那条「把整份清单压成单个全局考试日」的口径是学科盲的（那道门面已随 v3.0-B 收尾删除，
+     * 缘由记在 `MemoryScheduler` 类注释）：一场只绑数学的考试会把词卡
      * 一起 ramp，而首页那行（同一条缝选的数）不认它，屏幕与评分器就此各排一套（评审发现 2）。
      */
     private val _scheduling = MutableStateFlow(

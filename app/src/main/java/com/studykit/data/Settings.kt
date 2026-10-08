@@ -29,9 +29,9 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * 保留项的消费点：[themeMode] → `StudyKitTheme`；[glass] → `ui/material/Glass.kt`；
  * [reduceMotion] → 彩带 / 错峰入场 / 按压缩放；[nickname] → `HabitExporter.buildShareText` 抬头；
  * [dailyWordGoal] → 学习首页今日进度；[reminderEveryHours] → `ReminderScheduler`；
- * [examEpochDay] → 学习首页倒计时行（v3.0-B 起它经由 [examList] 合成进来，不再是唯一真值）；
- * [exams] → 同一格的"哪一场"与排期看的那天（[examForCountdown] / [examEpochDayEffective]，消费点在
- * `ExamPolicy` 与首页/统计/提醒那条链上，v3.0-B Task 3 起逐个接上）；
+ * [examEpochDay] → 只在清单为空时经 [examList] 合成一场**全学科**考试（v3.0-B 起它不再是唯一真值）；
+ * [exams] → 同一格的"哪一场"（[examForCountdown]）与排期看的那几场，消费点在
+ * `ExamPolicy` 与首页/统计/提醒那条链上，v3.0-B Task 3 起逐个接上；
  * [examLimitMinutes] / [examPauseCountsTime] → 套卷计时的截止时刻（v3.0-B Task 5）；
  * [lastDictFailure] → 设置页诊断段（只是显示，不参与逻辑）；
  * [recallBeforeGrade] → `ui/study/RecallGate.kt` 的闸门判定（`CardStudyScreen` 读它，
@@ -226,10 +226,6 @@ data class AppSettings(
             emptyList()
         }
 
-    /** 排期与倒计时看的那一天：清单里最早那场；没有考试 = 0L（`MemoryScheduler` 的「没设考试」哨兵值） */
-    val examEpochDayEffective: Long
-        get() = examList.minByOrNull { it.epochDay }?.epochDay ?: 0L
-
     /**
      * 首页倒计时那一格该显示哪场：**优先还没考的最近一场**，全考完才退回「最后考掉的那场」，
      * 让「考试已过 N 天」这句继续说得出。取最早一场会把它顶掉，屏幕上永远挂着一次六月的考试。
@@ -241,22 +237,6 @@ data class AppSettings(
         return list.filter { it.epochDay >= todayEpoch }.minByOrNull { it.epochDay }
             ?: list.maxByOrNull { it.epochDay }
     }
-
-    /**
-     * 旧签名保留：按**今天**取该倒计时的那一场。
-     *
-     * ⚠️ 它内部读 `LocalDate.now()`（旧实现是纯 `ofEpochDay`，不读时钟）。所以它是**显示层**属性：
-     * 排期路径不许调它 —— 要可测的语义就直调 [examForCountdown] 显式注入 today，要"那一天本身"
-     * 就用 [examEpochDayEffective]。
-     *
-     * 【v3.0-B T9 之后的实情】生产调用点已经**归零**：首页倒计时那行改成直接读
-     * `examForCountdown(today)`（连同 `countdownLine`），设置页那一格也被考试清单编辑器取代
-     * （`setExamDate` 随之删除，旧键 `exam_epoch_day` 唯一的活写点没了）。现在只有
-     * `AppSettingsTest` / `AppSettingsExamsTest` 还钉着它，留着的全部理由就是"旧单日期语义的
-     * 一行读法"—— 整枝评审若判定它不再需要，连那几条用例一起删。
-     */
-    val examDate: LocalDate?
-        get() = examForCountdown(LocalDate.now())?.let { runCatching { LocalDate.ofEpochDay(it.epochDay) }.getOrNull() }
 
     fun toMap(): Map<String, String> = linkedMapOf(
         KEY_THEME to themeMode.name,

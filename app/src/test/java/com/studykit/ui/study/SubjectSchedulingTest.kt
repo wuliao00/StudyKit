@@ -2,7 +2,6 @@ package com.studykit.ui.study
 
 import com.studykit.data.AppSettings
 import com.studykit.data.memory.ExamEntry
-import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.ReviewStrictness
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -16,8 +15,8 @@ import org.junit.Test
  * 一辈子没进过调度器（`KernelHub` 为此删掉了单参重载）。这里防的是同一件事的第二次发生。
  *
  * 期望值一律写手算的字面量（沿用 Task 1/Task 2 立下的约定），不拿生产函数给期望取数。
- * 对 `MemoryScheduler.forSettings` 的调用**只作同语义对照**留档（评审 6 的裁定）：
- * 值本身由字面量那条钉住，对照那条红线时只会说"两条都变了"，单独不具备鉴别力。
+ * 这里不写"另一个入口给同一个数"那种对照：两条一起被改动时它永远绿，单独不具鉴别力
+ * （上一轮那条对照已经随它参照的旧门面一起删掉）。
  */
 class SubjectSchedulingTest {
 
@@ -33,8 +32,6 @@ class SubjectSchedulingTest {
         assertEquals(0.9, none.targetRecall, 1e-9)
         assertEquals(36.0, none.maxIntervalDays, 1e-6)
         assertEquals(schedulingForSubject(AppSettings(), "数学", today), none)
-        // 对照（合法，但鉴别力由上面两条字面量负责）：旧 forSettings 的"没设考试"哨兵同值
-        assertEquals(MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today), none)
     }
 
     @Test

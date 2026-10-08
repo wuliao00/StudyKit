@@ -281,10 +281,13 @@ data class Scheduling(val targetRecall: Double, val maxIntervalDays: Double)
  * 单独抽出来是因为这一步最容易出错（考试日期过期、时区、空值），
  * 而它一旦错了，表现是"所有人的复习量都暴涨"这种全局症状。
  *
- * v3.0-B 起有两个入口：[forSubject]（按学科，考试清单——**生产唯一口径**，经
- * `schedulingForSubject` 组合）与 [forSettings]（全局口径，一个日期；留作旧语义的锚，
- * 见其 KDoc）。**算术只住在 [forSubject] 一处** —— 前者摊成一场全学科考试后分派过去，
- * 两边不可能各说一套；「base」那一步再单独住 [baseTargetRecall]，显示侧与排期侧共用。
+ * v3.0-B 起算术只住一处：[forSubject]（按学科，吃考试清单 —— **生产唯一口径**，经
+ * `schedulingForSubject` 组合；「库级、无学科」的那一路走 `subject = null` 这条缝）。
+ * 原来那道「单个全局考试日」的门面 `forSettings` 已随收尾波删除 —— 生产调用点归零、语义与
+ * `forSubject(subject = null)` **故意不一致**（学科盲），留着就是一条没人走的旧真值；
+ * 它当年合成的那个形状现在只由 `AppSettings.examList` 对旧键 `exam_epoch_day` 的合成承担
+ * （`MemorySchedulerTest` 钉着那条合成后的读数）。「base」那一步单独住 [baseTargetRecall]，
+ * 显示侧与排期侧共用同一个实现。
  */
 object MemoryScheduler {
 
@@ -314,46 +317,6 @@ object MemoryScheduler {
     ): Double {
         val manual = STRICTNESS_TARGET[strictness]
         return manual ?: (days?.let { MemoryModel.targetRecallFor(it, params) } ?: params.defaultTargetRecall)
-    }
-
-    /**
-     * 全局口径：取「最近那场考试」算一份 `Scheduling`（不看学科）。
-     *
-     * **v3.0-B 评审 2 之后的处境**：生产调用点已全部改走 [forSubject] / `schedulingForSubject`
-     * （学科口径，`subject = null` 那条缝），本函数留作「单一全局考试日」这一旧语义的锚，
-     * 被 `MemorySchedulerTest` 的等价用例钉着 —— **不要删**，也不要再往生产里接新调用点。
-     *
-     * 同一份学科绑定的清单下，本函数与 `forSubject(subject = null)` **故意**给出不同的数：
-     * 前者学科盲（任何一场考试日都抬所有卡，v2.9 的原语义），后者是 v3.0-B 规则
-     * （只有关联学科为空的考试才抬没有学科的卡，见 [ExamPolicy.linksSubject] 与计划偏差 D5）。
-     *
-     * 实现收成分派到 [forSubject]：两个入口共用一套算术，杜绝"两处各说一套"。
-     *
-     * 单个日期在这里摊成一场**全学科**考试（`subjects` 空，窗口与冲刺值取 [ExamEntry] 的默认
-     * 30 天 / 0.95），与 `AppSettings.examList` 对旧键的合成同一个形状 —— 两处形状不一样，
-     * 就是这套改造最忌讳的"两个入口各说一套"。
-     *
-     * 摊过去之后有两处与旧算式不同，都是 v3.0-B T3 有意改的，不是漏网：
-     *  1. 考试**当天**：旧代码 `days <= 0` 把它当作"没填"（0.9 / 36 天），现在是最紧的一档
-     *     （1 天 horizon → 间隔地板 3 天，retention 由 ramp 打满）。整套功能要的就是"临考越来越严"，
-     *     旧那天的宽松是"只有一个全局日期、背后没有 ramp"的副作用，不是设计。
-     *  2. **手动档 + 窗口内**：旧代码对手动档完全不看考试日；现在 ramp 在临窗 30 天里把
-     *     `RELAXED`(0.80) / `STANDARD`(0.88) 线性抬向冲刺值。只抬不降，`AUTO` 与 `STRICT` 在这段
-     *     里 base 本就等于 0.95，数值分毫不动。
-     * 其余各档逐值不变：没填（`examEpochDay <= 0`）、已过期、窗口外（剩余 >30 天）都不进 ramp，
-     * 而 horizon 与旧算式同一个天数（由 [ExamPolicy.nearestExamDaysLeft] 给出，不再自己减日期）。
-     *
-     * @param examEpochDay `AppSettings.examEpochDay`，0 表示没填
-     * @param today        今天的本地日期（由调用方给，测试里可注入）
-     */
-    fun forSettings(
-        strictness: ReviewStrictness,
-        examEpochDay: Long,
-        today: LocalDate,
-        params: MemoryParams = MemoryParams(),
-    ): Scheduling {
-        val exams = if (examEpochDay > 0L) listOf(ExamEntry(name = ExamEntry.DEFAULT_NAME, epochDay = examEpochDay)) else emptyList()
-        return forSubject(strictness = strictness, exams = exams, subject = null, today = today, params = params)
     }
 
     /**

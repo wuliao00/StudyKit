@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
  * 钉住的六件事，每件都对应一条会被用户直接察觉的行为：
  *  1. **算法写回 `review_at` 本身**（计划里的单列决策）：评一次分就在那一列上写出下一次到期，
  *     列表与提醒（`MistakeDao.getDueForReview`）零特判 —— 所以这里断言的是 `reviewAt` 那一列，
- *     不是任何新增的"算法专用列"（schema 冻结在 v7，也不许加列）。
+ *     不是任何新增的"算法专用列"（这一列 v2.7 起就在，其后两次升 schema 也没给它加伴生列，判定不许靠新列）。
  *  2. 首评走内核原生 `firstTime` 支（`fsrs_stability` 为 null 就是"从 S0 起步"，A-T3 教训）；
  *     AGAIN → RELEARNING + 当日再见（10 分钟），GOOD → REVIEW + 内核算出的间隔。
  *  3. 超纠正侧信道**只允许把时刻往前拉**（min），永远不许把已排好的间隔推后。
@@ -44,7 +44,7 @@ class MistakeSchedulingTest {
     private val oneDayMs = TimeUnit.DAYS.toMillis(1)
     private val tenMinutesMs = TimeUnit.MINUTES.toMillis(10)
 
-    /** 与 `MemoryScheduler.forSettings` 默认档一致的测试夹具：targetRecall=0.9 时 FSRS 的间隔恰为 S 天 */
+    /** 固定夹具（0.9 / 365 天上限）：targetRecall=0.9 时 FSRS 的间隔恰为 S 天，上限宽到不参与夹取 */
     private val sched = Scheduling(targetRecall = 0.9, maxIntervalDays = 365.0)
 
     private fun mistake(

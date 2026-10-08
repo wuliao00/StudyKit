@@ -340,7 +340,8 @@ class ReminderWorker(
      * 调度器只把卡排到第 4 天，预测侧按 30 天数就会把这两周数少。FSRS 参数走 `settings.fsrsActiveParams`，
      * 没校准过时才取发布默认。
      * v3.0-B 评审 2：提醒是对**全库**的判断，走学科缝的 `subject = null` 那一侧（与看板、词卡评分
-     * 同一个数）；旧形状 `forSettings(examEpochDayEffective, ...)` 学科盲——一场只绑数学的考试会把
+     * 同一个数）；旧那条「把整份清单压成单个全局考试日」的口径学科盲（那道门面已随 v3.0-B 收尾删除，
+     * 缘由记在 `MemoryScheduler` 类注释）——一场只绑数学的考试会把
      * 提醒也抬严。`maxIntervalDays` 语义不变：同一个 `forSubject` 按同一 horizon 给出，不随本次替换漂移。
      * 时钟只读一次：`today` 与 `dayStart` 都从同一个 [now] 推，免得跨过零点那一次调用里
      * 「今天」和「今天零点」不是同一天。

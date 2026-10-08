@@ -158,7 +158,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 与提醒侧同一条纪律），FSRS 参数走 `settings.fsrsActiveParams`，没校准过时才取发布默认。
      * v3.0-B 评审 2：这一路是**库级**视图（全库逐卡反解），走学科缝的 `subject = null` 那一侧
      * （[schedulingForSubject]，与学习首页 `_scheduling` 同一个数、同一条 ramp 规则）；
-     * 旧形状 `forSettings(examEpochDayEffective, ...)` 学科盲——一场只绑数学的考试会把看板也抬上去。
+     * 旧那条「把整份清单压成单个全局考试日」的库级口径是**学科盲**的（那道门面已随 v3.0-B 收尾删除，
+     * 缘由记在 `MemoryScheduler` 类注释）——一场只绑数学的考试会把看板也抬上去。
      * `maxIntervalDays` 语义不变：它由同一个 `forSubject` 按同一 horizon 给出，只是清单里非全学科的
      * 考试从此不再拖紧这一路。
      * `settings.dailyWordGoal` 在这里只进 [ForecastCfg.newPerDay] 一个地方：它说的是"每天进几个新词"，
@@ -224,7 +225,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * ## 复用两条**已有**的全量时间戳查询，不加带窗口的新查询
      * [WordRepository.observeReviewTimestamps]（`word_reviews.reviewed_at`）与
      * [QuestionRepository.observePracticeTimestamps]（`practice_records.at`）取的就是这里要的那两列，
-     * Room schema 因此**停在 v8 不动**。带窗口的变体在这里反而不能用：Flow 的上界必须在订阅那一刻
+     * 这一路因此**一个 schema 都没动**（只是两条既有全量查询；整库现在是 v9，那是 v3.0-B 加
+     * `mock_sessions` 与 `mistakes` 两列的事，与热力图无关）。带窗口的变体在这里反而不能用：Flow 的上界必须在订阅那一刻
      * 定死，把「此刻」写进 SQL 参数，之后新发生的复习就永远落在界外——图上今天的格子会一直是空的。
      * （提醒侧那条 `observeReviewTimestampsBetween` 是一次性读，才敢把上界写成 `now`。）
      * 精确的 52 周窗口由 [ReviewHeatmapLogic] 按本地日判：SQL 的 `date()` 不吃时区，

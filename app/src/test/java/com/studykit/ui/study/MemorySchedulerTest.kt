@@ -1,11 +1,13 @@
 package com.studykit.ui.study
 
+import com.studykit.data.AppSettings
 import com.studykit.data.memory.ExamEntry
 import com.studykit.data.memory.MemoryModel
 import com.studykit.data.memory.MemoryParams
 import com.studykit.data.memory.MemoryScheduler
 import com.studykit.data.memory.MemoryState
 import com.studykit.data.memory.ReviewStrictness
+import com.studykit.data.memory.Scheduling
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,6 +18,10 @@ import java.time.LocalDate
  *
  * 挑出来单测是因为它错了会全局发作：考试日期填成过去、或者严格度没生效，
  * 表现是"所有人的复习量突然暴涨/消失"，而不是某一张卡算错。
+ *
+ * 下面那批 `globalScheduling(...)` 的用例原本打的是 `MemoryScheduler.forSettings` 那道门面
+ * （收尾波已删，生产调用点归零）。测试里用同一座桥把它们**逐值原样**搬到 [MemoryScheduler.forSubject]：
+ * 门面当年做的事（一个日期摊成一场全学科考试）写在 [globalScheduling] 里，一条断言的语义都没丢。
  */
 class MemorySchedulerTest {
 
@@ -23,9 +29,27 @@ class MemorySchedulerTest {
 
     private fun examIn(days: Int) = today.plusDays(days.toLong()).toEpochDay()
 
+    /**
+     * 已删门面 `MemoryScheduler.forSettings` 的形状，由测试自己摊一遍：
+     * 一个日期 = 一场**全学科**考试（`subjects` 空、窗口 30 天、冲刺 0.95 —— 都是 [ExamEntry] 的构造默认），
+     * `0L` = 不合成（退回"没有考试"那一支）。这与 `AppSettings.examList` 对旧键 `exam_epoch_day`
+     * 做的合成同一个形状；那条合成才是现在仍然存在的契约，由 `旧单日期经 examList 合成后排出的数` 那条钉住。
+     */
+    private fun globalScheduling(strictness: ReviewStrictness, examEpochDay: Long): Scheduling =
+        MemoryScheduler.forSubject(
+            strictness = strictness,
+            exams = if (examEpochDay > 0L) {
+                listOf(ExamEntry(name = ExamEntry.DEFAULT_NAME, epochDay = examEpochDay))
+            } else {
+                emptyList()
+            },
+            subject = null,
+            today = today,
+        )
+
     @Test
     fun `no exam date uses the default target but still caps the interval`() {
-        val s = MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today)
+        val s = globalScheduling(ReviewStrictness.AUTO, 0L)
         assertEquals(0.9, s.targetRecall, 1e-9)
         // 上限按"半年保持期"给：36 天。不给上限的话，一个 h=2000 天的老词会被排到一年后
         assertEquals(36.0, s.maxIntervalDays, 1e-6)
@@ -34,8 +58,8 @@ class MemorySchedulerTest {
     /** 考试填在过去 = 没填。绝不能算出负保持期把间隔压成下限的 3 天 */
     @Test
     fun `a past exam date is treated as unset`() {
-        val past = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(-40), today)
-        val none = MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today)
+        val past = globalScheduling(ReviewStrictness.AUTO, examIn(-40))
+        val none = globalScheduling(ReviewStrictness.AUTO, 0L)
         assertEquals(none.targetRecall, past.targetRecall, 1e-9)
         assertEquals(none.maxIntervalDays, past.maxIntervalDays, 1e-9)
     }
@@ -43,9 +67,9 @@ class MemorySchedulerTest {
     /** 越近的考试越严格、上限越短（Cepeda 2006：最优间隔随保持期放大） */
     @Test
     fun `nearer exam means stricter target and shorter cap`() {
-        val soon = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(30), today)
-        val mid = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(120), today)
-        val far = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(300), today)
+        val soon = globalScheduling(ReviewStrictness.AUTO, examIn(30))
+        val mid = globalScheduling(ReviewStrictness.AUTO, examIn(120))
+        val far = globalScheduling(ReviewStrictness.AUTO, examIn(300))
         assertEquals(0.95, soon.targetRecall, 1e-9)
         assertEquals(0.85, mid.targetRecall, 1e-9)
         assertEquals(0.75, far.targetRecall, 1e-9)
@@ -64,11 +88,11 @@ class MemorySchedulerTest {
     @Test
     fun `manual strictness overrides the exam-derived target`() {
         val exam = examIn(300)
-        assertEquals(0.80, MemoryScheduler.forSettings(ReviewStrictness.RELAXED, exam, today).targetRecall, 1e-9)
-        assertEquals(0.88, MemoryScheduler.forSettings(ReviewStrictness.STANDARD, exam, today).targetRecall, 1e-9)
-        assertEquals(0.95, MemoryScheduler.forSettings(ReviewStrictness.STRICT, exam, today).targetRecall, 1e-9)
+        assertEquals(0.80, globalScheduling(ReviewStrictness.RELAXED, exam).targetRecall, 1e-9)
+        assertEquals(0.88, globalScheduling(ReviewStrictness.STANDARD, exam).targetRecall, 1e-9)
+        assertEquals(0.95, globalScheduling(ReviewStrictness.STRICT, exam).targetRecall, 1e-9)
         // 手动档也要吃上限：上限仍由考试日期决定，不能被"我想严格"变成无限长
-        assertEquals(60.0, MemoryScheduler.forSettings(ReviewStrictness.STRICT, exam, today).maxIntervalDays, 1e-6)
+        assertEquals(60.0, globalScheduling(ReviewStrictness.STRICT, exam).maxIntervalDays, 1e-6)
     }
 
     // ── 按钮上印的预览 ───────────────────────────────────────────────────
@@ -76,7 +100,7 @@ class MemorySchedulerTest {
     /** 三档的间隔偏序必须在按钮上成立，否则用户会看到"忘记比认识排得更远"这种荒话 */
     @Test
     fun `preview keeps the ordering the buttons promise`() {
-        val sched = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(120), today)
+        val sched = globalScheduling(ReviewStrictness.AUTO, examIn(120))
         val state = MemoryState(halfLifeDays = 3.0, difficulty = 1.0)
         val preview = MemoryModel.preview(
             state = state,
@@ -103,7 +127,7 @@ class MemorySchedulerTest {
      */
     @Test
     fun `overdue words preview the interval they will actually get`() {
-        val sched = MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today)
+        val sched = globalScheduling(ReviewStrictness.AUTO, 0L)
         val fresh = MemoryModel.preview(
             state = MemoryState.NEW, gapDays = 0.0,
             targetRecall = sched.targetRecall, maxIntervalDays = sched.maxIntervalDays,
@@ -123,7 +147,7 @@ class MemorySchedulerTest {
 
     @Test
     fun `preview never exceeds the cap`() {
-        val sched = MemoryScheduler.forSettings(ReviewStrictness.AUTO, examIn(30), today)
+        val sched = globalScheduling(ReviewStrictness.AUTO, examIn(30))
         val state = MemoryState(halfLifeDays = 900.0, difficulty = 1.0)
         val preview = MemoryModel.preview(
             state = state,
@@ -182,23 +206,45 @@ class MemorySchedulerTest {
     private fun exam(dayOffset: Long, subjects: List<String> = emptyList(), sprint: Double = 0.95, window: Int = 30) =
         ExamEntry(name = "考", epochDay = today.plusDays(dayOffset).toEpochDay(), subjects = subjects, rSprint = sprint, windowDays = window)
 
+    /**
+     * 门面 `forSettings` 删掉之后，仍然真实存在的契约是**合成**那半边：只填过旧单日期
+     * （`app_settings.exam_epoch_day`）的用户，`AppSettings.examList` 必须给他一场**全学科**考试，
+     * 而且它经 [MemoryScheduler.forSubject] 排出来的两个数与门面时代逐字一致。
+     *
+     * 三段各自钉住一件事（原来的"两个入口相等"那种比法已经没意义了 —— 只剩一个入口）：
+     *  1. **合成的形状**：名字「考试」、`subjects` 空（= 全学科，词卡那一侧唯一能被抬起的那条缝）、
+     *     窗口 30 天、冲刺 0.95 —— 全是字面量，不读 `ExamEntry.DEFAULT_*`（常量一动闸门就跟着动）。
+     *  2. **排期读数**：12 天后考 → 0.95 / 3.0 天，手算写死。
+     *  3. **摊法本身**：同一批数经 [globalScheduling]（测试里那座"一个日期 = 一场全学科考试"的桥）
+     *     与经生产合成走的是同一条路；没填（旧键 0）与已过的日期两个边界一起比。
+     */
     @Test
-    fun `forSettings 等于把单日期摊成一场全学科考试的 forSubject`() {
-        val day = today.plusDays(12).toEpochDay()
+    fun `旧单日期经 examList 合成后排出的数与门面时代逐字一致`() {
+        val day = today.plusDays(12L).toEpochDay()
+        val synthesized = AppSettings(examEpochDay = day).examList
+        assertEquals(1, synthesized.size)
+        assertEquals("考试", synthesized.single().name)
+        assertTrue("旧键合成那场必须是全学科，否则词卡从此不认任何考试", synthesized.single().subjects.isEmpty())
+        assertEquals(0.95, synthesized.single().rSprint, 1e-9)
+        assertEquals(30, synthesized.single().windowDays)
+
+        val s = MemoryScheduler.forSubject(ReviewStrictness.AUTO, synthesized, null, today)
+        // AUTO 的 base = targetRecallFor(12) = 0.95（≤60 天档），冲刺值与它相等 → ramp 抬不动
+        assertEquals(0.95, s.targetRecall, 1e-9)
+        // 上限 = max(3.0, 12×0.2=2.4)：这一档是 3 天地板在起作用，不是 1/5 那条经验带
+        assertEquals(3.0, s.maxIntervalDays, 1e-9)
+        assertEquals(globalScheduling(ReviewStrictness.AUTO, day), s)
+
+        // 「没设考试」哨兵：旧键 0 不合成，清单为空 → 退回默认保持期
+        assertEquals(globalScheduling(ReviewStrictness.AUTO, 0L), MemoryScheduler.forSubject(ReviewStrictness.AUTO, AppSettings().examList, null, today))
+
+        // 已过的日期也同值（合成了条目，但排期走"没有未来考试"那一支，用 STANDARD 档再核一遍手动档）
+        val pastDay = today.minusDays(3L).toEpochDay()
+        val pastSynth = AppSettings(examEpochDay = pastDay).examList
+        assertEquals(1, pastSynth.size)
         assertEquals(
-            MemoryScheduler.forSettings(ReviewStrictness.AUTO, day, today),
-            MemoryScheduler.forSubject(ReviewStrictness.AUTO, listOf(exam(12L)), null, today),
-        )
-        // 「没设考试」两路同值：0L 哨兵 -> 不合成 -> 默认保持期
-        assertEquals(
-            MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today),
-            MemoryScheduler.forSubject(ReviewStrictness.AUTO, emptyList(), "数学", today),
-        )
-        // 已过的日期也同值（都走"没有未来考试"那一支）
-        val past = today.minusDays(3).toEpochDay()
-        assertEquals(
-            MemoryScheduler.forSettings(ReviewStrictness.STANDARD, past, today),
-            MemoryScheduler.forSubject(ReviewStrictness.STANDARD, listOf(ExamEntry("考", past)), null, today),
+            globalScheduling(ReviewStrictness.STANDARD, pastDay),
+            MemoryScheduler.forSubject(ReviewStrictness.STANDARD, pastSynth, null, today),
         )
     }
 
@@ -214,7 +260,7 @@ class MemorySchedulerTest {
     fun `硬闸 非关联学科退回默认保持期，不被别人的考试日拖紧`() {
         val s = MemoryScheduler.forSubject(ReviewStrictness.AUTO, listOf(exam(5L, subjects = listOf("数学"))), "英语", today)
         assertEquals(
-            MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today),
+            globalScheduling(ReviewStrictness.AUTO, 0L),
             s,
         )
     }
@@ -252,15 +298,15 @@ class MemorySchedulerTest {
     /**
      * 考试**当天**：v3.0-B T3 有意改掉的一处行为（不是回归）。
      *
-     * 旧 `forSettings` 里"今天就是考试日"与"没填"同值（0.9 / 36 天）—— 那是"只有一个全局日期、
+     * 旧门面那侧"今天就是考试日"与"没填"同值（0.9 / 36 天）—— 那是"只有一个全局日期、
      * 背后没有 ramp"留下的副作用。现在当天是最紧的一档：horizon 夹到 1 天（不夹就是把最紧急的一天
      * 送进 `targetRecallFor(0)` / `maxIntervalDaysFor(0)` 的"无信息"分支，反而松开），
      * 于是 target 0.95、间隔地板 3 天。
      */
     @Test
     fun `考试当天是最紧的一档不再等同没填`() {
-        val onExamDay = MemoryScheduler.forSettings(ReviewStrictness.AUTO, today.toEpochDay(), today)
-        val none = MemoryScheduler.forSettings(ReviewStrictness.AUTO, 0L, today)
+        val onExamDay = globalScheduling(ReviewStrictness.AUTO, today.toEpochDay())
+        val none = globalScheduling(ReviewStrictness.AUTO, 0L)
         assertEquals(0.95, onExamDay.targetRecall, 1e-9)
         assertEquals(3.0, onExamDay.maxIntervalDays, 1e-9)
         assertEquals(0.9, none.targetRecall, 1e-9)
@@ -269,16 +315,17 @@ class MemorySchedulerTest {
 
     /**
      * 分派带出的第二处有意改变（同一处裁定，另一条支流）：手动档在临窗 30 天内跟着 ramp 往上抬 ——
-     * 旧 `forSettings` 对手动档完全不看考试日。只抬不降，`STRICT` 本来就等于冲刺值所以纹丝不动。
+     * 旧门面那侧对手动档完全不看考试日。只抬不降，`STRICT` 本来就等于冲刺值所以纹丝不动。
      */
     @Test
     fun `手动档在窗口内跟着 ramp 抬，窗口外与旧算式逐值相同`() {
         // 15 天后考：0.80 + (0.95 − 0.80)·(1 − 15/30) = 0.875
-        assertEquals(0.875, MemoryScheduler.forSettings(ReviewStrictness.RELAXED, examIn(15), today).targetRecall, 1e-9)
+        assertEquals(0.875, globalScheduling(ReviewStrictness.RELAXED, examIn(15)).targetRecall, 1e-9)
         // 窗口外一天（left=31 > windowDays=30）不抬 —— 这一支仍是旧值
-        assertEquals(0.80, MemoryScheduler.forSettings(ReviewStrictness.RELAXED, examIn(31), today).targetRecall, 1e-9)
-        assertEquals(0.95, MemoryScheduler.forSettings(ReviewStrictness.STRICT, examIn(15), today).targetRecall, 1e-9)
-        // 间隔上限不进 ramp：仍按剩余天数给
-        assertEquals(MemoryModel.maxIntervalDaysFor(15), MemoryScheduler.forSettings(ReviewStrictness.RELAXED, examIn(15), today).maxIntervalDays, 1e-9)
+        assertEquals(0.80, globalScheduling(ReviewStrictness.RELAXED, examIn(31)).targetRecall, 1e-9)
+        assertEquals(0.95, globalScheduling(ReviewStrictness.STRICT, examIn(15)).targetRecall, 1e-9)
+        // 间隔上限不进 ramp：仍按剩余天数给。手算写死 —— 上一版这里拿 `MemoryModel.maxIntervalDaysFor(15)`
+        // 当期望，等于让被测的那条算术自己给自己出题，改错了也照样绿（15 天的 1/5 恰为 3.0，与地板同值）
+        assertEquals(3.0, globalScheduling(ReviewStrictness.RELAXED, examIn(15)).maxIntervalDays, 1e-9)
     }
 }

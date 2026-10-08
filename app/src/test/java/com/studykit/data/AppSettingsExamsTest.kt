@@ -11,7 +11,8 @@ import org.junit.Test
  *
  * 钉三件事：① 脏值只该让**那一条**退回默认，绝不打垮 `fromMap`（与 `AppSettingsTest` 同一条纪律）；
  * ② 旧版只有一个 `exam_epoch_day` 的用户，升级后必须看到**一模一样**的行为 ——
- * 所以 `examList` 在清单为空时从旧键合成一场全学科考试，`examEpochDayEffective` 回原值；
+ * 所以 `examList` 在清单为空时从旧键合成一场全学科考试（"那一天本身"不再有第二个 getter，
+ * 要读它就是读 `examList`；`examEpochDayEffective` 已随收尾波删除）；
  * ③ 评审 C4 补的边界闸门：优先级（清单非空时旧键说了不算）、字段级字面量（0.98 / 0 天原样往返、
  * 缺字段 = 未指定 = 构造默认）、布尔开关**双向**、降序清单 —— 专防「取 first() 而不是 minBy」
  * 「缺键退到类型零值」这一类实现变异。
@@ -31,7 +32,7 @@ class AppSettingsExamsTest {
         val s = AppSettings()
         assertTrue(s.exams.isEmpty())
         assertEquals(0, s.examLimitMinutes)
-        assertEquals(0L, s.examEpochDayEffective)
+        assertTrue(s.examList.isEmpty())
     }
 
     @Test
@@ -47,9 +48,12 @@ class AppSettingsExamsTest {
         assertEquals(false, back.examPauseCountsTime)
     }
 
+    /** `examList` 就是那份清单本身，不排序不夹取；排期看的那一天从它里面取最早那场 */
     @Test
-    fun `examEpochDayEffective 取最早一场`() {
-        assertEquals(20_600L, AppSettings(exams = sample).examEpochDayEffective)
+    fun `examList 原样给出清单里最早那场是 20600`() {
+        val list = AppSettings(exams = sample).examList
+        assertEquals(sample, list)
+        assertEquals(20_600L, list.minOf { it.epochDay })
     }
 
     @Test
@@ -65,10 +69,11 @@ class AppSettingsExamsTest {
     @Test
     fun `旧单日期用户在清单为空时行为不变`() {
         val legacy = AppSettings.fromMap(mapOf(AppSettings.KEY_EXAM_DAY to "20600"))
-        assertEquals(20_600L, legacy.examEpochDayEffective)
+        assertEquals(20_600L, legacy.examList.single().epochDay)
         assertEquals(1, legacy.examList.size)
         assertTrue(legacy.examList.first().subjects.isEmpty())          // 全学科，与 v2.9 的影响面一致
-        assertEquals(LocalDate.ofEpochDay(20_600L), legacy.examDate)
+        // 合成那场的名字就是兜底名「考试」，倒计时那格读的是同一场（旧 `examDate` 的读法已并入这里）
+        assertEquals("考试", legacy.examForCountdown(LocalDate.ofEpochDay(20_500L))?.name)
     }
 
     @Test
@@ -125,7 +130,7 @@ class AppSettingsExamsTest {
         val map = AppSettings(examEpochDay = 20_500L, exams = sample).toMap()
         val s = AppSettings.fromMap(map)
         assertEquals(2, s.examList.size)                                   // 旧键不掺和，清单原样两条
-        assertEquals(20_600L, s.examEpochDayEffective)                     // 清单里最早的 20600，不是旧键的 20500
+        assertEquals(20_600L, s.examList.minOf { it.epochDay })            // 清单里最早的 20600，不是旧键的 20500
         val today = LocalDate.ofEpochDay(20_550L)
         assertEquals("期末考", s.examForCountdown(today)?.name)            // 也不是旧键合成的那场「考试」
     }
@@ -181,7 +186,7 @@ class AppSettingsExamsTest {
             ExamEntry("期末考", 20_600L, emptyList(), 0.95, 30),
         )
         val s = AppSettings(exams = desc)
-        assertEquals(20_600L, s.examEpochDayEffective)                      // 取 min，不是取第一条的 20700
+        assertEquals(20_600L, s.examList.minOf { it.epochDay })            // 清单里取 min，不是第一条的 20700
         assertEquals("期末考", s.examForCountdown(LocalDate.ofEpochDay(20_550L))?.name)
     }
 }

@@ -25,7 +25,7 @@ class AppSettingsTest {
         assertEquals("", s.nickname)
         assertEquals(AppSettings.DEFAULT_WORD_GOAL, s.dailyWordGoal)
         assertEquals(AppSettings.DEFAULT_REMINDER_HOURS, s.reminderEveryHours)
-        assertNull(s.examDate)
+        assertTrue(s.examList.isEmpty())
         // v2.5 §3.1/§3.2 那两项：闸门默认**开**（设计里的默认行为，不是"用户已经选过"），
         // 那条一次性说明默认**没看过**（每次安装只出现一次）
         assertTrue(s.recallBeforeGrade)
@@ -99,7 +99,7 @@ class AppSettingsTest {
         assertFalse(s.reduceMotion)
         assertEquals(AppSettings.DEFAULT_WORD_GOAL, s.dailyWordGoal)
         assertEquals(AppSettings.DEFAULT_REMINDER_HOURS, s.reminderEveryHours)
-        assertNull(s.examDate)
+        assertTrue("坏考试日只该让那一项退回默认，别凭空合成出一场考试", s.examList.isEmpty())
 
         // 区间边界本身要收
         assertEquals(500, AppSettings.fromMap(mapOf(AppSettings.KEY_WORD_GOAL to "500")).dailyWordGoal)
@@ -129,11 +129,17 @@ class AppSettingsTest {
         assertFalse(AppSettings(themeMode = ThemeMode.SYSTEM).resolveDark(systemDark = false))
     }
 
+    /**
+     * 旧单日期那一格现在的读法是 [AppSettings.examForCountdown]（显式注入 today，可测）——
+     * 那个内部读 `LocalDate.now()` 的 `examDate` 属性已随收尾波删除（生产调用点归零）。
+     */
     @Test
     fun `考试日期零值表示未设置 其余按 epochDay 解出`() {
         val day = LocalDate.of(2027, 3, 1)
-        assertEquals(day, AppSettings(examEpochDay = day.toEpochDay()).examDate)
-        assertNull(AppSettings(examEpochDay = 0L).examDate)
+        val s = AppSettings(examEpochDay = day.toEpochDay())
+        assertEquals(day.toEpochDay(), s.examList.single().epochDay)
+        assertEquals(day, s.examForCountdown(day)?.let { LocalDate.ofEpochDay(it.epochDay) })
+        assertNull(AppSettings(examEpochDay = 0L).examForCountdown(day))
     }
 
     @Test
