@@ -189,15 +189,25 @@ internal fun decodeResults(raw: String?): Map<Long, MockExamState.Answer> {
  *
  * 只有分数与待批改清单，逐题判词住在 [encodeResults] 写的那一列：结果页要重画整卷时读后者，
  * 而"这卷考了多少分"这种一句话读数才值得单独留着。
+ *
+ * [autoSubmitted] 记的是"这一卷是钟替他按的交卷，不是他自己按的"（R3）。它必须落在行里而不是
+ * 只落在界面上：结果页那句「时间到，已自动交卷」是**成绩的一部分**，一条只靠 toast 的标注在用户
+ * 离开再回来时就没影了，而那时屏幕上仍然印着那个分数。
  */
-internal data class MockSummary(val correctCount: Int, val total: Int, val toGrade: List<Long>)
+internal data class MockSummary(
+    val correctCount: Int,
+    val total: Int,
+    val toGrade: List<Long>,
+    val autoSubmitted: Boolean = false,
+)
 
-internal fun encodeExamResult(out: MockSubmission): String =
+internal fun encodeExamResult(out: MockSubmission, autoSubmitted: Boolean = false): String =
     JSONObject()
         .put("correct", out.correctCount)
         .put("total", out.total)
         .put("graded", out.answeredCount)
         .put("toGrade", JSONArray().apply { out.toGrade.forEach { put(it) } })
+        .put("auto", if (autoSubmitted) 1 else 0)
         .toString()
 
 /** 摘要读不通返回 null（宁缺一条分数，不显示一个 0 分的假成绩） */
@@ -211,5 +221,7 @@ internal fun decodeExamResult(raw: String?): MockSummary? {
         toGrade = o.optJSONArray("toGrade")?.let { arr ->
             buildList { for (i in 0 until arr.length()) arr.optLong(i).takeIf { it > 0L }?.let { add(it) } }
         } ?: emptyList(),
+        // 缺键（旧版本写下的行）读成 false：没有证据说那是自动交卷，就不能凭空标注「时间到」
+        autoSubmitted = o.optInt("auto") == 1,
     )
 }

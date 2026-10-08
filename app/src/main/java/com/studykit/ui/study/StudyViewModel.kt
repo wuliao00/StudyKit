@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.Mistake
+import com.studykit.data.entity.MockSession
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.ReviewLog
 import com.studykit.data.entity.Word
@@ -23,6 +24,8 @@ import com.studykit.ui.mistake.MistakeIntake
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -105,6 +108,13 @@ data class QuizUiState(
  * 这里 `answers` 只是"第几题选了哪个"，对错与反馈全部压到 [submitMockExam] 那一刻，
  * 算完才填进 [results]（[MockExamState] 的产物）。交卷前 `results` 为空、`correctCount` 恒 0，
  * 页面也就无从泄露判词。
+ *
+ * v3.0-B T11 起这一份是**可持久化**的会话（`mock_sessions` 表）：[sessionId] 是那行的主键，
+ * [examName] 是开卷那一刻从考试清单盖上的名字（清单后来改了也不回头改历史，计划 D2），
+ * [deadlineTs] / [paused] / [nowTs] 三个原始数撑起计时 —— 页面上那串 `mm:ss` 由纯函数
+ * [remainingLabel](`nowTs`, `deadlineTs`) 现算，**不在这份状态里再放一个同名派生属性**：
+ * 属性与函数同名会自引用，而且计时读数一旦有两个来源，屏幕与落库就会各说一套。
+ * [autoSubmitted] 是「时间到，钟替他按的交卷」（R3），结果页据此标注，且写进 `result` 那一列。
  */
 data class MockExamUiState(
     val subject: String = "",
@@ -113,6 +123,13 @@ data class MockExamUiState(
     val index: Int = 0,
     val submitted: Boolean = false,
     val results: Map<Long, MockExamState.Answer> = emptyMap(),
+    val sessionId: Long? = null,
+    val examName: String = "",
+    val deadlineTs: Long? = null,
+    val paused: Boolean = false,
+    val nowTs: Long = 0L,
+    val toGrade: List<Long> = emptyList(),
+    val autoSubmitted: Boolean = false,
 ) {
     val started: Boolean get() = questions.isNotEmpty()
     val total: Int get() = questions.size
@@ -137,6 +154,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = container.settingsRepository
     private val reviewLogRepository = container.reviewLogRepository
 
+    /** 套卷会话持久化（v3.0-B T11）：`mock_sessions` 表那一行的唯一写入口在下面 `persistMockSession` */
+    private val mockSessionRepository = container.mockSessionRepository
+
     /**
      * v2.9 Task 6：背词与练习两条评分点共用的**粗粒度会话键**（每个 VM 实例一个，同一屏幕内的多次评分
      * 共享）。review_log 的 `session_id` 供 Task 7 统计会话长度 / 同会话连点去重分组用；两类写入路径靠
@@ -151,6 +171,14 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
 
         /** 模考整卷题量：比一轮练习更长一点，取数仍走现有 `getBySubject`（库里没有就有多少出多少） */
         private const val MOCK_EXAM_SIZE = 20
+
+        /**
+         * 模考作答/跳题的防抖落库窗口（v3.0-B T11，毫秒）。
+         *
+         * 与设置页那个同名手法（`SettingsScreen` 的考试清单编辑器）同一档位：够短到用户察觉不出
+         * "已经存了"这件事的延迟，又够长到一次连点只落一次库。代价见 `persistMockSession` 的 KDoc。
+         */
+        private const val MOCK_SAVE_DEBOUNCE_MS = 400L
 
         /**
          * 到这个天数就打上「已掌握」标签（**只作展示**，不再决定它会不会回到队列）。
@@ -629,46 +657,245 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         _quiz.value = state.copy(index = state.index + 1, selected = null)
     }
 
-    // ── 模考会话（v2.7 计划 B Task 13）──────────────────────────────────────
+    // ── 模考会话（v2.7 计划 B Task 13；v3.0-B T11 起可持久化 + 计时）────────────
     private val _mockExam = MutableStateFlow(MockExamUiState())
     val mockExam: StateFlow<MockExamUiState> = _mockExam
 
     /**
-     * 组一卷模拟卷：与 [startQuiz] 同一取数口径（该学科前 [MOCK_EXAM_SIZE] 题、读一次交错开关
-     * 交给 [interleaveBySubject] 判定），差别只在这一卷**一次性拿全**、作答期间不再回源分页读库。
+     * 当前这一卷在 `mock_sessions` 里的那一行（内存快照）。
+     *
+     * 它是**唯一**的落库真值来源：所有写都走 [persistMockSession]，从这一份出发打补丁，
+     * 于是"界面上看到的"与"库里存的"不可能分家 —— 前提是 `answers` 一律从 UI 状态现取后传进来
+     * （见 [answerMockExam]），绝不从 `mockSessionRow.answers` 反着读第二遍。
+     */
+    private var mockSessionRow: MockSession? = null
+
+    /** 防抖落库那条唯一在途的写（R4）：新写来了先把还没起跑的那条取消 */
+    private var mockSaveJob: Job? = null
+
+    /** 本次暂停的起点（`System.currentTimeMillis()`）；0 = 没在暂停中。恢复时用来推截止时刻 */
+    private var mockPausedAt: Long = 0L
+
+    /**
+     * 组一卷模拟卷并**立刻留下一行**（v3.0-B T11）：与 [startQuiz] 同一取数口径（该学科前
+     * [MOCK_EXAM_SIZE] 题、读一次交错开关交给 [interleaveBySubject] 判定），差别只在：
+     * 这一卷一次性拿全、作答期间不再回源分页读库，且 `question_ids` 落的是**交错之后**的顺序。
+     *
+     * 为什么落交错后的顺序而不是原始取数顺序：`question_ids` 就是"发出去的那一份卷"，
+     * [loadActiveMockSession] 恢复时按它逐题取回、不再重排（重排会换顺序，恢复出来的卷和用户
+     * 答到一半的那卷对不上，`cursor` 会指错题）。
+     *
+     * 限时来自设置那一格（`examLimitMinutes`，0 = 不限时 → `deadline_ts` 留 null，与"1970 年截止"
+     * 是两回事）；卷名取开卷那一刻的 `examForCountdown(today)`，之后清单怎么改都不回写历史行
+     * （考试清单住设置、不是表，计划 D2）。
      */
     fun startMockExam(subject: String) {
         viewModelScope.launch {
-            val interleaving = settingsRepository.current().interleavingEnabled
-            val questions = questionRepository.getBySubject(subject, MOCK_EXAM_SIZE, 0)
+            val settings = settingsRepository.current()
+            val questions = interleaveBySubject(
+                questions = questionRepository.getBySubject(subject, MOCK_EXAM_SIZE, 0),
+                enabled = settings.interleavingEnabled,
+            )
+            val now = System.currentTimeMillis()
+            val limit = settings.examLimitMinutes
+            val row = MockSession(
+                subject = subject,
+                examName = settings.examForCountdown(LocalDate.now())?.name ?: "",
+                questionIds = encodeQuestionIds(questions.map { it.id }),
+                answers = "{}",
+                startTs = now,
+                deadlineTs = if (limit > 0) now + limit * 60_000L else null,
+                limitMin = limit,
+                state = encodePhase(MockPhase.RUN),
+            )
+            val id = mockSessionRepository.insert(row)
+            mockSessionRow = row.copy(id = id)
+            mockPausedAt = 0L
             _mockExam.value = MockExamUiState(
                 subject = subject,
-                questions = interleaveBySubject(questions, enabled = interleaving),
+                questions = questions,
+                sessionId = id,
+                examName = row.examName,
+                deadlineTs = row.deadlineTs,
+                nowTs = now,
             )
         }
     }
 
-    /** 重置模考会话（返回学科选择 / 退出模考） */
+    /**
+     * 把界面状态清回"没有卷"。
+     *
+     * **不删库里的行**（v3.0-B T11 起这一行是用户跨进程留下的东西）：作废整卷走
+     * [abandonMockSession]，交卷走 [submitMockExam]（那一行会置 DONE 并被 [loadActiveMockSession]
+     * 滤掉）。这里只连同内存快照一起丢掉，并取消还没起跑的防抖写 —— 否则"页面已经清空了、
+     * 400ms 后库里却又落一次旧快照"。
+     */
     fun resetMockExam() {
+        mockSaveJob?.cancel()
+        mockSaveJob = null
+        mockSessionRow = null
+        mockPausedAt = 0L
         _mockExam.value = MockExamUiState()
     }
 
     /**
-     * 记一次作答：只把"这题选了哪个"写进会话，**不判对错、不落库、不产反馈**。
+     * 记一次作答：只把"这题选了哪个"写进会话，**不判对错、不产反馈**。
      * 交卷前允许改答案（后写覆盖前写）；已交卷或整卷已跳走则忽略（终态锁死）。
+     * 落库走防抖那一条在途写（[persistMockSession]），不逐次 `launch`。
      */
     fun answerMockExam(questionId: Long, selected: Int) {
         val state = _mockExam.value
         if (state.submitted) return
         if (state.questions.none { it.id == questionId }) return
-        _mockExam.value = state.copy(answers = state.answers + (questionId to selected))
+        val answers = state.answers + (questionId to selected)
+        _mockExam.value = state.copy(answers = answers)
+        persistMockSession { it.copy(answers = encodeAnswers(answers), cursor = state.index) }
     }
 
-    /** 在卷内前后翻题（交卷前自由导航）；越界夹到首 / 末题，不会崩 */
+    /** 在卷内前后翻题（交卷前自由导航）；越界夹到首 / 末题，不会崩。`cursor` 一并防抖落库 */
     fun gotoMockExam(index: Int) {
         val state = _mockExam.value
         if (state.submitted || state.total == 0) return
-        _mockExam.value = state.copy(index = index.coerceIn(0, state.total - 1))
+        val next = index.coerceIn(0, state.total - 1)
+        _mockExam.value = state.copy(index = next)
+        persistMockSession { it.copy(cursor = next) }
+    }
+
+    /**
+     * 防抖落库：取消上一条还没起跑的写，再写**当前**这一份。
+     *
+     * 为什么不逐次写：一次连点四道题会排四个 `launch`，它们读到的 `mockSessionRow` 有可能不是
+     * 同一个版本，最后落库的不一定是最新的那份。取消重排让"在途的写"最多一条，且一定是最新的快照。
+     *
+     * 代价（照实记在这里，不假装它不存在）：进程**恰好**落在防抖窗口里被杀，最多丢这 400ms 内的
+     * 作答 —— 也就是最后那一道题的点击。这一层不是崩溃安全的：真要逐次安全，就得每答一题同步等
+     * Room 写完，而模考的作答点是主线程上的点击回调，那是拿手感换保险。交卷那一步不走这条
+     * （见 [commitMockSession]：终态写必须落定，且必须排在练习记录与事件流之前）。
+     */
+    private fun persistMockSession(patch: (MockSession) -> MockSession) {
+        val base = mockSessionRow ?: return
+        val next = patch(base)
+        mockSessionRow = next
+        mockSaveJob?.cancel()
+        mockSaveJob = viewModelScope.launch {
+            delay(MOCK_SAVE_DEBOUNCE_MS)
+            mockSessionRepository.update(next)
+        }
+    }
+
+    /**
+     * 同步定格的落库（不打扰防抖那条）：用于**终态**写。
+     *
+     * 与 [persistMockSession] 的差别只有一处、但要紧：这一条在调用方的协程里 `await` 似地写完才继续，
+     * 于是交卷时"会话行 → 练习记录 → 事件流"的先后（R8）是真的，不会变成"400ms 后才补写会话行、
+     * 而练习记录已经先落库"。顺带取消还没起跑的防抖写：那一份快照比这里新不了，让它闭嘴。
+     */
+    private suspend fun commitMockSession(patch: (MockSession) -> MockSession) {
+        val base = mockSessionRow ?: return
+        val next = patch(base)
+        mockSessionRow = next
+        mockSaveJob?.cancel()
+        mockSaveJob = null
+        mockSessionRepository.update(next)
+    }
+
+    /**
+     * 暂停：状态置 PAUSED，截止时刻先不动。
+     *
+     * 推不推截止是**恢复**那一刻才知道的事（要读 `examPauseCountsTime`、要算暂停了多久），
+     * 所以这里只记下暂停起点，`deadline_ts` 原样留着。
+     */
+    fun pauseMockExam() {
+        val state = _mockExam.value
+        if (!state.started || state.submitted || state.paused) return
+        mockPausedAt = System.currentTimeMillis()
+        _mockExam.value = state.copy(paused = true, nowTs = mockPausedAt)
+        persistMockSession { it.copy(state = encodePhase(MockPhase.PAUSED)) }
+    }
+
+    /** 继续：按设置决定暂停那段扣不扣时（文档 L1883「暂停计时可配」） */
+    fun resumeMockExam() {
+        val state = _mockExam.value
+        if (!state.paused) return
+        viewModelScope.launch {
+            val counts = settingsRepository.current().examPauseCountsTime
+            val now = System.currentTimeMillis()
+            val deadline = deadlineAfterResume(now, mockPausedAt, state.deadlineTs, counts)
+            mockPausedAt = 0L
+            _mockExam.value = state.copy(paused = false, deadlineTs = deadline, nowTs = now)
+            persistMockSession { it.copy(state = encodePhase(MockPhase.RUN), deadlineTs = deadline) }
+        }
+    }
+
+    /**
+     * 页面每秒喂一次（`nowTs` 由调用方传，测试给假时钟）。
+     * 到期就交卷，且标 `autoSubmitted = true` —— 结果页要能说出"这是时间到自动交的"，
+     * 用户自己按的交卷和钟替他按的，在分数上不该看起来一样（R3；这一位同时写进 `result` 那一列）。
+     */
+    fun onMockTick(nowTs: Long) {
+        val state = _mockExam.value
+        if (!state.started || state.submitted || state.paused) return
+        _mockExam.value = state.copy(nowTs = nowTs)
+        if (isExpired(nowTs, state.deadlineTs)) submitMockExam(auto = true)
+    }
+
+    /**
+     * 进页面时问一句：有没有没交完的那一卷。有就恢复成 PAUSED（不替用户把钟偷偷跑起来，R6）。
+     *
+     * 用 `observeActive()`（"没交卷的那几条，新的在前"）而不是按 id 订阅：进页面时手上没有 id 可查，
+     * 而"最新那一卷"正是用户预期被续上的那一卷。仓储里那两个 `observeById` / `observeRecent`
+     * 全计划无人调用，已随本任务删除 —— 死 API 不进发布包。
+     *
+     * **已知代价（照实写）**：恢复时暂停起点只能取"现在"。库里没有 `paused_at` 那一列（T8 的表
+     * 没有它，补一列要一轮迁移），所以离开页面的那一段**不补回**剩余时间：10:00 暂停、10:40 回来，
+     * 截止时刻仍是 10:00 那份，用户少拿 40 分钟"停表"。宁可少给也不能白送 —— 反过来把离开的那段
+     * 也算进暂停，就等于允许"关掉 App 睡一觉再回来继续考"。要在跨进程死亡后也守住「暂停即停表」，
+     * 需要加 `paused_at` 列（后续任务）。
+     *
+     * 题库变了、题目取不到时**删行作废**（R9）：`question_ids` 里少一题就少一题的分数与解析，
+     * 那种"半张卷"看着完整、其实是拿别人的空缺给用户判错，绝不显示。
+     */
+    fun loadActiveMockSession() {
+        viewModelScope.launch {
+            val active = mockSessionRepository.observeActive()
+                .firstOrNull { decodePhase(it.state) != MockPhase.DONE }
+            if (active == null) {
+                resetMockExam()
+                return@launch
+            }
+            val ids = decodeQuestionIds(active.questionIds)
+            val questions = ids.mapNotNull { questionRepository.getById(it) }
+            if (ids.isEmpty() || questions.size != ids.size) {
+                mockSaveJob?.cancel()
+                mockSessionRepository.deleteById(active.id)
+                mockSessionRow = null
+                resetMockExam()
+                return@launch
+            }
+            val now = System.currentTimeMillis()
+            mockPausedAt = now
+            mockSessionRow = active.copy(state = encodePhase(MockPhase.PAUSED))
+            _mockExam.value = MockExamUiState(
+                subject = active.subject,
+                questions = questions,          // 按 question_ids 的顺序，不再交错：那一份卷已经发出去了
+                answers = decodeAnswers(active.answers),
+                index = active.cursor.coerceIn(0, questions.size - 1),
+                sessionId = active.id,
+                examName = active.examName,
+                deadlineTs = active.deadlineTs,
+                paused = true,
+                nowTs = now,
+            )
+        }
+    }
+
+    /** 丢弃这一卷（页面上那枚「丢弃本卷」经确认对话框进来）：删行 + 清空界面，不留半成品 */
+    fun abandonMockSession(id: Long) {
+        mockSaveJob?.cancel()
+        mockSaveJob = null
+        mockSessionRow = null
+        viewModelScope.launch { mockSessionRepository.deleteById(id) }
+        resetMockExam()
     }
 
     /**
@@ -678,8 +905,11 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      *
      * 双写只发生一次：模考作答从不碰 [selectOption]，本方法又有 `if (submitted) return` 终态锁，
      * 未作答的题压根不进落库循环，因此不会出现记录或错题的二次入库。
+     *
+     * [auto] = 时间到自动交（R3），只影响 `autoSubmitted` 这一位与结果页那句标注。
+     * 待批改队列、`result` 摘要与 `review_log` 双写在 T12 接上。
      */
-    fun submitMockExam() {
+    fun submitMockExam(auto: Boolean = false) {
         val state = _mockExam.value
         if (!state.started || state.submitted) return
         val answerKey = state.questions.associate { it.id to it.answerIndex }
@@ -692,9 +922,16 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         state.answers.forEach { (questionId, selected) -> machine.answer(questionId, selected) }
         val results = machine.submit()
         // 先冻结 UI 终态（同步），成绩页立刻能读 results；落库在下面的协程里异步补
-        _mockExam.value = state.copy(submitted = true, results = results)
+        _mockExam.value = state.copy(submitted = true, results = results, autoSubmitted = auto)
         val answered = state.questions.filter { state.answers.containsKey(it.id) }
         viewModelScope.launch {
+            commitMockSession {
+                it.copy(
+                    state = encodePhase(MockPhase.DONE),
+                    answers = encodeAnswers(state.answers),
+                    cursor = state.index,
+                )
+            }
             answered.forEach { question ->
                 val selected = state.answers.getValue(question.id)
                 // 与练习同一 submitAnswer，只是 conf 传 null（模考不采集信心 → confidence 落 NULL）

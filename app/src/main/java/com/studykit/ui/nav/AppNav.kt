@@ -327,7 +327,10 @@ fun AppNav(
                         navController.navigate(StudyRoutes.QUIZ) { launchSingleTop = true }
                     },
                     onOpenMockExam = {
-                        studyViewModel.resetMockExam()
+                        // v3.0-B T11：进模考不再先 `resetMockExam()`（那等于每次进页面都把
+                        // 没交的那一卷作废）。改问库里有没有续得上的卷：有就恢复成**暂停**态
+                        // （R6：绝不替用户把钟偷偷跑起来），没有才回到学科选择。
+                        studyViewModel.loadActiveMockSession()
                         navController.navigate(StudyRoutes.MOCK_EXAM) { launchSingleTop = true }
                     },
                     onOpenMistakes = {

@@ -196,4 +196,18 @@ class MockSessionMachineTest {
         assertNull(decodeExamResult(null))
         assertNull(decodeExamResult("}{"))
     }
+
+    /**
+     * ⛔ 自动交卷这件事必须落在**行里**（R3）：结果页那句「时间到，已自动交卷」不能只靠一次 toast
+     * 的时机 —— 进程在成绩页被杀、回到模考再走一遍读数，那句标注不该凭空消失或凭空出现。
+     */
+    @Test
+    fun `交卷摘要记住时间到那一下`() {
+        val out = submitOutcome(ids, mapOf(1L to 0), key, 3)
+        assertEquals(false, decodeExamResult(encodeExamResult(out))!!.autoSubmitted)
+        assertEquals(true, decodeExamResult(encodeExamResult(out, autoSubmitted = true))!!.autoSubmitted)
+        // 旧版本写下的行没有这个键：读回 false，不能因为缺键就凭空标注「时间到」
+        val legacy = """{"correct":1,"total":4,"graded":1,"toGrade":[2,3,4]}"""
+        assertEquals(false, decodeExamResult(legacy)!!.autoSubmitted)
+    }
 }
