@@ -173,8 +173,9 @@ class MistakeDetailRenderTest {
 
     // ── v3.0-B T17：详情页补画遮挡 ────────────────────────────────────────
     // 入口文案 + VM 那一步真正要写的那一对列。`MistakeViewModel.setOcclusion` 的函数体只有
-    // 「读行 → copy(这两列) → update」，VM 本身在 JVM 侧起不来（本仓无 VM 测试先例），
-    // 所以能钉的全在这里：给定编辑器那份形状列表，落库的 `kind`/`extra` 必须是哪一对。
+    // 「读行 → copy(这两列) → update」；VM 级写入用例本仓已有（`ui/study/MockSessionResumeWriterTest`
+    // 真起 `StudyViewModel` + 内存 Room），但**错题侧这一条还没排进去**，所以能钉的全在这里：
+    // 给定编辑器那份形状列表，落库的 `kind`/`extra` 必须是哪一对。
 
     @Test fun `遮挡入口的文案跟着块数换_零块说的是补画`() {
         assertEquals("在照片上画遮挡", occlusionEntryLabel(0))

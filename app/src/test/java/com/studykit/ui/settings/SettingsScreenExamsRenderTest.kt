@@ -30,8 +30,10 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * 考试清单行的**渲染守卫**（v3.0-B T9）。
  *
- * 只渲染 [ExamRowBlock]，不构造 [SettingsViewModel]（背后是 Room，JVM 侧起不来；仓里没有 VM 级
- * 测试先例）—— 同 [SettingsBehaviorRenderTest] / [com.studykit.ui.study.MockExamRenderTest] 的手法：
+ * 只渲染 [ExamRowBlock]，不构造 [SettingsViewModel]（它背后是 Room；本仓已有 VM 级用例那条先例走的是
+ * `StudyKitApp.createContainer()` 覆写成一次性内存库，见 `ui/study/MockSessionResumeWriterTest`，
+ * 钉的是套卷恢复与交卷，与这一屏无关）—— 同 [SettingsBehaviorRenderTest] /
+ * [com.studykit.ui.study.MockExamRenderTest] 的手法：
  * Robolectric + `@GraphicsMode(NATIVE)` + 手写 `LocalAppTheme provides AppThemeVals(...)` 宿主。
  *
  * 纯函数那半边（解析/校验/文案）由 `ExamEditorTest` 逐字钉住；这里管的是**接上屏之后**才成立的三件事：

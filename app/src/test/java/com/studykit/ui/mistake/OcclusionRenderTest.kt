@@ -379,7 +379,9 @@ private val DRAFT_B = OcclusionShape.Ellipse(0.6, 0.7, 0.1, 0.08)
  * `gate` 走**生产**的 [buildRedoGate]，且 `shapeCount` 由 `saved.size` 喂进去 —— 页面上这两件事
  * 本来就是同一个 `occlusionShapes(current)` 的两半（一半进判定、一半给渲染层），在这里分成两参数
  * 喂就是假场景。编辑态的草稿由参数给定（生产里它是那一串 JSON 串），回调一律记进调用方的清单：
- * VM 那一行 `setOcclusion` 起不来（本仓没有 VM 级先例），本文件钉到"把哪一份草稿交出去"为止。
+ * VM 那一行 `setOcclusion` 本文件不测 —— VM 级用例本仓已有（`ui/study/MockSessionResumeWriterTest`
+ * 真起 `StudyViewModel` + 内存 Room），但那条覆盖的是套卷恢复与交卷，错题侧的 `setOcclusion`
+ * 还没排进去，所以本文件钉到"把哪一份草稿交出去"为止。
  */
 @Composable
 private fun SectionHarness(
