@@ -153,6 +153,11 @@ internal enum class ConcealedSection {
 /**
  * 详情页一次渲染所需的门控结论：把「哪段能看、哪段还不能看」算死在一处，
  * 页面只读字段，不再自己拼条件（拼错一次就等于答案提前露出）。
+ *
+ * 文字段与照片是**并列的两段**：[ConcealedSection] 单值地回答「哪一段文字被遮」，照片走下面
+ * 那三个布尔投影（计划 D6）。不给那个枚举加 `IMAGE` 值是有原因的 —— 它一次只能指一段，
+ * 塞进去就造出「正遮着图片时，答案段算不算遮」这种没有正确答案的状态，还留下一个
+ * 与其余值永远互斥的死值。
  */
 internal data class RedoGate(
     val phase: RedoPhase,
@@ -163,6 +168,15 @@ internal data class RedoGate(
     /** 备注原文 */
     val noteText: String,
     val concealed: ConcealedSection,
+    /**
+     * 这一条错题有没有随附照片（`image_path` 非空且文件真的在）。
+     *
+     * 唯一来源是页面把 `imageFile != null && imageExists` 喂进来这一次 —— 页面上不许再拼
+     * 第二份「有没有图」的派生态，否则那个异步回填晚一帧就出现两个答案。
+     */
+    val hasImage: Boolean = false,
+    /** 照片上画了几处遮挡块（0 = 没画） */
+    val shapeCount: Int = 0,
 ) {
     /** 这道题有没有「可展开的东西」。false 时页面不该说「已遮住」，也不该给收回按钮。 */
     val hasReveal: Boolean get() = concealed != ConcealedSection.NONE
@@ -177,6 +191,22 @@ internal data class RedoGate(
     /** 备注此刻可见吗 */
     val noteVisible: Boolean
         get() = !(phase == RedoPhase.REDO && concealed == ConcealedSection.NOTE)
+
+    /**
+     * 重做阶段照片该不该整张扣住。
+     *
+     * **画了遮挡块 = 用户已经指明答案写在哪几块**，那剩下的部分本来就不含答案，可以放心看；
+     * **没画 = 我们不知道答案在照片哪里**，于是整张扣到核对阶段。
+     * 这条分界是本次改动真正要修的东西：拍照收录的错题，照片里就印着正确答案，
+     * 而改动前详情页那一块（`MistakeDetailScreen` 的照片段）在重做阶段完全不设防。
+     */
+    val imageCovered: Boolean get() = hasImage && shapeCount == 0 && phase == RedoPhase.REDO
+
+    /** 照片此刻能不能摆上树（含同一段的第二条出口 —— 点开大图那个灯箱） */
+    val imageVisible: Boolean get() = !imageCovered
+
+    /** 图片上还要盖一层遮挡块（配合 T15 的 `OcclusionImage` 渲染） */
+    val partiallyCovered: Boolean get() = hasImage && shapeCount > 0 && phase == RedoPhase.REDO
 }
 
 /**
@@ -185,8 +215,17 @@ internal data class RedoGate(
  * 遮的优先级只有一个答案段：正文里认得出答案与解析就遮它；认不出才退而遮备注
  * （备注往往是用户自己写的错因，对答案时同样会被剧透）。两处都没有 → [ConcealedSection.NONE]，
  * 页面照常显示全部内容，只保留「先重做再对答案」这句行为提示，不假装遮住了什么。
+ *
+ * [hasImage] / [shapeCount] 只往照片那三个投影里喂，不参与上面这段文字判定（计划 D6：两段互不
+ * 搅扰）；两参都带默认值，所以既有三参调用点与 `RedoFlowTest` 里那批断言含义一字不变。
  */
-internal fun buildRedoGate(content: String, note: String, phase: RedoPhase): RedoGate {
+internal fun buildRedoGate(
+    content: String,
+    note: String,
+    phase: RedoPhase,
+    hasImage: Boolean = false,
+    shapeCount: Int = 0,
+): RedoGate {
     val split = splitForRedo(content)
     val concealed = when {
         split.answerKey.isNotBlank() -> ConcealedSection.ANSWER_KEY
@@ -199,6 +238,8 @@ internal fun buildRedoGate(content: String, note: String, phase: RedoPhase): Red
         answerKey = split.answerKey,
         noteText = note,
         concealed = concealed,
+        hasImage = hasImage,
+        shapeCount = shapeCount.coerceAtLeast(0),
     )
 }
 
@@ -208,6 +249,15 @@ internal fun coveredLabel(section: ConcealedSection): String? = when (section) {
     ConcealedSection.ANSWER_KEY -> "答案与解析已遮住"
     ConcealedSection.NOTE -> "备注已遮住"
 }
+
+/**
+ * 照片那一段的说明（与 [coveredLabel] 同一族：文案收在纯函数里才钉得进测试）。
+ *
+ * 两句的分工照 [RedoGate.imageCovered] / [RedoGate.partiallyCovered] 那条分界：
+ * 一块都没画 → 整张扣住，别让人以为图片丢了；画了 → 说清遮了几处、以及怎么才给看全。
+ */
+internal fun imageCoverHint(shapeCount: Int): String =
+    if (shapeCount > 0) "已遮 $shapeCount 处，先回忆，点按全揭" else "整张照片扣住，重做后再看"
 
 // ── 文案 ────────────────────────────────────────────────────────────────
 // 收在函数而不是散在 Composable 里，是为了让 `RedoFlowTest` 能断言它们：

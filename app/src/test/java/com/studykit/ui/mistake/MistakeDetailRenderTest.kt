@@ -135,4 +135,39 @@ class MistakeDetailRenderTest {
         assertTrue(unset.contains("由系统安排"))
         assertEquals("下次复习：10月05日", nextReviewLine("10月05日"))
     }
+
+    // ── v3.0-B T14：照片这一段的门（页相判定不看 kind + 占位那句不许说谎）───
+    // 渲染层的"照片到底在不在树上"由 `MistakePhotoGateRenderTest` 钉（Robolectric）。
+    // 本文件是纯 JVM 的页相/文案守卫，能钉的是这两件事，都不需要真图片文件。
+
+    @Test fun `遮挡卡的行照常渲染，页相判定只看 id 不看 kind`() {
+        // T16/T17 会开始写 kind=1 的行；那只是一张**多画了几个块**的错题照片，
+        // 不是另一种卡 —— 若页相判定哪天去读 kind，这些行会在详情页凭空变成"错题不存在"。
+        val occlusion = Mistake(
+            id = 9L, uuid = "u9", source = Mistake.SOURCE_PHOTO, subject = "数学",
+            title = "遮挡卡", content = "题干", imagePath = "x.jpg",
+            kind = Mistake.KIND_OCCLUSION, extra = "{\"shapes\":[]}",
+        )
+        val render = renderMistakeDetail(
+            state = MistakeDetailState(id = 9L, mistake = occlusion, answered = true),
+            mistakeId = 9L,
+        )
+        assertTrue(render is MistakeDetailReady)
+        assertEquals(9L, (render as MistakeDetailReady).mistake.id)
+    }
+
+    @Test fun `照片被扣住时那句占位提示不许撒谎`() {
+        val covered = buildRedoGate("题干", "", RedoPhase.REDO, hasImage = true)
+        // 占位卡出现的唯一条件：这一行确实有照片，且此刻不许露出
+        assertTrue(covered.hasImage && !covered.imageVisible)
+        val hint = imageCoverHint(covered.shapeCount)
+        // 不许写成"照片不见了"：用户会以为错题的图片丢了
+        for (phrase in listOf("不存在", "已删除", "丢失", "失败")) {
+            assertFalse("占位提示不许说照片没了：$hint", hint.contains(phrase))
+        }
+        // 一块都没画的时候不许说"已遮 N 处" —— 那是画了块之后才成立的话，说反了等于骗人
+        assertFalse(hint.contains("已遮"))
+        // 核对阶段同一行：照片回到树上，这句提示也就该退场（imageVisible 为真）
+        assertTrue(buildRedoGate("题干", "", RedoPhase.CHECK, hasImage = true).imageVisible)
+    }
 }

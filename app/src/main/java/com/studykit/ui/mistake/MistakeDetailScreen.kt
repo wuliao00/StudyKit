@@ -104,6 +104,13 @@ private fun sourceLabel(source: String): String = when (source) {
  * 答案在场时的「看懂」不算提取过。
  * 判定与文案全在 `RedoFlow.kt`（纯函数，钉在 `RedoFlowTest`），页面只读 [RedoGate] 的字段。
  *
+ * ## 照片也归这道门管（v3.0-B T14）
+ * 照片是**与文字段并列**的第二段：拍进来的错题，照片里就印着标准答案，而 v2.5 起这一段在重做
+ * 阶段完全不设防。现在它读 [RedoGate.imageVisible] —— 没画遮挡块的照片整张扣到对照阶段（页面
+ * 位置留一张占位卡，不让人以为图丢了），画了遮挡块的可以照看（用户已指明答案写在哪几块，
+ * 剩下的部分不含答案），遮挡层的渲染与「点按全揭」在 T15 接进 [MistakePhotoBlock] 标好的那一位。
+ * 灯箱（[FullImageOverlay]）是同一段照片的第二条出口，读同一个判定，不许有第二条不设防的路。
+ *
  * 阶段用 `rememberSaveable(mistakeId)` 存**阶段名串**：转屏/换屏不丢，换一道题（同一 entry 上
  * `mistakeId` 变了）不会把上一道题的展开态带过来；存档里读到认不出的串时
  * [decodeRedoPhase] 回到遮住那一侧，宁可让用户多点一次按钮。
@@ -238,11 +245,28 @@ fun MistakeDetailScreen(
     val current = (render as MistakeDetailReady).mistake
     // 到这里 `current.id == mistakeId` 是由 [renderMistakeDetail] 保证的：
     // 下面所有写动作一律喂 route 上的 [mistakeId]，不喂渲染出来的行。
-    // 重做门控只看这一行的正文与备注，算一次就够（纯函数，无 IO）。
+    //
+    // 照片的真值只在这一处算（v3.0-B T14）：下面那一位 `imageExists` 直接喂进 [buildRedoGate]，
+    // 所以这三行必须排在 `redoGate` **前面** —— 闸要先知道「这一行到底有没有照片」才谈得上扣不扣。
+    // 页面下游一律读 `redoGate.hasImage`，不再 `remember` 第二份「有没有图」（那样回填晚一帧
+    // 就有两个答案）。
+    val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }
+    // 组合期不 stat 磁盘（终审 I8）：与 `MistakeCaptureScreen` 的照片预览同一写法 ——
+    // 路径在组合期拼好，存在性由 IO 线程回填。初值乐观取「有路径就当有图」，
+    // 否则大图会在「塌陷 → 弹回」之间跳一次，正文跟着抖一屏。
+    var imageExists by remember(imageFile) { mutableStateOf(imageFile != null) }
+    LaunchedEffect(imageFile) {
+        imageExists = withContext(Dispatchers.IO) { imageFile?.exists() == true }
+    }
+    // 重做门控看这一行的正文与备注，外加「有没有照片 + 照片上画了几处遮挡块」。
+    // 仍是纯函数、仍无 IO：`occlusionShapes` 只读 `kind` / `extra` 两个字段（T13）。
+    val shapes = occlusionShapes(current)
     val redoGate = buildRedoGate(
         content = current.content,
         note = current.note,
         phase = decodeRedoPhase(redoPhaseRaw),
+        hasImage = imageFile != null && imageExists,
+        shapeCount = shapes.size,
     )
     // 重做目标题目：默认是 note 里 qid 回溯到的那道题；点过「换一道同考点的」则换成会话选中的那道
     // （只改这一个局部变量，错题行一个字不动）。拍照 / 无 qid 的错题拿不到题 → null，提示阶梯不出。
@@ -255,14 +279,6 @@ fun MistakeDetailScreen(
         redoCtx.variantPool.any { it.conceptTag == redoQuestion.conceptTag && it.id != redoQuestion.id }
     // 拍照题的重述门：未过之前，答案与解析段保持折叠（见 RedoFlow.restateGateRequired）。
     val restateBlocking = restateGateRequired(current.source) && !restated
-    val imageFile = current.imagePath?.let { viewModel.resolveImage(it) }
-    // 组合期不 stat 磁盘（终审 I8）：与 `MistakeCaptureScreen` 的照片预览同一写法 ——
-    // 路径在组合期拼好，存在性由 IO 线程回填。初值乐观取「有路径就当有图」，
-    // 否则大图会在「塌陷 → 弹回」之间跳一次，正文跟着抖一屏。
-    var imageExists by remember(imageFile) { mutableStateOf(imageFile != null) }
-    LaunchedEffect(imageFile) {
-        imageExists = withContext(Dispatchers.IO) { imageFile?.exists() == true }
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -328,27 +344,13 @@ fun MistakeDetailScreen(
             }
 
             // ── 大图 ──────────────────────────────────────────────────────
-            if (imageFile != null && imageExists) {
-                Spacer(Modifier.height(AppTheme.space.md))
-                AsyncImage(
-                    model = imageFile,
-                    // 不写 current.title：标题就在上方一行，重复一次是噪声（终审 I9）。
-                    // 但这枚图**可点**（点开灯箱），清空描述会留下一个「未加标签的按钮」，
-                    // 反而更糟 —— 故换成它真正做的事。
-                    contentDescription = "查看大图",
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(AppTheme.radius.lg))
-                        // 图片卡：1dp divider 发丝描边，夜间卡面与照片暗部分层
-                        .border(
-                            width = 1.dp,
-                            color = colors.divider,
-                            shape = RoundedCornerShape(AppTheme.radius.lg),
-                        )
-                        .clickable { showFullImage = true },
-                )
-            }
+            // 照片是与文字段并列的第二段，闸在 `redoGate.imageVisible`（v3.0-B T14）。
+            MistakePhotoBlock(
+                imageFile = imageFile,
+                gate = redoGate,
+                shapes = shapes,
+                onOpenFullImage = { showFullImage = true },
+            )
 
             // ── 题面 / 重做门 / 答案与解析 / 备注 ──────────────────────────
             if (redoGate.stemText.isNotBlank()) {
@@ -467,7 +469,13 @@ fun MistakeDetailScreen(
         }
 
         // ── 全屏看图 ──────────────────────────────────────────────────────
-        if (showFullImage && imageFile != null) {
+        // 灯箱是同一段照片的**第二条出口**（v3.0-B T14）：主图在重做阶段扣住时这里必须读同一个
+        // `imageVisible`，否则「点按放大」绕过去，就把照片连同印着的答案一起亮出来。
+        // 能置上 `showFullImage` 的那颗点击只存在于「可见且未画遮挡块」的照片上（见
+        // [MistakePhotoBlock]），这里再兜一道：万一灯箱开着时用户按了「重新遮住答案」，
+        // 相位翻回 REDO 的下一帧组合就把它关掉（`showFullImage` 留着无害——它是瞬时态，
+        // 再次进到对照阶段时才可能被读到）。
+        if (showFullImage && imageFile != null && redoGate.hasImage && redoGate.imageVisible) {
             FullImageOverlay(file = imageFile, onDismiss = { showFullImage = false })
         }
     }
@@ -509,6 +517,84 @@ fun MistakeDetailScreen(
             onDismiss = { showDeleteDialog = false },
         )
     }
+}
+
+/**
+ * 错题照片那一段（v3.0-B T14：重做阶段不再把整张照片连答案一起亮出来）。
+ *
+ * 三相，读的全是 [RedoGate] 上那三个照片投影，页面自己不再拼条件：
+ * - **没有照片**（`gate.hasImage` 为假：`image_path` 空、或文件已不在）：整段不出，
+ *   连占位都不出 —— 这条错题本来就没图，摆一句"照片扣住了"是让人去找一张不存在的照片。
+ * - **有照片但此刻扣着**（[RedoGate.imageCovered]）：给一张占位卡，把「这里本来有张图、
+ *   是被扣住的」写在脸上。遮住的东西必须在页面上留位置，否则用户读成"图片丢了"。
+ * - **有照片且可见**：照常摆出来，可点开灯箱；画了遮挡块（[RedoGate.partiallyCovered]）时
+ *   多一行 [imageCoverHint] 说明遮了几处。
+ *
+ * 「有没有照片」只读 [RedoGate.hasImage] —— 它的唯一来源是页面把 `imageFile != null && imageExists`
+ * 喂进 [buildRedoGate] 的那一次。条件里那句 `imageFile != null` 不参与判定、只为把非空句柄交给
+ * `AsyncImage`（Kotlin 的智能转换），不是第二份真值。
+ *
+ * 为什么单独抽成一个 composable：这条闸要能被渲染守卫钉住（`MistakePhotoGateRenderTest`）——
+ * 「重做阶段树上根本没有那张照片」这件事，纯函数测试只能证明判定算对了，证明不了它接到了树。
+ * 整屏渲染要 [MistakeViewModel]（背后是 Room），JVM 侧起不来，故只渲染这一小段。
+ *
+ * ⚠️ **T15 落地位就在下面那一整个 `AsyncImage(...)` 调用**：换成
+ * `OcclusionImage(model = imageFile, shapes = shapes, modifier = <同一条链>, onRevealAll = ...)`，
+ * 其余（圆角、描边、点按、说明行）一字不动 —— 遮挡层的几何与手势全在 `OcclusionOverlay.kt` 那边。
+ * 本任务不画半层遮挡（不许半成品），所以 `partiallyCovered` 那句"已遮 N 处"说明在 T15 之前
+ * 只会出现在**已经画了块的行**上，而那种行要等 T16 的编辑器才开始入库，今天从 UI 上走不到。
+ */
+@Composable
+internal fun MistakePhotoBlock(
+    imageFile: File?,
+    gate: RedoGate,
+    shapes: List<OcclusionShape>,
+    onOpenFullImage: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    if (imageFile != null && gate.hasImage && gate.imageVisible) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        AsyncImage(
+            model = imageFile,
+            // 不写 current.title：标题就在上方一行，重复一次是噪声（终审 I9）。
+            // 但这枚图**可点**（点开灯箱），清空描述会留下一个「未加标签的按钮」，
+            // 反而更糟 —— 故换成它真正做的事。
+            contentDescription = "查看大图",
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(AppTheme.radius.lg))
+                // 图片卡：1dp divider 发丝描边，夜间卡面与照片暗部分层
+                .border(
+                    width = 1.dp,
+                    color = colors.divider,
+                    shape = RoundedCornerShape(AppTheme.radius.lg),
+                )
+                // 画了遮挡块之后点按归"全揭"（T15 的 `onRevealAll`），不再是放大原图；
+                // 整张原图能点开的只有「没画块的可见照片」那一种。
+                .clickable(enabled = !gate.partiallyCovered) { onOpenFullImage() },
+        )
+        if (gate.partiallyCovered) {
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Text(
+                text = imageCoverHint(gate.shapeCount),
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
+        }
+    } else if (gate.hasImage && !gate.imageVisible) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = imageCoverHint(gate.shapeCount),
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
+        }
+    }
+    // `shapes` 目前无人读，它是 T15 那次替换的输入（见上面那条 ⚠️）：
+    // 参数先接上，T15 只改一行调用，不动条件、不动页面。
 }
 
 /**

@@ -233,4 +233,59 @@ class RedoFlowTest {
         assertEquals("重新遮住答案", redoCoverAgainLabel())
         assertEquals("答案与解析", answerSectionTitle())
     }
+
+    // ── v3.0-B T14：照片这一段该不该露出来 ────────────────────────────────
+    // 修的是一个从 v2.5 就在的洞：拍照录入的错题，照片里就印着正确答案，而详情页在重做阶段
+    // 把整张照片无条件摆出来。照片是与文字**并列**的第二段，不挤进 `ConcealedSection`
+    // （那个枚举是单值的，塞进去就造出「遮图片时答案段算不算遮」这种没有正确答案的状态，计划 D6），
+    // 改成 `RedoGate` 上的布尔投影。
+
+    @Test
+    fun `REDO 阶段的普通错题：整张照片扣住`() {
+        val gate = buildRedoGate("题干\n正确答案：B", "", RedoPhase.REDO, hasImage = true)
+        assertFalse(gate.imageVisible)
+        assertTrue(gate.imageCovered)
+    }
+
+    @Test
+    fun `CHECK 阶段照片照旧露出来`() {
+        val gate = buildRedoGate("题干\n正确答案：B", "", RedoPhase.CHECK, hasImage = true)
+        assertTrue(gate.imageVisible)
+    }
+
+    @Test
+    fun `画了遮挡块的错题 REDO 阶段可以看图（答案区已经被盖住）`() {
+        val gate = buildRedoGate("题干", "", RedoPhase.REDO, hasImage = true, shapeCount = 2)
+        assertTrue(gate.imageVisible)
+        assertTrue(gate.partiallyCovered)
+        assertEquals(2, gate.shapeCount)
+    }
+
+    @Test
+    fun `没有照片的两相都不给遮盖提示`() {
+        listOf(RedoPhase.REDO, RedoPhase.CHECK).forEach {
+            assertFalse(buildRedoGate("题干", "", it, hasImage = false).imageCovered)
+            assertFalse(buildRedoGate("题干", "", it, hasImage = false).partiallyCovered)
+        }
+    }
+
+    @Test
+    fun `图片遮不住文字段的答案：concealed 仍独立照旧`() {
+        // 加了图片参数不能把 ANSWER_KEY 那段判定搅乱 —— 那是另一段（计划 D6 的理由）
+        val gate = buildRedoGate("题干\n正确答案：B", "", RedoPhase.REDO, hasImage = true, shapeCount = 1)
+        assertEquals(ConcealedSection.ANSWER_KEY, gate.concealed)
+        assertTrue(gate.hasReveal)
+    }
+
+    @Test
+    fun `默认参数保持旧调用形状不变`() {
+        assertEquals(buildRedoGate("题干\n正确答案：B", "备注", RedoPhase.REDO), buildRedoGate("题干\n正确答案：B", "备注", RedoPhase.REDO, false, 0))
+    }
+
+    @Test
+    fun `遮盖提示按块数分两句说`() {
+        assertTrue(imageCoverHint(0), imageCoverHint(0).contains("整张"))
+        assertTrue(imageCoverHint(3), imageCoverHint(3).contains("3 处"))
+        assertTrue(imageCoverHint(3).contains("点按"))
+    }
 }
