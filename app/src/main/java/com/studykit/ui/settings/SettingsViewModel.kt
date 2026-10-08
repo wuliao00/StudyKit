@@ -12,6 +12,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
+import com.studykit.data.memory.ExamEntry
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.optimize.ParamSnapshot
 import com.studykit.util.MistakeImageStore
@@ -19,7 +20,6 @@ import com.studykit.util.OneShotGate
 import com.studykit.util.backup.BackupArchive
 import com.studykit.util.backup.StorageStats
 import com.studykit.util.backup.StorageStatsReader
-import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -242,11 +242,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setReminderHours(value: Int) =
         write { it.copy(reminderEveryHours = value.coerceIn(AppSettings.HOURS_RANGE)) }
 
-    /** null 或越界的日期都写回「未设置」（`examEpochDay = 0`）；界面已经先校验过，这里只是兜底 */
-    fun setExamDate(date: LocalDate?) {
-        val epochDay = date?.toEpochDay()?.takeIf { it in AppSettings.EXAM_DAY_RANGE } ?: 0L
-        write { it.copy(examEpochDay = epochDay) }
-    }
+    /**
+     * 清单的**唯一**写入口：每次编辑都基于 `examList`（含旧键合成的那一场）重算整份清单，
+     * 并把 `examEpochDay` 清零。清零是必要的而不是清理垃圾 —— 不清的话，用户删掉最后一场
+     * 考试，旧键那条立刻回填，界面显示"没设考试"而调度仍按那场排。
+     */
+    private fun writeExams(transform: (List<ExamEntry>) -> List<ExamEntry>) =
+        write { it.copy(exams = transform(it.examList), examEpochDay = 0L) }
+
+    fun addExam(entry: ExamEntry) = writeExams { it + entry }
+
+    fun replaceExam(index: Int, entry: ExamEntry) =
+        writeExams { list -> list.mapIndexed { i, old -> if (i == index) entry else old } }
+
+    fun removeExam(index: Int) =
+        writeExams { list -> list.filterIndexed { i, _ -> i != index } }
+
+    /** 套卷限时（分钟），0 = 不限时。`EXAM_LIMIT_RANGE` 与 [AppSettings.fromMap] 是同一条闸门 */
+    fun setExamLimitMinutes(minutes: Int) =
+        write { it.copy(examLimitMinutes = minutes.coerceIn(AppSettings.EXAM_LIMIT_RANGE)) }
+
+    /** 暂停期间限时照常扣与否。消费点在套卷的截止时刻算术（v3.0-B Task 5） */
+    fun setExamPauseCountsTime(on: Boolean) = write { it.copy(examPauseCountsTime = on) }
 
     // ── 数据管理 ────────────────────────────────────────────────
 

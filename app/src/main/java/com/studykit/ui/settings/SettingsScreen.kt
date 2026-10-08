@@ -45,9 +45,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -58,6 +60,7 @@ import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.ThemeMode
+import com.studykit.data.memory.ExamEntry
 import com.studykit.data.memory.ReviewStrictness
 import com.studykit.optimize.SynthLog
 import com.studykit.ui.components.AppButton
@@ -72,7 +75,7 @@ import com.studykit.ui.optimize.CalibrationCard
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.backup.StorageStats
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -169,8 +172,10 @@ const val SwitchInterleavingTag = "settings_switch_interleaving"
  * - 品牌色（accent/success/gold/warning）只做填充、描边、色点；**文字与图标一律同族 `*Ink`**。
  *   磁贴选中态是实底容器 → `accentInk` 底 + `onAccent` 字（与 [AppButton] 同一套）。
  * - 每格改动立即写库，全页没有「保存」按钮；文本格按 [DebounceMs] 静默后写（见其注释）。
- * - 考试日不走 `@ExperimentalMaterial3Api` 的 DatePicker：填 `yyyy-MM-dd` + `LocalDate.parse` 校验，
- *   非法时在本格下面给一行 `warningInk` 的原因，旁边一枚「清除」把 `examEpochDay` 归 0。
+ * - 考试不走 `@ExperimentalMaterial3Api` 的 DatePicker：清单每行仍是 `yyyy-MM-dd` 文本 + 防抖 +
+ *   逐格错误串（与旧「考试日」格同一形状），非法时在本格下面给一行 `warningInk` 的原因。
+ *   任何一次清单编辑都把旧键 `examEpochDay` 清零 —— 不清，删光清单后旧键合成的那一场会立刻复活，
+ *   界面写着"没设考试"而排期仍被它拖紧（`SettingsViewModel.writeExams`）。
  * - 导出/恢复走 SAF（`CreateDocument("application/zip")` / `OpenDocument`），
  *   恢复前必经过一次二次确认；`busy` 为真时两个入口都禁用。
  */
@@ -263,29 +268,29 @@ fun SettingsScreen(
         }
     }
 
-    // ── 考试日 ───────────────────────────────────────────────────
-    var examText by rememberSaveable { mutableStateOf("") }
-    var examEdited by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(settings.examEpochDay, examEdited) {
-        if (!examEdited) examText = settings.examDate?.toString() ?: ""
+    // ── 套卷限时（分钟）──────────────────────────────────────────
+    // 考试日本身不再有一格 state：清单逐行各管各的文本（见 ExamRowBlock），这里只留套卷限时这一格。
+    var mockLimitText by rememberSaveable { mutableStateOf("") }
+    var mockLimitEdited by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(settings.examLimitMinutes, mockLimitEdited) {
+        if (!mockLimitEdited) mockLimitText = settings.examLimitMinutes.toString()
     }
-    val examParsed = examText.trim().takeIf { it.isNotEmpty() }?.let { raw ->
-        runCatching { LocalDate.parse(raw) }.getOrNull()
-    }
-    val examError = when {
-        !examEdited || examText.isBlank() -> null
-        examParsed == null -> "按 2026-12-19 这样的 yyyy-MM-dd 填"
-        examParsed.toEpochDay() !in AppSettings.EXAM_DAY_RANGE ->
-            "日期要在 ${LocalDate.ofEpochDay(AppSettings.EXAM_DAY_RANGE.first)} 到 " +
-                LocalDate.ofEpochDay(AppSettings.EXAM_DAY_RANGE.last) + " 之间"
+    val mockLimitValue = mockLimitText.toIntOrNull()
+    val mockLimitError = when {
+        !mockLimitEdited || mockLimitText.isBlank() -> null
+        mockLimitValue == null -> "只能是整数"
+        mockLimitValue !in AppSettings.EXAM_LIMIT_RANGE ->
+            "收在 ${AppSettings.EXAM_LIMIT_RANGE.first}–${AppSettings.EXAM_LIMIT_RANGE.last} 之间"
         else -> null
     }
-    LaunchedEffect(examText, examEdited) {
-        if (!examEdited) return@LaunchedEffect
+    LaunchedEffect(mockLimitText, mockLimitEdited) {
+        if (!mockLimitEdited) return@LaunchedEffect
         delay(DebounceMs)
-        if (examParsed != null && examParsed != settings.examDate) viewModel.setExamDate(examParsed)
+        val parsed = mockLimitText.toIntOrNull()
+        if (parsed != null && parsed in AppSettings.EXAM_LIMIT_RANGE && parsed != settings.examLimitMinutes) {
+            viewModel.setExamLimitMinutes(parsed)
+        }
     }
-    val daysLeft = settings.examDate?.let { ChronoUnit.DAYS.between(LocalDate.now(), it) }
 
     // 页根滚动状态提到外面，是为了下面那次「有提示就滚回页首」（见 LaunchedEffect(message)）
     val scrollState = rememberScrollState()
@@ -461,42 +466,75 @@ fun SettingsScreen(
             }
             HorizontalDivider(color = colors.divider)
             SettingBlock(
-                title = "考试日",
+                title = "考试清单",
                 hint = buildString {
-                    append("学习首页的倒计时行按这一天算剩余天数；留空即不显示。")
-                    when {
-                        daysLeft == null -> Unit
-                        daysLeft > 0 -> append("还有 $daysLeft 天。")
-                        daysLeft == 0L -> append("就是今天。")
-                        else -> append("已经过了 ${-daysLeft} 天，改日期或清除。")
-                    }
+                    append("每一场只管它关联的学科，留空 = 全部学科；学习首页的倒计时与排期看最近的一场。")
+                    if (settings.examList.isEmpty()) append("还没设考试，点下面「加一场考试」。")
                 },
-                error = examError,
             ) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    AppTextField(
-                        value = examText,
-                        onValueChange = {
-                            examText = it
-                            examEdited = true
-                        },
-                        placeholder = "2026-12-19",
-                        isError = examError != null,
+                settings.examList.forEachIndexed { i, e ->
+                    ExamRowBlock(
+                        index = i,
+                        entry = e,
+                        onPatch = { next -> viewModel.replaceExam(i, next) },
+                        onRemove = { viewModel.removeExam(i) },
+                    )
+                    Spacer(modifier = Modifier.height(AppTheme.space.sm))
+                }
+                AppButton(
+                    text = "加一场考试",
+                    secondary = true,
+                    onClick = {
+                        // 新场默认摆到 90 天后：默认窗口 30 天，先落在窗外 ——
+                        // 刚点下「加一场」的那一刻不该就把全部排期拧紧张，日期由用户改成真要考的那天。
+                        viewModel.addExam(
+                            ExamEntry(
+                                name = ExamEntry.DEFAULT_NAME,
+                                epochDay = LocalDate.now().plusDays(90).toEpochDay(),
+                            ),
+                        )
+                    },
+                )
+            }
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
+                title = "套卷限时",
+                hint = mockTimingHint(settings.examLimitMinutes, settings.examPauseCountsTime),
+                error = mockLimitError,
+            ) {
+                AppTextField(
+                    value = mockLimitText,
+                    onValueChange = { raw ->
+                        // 只收数字并截到三位（上限 600 分钟），与「每日目标词数」那一格同一手法
+                        mockLimitText = raw.filter { it.isDigit() }.take(3)
+                        mockLimitEdited = true
+                    },
+                    placeholder = "0",
+                    keyboardType = KeyboardType.Number,
+                    isError = mockLimitError != null,
+                )
+            }
+            HorizontalDivider(color = colors.divider)
+            SettingBlock(
+                title = "暂停是否照常计时",
+                hint = "选「照常」：暂停期间限时照扣，截止时刻不动；选「暂停不计」：截止时刻跟着暂停往后推。",
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                    modifier = Modifier.selectableGroup(),
+                ) {
+                    ChoiceTile(
+                        label = "照常计时",
+                        selected = settings.examPauseCountsTime,
+                        onClick = { viewModel.setExamPauseCountsTime(true) },
                         modifier = Modifier.weight(1f),
                     )
-                    if (settings.examDate != null) {
-                        TextButton(
-                            onClick = {
-                                examText = ""
-                                examEdited = true
-                                viewModel.setExamDate(null)
-                            },
-                            // 文字按钮本体约 20dp 高，够不上 48dp（终审 I9）
-                            modifier = Modifier.minimumInteractiveComponentSize(),
-                        ) {
-                            Text(text = "清除", color = colors.warningInk)
-                        }
-                    }
+                    ChoiceTile(
+                        label = "暂停不计",
+                        selected = !settings.examPauseCountsTime,
+                        onClick = { viewModel.setExamPauseCountsTime(false) },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
             HorizontalDivider(color = colors.divider)
@@ -507,9 +545,12 @@ fun SettingsScreen(
                     append("越松则让它多忘一会儿，那一次提取的加固效果反而更强。")
                     append(
                         when {
-                            settings.reviewStrictness != ReviewStrictness.AUTO -> "当前为固定档，不随考试日变化。"
-                            settings.examDate != null -> "当前跟随考试日：考得越近越严。"
-                            else -> "当前为自动，但未填考试日，按 90% 执行。"
+                            // v3.0-B T3 起固定档在考试的冲刺窗口里也会被抬向那场的冲刺值（只抬不压），
+                            // 旧句「不随考试日变化」已经是假话，照实说。
+                            settings.reviewStrictness != ReviewStrictness.AUTO ->
+                                "当前为固定档；进了某场考试的冲刺窗口，目标保留率照样抬向那场的冲刺值，只抬不压。"
+                            settings.examList.isNotEmpty() -> "当前跟随考试：哪科有考试临近，哪科越紧。"
+                            else -> "当前为自动，但未填考试，按 90% 执行。"
                         },
                     )
                 },
@@ -714,7 +755,7 @@ fun SettingsScreen(
         AppCard(modifier = Modifier.fillMaxWidth()) {
             SettingBlock(
                 title = "恢复默认设置",
-                hint = "只清设置这一张表：主题、玻璃、减弱动效、昵称、目标与考试日全部回到默认，" +
+                hint = "只清设置这一张表：主题、玻璃、减弱动效、昵称、目标与考试清单全部回到默认，" +
                     "词库、错题、打卡一条不动。",
             ) {
                 var showResetDialog by rememberSaveable { mutableStateOf(false) }
@@ -1145,6 +1186,116 @@ private fun ChoiceTile(
             maxLines = 1,
         )
     }
+}
+
+/**
+ * 清单里的一场考试：五个字段各是旧「考试日」格那一套写法（`rememberSaveable` 文本 + `edited`
+ * 脏标 + 双向同步守卫 + [DebounceMs] 静默后写），外加一行 ramp 说明。
+ * `internal` 是为了渲染守卫能在 JVM 里直接摆这一行（同 [SchedulePracticeSettings] 的先例：
+ * 整页要 [SettingsViewModel]，背后是 Room，起不来）。
+ *
+ * 状态键用 `entry.epochDay`：写回后日期变了，整行按库里的新值重新落一遍（文本被规范化，
+ * `edited` 归 false）；日期没变则保住用户正在敲的手。两行同日考试也各占各的组合位置，不串写。
+ */
+@Composable
+internal fun ExamRowBlock(
+    index: Int,
+    entry: ExamEntry,
+    onPatch: (ExamEntry) -> Unit,
+    onRemove: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    var name by rememberSaveable(entry.epochDay) { mutableStateOf(entry.name) }
+    var dateText by rememberSaveable(entry.epochDay) { mutableStateOf(LocalDate.ofEpochDay(entry.epochDay).toString()) }
+    var subjectsText by rememberSaveable(entry.epochDay) { mutableStateOf(examSubjectsToText(entry.subjects)) }
+    var sprintText by rememberSaveable(entry.epochDay) { mutableStateOf((entry.rSprint * 100).roundToInt().toString()) }
+    var windowText by rememberSaveable(entry.epochDay) { mutableStateOf(entry.windowDays.toString()) }
+    var edited by rememberSaveable(entry.epochDay) { mutableStateOf(false) }
+    val errors = validateExamDraft(dateText, sprintText, windowText)
+    LaunchedEffect(name, dateText, subjectsText, sprintText, windowText, edited) {
+        if (!edited) return@LaunchedEffect
+        delay(DebounceMs)
+        val next = examFromDraft(
+            name = name,
+            dateText = dateText,
+            subjects = examSubjectsFromText(subjectsText),
+            sprintText = sprintText,
+            windowText = windowText,
+            fallback = entry,
+        )
+        if (next != null && next != entry) onPatch(next)
+    }
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "第 ${index + 1} 场", style = texts.cardTitle, color = colors.primaryText, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = {
+                        edited = true
+                        onRemove()
+                    },
+                    // 文字按钮本体约 20dp 高，够不上 48dp（终审 I9 那条口径）
+                    modifier = Modifier.minimumInteractiveComponentSize(),
+                ) { Text(text = "删除", color = colors.warningInk) }
+            }
+            AppTextField(
+                value = name,
+                onValueChange = { name = it; edited = true },
+                placeholder = "期末考",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            AppTextField(
+                value = dateText,
+                onValueChange = { dateText = it; edited = true },
+                placeholder = "2026-12-19",
+                isError = errors.date != null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            FieldError(errors.date, colors.warningInk, texts.caption)
+            AppTextField(
+                value = subjectsText,
+                onValueChange = { subjectsText = it; edited = true },
+                placeholder = "数学、物理（留空=全部学科）",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+                // 两格并排只靠 placeholder 认不得谁是谁（填了字就没了），label 行是读屏唯一的信息源
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "冲刺保留 %", style = texts.caption, color = colors.secondaryText)
+                    AppTextField(
+                        value = sprintText,
+                        onValueChange = { sprintText = it; edited = true },
+                        placeholder = "95",
+                        keyboardType = KeyboardType.Number,
+                        isError = errors.sprint != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "提前天数", style = texts.caption, color = colors.secondaryText)
+                    AppTextField(
+                        value = windowText,
+                        onValueChange = { windowText = it; edited = true },
+                        placeholder = "30",
+                        keyboardType = KeyboardType.Number,
+                        isError = errors.window != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            FieldError(errors.sprint, colors.warningInk, texts.caption)
+            FieldError(errors.window, colors.warningInk, texts.caption)
+            Text(text = rampHint(entry.windowDays), style = texts.caption, color = colors.secondaryText)
+        }
+    }
+}
+
+/** 一格的错误串：没有就不占位（`SettingBlock` 那个 error 参数管的是整块，逐格错误要自己落） */
+@Composable
+private fun FieldError(message: String?, color: Color, style: TextStyle) {
+    if (message == null) return
+    Text(text = message, style = style, color = color)
 }
 
 /** 占用统计正文：三格一排，两排计数 + 一行体积；`stats == null` 时是「还在算」而不是 0。 */
