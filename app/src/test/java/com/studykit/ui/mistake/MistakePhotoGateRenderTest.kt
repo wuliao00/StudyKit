@@ -92,17 +92,52 @@ class MistakePhotoGateRenderTest {
         composeRule.onNodeWithText("整张照片扣住，重做后再看").assertDoesNotExist()
         composeRule.onNodeWithText("已遮", substring = true).assertDoesNotExist()
     }
+
+    /**
+     * T15 那一行接线的守卫：判定算对了但**没接到渲染层**的话，上面四条一条都发现不了 ——
+     * 它们看的是照片在不在树上，而这里钉的是罩子有没有真的盖上去、点一下有没有真的揭开。
+     */
+    @Test
+    fun `重做阶段画过块的行挂上罩子，点一下整层全揭`() {
+        var opened = 0
+        composeRule.setContent {
+            PhotoHost(
+                phase = RedoPhase.REDO,
+                hasImage = true,
+                shapeCount = 1,
+                shapes = listOf(OcclusionShape.Rect(0.1, 0.1, 0.4, 0.4)),
+                onOpenFullImage = { opened++ },
+            )
+        }
+        // 量具对照：这一屏没组合成功的话，下面那句"节点不存在"就是假的
+        composeRule.onNodeWithText("已遮 1 处，先回忆，点按全揭").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("遮住答案，点按全揭").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("遮住答案，点按全揭").performClick()
+        composeRule.waitForIdle()
+        // 全揭是整层一起揭（R1）：点过一次，那一层就不复存在，没有第二块可揭
+        composeRule.onNodeWithContentDescription("遮住答案，点按全揭").assertDoesNotExist()
+        // 罩子没了，"已遮 N 处"那句必须跟着收回 —— 答案就摆在眼前还说遮着是假话
+        composeRule.onNodeWithText("已遮 1 处，先回忆，点按全揭").assertDoesNotExist()
+        // 揭开不是把照片拿走
+        composeRule.onNodeWithContentDescription("查看大图").assertIsDisplayed()
+        assertEquals("重做阶段点照片不该有第二个手势（灯箱仍归对照阶段）", 0, opened)
+    }
 }
 
 /**
  * 测试宿主：把 [MistakePhotoBlock] 单独摆进主题里，gate 走**生产**的 [buildRedoGate]
  * （不在测试里手搓 `imageVisible`，否则钉的是我自己写的布尔，而不是页面读的那一位）。
+ *
+ * [shapeCount] 与 [shapes] 是两个独立的喂入口：前者进 gate（那句"已遮 N 处"读它），
+ * 后者是 T15 起渲染层真正拿来画罩子的那份列表。老用例保持 `shapes = emptyList()`
+ * （它们钉的是照片在不在树上，与块无关），只有最后那条同时喂两者 —— 那才是页面真实的配对。
  */
 @Composable
 private fun PhotoHost(
     phase: RedoPhase,
     hasImage: Boolean,
     shapeCount: Int = 0,
+    shapes: List<OcclusionShape> = emptyList(),
     onOpenFullImage: () -> Unit = {},
 ) {
     CompositionLocalProvider(
@@ -115,7 +150,7 @@ private fun PhotoHost(
         MistakePhotoBlock(
             imageFile = if (hasImage) File("nope.jpg") else null,
             gate = buildRedoGate("题干", "", phase, hasImage = hasImage, shapeCount = shapeCount),
-            shapes = emptyList(),
+            shapes = shapes,
             onOpenFullImage = onOpenFullImage,
         )
     }

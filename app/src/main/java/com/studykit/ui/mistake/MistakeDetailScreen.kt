@@ -108,7 +108,8 @@ private fun sourceLabel(source: String): String = when (source) {
  * 照片是**与文字段并列**的第二段：拍进来的错题，照片里就印着标准答案，而 v2.5 起这一段在重做
  * 阶段完全不设防。现在它读 [RedoGate.imageVisible] —— 没画遮挡块的照片整张扣到对照阶段（页面
  * 位置留一张占位卡，不让人以为图丢了），画了遮挡块的可以照看（用户已指明答案写在哪几块，
- * 剩下的部分不含答案），遮挡层的渲染与「点按全揭」在 T15 接进 [MistakePhotoBlock] 标好的那一位。
+ * 剩下的部分不含答案）。遮挡块的渲染与「点按全揭」（T15 的 [OcclusionImage]）已经接在
+ * [MistakePhotoBlock] 里：罩子只在重做阶段挂着，点一次整层揭开，没有逐块点揭（猜错的代价是亮答案）。
  * 灯箱（[FullImageOverlay]）是同一段照片的第二条出口，读同一个判定，不许有第二条不设防的路。
  *
  * 阶段用 `rememberSaveable(mistakeId)` 存**阶段名串**：转屏/换屏不丢，换一道题（同一 entry 上
@@ -538,11 +539,10 @@ fun MistakeDetailScreen(
  * 「重做阶段树上根本没有那张照片」这件事，纯函数测试只能证明判定算对了，证明不了它接到了树。
  * 整屏渲染要 [MistakeViewModel]（背后是 Room），JVM 侧起不来，故只渲染这一小段。
  *
- * ⚠️ **T15 落地位就在下面那一整个 `AsyncImage(...)` 调用**：换成
- * `OcclusionImage(model = imageFile, shapes = shapes, modifier = <同一条链>, onRevealAll = ...)`，
- * 其余（圆角、描边、点按、说明行）一字不动 —— 遮挡层的几何与手势全在 `OcclusionOverlay.kt` 那边。
- * 本任务不画半层遮挡（不许半成品），所以 `partiallyCovered` 那句"已遮 N 处"说明在 T15 之前
- * 只会出现在**已经画了块的行**上，而那种行要等 T16 的编辑器才开始入库，今天从 UI 上走不到。
+ * 遮挡层的渲染与点按全揭（v3.0-B T15）就在这里：照片那一位换成 [OcclusionImage]，
+ * 圆角、描边、点按（开灯箱）、说明行**一条链原样搬过去**，几何与手势全在 `OcclusionOverlay.kt` 那边。
+ * 只有「REDO + 画了块 + 还没点揭过」三者同时成立时罩子才在（[coversOn]），说明行读同一个 val，
+ * 于是"已遮 N 处"不会和屏幕上已经摊开的照片各说一套。
  */
 @Composable
 internal fun MistakePhotoBlock(
@@ -553,15 +553,22 @@ internal fun MistakePhotoBlock(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    // 点按全揭是**这一次**的瞬时态，不落库：阶段一变（REDO↔CHECK）或换一张图就归零。
+    // 于是核对阶段天然全露（下面 coversOn 也跟着为假），而「重新遮住答案」回到 REDO 时罩子落回去 ——
+    // 那颗钮的全部意义就是这道题还能再练一遍。
+    var revealedByTap by remember(gate.phase, imageFile) { mutableStateOf(false) }
+    val coversOn = gate.partiallyCovered && !revealedByTap
     if (imageFile != null && gate.hasImage && gate.imageVisible) {
         Spacer(Modifier.height(AppTheme.space.md))
-        AsyncImage(
+        OcclusionImage(
             model = imageFile,
+            shapes = shapes,
             // 不写 current.title：标题就在上方一行，重复一次是噪声（终审 I9）。
             // 但这枚图**可点**（点开灯箱），清空描述会留下一个「未加标签的按钮」，
-            // 反而更糟 —— 故换成它真正做的事。
-            contentDescription = "查看大图",
-            contentScale = ContentScale.FillWidth,
+            // 反而更糟 —— 故换成它真正做的事。画了块时真正可点的是上面那层罩子（自带描述）。
+            photoDescription = "查看大图",
+            revealed = !coversOn,
+            onRevealAll = { revealedByTap = true },
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(AppTheme.radius.lg))
@@ -571,11 +578,11 @@ internal fun MistakePhotoBlock(
                     color = colors.divider,
                     shape = RoundedCornerShape(AppTheme.radius.lg),
                 )
-                // 画了遮挡块之后点按归"全揭"（T15 的 `onRevealAll`），不再是放大原图；
+                // 画了遮挡块之后点按归"全揭"（`OcclusionImage` 那一层），不再是放大原图；
                 // 整张原图能点开的只有「没画块的可见照片」那一种。
                 .clickable(enabled = !gate.partiallyCovered) { onOpenFullImage() },
         )
-        if (gate.partiallyCovered) {
+        if (coversOn) {
             Spacer(Modifier.height(AppTheme.space.xs))
             Text(
                 text = imageCoverHint(gate.shapeCount),
@@ -593,8 +600,6 @@ internal fun MistakePhotoBlock(
             )
         }
     }
-    // `shapes` 目前无人读，它是 T15 那次替换的输入（见上面那条 ⚠️）：
-    // 参数先接上，T15 只改一行调用，不动条件、不动页面。
 }
 
 /**
