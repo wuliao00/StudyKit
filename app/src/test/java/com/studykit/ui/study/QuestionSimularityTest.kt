@@ -40,14 +40,14 @@ class QuestionSimularityTest {
         assertEquals(s.sim(1L, 2L), s.sim(2L, 1L), 1e-6f)
     }
 
-    @Test fun `不认识的 id 一律给零`() {
+    @Test fun `不认识的 id 两侧不同时给零`() {
         val s = QuestionSimularity(listOf(q(1)))
         assertEquals(0f, s.sim(1L, 99L), 1e-6f)
         assertEquals(0f, s.sim(98L, 99L), 1e-6f)
     }
 
     @Test fun `陌生 id 的自反给一不给零`() {
-        // 钉住两条约定的先后：自反排在「陌生 id 给零」之前（见 Simularity 的 KDoc）
+        // 两条约定的先后：自反排在「不认识的 id 给零」之前（见 Simularity 的 KDoc）
         val s = QuestionSimularity(listOf(q(1)))
         assertEquals(1f, s.sim(99L, 99L), 1e-6f)
         assertEquals(0, s.computations)   // 短路在查表之前，不认识也一样不消耗计算
