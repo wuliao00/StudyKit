@@ -14,6 +14,7 @@ import com.studykit.data.entity.Question
  *  - 不认识的 id 给 `0f`（"没有依据"当作不像，绝不因为缺数据而阻断交错）。
  *    两条规则的先后：自反先判，所以两侧同一个 id 时给 `1f`，哪怕这个 id 提供方并不认识 ——
  *    「同一条题和自己不像」讲不通，真正需要"没有依据 ⇒ 当它不像"的是**两个不同 id** 之间查不到东西。
+ *  - 同一对 id 反复调用必须给**同一个**分值（只由这两个入参决定，与调用次数、调用顺序、外部状态都无关）—— `QueueBuilder.report` 会把每一对相邻读两遍（一遍给 `maxAdjSim`、一遍走 `violates`），那两个数对得上的前提就是这条。
  */
 internal fun interface Simularity {
     fun sim(a: Long, b: Long): Float

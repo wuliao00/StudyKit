@@ -9,8 +9,13 @@ import org.junit.Test
  * `QueueBuilder` 第一遍（相邻修复）的约束算法用例（v3.0-C Task 3）。
  *
  * `policy` 用 [LexicalInterleave.DEFAULT]（tauHi=0.60 / tauLo=0.15 / lookahead=12 /
- * maxRepairRounds=4），**唯一的例外**是「换位只往后看 lookahead 个位置」里那两处 `p.copy(lookahead = 1000)`：
- * 那一档就是这条用例的被测对象（"窗口不设界"那个变异），不是夹具在漂。
+ * maxRepairRounds=4），偏离它的地方**只有两类**，都在「换位只往后看 lookahead 个位置」那一条里，
+ * 而且两类都是**被测对象本身**（不是夹具在漂）：
+ *  - 两处 `p.copy(lookahead = 1000)`：钉「窗口不设界」那个变异 —— 同一份夹具要跑两档才给得出
+ *    "无界严格更靠前"这一半观测，把界撤掉正是那个变异做的事；
+ *  - 一处 `p.copy(maxRepairRounds = 3)`：钉「轮数写死成 4、不读 policy」那个变异 —— 轮数停在 DEFAULT 的 4
+ *    上就什么都测不出来（3 轮 23 / 4 轮 11 这个差只存在于把轮数调离 4 的那一档）。
+ * 除这两类之外没有第三条用例改过 policy 的任何字段。
  * 簇型替身 `FixtureSim` 只给 0.9/0.0 两个值，于是"违规"与"可换"没有灰区；
  * 需要灰区的那几条（tauHi / tauLo 的边界、插入的两侧检查）改用手写的按对打分器。
  * 期望值全部手推后实跑核对，⛔ 标记的那几条钉字面量、不读生产常量。
@@ -76,7 +81,9 @@ class QueueBuilderAdjacentTest {
         val crisp = listOf(QueueItem(1, 3f, "A"), QueueItem(2, 2f, "B"), QueueItem(3, 1f, "C"))
         val plan = QueueBuilder.build(crisp, simOf(crisp), emptyList(), emptyMap(), p)
         assertEquals(listOf(1L, 2L, 3L), plan.queue.map { it.id })
-        assertEquals(0, plan.pulled)
+        // 原来这里有一句 `assertEquals(0, plan.pulled)`，修复轮 2 删掉了：这条的池是 `emptyList()`，
+        // 空池下 `pulled` 恒为 0、与算法无关，它不可能红 ⇒ 白断言（同 F17 那两句的理由）。
+        // 要钉"上限开着时仍然优先换位"请看「优先窗口内换位而不是拉缓冲卡」，那里的池真有一张可插的卡。
         assertTrue(plan.unresolved.isEmpty())
     }
 
@@ -255,6 +262,21 @@ class QueueBuilderAdjacentTest {
         assertEquals(listOf(0), plan.unresolved)
     }
 
+    @Test fun `池卡与右邻恰好等于 tauLo 时不许插`() {
+        // ⛔ 上面那条的**右半边**镜像（v3.0-C T3 修复轮 2 的 N2）：上一条把边界压在左邻（90 与 1 恰好 0.15f、
+        // 与右邻 2 是 0f），于是「只把右侧那个 `< policy.tauLo` 松成 `<=`」这一刀在它身上不可见 ——
+        // 右邻那一侧是 0f，`<` 与 `<=` 同解（修复轮 1 报告「要说准的口径」第 2 条把这条记成留口）。
+        // 这里反过来：90 与左邻 1 是 0f、与右邻 2 **恰好** 0.15f ⇒ pristine 的 `<` 拒它，`<=` 放它进来。
+        // 只松右侧那一刀的实跑红象（修复轮 2 真跑）：这一条红在 `pulled`（`expected:<0> but was:<1>`），
+        // 池卡被插到下标 1 ⇒ size 从 10 变 11，19 条里只这一条红。
+        // 同样必须 ≥10 条：cap = 10*10/100 = 1 ⇒ 上限开着，"没插"只能归因于这道边界判定。
+        val items = (1L..10L).map { QueueItem(it, (11 - it).toFloat(), "A") }
+        val plan = QueueBuilder.build(items, nonTransitiveSim(similarTo = 2L, poolScore = 0.15f), listOf(QueueItem(90, 0f, "Z")), emptyMap(), p)
+        assertEquals(0, plan.pulled)
+        assertEquals(10, plan.queue.size)
+        assertEquals(listOf(0), plan.unresolved)          // 违规还在 (1,2) 那对上，插入被拒 ⇒ 没挪动它
+    }
+
     @Test fun `池里已经在队列的 id 不许重复拉入`() {
         // 变异「删掉 `it.id !in inQueue`」的杀手。夹具要点（16 条）：
         //  - 违规在 i=0，窗口 [2,13] 全是簇 1 ⇒ 换不动，只能插；cap = 16*10/100 = 1 ⇒ 上限是开着的；
@@ -279,7 +301,8 @@ class QueueBuilderAdjacentTest {
         val plan = QueueBuilder.build(items, simOf(items), emptyList(), emptyMap(), p)
         assertTrue(plan.unresolved.isNotEmpty())
         assertTrue(plan.maxAdjSim!! > p.tauHi)
-        assertEquals(0, plan.pulled)
+        // `assertEquals(0, plan.pulled)` 修复轮 2 删掉了（同上一条那两句的理由）：池是 `emptyList()` ⇒
+        // 这张空池里什么都拉不出来，那句在任何实现下都红不了。这条真正钉的是上面两句加下面 size。
         assertEquals(3, plan.queue.size)                  // 上报不等于顺手丢条目
     }
 
