@@ -57,7 +57,8 @@ internal data class QueuePlan(
  *        预算封顶的是"尝试次数"（被落点拒掉的也算一次），所以这一项与映射里有多少对子无关。
  *        `gap` 与 drill 落位用的都是下标查找（[gapOf]/[stampGaps]），不查表 ⇒ 不进这笔账；
  *      - 外加 [report] 的 `2 × (n − 1)` 次读数（`maxAdjSim` 一遍、`unresolved` 走 [violates] 一遍）。
- *     上界存在 Task 8 才钉得住，届时按这五项推（它那些用例的 `confusable` 都是空映射 ⇒ 第二、三项为 0）；
+ *     上界存在 Task 8 才钉得住，届时按这五项推（它那些用例的 `confusable` 都是空映射 ⇒ 一张都不会真挪 ⇒
+ *     **第二、四项为 0**；第三项要看池子 —— Task 8 里有一条 500 张缓冲池的用例，那一条它不为 0）；
  *  2. drills 之后**复扫**一遍（参考实现挪完 b 就不管新邻居了，偏差 D6 第 2 条）；
  *  3. `maxAdjSim` 用 `maxOfOrNull`，少于两条给 null，不抛；
  *  4. 一切遍历序定死：排序键 `(urgency desc, id asc)`，混淆映射按 id 升序走（[applyDrills] 外层 `TreeMap` 归一化，
@@ -295,7 +296,9 @@ internal object QueueBuilder {
         abs(q.indexOfFirst { it.id == aId } - q.indexOfFirst { it.id == bId })
 
     /**
-     * 把 [moving] 放到距 anchor [InterleavePolicy.gapLo] 题的位置。
+     * 把 [moving] 放到距 anchor [InterleavePolicy.gapLo] 题的位置 —— **想去的那个位置够不着时由
+     * `coerceIn` 夹到队尾**（anchor 已经贴着队尾就是这一档），夹过之后实际距离就短于 gapLo；
+     * 这一对因此可能仍然隔得不够开，真实距离照旧由 [QueueDrill.gap] 报，这里不假装挪成了。
      *
      * 先删后算：`removeAt(ib)` 会让 `ib` 之后的所有下标左移一格，anchor 在 `ib` 之后时必须减一
      * —— 文档参考实现正是漏了这一步（偏差 D6 第 1 条）。
