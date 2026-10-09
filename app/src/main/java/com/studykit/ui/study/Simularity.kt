@@ -4,7 +4,8 @@ import com.studykit.data.entity.Question
 
 /**
  * 相似度提供方。id 是各内容类型自己的主键（题库轮里就是 `Question.id`），
- * 提供方**不解释 id 从哪来** —— 这正是把词面实现换成嵌入实现时唯一要动的地方（计划 D1 留下的缝）。
+ * 提供方**不解释 id 从哪来** —— 这正是把词面实现换成嵌入实现时提供方这一侧唯一要动的地方（计划 D1 留下的缝；
+ * 语义包还带来它自己的刻度，那一份在 `InterleavePolicy` 侧另开，不在这条缝上）。
  *
  * 约定（`QuestionSimularity` 与测试替身都要守住）：
  *  - `sim(a, a) == 1f`（自反）；
@@ -24,7 +25,10 @@ internal fun interface Simularity {
  * 为什么要它而不是直接把 `(Long, Long) -> Float` 传来传去：`QueueBuilder` 在一轮修复里会
  * 反复问同一对（换位的窗口扫、插入前查两个邻居、drills 复扫），不记忆化的话重复计算把
  * 500 题那一档的预算直接撑爆（偏差 D5 的整个理由）。两个计数器是给测试钉上界用的，
- * 不是诊断装饰 —— Task 8 的查找上界断言全靠 [lookups]。
+ * 不是诊断装饰 —— 但口径要说准：Task 8 的查找上界是在它自己的测试替身上数的，公式取的是
+ * `LexicalInterleave.DEFAULT` 的 `lookahead` 与 `maxRepairRounds`；[lookups] 在这里是这一层的证据，
+ * 说明同一个口径（一次 `sim()` 记一笔）在本类就数得出来。
+ * 两个计数器都是非线程安全的可变状态、不提供 reset —— 按「一次同步构建一个队列」的用法设计。
  *
  * 记忆化的粒度是**对**，不是单题的二元组：[pairs] 保证每对不同的题最多真实调用一次
  * [TextSimilarity.questionSimilarity]（正向与反向共用同一条目），此后两侧都是缓存命中。

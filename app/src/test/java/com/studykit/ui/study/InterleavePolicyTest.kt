@@ -13,7 +13,7 @@ import org.junit.Test
  */
 class InterleavePolicyTest {
 
-    @Test fun `词面刻度的五个阈值顺序自洽`() {
+    @Test fun `四个分值阈值的顺序自洽`() {
         val p = LexicalInterleave.DEFAULT
         // tauLo < drillLo < tauHi < drillHi：缓冲卡够不像、混淆带跨过相邻线、上界仍低于"重复"
         assertTrue("tauLo=${p.tauLo}", p.tauLo < p.drillLo)
@@ -41,7 +41,7 @@ class InterleavePolicyTest {
     }
 
     @Test fun `文档的余弦刻度没被误用成词面刻度`() {
-        // ⛔ 这条钉的是偏差 D3：0.85/0.30 是余弦的尺子，套到 Dice 上闸门永远关不上。
+        // ⛔ 这条钉的是偏差 D3：0.85/0.30 是余弦的尺子，照搬会让闸门很少关上（只有归一化后同文的对子必然触发）。
         // 期望值写成字面量，不读文档也不读别处常量 —— 改 DEFAULT 就必须让这条红。
         assertEquals(0.60f, LexicalInterleave.DEFAULT.tauHi, 1e-6f)
         assertEquals(0.15f, LexicalInterleave.DEFAULT.tauLo, 1e-6f)
@@ -52,12 +52,5 @@ class InterleavePolicyTest {
         assertEquals(8, LexicalInterleave.DEFAULT.topK)
         assertEquals(12, LexicalInterleave.DEFAULT.lookahead)
         assertEquals(4, LexicalInterleave.DEFAULT.maxRepairRounds)
-    }
-
-    @Test fun `相邻线上界的严格性有定义域`() {
-        // tauHi 用"严格大于"判违规（文档 L1243 `sim(...) > TAU_HI`），恰好等于不算违规。
-        // 这条不是自证：它要求 Task 3 的实现用 > 而不是 >=，改了实现就要红。
-        val p = LexicalInterleave.DEFAULT
-        assertTrue(p.tauHi > p.tauLo)
     }
 }
