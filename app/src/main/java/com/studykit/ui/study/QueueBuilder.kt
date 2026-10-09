@@ -1,9 +1,16 @@
 package com.studykit.ui.study
 
-/** 队列里的一项。[urgency] 越大越该先出；装配层用它承载"原序位置"，见 `QuestionQueuePlanner`。 */
+/**
+ * 队列里的一项。[urgency] 越大越该先出。
+ * 「装配层用它承载原序位置」是**前瞻**：那个装配层是 `QuestionQueuePlanner`（Task 5），本任务里还没有读这个字段的代码
+ * —— 现在唯一用到它的是 [build] 的排序键。
+ */
 internal data class QueueItem(val id: Long, val urgency: Float, val subject: String)
 
-/** 一对被判定为易混的对子，[gap] 是**最终**队列里两者的距离（不是移动前的） */
+/**
+ * 一对被判定为易混的对子，[gap] 是**最终**队列里两者的距离（不是移动前的）。
+ * 前瞻：本任务不产出它（[QueuePlan.drillPairs] 恒空），[gap] 的这条口径要等 Task 4 的第二遍填进它才算被验证过。
+ */
 internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
 
 /**
@@ -30,9 +37,15 @@ internal data class QueuePlan(
  *
  * 与文档参考实现的差别全部记在计划的偏差 D5/D6：
  *  1. 有界窗口 + 每轮一次单向前扫 + 最多 [InterleavePolicy.maxRepairRounds] 轮，
- *     替掉最坏 O(n²) 的全尾扫描 —— 换位尝试的上界是 `n × lookahead × maxRepairRounds`，
- *     上界存在 Task 8 才钉得住；
- *  2. drills 之后**复扫**一遍（参考实现挪完 b 就不管新邻居了，Task 4）；
+ *     替掉最坏 O(n²) 的全尾扫描 —— 查表次数上界由**两项**相加，只写第一项会低估：
+ *      - 换位项：`n × (lookahead + 1) × maxRepairRounds`（每个位置 1 次相邻判定 + 窗口内至多 lookahead 次候选判定）；
+ *      - **插池扫描项**：`insertBuffer` 是在**每个**违规位置上都试的（只要 `pulled < pullCap` 还没耗尽），
+ *        每试一次最坏扫完整池、每条候选查两个邻居 ⇒ `违反位置数 × maxRepairRounds × |pool| × 2`，
+ *        其中违反位置数 ≤ `n`。池里有几百张都不像的卡时这一项比换位项大一个数量级
+ *        （n=500、|pool|=500 时约为第一项的 80 倍），所以它必须写在账上；
+ *      - 外加 [report] 的 `2 × (n − 1)` 次读数（`maxAdjSim` 一遍、`unresolved` 走 [violates] 一遍）。
+ *     上界存在 Task 8 才钉得住，届时按这三项推；
+ *  2. drills 之后**复扫**一遍（参考实现挪完 b 就不管新邻居了；复扫在 Task 4，本任务没有它）；
  *  3. `maxAdjSim` 用 `maxOfOrNull`，少于两条给 null，不抛；
  *  4. 一切遍历序定死：排序键 `(urgency desc, id asc)`，混淆映射按 id 升序走。
  *
@@ -41,7 +54,10 @@ internal data class QueuePlan(
  */
 internal object QueueBuilder {
 
-    /** 缓冲拉前的条数上限的分母：文档 L1264「pulled 上限 = due 数 ×10%」 */
+    /**
+     * 缓冲拉前条数上限的**分子**：`due 条数 × PULL_CAP_PERCENT / 100`（分母是那个 100，不是这里的 10），
+     * 对应文档 L1264「pulled 上限 = due 数 ×10%」。整数除法 ⇒ 不足十题的会话上限就是 0。
+     */
     private const val PULL_CAP_PERCENT = 10
 
     fun build(
@@ -59,12 +75,29 @@ internal object QueueBuilder {
     }
 
     /**
+     * 相邻违规判定的**唯一一处**算术（计划的全局约束「单一算术之家：相邻判定、gap 计算、pull 上限只允许一处实现」）：
+     * [repairAdjacent] 的修复点与 [report] 的 `unresolved` 都调它，不在两处各写一遍 `> policy.tauHi`。
+     *
+     * 方向：严格大于 —— 分值**恰好等于** `tauHi` 不算违规。简报里那版把这条式子内联在两处，
+     * 与全局约束直接冲突，约束胜出（这条是裁定，不是实现者的判断）。
+     *
+     * 前置条件 `tauLo <= tauHi`：[InterleavePolicy] 是普通 data class、不校验任何不变量，
+     * 所以这里只把口径写死在句子中；这条不变量归 [repairAdjacent] 的完备性段讨论，
+     * 而 `LexicalInterleave.DEFAULT` 的 `tauLo < tauHi` 由 `InterleavePolicyTest` 的顺序用例钉着 ——
+     * 换一份不满足它的 policy 进来，本类不保证修干净（`unresolved` 会如实报出来，不是静默错序）。
+     */
+    private fun violates(a: QueueItem, b: QueueItem, sim: Simularity, policy: InterleavePolicy): Boolean =
+        sim.sim(a.id, b.id) > policy.tauHi
+
+    /**
      * 相邻修复。返回拉入的缓冲卡数。
      *
      * 每轮就是**一次单向前扫**，动完位置只 `i++`，不回退。不回退是完备的，因为一次移动只会
      * 碰坏指针前方或脚下的相邻对：换位 `i+1 <-> j`（`j >= i+2`）改动的相邻对只有
      * `(i,i+1)`、`(i+1,i+2)`、`(j-1,j)`、`(j,j+1)` 四对 —— `(i,i+1)` 由换位的成立条件
      * （`sim(q[i], q[j]) < tauLo`，而换进 `i+1` 的正是原来 `j` 上那条）直接保证合格，
+     * **这一句要 `tauLo <= tauHi` 才成立**（[InterleavePolicy] 不校验它，是文档口径；真把 tauLo 调到 tauHi 之上，
+     * 换进来那条就可能自己违规而前扫不再回看它）；
      * 其余三对分别在本轮的 `i+1`（下一步就查到）、`j-1`、`j` 三处被重新查到，
      * `j > i+1` 保证指针一定追得上。插入只新增 `(i,i+1)` 与 `(i+1,i+2)` 两对，
      * 两对都在插入前查过（两侧邻居都不像才让插），而 `(旧 i+1, 旧 i+2)` 在 `i+2` 处查到。
@@ -80,8 +113,9 @@ internal object QueueBuilder {
      * 那为什么还要多轮：本轮走到 `i` 时"窗口里没有可换的"不等于这个位置整轮都修不动 ——
      * 同一轮里更靠后的换位会把一张异簇卡片搬进 `i` 的窗口范围（候选被搬到 `i'+1`，而 `i'` 落在 `i` 的窗口内），
      * 但指针已经走过 `i`，只有下一轮从头再扫才捡得到它。「换位只往后看 lookahead 个位置」那条用例的
-     * 60 条夹具就是这么一轮把队尾那张往前搬一格、四轮搬四格（59 → 47 → 35 → 23 → 11）。
-     * 轮数由 [InterleavePolicy.maxRepairRounds] 封住上界，本轮 `changed` 为假即早停。
+     * 60 条夹具就是这么搬的：**每轮最多前移一个窗口（`lookahead` 格），四轮 48 格**（59 → 47 → 35 → 23 → 11）。
+     * 轮数由 [InterleavePolicy.maxRepairRounds] 封住上界，本轮 `changed` 为假即早停；
+     * 那条用例同时钉了 `maxRepairRounds = 3` 的下标（23），所以"循环真读的是 policy 的轮数"不是只能靠读代码相信。
      */
     private fun repairAdjacent(
         q: MutableList<QueueItem>,
@@ -97,7 +131,7 @@ internal object QueueBuilder {
             var changed = false
             var i = 0
             while (i < q.size - 1) {
-                if (sim.sim(q[i].id, q[i + 1].id) > policy.tauHi) {
+                if (violates(q[i], q[i + 1], sim, policy)) {
                     val moved = swapInWindow(q, i, sim, policy) ||
                         (pulled < pullCap && insertBuffer(q, inQueue, i, sim, pool, policy).also { if (it) pulled++ })
                     if (moved) changed = true
@@ -132,8 +166,14 @@ internal object QueueBuilder {
     }
 
     /**
-     * 从池里挑一条缓冲卡插到 i+1。候选必须**同时**与左右两邻足够不像 ——
-     * 只查一侧会把一个违规换成两个（文档 L1246 两侧都查，这条照抄）。
+     * 从池里挑一条缓冲卡插到 i+1。候选必须**同时**与左右两邻足够不像（文档 L1246 两侧都查，这条照抄）。
+     *
+     * 两侧都查的理由要说准，不是"只查一侧会把一个违规换成两个"—— 那是算术上的错话：
+     * 插入把 `(q[i], q[i+1])` 这一对**劈成** `(q[i], 新卡)` 与 `(新卡, q[i+1])` 两对，
+     * 被查的那一侧已经合格，没查的那一侧才可能违规 ⇒ 最坏情形是**一个挪了位置的违规 + 一次白拉**，
+     * 违规总数不增（`池卡与右邻相似时不许插` 就是这一刀的杀手，它先红在 `pulled`：
+     * 修复轮 1 实跑 `expected:<0> but was:<1>`；被挪走的那个违规还留在队列里，只是换了下标）。
+     * 即便如此这一刀仍然该防：违规没被修掉，只是换了地方并且吃掉了一张缓冲额度。
      *
      * 「两侧都查」得靠簇型替身之外的按对分值才钉得住：替身的簇是传递的，两邻同簇时
      * "像一侧"必然"像两侧"，只查一侧的实现照样过。所以那两条用例改用非传递的按对打分器
@@ -157,7 +197,10 @@ internal object QueueBuilder {
         return true
     }
 
-    /** 汇总最终队列的读数（第二遍与复扫都复用这一份，不再各算各的） */
+    /**
+     * 汇总最终队列的读数。相邻违规的判定走 [violates]（与修复点同一个家），这里不另写比较式。
+     * 前瞻：第二遍（drills）与复扫都在 Task 4，本任务只有第一遍调用它，`drills` 实参恒为 `emptyList()`。
+     */
     private fun report(
         q: List<QueueItem>,
         sim: Simularity,
@@ -165,13 +208,12 @@ internal object QueueBuilder {
         drills: List<QueueDrill>,
         policy: InterleavePolicy,
     ): QueuePlan {
-        val adjacent = (0 until q.lastIndex).map { i -> i to sim.sim(q[i].id, q[i + 1].id) }
         return QueuePlan(
             queue = q,
             pulled = pulled,
-            maxAdjSim = adjacent.maxOfOrNull { it.second },
+            maxAdjSim = (0 until q.lastIndex).maxOfOrNull { sim.sim(q[it].id, q[it + 1].id) },
             drillPairs = drills,
-            unresolved = adjacent.filter { it.second > policy.tauHi }.map { it.first },
+            unresolved = (0 until q.lastIndex).filter { violates(q[it], q[it + 1], sim, policy) },
         )
     }
 }

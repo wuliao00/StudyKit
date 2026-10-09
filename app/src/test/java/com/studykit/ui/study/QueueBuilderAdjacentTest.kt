@@ -8,8 +8,11 @@ import org.junit.Test
 /**
  * `QueueBuilder` 第一遍（相邻修复）的约束算法用例（v3.0-C Task 3）。
  *
- * `policy` 一律用 [LexicalInterleave.DEFAULT]（tauHi=0.60 / tauLo=0.15 / lookahead=12 /
- * maxRepairRounds=4），簇型替身 `FixtureSim` 只给 0.9/0.0 两个值，于是"违规"与"可换"没有灰区。
+ * `policy` 用 [LexicalInterleave.DEFAULT]（tauHi=0.60 / tauLo=0.15 / lookahead=12 /
+ * maxRepairRounds=4），**唯一的例外**是「换位只往后看 lookahead 个位置」里那两处 `p.copy(lookahead = 1000)`：
+ * 那一档就是这条用例的被测对象（"窗口不设界"那个变异），不是夹具在漂。
+ * 簇型替身 `FixtureSim` 只给 0.9/0.0 两个值，于是"违规"与"可换"没有灰区；
+ * 需要灰区的那几条（tauHi / tauLo 的边界、插入的两侧检查）改用手写的按对打分器。
  * 期望值全部手推后实跑核对，⛔ 标记的那几条钉字面量、不读生产常量。
  */
 class QueueBuilderAdjacentTest {
@@ -47,13 +50,14 @@ class QueueBuilderAdjacentTest {
      *
      * 为什么不能用 [FixtureSim]：簇是传递的，"与右邻像"的那张卡必然"与左邻也像"（两邻同簇），
      * 于是它连单侧检查都过不了 —— 「只查一侧」这个变异在簇型替身下**永不现形**，
-     * 只能换成手写按对分值。`similarTo` 给的是池卡唯一相似的那一个队列 id。
+     * 只能换成手写按对分值。`similarTo` 给的是池卡唯一相似的那一个队列 id，
+     * `poolScore` 是池卡与那一侧的分值（默认 0.90f = 明显相似；钉 tauLo 边界那条传 0.15f）。
      */
-    private fun nonTransitiveSim(similarTo: Long): Simularity = Simularity { a, b ->
+    private fun nonTransitiveSim(similarTo: Long, poolScore: Float = 0.90f): Simularity = Simularity { a, b ->
         when {
             a == b -> 1f
             (a == 1L && b in 2L..10L) || (b == 1L && a in 2L..10L) -> 0.90f
-            (a == 90L && b == similarTo) || (b == 90L && a == similarTo) -> 0.90f
+            (a == 90L && b == similarTo) || (b == 90L && a == similarTo) -> poolScore
             else -> 0f
         }
     }
@@ -85,15 +89,30 @@ class QueueBuilderAdjacentTest {
     @Test fun `恰好等于 tauHi 的相邻不算违规而高出一点就算`() {
         // ⛔ 比较方向：文档 L1243 写的是 `sim(...) > TAU_HI`，等于不算违规。
         // Task 2 原有一条测试自称钉住了这件事，但它只读 policy 自己的字段，任何实现改动都红不了，
-        // 评审后已删（T2 修复轮 1）。真正钉住它的是下面这两条：分值恰好压在 0.60f 上，与高出 0.01f。
+        // 评审后已删（T2 修复轮 1）。真正钉住它的是下面这两段：分值恰好压在 0.60f 上，与高出 0.01f。
         // 期望值全部写字面量，不读生产常量。
-        val items = listOf(QueueItem(1, 2f, "A"), QueueItem(2, 1f, "A"))
-        val onBoundary = Simularity { a, b -> if (a == b) 1f else 0.60f }
+        //
+        // 第三题（与 1、2 都是 0f）是**必需的**，不是凑数：相邻判定在 [QueueBuilder] 里有两个调用点
+        // （修复点与 report 的 unresolved），它们共用 `violates` 这一个家。有第三条可换候选在窗口里，
+        // 修复点那半边的 `>` 松成 `>=` 才会改变**看得见的末序**（[1, 2, 3] → [1, 3, 2]）；
+        // 只有两条时这一刀在修复点不可见（窗口里没东西可换，队列原地不动），只剩 report 那半边能红。
+        val items = listOf(QueueItem(1, 2f, "A"), QueueItem(2, 1f, "A"), QueueItem(3, 0f, "B"))
+        // 1 与 2 恰好压在 tauHi=0.60f 上；3 与两侧都是 0f（既不算违规，也是合格的可换候选）
+        val onBoundary = Simularity { a, b ->
+            when {
+                a == b -> 1f
+                (a == 1L && b == 2L) || (b == 1L && a == 2L) -> 0.60f
+                else -> 0f
+            }
+        }
         val plan = QueueBuilder.build(items, onBoundary, emptyList(), emptyMap(), p)
+        assertEquals(listOf(1L, 2L, 3L), plan.queue.map { it.id })     // 修复点不动它：等于 tauHi 不触发换位
         assertTrue("等于 tauHi 被判成违规: ${plan.unresolved}", plan.unresolved.isEmpty())
         assertEquals(0.60f, plan.maxAdjSim!!, 1e-6f)
+        // 高出一点就算：这里用两条夹具，因为第三条会在 0.61f 那一档再多引入一个违规位置（把期望从 [0] 变成 [0, 1]），
+        // 与这条要钉的"比较方向"无关。
         val justOver = Simularity { a, b -> if (a == b) 1f else 0.61f }
-        val over = QueueBuilder.build(items, justOver, emptyList(), emptyMap(), p)
+        val over = QueueBuilder.build(listOf(QueueItem(1, 2f, "A"), QueueItem(2, 1f, "A")), justOver, emptyList(), emptyMap(), p)
         assertEquals(listOf(0), over.unresolved)
     }
 
@@ -116,7 +135,10 @@ class QueueBuilderAdjacentTest {
         val plan = QueueBuilder.build(items, simOf(items), emptyList(), emptyMap(), p)
         assertTrue("仍有未解决: ${plan.unresolved}", plan.unresolved.isEmpty())
         val adj = plan.queue.zipWithNext().maxOfOrNull { (a, b) -> simOf(items).sim(a.id, b.id) } ?: 0f
-        assertTrue("maxAdjSim=$adj", adj <= p.tauHi)
+        // ⛔ 上限写**字面量** 0.60f（= 现在 DEFAULT.tauHi 的值），不读 p.tauHi：
+        // 读常量的话，`DEFAULT.tauHi` 哪天被抬到 0.9f 之上（于是相邻违规根本不触发、`adj` 停在 0.9f）
+        // 这句照样绿 —— 那正是这条用例要防的那种"自己给自己发合格证"。
+        assertTrue("maxAdjSim=$adj", adj <= 0.60f)
         assertEquals(adj, plan.maxAdjSim!!, 1e-6f)
     }
 
@@ -129,19 +151,36 @@ class QueueBuilderAdjacentTest {
     }
 
     @Test fun `优先窗口内换位而不是拉缓冲卡`() {
-        // A A B：位置 0/1 违规，位置 2 是异簇 ⇒ 应该把 2 换到 1，pulled 必须留在 0
-        val items = listOf(QueueItem(1, 3f, "A"), QueueItem(2, 2f, "A"), QueueItem(3, 1f, "B"))
+        // 「先看窗口、窗口里没有才去看池」这个**优先级**必须由断言观测得出来，所以夹具要满足两件事：
+        //  1. 违规位置后面**有**可换的异簇候选（位置 2 的 3）；
+        //  2. 拉前上限是**开着的**（10 条 ⇒ cap = 10*10/100 = 1），而且池里那张与两侧都不像 ⇒ 插一张技术上完全可行。
+        // 三条的旧夹具做不到：cap = 3*10/100 = 0，于是把 `swapInWindow(...) || insertBuffer(...)` 换成
+        // 池优先（`insertBuffer(...) || swapInWindow(...)`）之后**什么测试都不红** —— 两种序都插不进来。
+        // 现在这两句断言把优先级钉死了：pristine 的 `pulled` 停在 0、末序是 [1, 3, 2, 4, 5, 7, 6, 8, 9, 10]。
+        // 把两半换成池优先再跑同一份夹具（修复轮 1 实跑，18 条里只这一条红）：`pulled` 从 0 变 1
+        // （`expected:<0> but was:<1>`，下面第一句当场红）—— 那张池卡被插进 i+1 = 下标 1，于是末序也不再是上面那个字面量。
+        // （`||` 的短路本身看不见 —— 本用例没有数查表次数，被钉的是它的**结果**：先看窗口就别拉卡。）
+        val items = listOf(
+            QueueItem(1, 10f, "A"), QueueItem(2, 9f, "A"), QueueItem(3, 8f, "B"),
+            QueueItem(4, 7f, "B"), QueueItem(5, 6f, "C"), QueueItem(6, 5f, "C"),
+            QueueItem(7, 4f, "A"), QueueItem(8, 3f, "B"), QueueItem(9, 2f, "C"),
+            QueueItem(10, 1f, "A"),
+        )
         val pool = listOf(QueueItem(90, 0f, "Z"))
-        val plan = QueueBuilder.build(items, simOf(items), pool, emptyMap(), p)
+        // 三簇按题干首字母分，池卡 90 单独占一簇（与三个簇都不像 ⇒ cap 开着就一定插得进来）
+        val sim = FixtureSim(items.associate { it.id to it.subject[0].code } + (90L to 'Z'.code))
+        val plan = QueueBuilder.build(items, sim, pool, emptyMap(), p)
         assertEquals(0, plan.pulled)
-        assertEquals(listOf(1L, 3L, 2L), plan.queue.map { it.id })
+        assertEquals(listOf(1L, 3L, 2L, 4L, 5L, 7L, 6L, 8L, 9L, 10L), plan.queue.map { it.id })
         assertTrue(plan.unresolved.isEmpty())
     }
 
     @Test fun `窗口内没有可换的才从池里插一张缓冲`() {
         // 10 条全同簇：位置 0 后面全是同簇（窗口内无可换），只能插池卡。
-        // **必须是 10 条**：拉前上限是 `n×10/100`，4 条的会话上限是 0，那样这条测试会
-        // 因为"上限挡着"而通过，跟"窗口里没有可换的"这件事完全无关（派发前手推发现的）。
+        // **必须 ≥10 条**：拉前上限是 `n×10/100`，4 条 ⇒ cap=0 ⇒ 卡根本插不进来，于是这条会红在下面那句
+        // `pulled` 上（断言 1、实跑得 0），而不是红在它要钉的那件事（"窗口里没得换"）上 ——
+        // 断言 `pulled == 1` 的用例被 cap 挡着是**红**，不是白过；"cap=0 就白过"那句只适用于断言
+        // `pulled == 0` 的用例（上面「优先窗口内换位而不是拉缓冲卡」与下面那几条带池卡的用例），那里 cap 关着就等于什么都没测。
         val items = (1L..10L).map { QueueItem(it, (11 - it).toFloat(), "A") }
         val poolItem = QueueItem(90, 0f, "Z")
         val sim = FixtureSim(items.associate { it.id to 1 } + (poolItem.id to 9))
@@ -177,22 +216,40 @@ class QueueBuilderAdjacentTest {
     }
 
     @Test fun `池卡与右邻相似时不许插`() {
-        // 变异「插入只查左邻」的杀手：违规对 1X/2X 的**右邻** 2 与池卡 90 像、左邻 1 不像。
+        // 变异「插入只查左邻」（= 把右侧那条检查删掉）的杀手：违规对 1X/2X 的**右邻** 2 与池卡 90 像、左邻 1 不像。
         // 只查左侧的实现会接受 90 并把它插到下标 1 ⇒ pulled 变 1、队列变 11 条 ⇒ 这条红。
         // 必须 ≥10 条：拉前上限 = 10*10/100 = 1，于是"没插"只能归因于邻居检查而不是上限（上限此时是开着的）。
         val items = (1L..10L).map { QueueItem(it, (11 - it).toFloat(), "A") }
         val plan = QueueBuilder.build(items, nonTransitiveSim(similarTo = 2L), listOf(QueueItem(90, 0f, "Z")), emptyMap(), p)
         assertEquals(0, plan.pulled)
         assertEquals(10, plan.queue.size)
-        assertEquals(listOf(0), plan.unresolved)              // 违规还在原地，没被挪成两个
+        // 违规还在原地。别把它读成"否则会变成两个"：插入是把 `(1,2)` 这一对**劈开**，
+        // 被查的左半边合格、没查的右半边违规 ⇒ 那个变异给的是一个挪了位置的违规（下标 1）+ 一次白拉，
+        // 不是两个；实际先红的是上面那句 `pulled`。
+        assertEquals(listOf(0), plan.unresolved)
     }
 
     @Test fun `池卡与左邻相似时不许插`() {
         // 上一条的镜像，变异「插入只查右邻」的杀手：池卡 90 与**左邻** 1 像、与右邻 2 不像。
-        // 与 [p] 的簇型替身区分不开的那件事，在这里靠非传递的按对分值分开：
-        // 簇是传递的，两邻同簇 ⇒ 像一侧就必然像两侧，「只查一侧」在簇型替身下永不现形。
+        // 这件事在 FixtureSim 那种簇型替身下区分不开（簇是传递的，两邻同簇 ⇒ 像一侧就必然像两侧，
+        // 「只查一侧」在簇型替身下永不现形），所以这里换成非传递的按对打分器把它分开。
         val items = (1L..10L).map { QueueItem(it, (11 - it).toFloat(), "A") }
         val plan = QueueBuilder.build(items, nonTransitiveSim(similarTo = 1L), listOf(QueueItem(90, 0f, "Z")), emptyMap(), p)
+        assertEquals(0, plan.pulled)
+        assertEquals(10, plan.queue.size)
+        assertEquals(listOf(0), plan.unresolved)
+    }
+
+    @Test fun `池卡与邻居恰好等于 tauLo 时不许插`() {
+        // ⛔ tauLo 的**严格方向**在插入侧的两个检查上（文档 L1244：候选要 `sim < tauLo` 才算足够不像）。
+        // 上面两条两侧检查的用例钉不住它：那里的池卡分值要么是 0.90f、要么是 0f，`<` 与 `<=` 给出的答案一样。
+        // 这条把池卡压到边界上：90 与左邻 1 的分值**恰好** 0.15f，与右邻 2 是 0f ⇒ pristine 的 `<` 拒它。
+        // 把 `insertBuffer` 的两个 `< policy.tauLo` 松成 `<=` 后（修复轮 1 实跑，18 条里只这一条红）：0.15f 被当成合格 ⇒
+        // 池卡真被插进下标 1 ⇒ `pulled` 从 0 变 1（`expected:<0> but was:<1>`，第一句当场红），
+        // 下面那句 size 也跟着成立不了（10 条变 11 条）。
+        // 同样必须 ≥10 条：cap = 1 ⇒ 上限开着，"没插"只能归因于这道边界判定。
+        val items = (1L..10L).map { QueueItem(it, (11 - it).toFloat(), "A") }
+        val plan = QueueBuilder.build(items, nonTransitiveSim(similarTo = 1L, poolScore = 0.15f), listOf(QueueItem(90, 0f, "Z")), emptyMap(), p)
         assertEquals(0, plan.pulled)
         assertEquals(10, plan.queue.size)
         assertEquals(listOf(0), plan.unresolved)
@@ -244,17 +301,21 @@ class QueueBuilderAdjacentTest {
     }
 
     @Test fun `换位只往后看 lookahead 个位置`() {
-        // 偏差 D5 的可执行变异测试：同一份夹具跑两遍，有界窗口和放开窗口必须给出**不同**末态。
+        // 偏差 D5 的可执行变异测试：同一份夹具跑两遍，有界窗口和放开窗口必须给出**不同**的观测量。
         //
-        // 先钉简报原先的 22 条夹具（前 21 条同簇 + 队尾一条异簇，urgency 递减）：
-        // 实跑观测 —— 有界（lookahead=12）与无界（lookahead=1000）都把 id 22 落在**下标 1**，末态一模一样。
-        // 4*12=48 格的搬运额度用不完 21 格的距离，于是四轮之内链条总能走完（每轮把队尾那张搬进 i=0 的窗口），
-        // 只看 queue 的断言在这条夹具上写不成变异测试 —— 这就是简报那条原先白绿的原因，留在这里免得有人把
-        // 下面的 60 条"简化"回去。
+        // 先钉简报原先的 22 条夹具（前 21 条同簇 + 队尾一条异簇，urgency 递减 ⇒ 初序就是 id 升序）：
+        // 实跑观测 —— 有界（lookahead=12）与无界（lookahead=1000）都把 id 22 落在**下标 1**，所以这一档**区分不了**
+        // 这两件事，下面两句只把它当观测值钉着，别把它读成变异测试（末序本身在两档并不逐格相同，差的是往队尾挪
+        // 的那几格，本用例没钉它们；被钉的这个下标恰好相同 ⇒ 这条夹具对"窗口设不设界"是瞎的）。
+        // 真正的判据是搬运额度：**窗口只在 `n - 1 > lookahead × maxRepairRounds` 时才咬得动**。
+        // 22 条 ⇒ 队尾那条只需走 21 格，而额度是 12×4 = 48 格，四轮之内链条总能走完 ⇒ 分不开；
+        // 60 条 ⇒ 要走 59 格 > 48 ⇒ 分得开。所以**别把下面 60 条"简化"回 22 条**：
+        // 「无界必须严格更靠前」那一句在 22 条上永不可能成立（这是派发前手推 + 修复轮 1 重推的结论）。
+        // 两档的池都是 emptyList() ⇒ `pulled` 恒为 0，那句断言永远不会红（没有东西可插），已删；
+        // 要钉"上限开着时仍然优先换位"请看「优先窗口内换位而不是拉缓冲卡」。
         val near = (1L..22L).map { QueueItem(it, (23 - it).toFloat(), if (it <= 21L) "A" else "B") }
         val nearSim = FixtureSim(near.associate { it.id to (if (it.id <= 21L) 1 else 2) })
         val nearBounded = QueueBuilder.build(near, nearSim, emptyList(), emptyMap(), p)
-        assertEquals(0, nearBounded.pulled)               // 池是空的，任何一格修复都只能靠换位
         assertEquals(1, nearBounded.queue.indexOfFirst { it.id == 22L })
         val nearUnbounded = QueueBuilder.build(near, nearSim, emptyList(), emptyMap(), p.copy(lookahead = 1000))
         assertEquals(1, nearUnbounded.queue.indexOfFirst { it.id == 22L })
@@ -266,8 +327,12 @@ class QueueBuilderAdjacentTest {
         val items = (1L..60L).map { QueueItem(it, (61 - it).toFloat(), if (it <= 59L) "A" else "B") }
         val sim = FixtureSim(items.associate { it.id to (if (it.id <= 59L) 1 else 2) })
         val bounded = QueueBuilder.build(items, sim, emptyList(), emptyMap(), p)
-        assertEquals(0, bounded.pulled)
         assertEquals(11, bounded.queue.indexOfFirst { it.id == 60L })
+        // 轮数这条线也钉住（v3.0-C T3 修复轮 1 的 F5）：同一条夹具把 maxRepairRounds 降到 3 ⇒ 少搬一个窗口
+        // ⇒ 下标 59 - 3*12 = 23。这一句钉的是"循环真读 policy.maxRepairRounds"：
+        // 把 `repairAdjacent(..., policy.maxRepairRounds, ...)` 写死成 4 的变异在这里红
+        // （实跑：expected:<23> but was:<11>，见修复轮 1 报告的变异 M4）。
+        assertEquals(23, QueueBuilder.build(items, sim, emptyList(), emptyMap(), p.copy(maxRepairRounds = 3)).queue.indexOfFirst { it.id == 60L })
         val unbounded = QueueBuilder.build(items, sim, emptyList(), emptyMap(), p.copy(lookahead = 1000))
         val farthest = unbounded.queue.indexOfFirst { it.id == 60L }
         assertTrue("无界窗口把队尾那条搬到了 $farthest，不比有界的 11 更靠前", farthest < 11)
