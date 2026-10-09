@@ -44,9 +44,19 @@ class TextSimilarityTest {
         assertEquals(0f, TextSimilarity.dice(TextSimilarity.bigrams("甲乙"), emptySet()), 1e-6f)
     }
 
-    @Test fun `dice 半重叠等于三分之二`() {
+    @Test fun `dice 半重叠等于零点五`() {
         // {甲乙,乙丙} 与 {乙丙,丙丁}：2*1/(2+2) = 0.5
         assertEquals(0.5f, TextSimilarity.dice(TextSimilarity.bigrams("甲乙丙"), TextSimilarity.bigrams("乙丙丁")), 1e-6f)
+    }
+
+    @Test fun `dice 不等长集合两种参数顺序都给精确值`() {
+        // 9 个共用二元组 + 一侧多 2 个、另一侧多 1 个 ⇒ 11 与 10 之比：2*9/(11+10) = 18/21 = 6/7 = 0.85714…，故容差取 1e-3
+        val shared = setOf("甲1", "甲2", "甲3", "甲4", "甲5", "甲6", "甲7", "甲8", "甲9")
+        val eleven = shared + setOf("乙1", "乙2")
+        val ten = shared + setOf("丙1")
+        assertEquals(0.857f, TextSimilarity.dice(eleven, ten), 1e-3f)
+        assertEquals(0.857f, TextSimilarity.dice(ten, eleven), 1e-3f)
+        assertEquals(TextSimilarity.dice(ten, eleven), TextSimilarity.dice(eleven, ten), 1e-6f)
     }
 
     @Test fun `题面相似只改标点后等于一`() {
@@ -66,10 +76,11 @@ class TextSimilarityTest {
         assertEquals(0.65f, s, 1e-6f)   // 字面完全不同，但同考点 ⇒ 抬到 CONCEPT_FLOOR
     }
 
-    @Test fun `同考点标签不压低本来就更高的字面相似`() {
-        val a = "下列句子中没有语病的一项是"
-        val b = "下列句子中有语病的一项是"
-        assertTrue(TextSimilarity.questionSimilarity(a, "病句", b, "病句") >= TextSimilarity.questionSimilarity(a, "", b, ""))
+    @Test fun `同考点地板抬升偏低的字面相似且异标签不抬升`() {
+        // 这对题面的字面 Dice 是 0.2（只共用「戊己」），落在地板值之下：
+        // 异标签必须保持 0.2（地板不许跨标签生效），同标签必须被抬到 0.65（地板抬升，两个方向都钉死）
+        assertEquals(0.2f, TextSimilarity.questionSimilarity("甲乙丙丁戊己", "病句辨析", "戊己庚辛壬癸", "衔接连贯"), 1e-6f)
+        assertEquals(0.65f, TextSimilarity.questionSimilarity("甲乙丙丁戊己", "病句辨析", "戊己庚辛壬癸", "病句辨析"), 1e-6f)
     }
 
     @Test fun `空考点标签不算同考点`() {
@@ -86,9 +97,15 @@ class TextSimilarityTest {
 
     @Test fun `相似值恒在零到一之间`() {
         val stems = listOf("甲乙丙丁戊", "乙丙丁戊己", "", "ABC abc 123", "下列各项中加点字读音完全相同的一项是")
+        // 同标签这一轮走 maxOf(literal, CONCEPT_FLOOR)，下界被常量顶着；
+        // 空标签这一轮不抬升，下界由 dice 自己守 —— 两条路径都要扫，否则半边的断言永远是绿的
         for (x in stems) for (y in stems) {
             val s = TextSimilarity.questionSimilarity(x, "k", y, "k")
             assertTrue("越界: [$x] vs [$y] = $s", s >= 0f && s <= 1f)
+        }
+        for (x in stems) for (y in stems) {
+            val s = TextSimilarity.questionSimilarity(x, "", y, "")
+            assertTrue("越界未抬升: [$x] vs [$y] = $s", s >= 0f && s <= 1f)
         }
     }
 }
