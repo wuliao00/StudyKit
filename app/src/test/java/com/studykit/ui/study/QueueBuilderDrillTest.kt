@@ -333,7 +333,9 @@ class QueueBuilderDrillTest {
         // 形状：anchor(1) 就在**队尾**（下标 11），伙伴 12 在下标 0（初距 11 > gapHi ⇒ 一定挪）。
         // 删掉下标 0 之后 anchor 左移到 10 ⇒ 想去的 target = 10 + gapLo 3 = 13 越出队尾 ⇒ 夹到 11（末位）
         // ⇒ 12 只能贴在 1 后面：真实距离 **1**，短于 gapLo。报的是真实值，不是打算挪成的 3。
-        // 杀的变异：删掉 `.coerceIn(0, q.size)` ⇒ `q.add(13, …)` 在长度 11 的队列上当场 IndexOutOfBoundsException。
+        // 杀的变异（本轮真跑）：删掉 `.coerceIn(0, q.size)` ⇒ target 停在 13，当场 IndexOutOfBoundsException，
+        // 炸点是落点检查读左邻那一句 `q[target - 1]`（Index 12 out of bounds for length 11），比 `q.add` 更早 ——
+        // 上一轮"没有夹具够得到、这一刀杀不掉"的说法已被这一跑否掉：同批还带走「落点等于原位时不算挪动」那条。
         val items = drillItems(listOf(12L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 2L, 1L).map { it to "A" })
         val sim = bandSim(Triple(1L, 12L, 0.5f))
         val plan = QueueBuilder.build(items, sim, emptyList(), mapOf(1L to listOf(12L)), p)
