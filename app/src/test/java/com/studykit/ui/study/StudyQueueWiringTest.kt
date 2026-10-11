@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -244,6 +245,29 @@ class StudyQueueWiringTest {
             q(12L, "英语", "Choose the correct past tense form"),
             q(13L, "英语", "Fill in the blank with a preposition"),
         )
+
+    /**
+     * F8 的夹具：**会话十张的最后两张是同文重复题**（ids 9 与 10，去掉标点后逐字相同 ⇒ 1.0f），
+     * 库里再留一张 id 11（`offset = QUIZ_SIZE` 那一次才取得到它 ⇒ 它只能当缓冲卡）。
+     * 这一份的形状是"修不动的相邻违规"里最小的一个：换位窗口是 `[i+2, i+1+lookahead]` 且右端截到队尾，
+     * 违规踩在下标 8 与 9 上时窗口是 `[10, 9]` = **空** ⇒ 换不了位 ⇒ 只剩拉缓冲卡这一招。
+     * 标签全空、其余两两分值最高 0.1739（(7,8)，`drillLo = 0.40` 之下）⇒ 题面层第二遍一对都够不着 ⇒
+     * `relocated` 0、不追加复扫、`drillIds` 空集（本条要钉的是**轮次长度**，不是提示）。
+     */
+    private fun pulledBufferBank(): List<Question> = listOf(
+        q(1L, "数学", "直角坐标系中点P到原点的距离"),
+        q(2L, "数学", "一组数据的平均数与中位数相等吗"),
+        q(3L, "数学", "抛两枚均匀硬币都正面朝上的概率"),
+        q(4L, "数学", "圆柱的底面半径扩大两倍体积怎么变"),
+        q(5L, "数学", "已知三角形三边长求它的面积"),
+        q(6L, "数学", "水的沸点在标准大气压下是多少"),
+        q(7L, "数学", "细胞核的主要功能是什么"),
+        q(8L, "数学", "氧气在工业上的制取方法是什么"),
+        q(9L, "数学", "已知等比数列求前n项和的公式"),
+        q(10L, "数学", "已知等比数列，求前n项和的公式（　）"),  // 与第 9 句去掉标点后**完全同文** ⇒ 1.0f
+        q(11L, "数学", "下列图形中是轴对称图形的是哪一个"),      // 缓冲卡：与 9 / 10 两侧都是 0f < tauLo
+    )
+
     // ── 起跑姿势 ────────────────────────────────────────────────
 
     private suspend fun applySettings(interleaving: Boolean, semantic: Boolean) {
@@ -557,5 +581,61 @@ class StudyQueueWiringTest {
         val state = startQuizWith(duplicateAdjacentBank(), "数学", interleaving = true, semantic = true)
         assertEquals(listOf(1L, 3L, 2L, 4L, 5L, 6L, 7L, 8L, 9L, 10L), ids(state))
         assertTrue("重复题不是易混题，不许挂提示: ${state.drillIds}", state.drillIds.isEmpty())
+    }
+
+    // ── ⑧ 一轮可以是 11 题：QUIZ_SIZE 是**取数**条数，不是轮次长度 ──────────
+
+    /**
+     * **F8（复审把这条从 out-of-scope 里提上来当产品缺口）**：接线之后一轮**合法地可以是 11 题** ——
+     * 会话按 `QUIZ_SIZE = 10` 取，而缓冲拉前上限是 `due.size × 10 / 100 = 10 × 10 / 100 = 1`（整数除法），
+     * 所以被拉进来的那张缓冲卡**就活在这一轮里**：`state.questions.size` 因此是 10 + pulled，而不是恒 10。
+     * 裁定是「11 是预期」：缓冲卡存在的意义就是被插进那一处修不动的相邻违规中间，把它剪掉等于把这层功能
+     * 自己剪掉。而 `state.total`、屏幕上那句「第 x / N 题」（`QuizScreen.kt:131`）、
+     * `isLast`（`QuizScreen.kt:379` 的 `state.index == state.total - 1`）、`accuracyPercent` 的分母
+     * 全都从 `questions.size` 走 —— 11 这一档此前**没有任何用例踩过**。
+     *
+     * 手推（[pulledBufferBank]，单科 `startQuiz`、两个开关都开；逐对分值见 `t7fix-probe-out.txt`）：
+     *  1. 学科层：单科 ⇒ 原序 [1..10]；装配层拿到的池 = `getBySubject(数学, 10, 10)` = [11]；
+     *  2. 第一遍前扫：(1,2)…(8,9) 都不违规（唯一非 0 的相邻对是 (7,8) = 0.1739 < tauHi），
+     *     i=8 上 (9,10) = **1.0f > tauHi** ⇒ 违规；换位窗口 `[i+2, i+1+lookahead]` 右端截到队尾 = `[10, 9]`
+     *     ⇒ **空窗口** ⇒ 换不了位 ⇒ 走 `insertBuffer`：pullCap = 1 还有额度，id 11 与左右两邻（9 与 10）都 0f
+     *     `< tauLo` ⇒ 插到 i+1 ⇒ 队列 [1,2,3,4,5,6,7,8,9,11,10]、`pulled` = 1；
+     *  3. 同一轮继续前扫：(9,11) 与 (11,10) 都 0f ⇒ 无新违规；第二轮整扫 `changed` 为假 ⇒ 早停，
+     *     拉池的额度也只有一份，不会再长出第 12 张；
+     *  4. 第二遍 drill：会话里落进混淆带 `[0.40, 0.75]` 的对子为**零**（同文那一对 1.0f 在带**外**）
+     *     ⇒ `relocated` 0 ⇒ 不追加复扫、`drillIds` 空集 ⇒ 末序就停在第 2 步那一串（11 格）。
+     *
+     * 与 ⑥ 那条互为对照：同一份装配层，⑥ 的夹具"违规修得动"⇒ 轮次就是 10 题，⑧ 的夹具"修不动"⇒ 11 题。
+     * 杀的变异（**实跑** MU-F8a：把 `startQuiz` 那一行改成 `questions = plan.questions.take(10)` ——
+     * 也就是「轮次长度 = 取数上限」那一读法）⇒ 本条第一句红，控制台逐字：
+     * `expected:<[1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 10]> but was:<[1, 2, 3, 4, 5, 6, 7, 8, 9, 11]>` ——
+     * 被截掉的不是缓冲卡，而是**本来就在卷里的 id 10**（`take` 从队尾砍）。红之后 JUnit 中止本方法，
+     * 后面那五句（total / 下标边界 / 正确率分母）没有机会各自显形 —— 记在这里，不当已验。
+     * 变异跑完即还原（提交前全仓不留临时变异标记，逐字核对见报告 §5），stdout 与 XML 留档见报告 §5。
+     * ⚠️ 本条**没有传统的 RED 一步**：它钉的是已经存在的生产行为（11 题那一档本来就出得来），
+     * 首跑即绿，所以牙齿只能靠上面那一刀变异给 —— 这也是 F9 那条账要留 stdout 的原因。
+     * ⚠️ 这里没有走 `vm.selectOption`：假 DAO 对 `QuestionDao.getById` 是直接报错的（答题链路不归本文件钉），
+     * 所以 `index` / `correctCount` 两个入参用 data class 的 `copy` 打进去 —— 轮次本身是生产路径产的真货，
+     * 派生读数（`total` / `current` / `finished` / `accuracyPercent`）是它自己的纯函数。
+     */
+    @Test
+    fun `拉进缓冲卡时这一轮就是十一题而取数上限只是取数`() = runBlocking {
+        val state = startQuizWith(pulledBufferBank(), "数学", interleaving = true, semantic = true)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 11L, 10L), ids(state))
+        assertEquals("会话取 10 张 + 缓冲池拉 1 张 = 这一轮 11 题（QUIZ_SIZE 不是轮次长度）", 11, state.total)
+
+        // 最后一格的边界：index 10 仍在轮内（屏幕上那句「第 11 / 11 题」与 isLast 都从这里走）
+        val last = state.copy(index = 10)
+        assertEquals(10L, last.current?.id)
+        assertFalse("第 11 张还在轮里，不许提前 finished", last.finished)
+        assertTrue("第 11 格就是这一轮的最后一格（isLast 的算式）", last.index == last.total - 1)
+        val past = state.copy(index = 11)
+        assertTrue("越出 11 格才算完卷", past.finished)
+        assertNull(past.current)
+
+        // 正确率的分母是这一轮的真实题数：1 题对 = 1×100/11 = 9（拿 10 当分母会报成 10）
+        assertEquals(9, state.copy(correctCount = 1).accuracyPercent)
+        assertEquals(100, state.copy(correctCount = 11).accuracyPercent)
+        assertTrue("本夹具一对都够不着混淆带，不该挂提示: ${state.drillIds}", state.drillIds.isEmpty())
     }
 }
