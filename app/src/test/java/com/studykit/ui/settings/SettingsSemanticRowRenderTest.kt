@@ -51,7 +51,9 @@ import org.robolectric.annotation.GraphicsMode
  *
  * ## 不测什么
  * 题面层打散本身（`planQuestionQueue` 的 `semantic` 分支）由 `QuestionQueuePlannerTest` 覆盖，
- * 这一簇只是读写镜像，不重复；而**此刻还没有生产代码读这一项** —— 组轮入口的接线是 Task 7。
+ * 这一簇只是读写镜像，不重复；读点也已由 v3.0-C Task 7 接到组轮入口
+ * （`StudyViewModel.startQuiz` / `startMixedQuiz`，那条形状由 `StudyQueueWiringTest` 钉）——
+ * 旧稿这里写的「此刻还没有生产代码读这一项」被 Task 7 那次提交作废了，故改掉（修复轮 F6）。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w400dp-h820dp")

@@ -100,7 +100,7 @@ data class QuizUiState(
     val index: Int = 0,
     val selected: Int? = null,
     val correctCount: Int = 0,
-    /** 该挂「这两张卡容易混，隔开放是故意的。」的题 id（每个混淆对里靠后那张，由 `drillNoteIds` 判） */
+    /** 该挂 [confusableDrillTip] 那句提示的题 id（每个混淆对里靠后那张，由 `drillNoteIds` 判；文案只有一个家，这里不抄第二份） */
     val drillIds: Set<Long> = emptySet(),
 ) {
     val started: Boolean get() = questions.isNotEmpty()

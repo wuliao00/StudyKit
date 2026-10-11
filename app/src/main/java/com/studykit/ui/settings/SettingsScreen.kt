@@ -1029,7 +1029,8 @@ private fun MessageBanner(text: String, onDismiss: () -> Unit) {
  * 交错这里只是 [AppSettings.interleavingEnabled] 的镜像，真打散的判定仍只有 `QuestionOrdering.interleaveBySubject` 一处；
  * ④ 同理只是 [AppSettings.semanticInterleaveEnabled] 的镜像，题面层的判定只在
  * [com.studykit.ui.study.planQuestionQueue] 的 `semantic` 形参那一处 —— 读点已由 v3.0-C Task 7 接到组轮入口
- * （`StudyViewModel.startQuiz` / `startMixedQuiz`），这一格拨动即改变下一轮题的顺序。
+ * （`StudyViewModel.startQuiz` / `startMixedQuiz`），这一格拨动改变的是**这一层的参与与否**（连带那次缓冲池取数
+ * 做不做）：它不承诺"拨一下顺序就变"——那一轮里若没有一对够着阈值，题面层本来一步都不动，开与关逐格相同。
  */
 @Composable
 fun SchedulePracticeSettings(
