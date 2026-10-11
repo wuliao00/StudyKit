@@ -72,6 +72,7 @@ import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.optimize.CalibrateViewModel
 import com.studykit.ui.optimize.CalibrationCard
+import com.studykit.ui.study.semanticInterleaveHint
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.backup.StorageStats
 import java.time.LocalDate
@@ -156,6 +157,12 @@ val KernelChoices = listOf(
 /** 两颗新开关的测试标签：渲染守卫靠它精确命中开关本体（标题不是点击目标，磁贴是单选不是开关） */
 const val SwitchConfidenceTag = "settings_switch_confidence"
 const val SwitchInterleavingTag = "settings_switch_interleaving"
+
+/**
+ * 「相似题打散」那一格（v3.0-C Task 6，题面层交错）的测试标签。同一姿势：渲染守卫只认这个 tag
+ * 命中开关本体（见 [SettingsSemanticRowRenderTest]），标题不是点击目标。
+ */
+const val SwitchSemanticTag = "settings_switch_semantic"
 
 /**
  * 设置页（v2.2 T7）：三段同页滚动 —— 外观与动效 / 档案与目标 / 数据管理。
@@ -650,7 +657,7 @@ fun SettingsScreen(
             }
         }
 
-        // ── 排期与练习：三件学习行为开关（内核二选一 / 先自评把握 / 交错），沿用既有分区插到档案节末尾 ──
+        // ── 排期与练习：四件学习行为开关（内核二选一 / 先自评把握 / 学科交错 / 相似题打散），沿用既有分区插到档案节末尾 ──
         Spacer(modifier = Modifier.height(AppTheme.space.md))
         AppCard(modifier = Modifier.fillMaxWidth()) {
             SchedulePracticeSettings(
@@ -658,6 +665,7 @@ fun SettingsScreen(
                 onKernel = viewModel::setSchedulingKernel,
                 onConfidence = viewModel::setConfidenceEnabled,
                 onInterleaving = viewModel::setInterleavingEnabled,
+                onSemanticInterleave = viewModel::setSemanticInterleaveEnabled,
             )
             HorizontalDivider(color = colors.divider)
             CalibrationCard(
@@ -1009,15 +1017,18 @@ private fun MessageBanner(text: String, onDismiss: () -> Unit) {
 }
 
 /**
- * 设置页「排期与练习」这一簇：①排期内核二选一、②先自评把握再评分、③交错练习。
+ * 设置页「排期与练习」这一簇：①排期内核二选一、②先自评把握再评分、③交错练习（学科层）、
+ * ④相似题打散（v3.0-C Task 6，题面层）。
  *
  * 抽成独立可组合，是为了渲染守卫能在 JVM 里把它真组合一次（同 [com.studykit.ui.habit.CheckInSheetRenderTest]
  * / [com.studykit.ui.study.RecallGateRenderTest] 先例：整页要 [SettingsViewModel]，背后是 Room，起不来）。
- * 主页面把它塞进「档案与目标」那一节的新卡片里；三行沿用既有 [SettingBlock] / [ChoiceTile] / Switch 写法，
+ * 主页面把它塞进「档案与目标」那一节的新卡片里；四行沿用既有 [SettingBlock] / [ChoiceTile] / Switch 写法，
  * 与文件里其余开关同一姿势。
  *
- * 三件的写回都只走各条既有开关的 [SettingsViewModel] 方法（整表 upsert），**不新增任何判定**：
- * 交错这里只是 [AppSettings.interleavingEnabled] 的镜像，真打散的判定仍只有 `QuestionOrdering.interleaveBySubject` 一处。
+ * 四件的写回都只走各条既有开关的 [SettingsViewModel] 方法（整表 upsert），**不新增任何判定**：
+ * 交错这里只是 [AppSettings.interleavingEnabled] 的镜像，真打散的判定仍只有 `QuestionOrdering.interleaveBySubject` 一处；
+ * ④ 同理只是 [AppSettings.semanticInterleaveEnabled] 的镜像，题面层的判定只在
+ * [com.studykit.ui.study.planQuestionQueue] 的 `semantic` 形参那一处，而它的**读点要等 Task 7** 才接到组轮入口。
  */
 @Composable
 fun SchedulePracticeSettings(
@@ -1025,6 +1036,7 @@ fun SchedulePracticeSettings(
     onKernel: (String) -> Unit,
     onConfidence: (Boolean) -> Unit,
     onInterleaving: (Boolean) -> Unit,
+    onSemanticInterleave: (Boolean) -> Unit,
 ) {
     val colors = AppTheme.colors
     SettingBlock(
@@ -1095,6 +1107,28 @@ fun SchedulePracticeSettings(
                 checked = settings.interleavingEnabled,
                 onCheckedChange = onInterleaving,
                 modifier = Modifier.testTag(SwitchInterleavingTag),
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = colors.accentInk,
+                    checkedBorderColor = colors.accentInk,
+                    checkedThumbColor = colors.card,
+                    uncheckedTrackColor = colors.divider,
+                    uncheckedBorderColor = colors.divider,
+                    uncheckedThumbColor = colors.card,
+                ),
+            )
+        },
+    )
+    // v3.0-C Task 6：题面层那一格，紧跟学科交错（两层在 planQuestionQueue 里就是叠着的这个顺序）。
+    // 文案从 T5 那个纯函数取，界面里不留第二份 —— 整句由 QuestionQueuePlannerTest 逐字钉着。
+    HorizontalDivider(color = colors.divider)
+    SettingBlock(
+        title = "相似题打散",
+        hint = semanticInterleaveHint(),
+        trailing = {
+            Switch(
+                checked = settings.semanticInterleaveEnabled,
+                onCheckedChange = onSemanticInterleave,
+                modifier = Modifier.testTag(SwitchSemanticTag),
                 colors = SwitchDefaults.colors(
                     checkedTrackColor = colors.accentInk,
                     checkedBorderColor = colors.accentInk,

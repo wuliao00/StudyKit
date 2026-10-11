@@ -42,6 +42,11 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * `StudyViewModel.markFlipTipSeen` 写，每次安装只出现一次；口径与 recallGateHintSeen 一致）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
  * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
+ * [semanticInterleaveEnabled] → 题库轮次的**题面层**（v3.0-C Task 6）。它的**解释**只有一处：
+ * `ui/study/QuestionQueuePlanner.kt` 的 `planQuestionQueue(…, semantic = …)` 那个形参 —— 设置页与
+ * ViewModel 都只是它的读写镜像，不新增第二处判定。**读点尚未接上**：把这一项交给组轮入口
+ * （`StudyViewModel.startQuiz` / `startMixedQuiz`）是 **Task 7** 的活，本条是全仓唯一一条
+ * 「存了还没人读」的设置，Task 7 落地前它不改变任何人的刷题顺序（默认关 + 无人读，双重不动）。
  * [schedulingKernel] → 排期算哪个内核，消费点在 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（均经 `KernelHub.forId`，A-T9）；写侧是设置页「排期与练习」的二选一（计划 B Task 20，首个可切换的生产入口）。调用点交的是**整份** `AppSettings`（不只是这一项 id），于是 [fsrsActiveParams] 与它同时生效（v3.0-A T2.6）；
  * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen` 的 `ConfidenceRow`，采集 UI 已在计划 B Task 11-12 落地、设置页也能关（计划 B Task 20）；关掉即 conf 恒 null、confidence 列落 NULL（这一句说的是"关掉"那一侧的落库口径，不代表开关还没生效）。
  *
@@ -129,6 +134,13 @@ data class AppSettings(
      * 而它当下更费劲（Kornell & Bjork 2008）—— 主观感受与客观效果错位是这套方法的特征，不是玄学承诺。
      */
     val interleavingEnabled: Boolean = true,
+    /**
+     * 题面层交错（v3.0-C）。**默认关闭**：判据是未校准的词面相似度
+     * （`LexicalInterleave.DEFAULT` 的初值没有过 200+200 标注对），
+     * 默认打开等于静默改掉所有现有用户刷题的顺序，而他自己不知道为什么。
+     * 关掉时这一层完全不参与，队列与今天逐元素相同（`planQuestionQueue` 的回退链）。
+     */
+    val semanticInterleaveEnabled: Boolean = false,
     /**
      * 排期内核 id（"FSRS"|"HALF_LIFE"，值域 [KERNEL_IDS]，默认 FSRS）。
      * 消费点：`ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（计划 A-T9，都经 `KernelHub.forId`）。
@@ -262,6 +274,7 @@ data class AppSettings(
         KEY_RECALL_BEFORE_GRADE to recallBeforeGrade.toString(),
         KEY_RECALL_GATE_HINT_SEEN to recallGateHintSeen.toString(),
         KEY_INTERLEAVING to interleavingEnabled.toString(),
+        KEY_SEMANTIC_INTERLEAVE to semanticInterleaveEnabled.toString(),
         KEY_SCHEDULING_KERNEL to schedulingKernel,
         KEY_CONFIDENCE_ENABLED to confidenceEnabled.toString(),
         KEY_FLIP_TIP_SEEN to flipTipSeen.toString(),
@@ -301,6 +314,7 @@ data class AppSettings(
         const val KEY_RECALL_BEFORE_GRADE = "recall_before_grade"
         const val KEY_RECALL_GATE_HINT_SEEN = "recall_gate_hint_seen"
         const val KEY_INTERLEAVING = "interleaving_enabled"
+        const val KEY_SEMANTIC_INTERLEAVE = "semantic_interleave_enabled"
         const val KEY_SCHEDULING_KERNEL = "scheduling_kernel"
         const val KEY_CONFIDENCE_ENABLED = "confidence_enabled"
         const val KEY_FLIP_TIP_SEEN = "flip_tip_seen"
@@ -402,6 +416,10 @@ data class AppSettings(
                 // 交错：默认**开**，与其余每一项同一口径（垃圾值 / 缺键只让本项退回默认）
                 interleavingEnabled = map[KEY_INTERLEAVING]?.toBooleanStrictOrNull()
                     ?: defaults.interleavingEnabled,
+                // 题面层交错：默认**关**（判据未校准，见字段 KDoc）。口径与上一行同一处：
+                // 严格解析只认 "true"/"false"，其余写法（"1"/"yes"/""/"TRUE"/"on"/带空格的）一律退回默认
+                semanticInterleaveEnabled = map[KEY_SEMANTIC_INTERLEAVE]?.toBooleanStrictOrNull()
+                    ?: defaults.semanticInterleaveEnabled,
                 // 内核：默认 FSRS；垃圾值 / 缺键同口径，只让本项退回默认
                 schedulingKernel = map[KEY_SCHEDULING_KERNEL]?.takeIf { it in KERNEL_IDS }
                     ?: defaults.schedulingKernel,

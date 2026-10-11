@@ -191,6 +191,9 @@ private fun BehaviorHost(
                     onKernel = onKernel,
                     onConfidence = onConfidence,
                     onInterleaving = onInterleaving,
+                    // 本守卫（v2.7 B20）钉的是前三件，早于 T6 那一格：这里给空实现只是补齐签名，
+                    // 「相似题打散」的渲染与回调由 SettingsSemanticRowRenderTest 负责， assertions 一条不动。
+                    onSemanticInterleave = {},
                 )
             }
         }

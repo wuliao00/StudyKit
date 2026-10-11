@@ -226,6 +226,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      */
     fun setInterleavingEnabled(on: Boolean) = write { it.copy(interleavingEnabled = on) }
 
+    /**
+     * 相似题打散开关（[AppSettings.semanticInterleaveEnabled]）在设置页的**镜像**，姿势与
+     * [setInterleavingEnabled] 同一族：这一格只写值，不新增任何判定。
+     *
+     * 这一项的**解释**全仓只有一处 —— `ui/study/QuestionQueuePlanner.kt` 的
+     * `planQuestionQueue(session, pool, interleaving, semantic, policy)` 里那个 `semantic` 形参：
+     * 传 false 就走早退分支，队列与今天逐元素相同（回退链由 `QuestionQueuePlannerTest` 钉着）。
+     *
+     * ⚠️ **Task 6 的提交里还没有生产代码读它**：把这一项从设置里取出来交给组轮入口
+     * （`StudyViewModel.startQuiz` / `startMixedQuiz`）是 **Task 7** 的活。所以此刻这一格是
+     * 「存得下、界面拨得动，但还改变不了任何一轮题的顺序」—— 不是笔误，是分轮，
+     * 全仓唯一一条暂无生产读点的设置就是它（`AppSettings` 的类注释同步记了这一笔）。
+     */
+    fun setSemanticInterleaveEnabled(on: Boolean) = write { it.copy(semanticInterleaveEnabled = on) }
+
     // ── 档案与目标 ──────────────────────────────────────────────
 
     /** 昵称：收边距、掐到 [AppSettings.NICKNAME_MAX]，与 [AppSettings.fromMap] 的收口口径一致 */

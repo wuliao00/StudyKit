@@ -164,6 +164,9 @@ class CalibrateRenderTest {
                     onKernel = {},
                     onConfidence = {},
                     onInterleaving = {},
+                    // T6 给这一簇加了第四格（相似题打散），本用例只借这簇画内核那一行：
+                    // 四个回调同样给空实现，断言一条不动。语义格的守卫在 SettingsSemanticRowRenderTest。
+                    onSemanticInterleave = {},
                 )
             }
         }
