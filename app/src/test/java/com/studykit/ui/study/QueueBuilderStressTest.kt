@@ -33,8 +33,9 @@ import kotlin.system.measureTimeMillis
  * 把 `maxRepairRounds` 从 4 压到 1：`pulled` 与 `unresolved` 一个都不动（17 / 0），只有读数从 3509 降到 2993
  * ⇒ 这一版原先写在下面的解释（"第 1..3 轮里已插进去的池卡成了换位的合格候选"）**同样不成立**，跟着推演一起撤。
  * 实测只支持到这一句：那一趟前扫自己就把初序那 474 对违规拆干净了，压根走不到上限；再往下的机制没有测，别照因果复述。
- * 上限那道闸因此改由 [oneClusterFiveHundred] 钉：那里换位**永久**无路（同簇），池卡插进来也只出现在
- * 已经被拆开的违规之前，直到 50 张用尽（`pulled = 50`、`queue = 550`、`unresolved = 449` 三个精确值，抬高上限就红）。
+ * 上限那道闸因此改由 [oneClusterFiveHundred] 钉：那里换位**永久**无路（同簇 ⇒ 候选 `0.9 >= tauLo`）、而池卡永远合格
+ * ⇒ 只剩插池一条路，直到 50 张用尽（`pulled = 50`、`queue = 550`、`unresolved = 449` 三个精确值实测钉死，抬高上限就红）。
+ * 至于每张池卡**具体插在哪几格**、它与违规位置的先后关系 —— 没有单独取证，属机制细节，跟上面那句同一个规矩：别照因果复述。
  *
  * 上界公式里的 `lookahead` / `maxRepairRounds` 读的是注入的 policy（那九个数由 `InterleavePolicyTest`
  * 用字面量钉着，漂不了），而被上界管的 [QueueBuilder] 内部预算（`PULL_CAP_PERCENT` / `DRILL_MOVE_BUDGET`）

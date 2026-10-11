@@ -12,9 +12,13 @@ package com.studykit.ui.study
  * 计数口径一个字都没改：每一次 `sim()` 记一笔，包括走 `constant` 那一条。
  *
  * 下游归属（v3.0-C T3 修复轮 1 的 F13 记的账，修复轮 2 的 N4 更正过 Task 4 那一行）：
- *  - [FixtureSim] 与 [FixtureSim.lookups]：**只有 Task 8** 用这个替身 —— 计划 Task 8 的 `Consumes` 点名
- *    `FixtureSim`（`QueueFixtures.kt`），那几条查找上界断言与实际查表读数都直接读 `sim.lookups`。
- *    Task 8 落地时给它加了带默认值的 [FixtureSim.constant]（老调用点一行没改），理由见上面那一段。
+ *  - [FixtureSim] 与 [FixtureSim.lookups]：**Task 8 是计划里唯一点名这个替身的下游，也是全仓唯一读 [FixtureSim.lookups] 的地方** ——
+ *    计划 Task 8 的 `Consumes` 点名 `FixtureSim`（`QueueFixtures.kt`），那几条查找上界断言与实际查表读数都直接读 `sim.lookups`，
+ *    除此之外没有别的读者。但它**不是唯一被 `new` 出来的地方**：Task 3 的 `QueueBuilderAdjacentTest` 也直接构造这个替身
+ *    （十余处：`:49` `:178` `:193` `:204` `:216` `:291` `:310` `:313` `:340` `:351`，都走默认 `constant`、只借它的 0.9/0.0 簇判定，从不读 `lookups`）。
+ *    所以早先这句"只有 Task 8 用这个替身"是**错的**（T8 收尾报告 §3 还把"Task 8 是唯一下游"当成"本轮复核仍然成立"再错一遍），
+ *    准确说法是"**计划命名的下游只有 T8、`lookups` 的读者只有 T8**；T3 也构造它但不读读数"。
+ *    Task 8 落地时给它加了带默认值的 [FixtureSim.constant]（上面那批 T3 老调用点全走默认值，一行都没改），理由见上一段。
  *    **Task 4 不读这个文件**：它自带 `ScoredSim`，并按计划 Task 3 Step 1 那条裁定（计划内部的"三处共用"
  *    说法已按 T4 自己的文本改成「T3 与 T8」）显式给 subject，与这份夹具不共用。
  *  - [queueItems] / [clusterMap]：本提交里**零调用点**，而且计划里也没有任何一条测试文本调用它们
