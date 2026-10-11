@@ -168,6 +168,54 @@ class QueueBuilderDrillTest {
         assertEquals(2, forward.drillPairs.size)
     }
 
+    @Test fun `HashMap 的桶序不许带着结果漂`() {
+        // ⛔ 钉偏差 D6 第 4 条在**大 id** 上的那一半：上一轮报告让步说"`java.util.HashMap` 替 `TreeMap`
+        // 在这批夹具下是等价变异"，那话只对当时的小 id 成立（M4a 那批 aId 全是个位/十位，恰好按升序出桶）。
+        // 20 条 + 两个 key 就能现形：默认容量 16 时 id 15 落第 15 桶、id 17 落第 1 桶 ⇒ HashMap 先迭代 17。
+        // 两对都挨着出（初距 1 < gapLo ⇒ 都要挪），而**处理序不同末序就不同**：
+        //  先 15（[TreeMap] 归一化，本仓口径）⇒ [..., 15, 17, 16, 19, 18, 20]；
+        //  先 17（跟着调用方的桶序走）⇒ [..., 15, 17, 19, 16, 20, 18]。
+        // 杀的变异：`for ((aId, partners) in TreeMap(confusable))` 改回直接吃 `confusable`。
+        // 末段两句顺手钉第三条出带路（applyDrills 的 KDoc）：(15,16) 挪完那刻是 3，(17,18) 那一挪把夹在中间的 18
+        // 搬走 ⇒ 最终 2（拆掉前一对间隔的是后一次 drill 的动作，不是复扫 —— 这里压根没有违规可复扫）。
+        val items = sameSubject((1L..20L).toList())
+        val sim = ScoredSim { a, b ->
+            if (setOf(a, b) == setOf(15L, 16L) || setOf(a, b) == setOf(17L, 18L)) 0.5f else 0f
+        }
+        val bucketed = java.util.HashMap<Long, List<Long>>()
+        bucketed[15L] = listOf(16L)
+        bucketed[17L] = listOf(18L)
+        val plan = QueueBuilder.build(items, sim, emptyList(), bucketed, p)
+        assertEquals(
+            listOf(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 17L, 16L, 19L, 18L, 20L),
+            plan.queue.map { it.id },
+        )
+        assertEquals(20, plan.queue.size)
+        assertEquals(listOf(15L, 17L), plan.drillPairs.map { it.aId })   // 记录序也是 aId 升序
+        assertEquals(2, plan.drillPairs[0].gap)                          // 带内的 3 被后一挪拆成 2：如实上报
+        assertEquals(3, plan.drillPairs[1].gap)
+        assertTrue(plan.unresolved.isEmpty())
+    }
+
+    @Test fun `伙伴清单的升序决定 drillPairs 的记录序`() {
+        // ⛔ 钉 `partners.sorted()`：此前每条夹具的伙伴清单都只有一项 ⇒ 删掉它杀不掉任何东西。
+        // anchor 1 挂两个伙伴，**插入序是 [9, 5]**（`linkedOf` 保住调用方给的清单序）：
+        // 1 与 5 初距 4 落在带内（零成本、只记不挪），1 与 9 初距 8 > gapHi ⇒ 挪到 anchor 后第 3 格（下标 3）。
+        // 升序 ⇒ 记录序 (1,5) 在前、(1,9) 在后；不升序 ⇒ 恰好相反。
+        // 杀的变异：`for (bId in partners.sorted())` 改回 `for (bId in partners)`。
+        // 末序在两档**逐格相同**（9 那一挪不依赖 5 先被看过：带内那一条只做了个判定），所以这条只能断记录序。
+        val items = sameSubject((1L..12L).toList())
+        val sim = ScoredSim { a, b ->
+            if (setOf(a, b) == setOf(1L, 5L) || setOf(a, b) == setOf(1L, 9L)) 0.5f else 0f
+        }
+        val plan = QueueBuilder.build(items, sim, emptyList(), linkedOf(1L to listOf(9L, 5L)), p)
+        assertEquals(listOf(5L, 9L), plan.drillPairs.map { it.bId })      // ⛔ 记录序 = 伙伴 id 升序
+        assertEquals(2, plan.drillPairs.size)
+        assertEquals(listOf(1L, 2L, 3L, 9L, 4L, 5L, 6L, 7L, 8L, 10L, 11L, 12L), plan.queue.map { it.id })
+        assertEquals(5, plan.drillPairs[0].gap)                           // (1,5)：最终 1 在下标 0、5 在下标 5
+        assertEquals(3, plan.drillPairs[1].gap)                           // (1,9)：挪成的 3
+    }
+
     @Test fun `跨学科的对子不 drill`() {
         // 「仅同学科内」（文档 L1227）这道过滤住在 confusablePairs 里；applyDrills 只看调用方给的映射，
         // 既不看学科也不看分值。所以这条只能问 confusablePairs —— 简报原稿把映射直接喂给 build 再断言队列不动，
@@ -279,6 +327,23 @@ class QueueBuilderDrillTest {
         assertTrue("未解决: ${plan.unresolved}", plan.unresolved.isEmpty())
     }
 
+    @Test fun `够不着 gapLo 时夹到队尾也如实报真实距离`() {
+        // ⛔ 钉 `placeBeside` 里 `coerceIn(0, q.size)` 那一档 —— 上一轮它**零覆盖**：没有任何夹具够得到，
+        // 于是"删掉 coerceIn"是个杀不掉的变异（它只会 IndexOutOfBounds，而没东西走到那一步）。
+        // 形状：anchor(1) 就在**队尾**（下标 11），伙伴 12 在下标 0（初距 11 > gapHi ⇒ 一定挪）。
+        // 删掉下标 0 之后 anchor 左移到 10 ⇒ 想去的 target = 10 + gapLo 3 = 13 越出队尾 ⇒ 夹到 11（末位）
+        // ⇒ 12 只能贴在 1 后面：真实距离 **1**，短于 gapLo。报的是真实值，不是打算挪成的 3。
+        // 杀的变异：删掉 `.coerceIn(0, q.size)` ⇒ `q.add(13, …)` 在长度 11 的队列上当场 IndexOutOfBoundsException。
+        val items = drillItems(listOf(12L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 2L, 1L).map { it to "A" })
+        val sim = bandSim(Triple(1L, 12L, 0.5f))
+        val plan = QueueBuilder.build(items, sim, emptyList(), mapOf(1L to listOf(12L)), p)
+        assertEquals(listOf(3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 2L, 1L, 12L), plan.queue.map { it.id })
+        assertEquals(12, plan.queue.size)                      // 夹到队尾也不增不减
+        assertEquals(1, plan.drillPairs.first().gap)           // ⛔ 低于 gapLo 的字面量：夹过就报 1
+        assertEquals(1, kotlin.math.abs(idxOf(plan, 1L) - idxOf(plan, 12L)))
+        assertTrue("未解决: ${plan.unresolved}", plan.unresolved.isEmpty())
+    }
+
     @Test fun `drillNoteIds 只标后面那张`() {
         // 杀的变异：`if (pa < pb) drill.bId else drill.aId` 的两个分支互换 ⇒ 返回 {1,2}（挂在前面那张 = 剧透）。
         val queue = sameSubject((1L..6L).toList())
@@ -306,6 +371,34 @@ class QueueBuilderDrillTest {
         assertTrue("skip 掉的对子也被记成 drill 了: ${plan.drillPairs}", plan.drillPairs.isEmpty())
     }
 
+    @Test fun `落点等于原位时不算挪动：不追加复扫`() {
+        // ⛔ 钉 `placeBeside` 里 `target == ib` 那道门（上一轮没有它：原地放回也 `return true` ⇒ `relocated++`）。
+        // 夹具是 Task 3 那条「换位只往后看 lookahead 个位置」的 60 条形状（59 条同簇 + 队尾一条异簇），
+        // 只把初序下标 47 与 58 上的 id 对调（59 ↔ 48）—— 四轮前扫一张都没多搬（每轮仍只有一次换位），
+        // 怪卡 60 仍落在**下标 11**，而队尾变成 `…, 48(下标 58), 59(下标 59)`。
+        // 于是映射 {48:[59]} 的 anchor 在前、伙伴贴着队尾且初距 1 < gapLo ⇒ 一定尝试挪：
+        // 删掉下标 59 ⇒ anchor = 58 ⇒ target = 58 + 3 = 61 → `coerceIn(0, 59)` 夹回 **59 = 抽它出来的那一格**，
+        // 而 sim(48,59) = 0.5f ≤ tauHi ⇒ 落点检查也不拦 ⇒ 整趟做完队列逐字节未变。
+        // 旧代码在这里返回 true ⇒ 复扫门开 ⇒ 那一轮从 i=0 就把怪卡从 11 换到下标 1
+        // （实跑 `expected:<11> but was:<1>` —— 正是这道门本来要关的那个回归重新打开）。
+        val ids = (1L..47L).toList() + listOf(59L) + (49L..58L).toList() + listOf(48L, 60L)
+        val items = drillItems(ids.map { it to if (it <= 59L) "A" else "B" })
+        val sim = ScoredSim { a, b ->
+            when {
+                setOf(a, b) == setOf(48L, 59L) -> 0.5f     // 混淆带内、又不越过 tauHi：落点两侧都不拒
+                a <= 59L && b <= 59L -> 0.9f
+                else -> 0f
+            }
+        }
+        val noDrill = QueueBuilder.build(items, sim, emptyList(), emptyMap(), p)
+        val plan = QueueBuilder.build(items, sim, emptyList(), mapOf(48L to listOf(59L)), p)
+        assertEquals(60, plan.queue.size)
+        assertEquals(11, plan.queue.indexOfFirst { it.id == 60L })     // ⛔ 四轮的字面量落点：空操作不该有第五轮
+        assertEquals(noDrill.queue.map { it.id }, plan.queue.map { it.id })   // 队列逐字节未变
+        assertEquals(1, plan.drillPairs.size)
+        assertEquals(1, plan.drillPairs.first().gap)                   // ⛔ 它仍然贴着 48：如实上报，不假装挪成了
+    }
+
     @Test fun `映射里本轮没有的 id 整对跳过，不崩也不记`() {
         // 调用方可能传一整份映射（文档 L1226 那张 `confusable` 表按题存、不按这一轮存），
         // 于是映射里会出现本轮队列里没有的 id：aId=0 不在队列、伙伴 5 在；aId=1 在、伙伴 99 不在。
@@ -324,7 +417,9 @@ class QueueBuilderDrillTest {
         // 夹具是 34 对**互不干扰**的混淆对：第 j 对占下标 4j 与 4j+1（挨着 ⇒ 每对都要挪），后两格是 filler；
         // 一次移动只重排自己那四格（删在 4j+1、插在 4j+3 ⇒ 下标 >= 4j+4 的元素一个都不动），
         // 所以"前 32 对都被处理、后 2 对一步没走"是推得死的。
-        // 杀的变异：删掉 `if (attempts >= DRILL_MOVE_BUDGET) break` ⇒ 34 对全被处理、预算等于没有。
+        // 杀的变异：删掉 `if (attempts >= DRILL_MOVE_BUDGET) continue` ⇒ 34 对全被处理、预算等于没有。
+        // 这一份夹具**全部是越界对子**，所以它钉的是"挪位封顶"；"记录不封顶"由下一条
+        // 「预算耗尽后带内的对子照样记录」钉（同一道门，两个半边）。
         // 实跑先红在 `drillPairs.size` 那一句（`expected:<32> but was:<34>`）；最后一对的距离是第二道锁，
         // 同一刀下它也会跟着挪开（JUnit 只报第一个失败，所以第二句的红象没在同一份输出里出现）。
         val pairCount = 34
@@ -345,6 +440,51 @@ class QueueBuilderDrillTest {
         assertEquals(136, plan.queue.size)
         assertEquals(32, plan.drillPairs.size)             // ⛔ DRILL_MOVE_BUDGET 是 private，这里钉它的字面值
         assertEquals(1, kotlin.math.abs(idxOf(plan, 34L) - idxOf(plan, 134L)))   // 第 34 对根本没被处理
+        assertTrue(plan.unresolved.isEmpty())
+    }
+
+    @Test fun `预算耗尽后带内的对子照样记录`() {
+        // ⛔ 钉 R5 的裁定：**带内的对子永远记，预算只封"挪位"这一种动作**。
+        // 旧实现到点时 `break` 出内层循环 ⇒ 连**零成本的带内对子**都不再记 ⇒ `drillPairs` 静默截断，
+        // 而它经 `drillNoteIds` 就是会话内提示的来源 —— 提示不许因为预算而缺席；外层还照样空转（break 只出一层）。
+        // 夹具 = 32 对越界（恰好把预算花光；每对占四格、删 4j+1 插 4j+3 ⇒ 后面的格一格不动，形状同上一条）
+        //       + 1 对带内（33 与 37 隔 4 题：不花预算，必须被记下来 —— 旧实现在这里被 break 吞掉）
+        //       + 1 对越界（34 与 38 挨着：预算已过 ⇒ 不记也不挪，证明预算确实还封着挪位）。
+        // 杀的变异：把带内那段早退挪到 `if (attempts >= DRILL_MOVE_BUDGET) continue` **之后**
+        // （或把那道门挪回 break 的位置）⇒ `drillPairs.size` 实跑 `expected:<33> but was:<32>`。
+        val outOfBand = 32
+        val ids = ArrayList<Long>(outOfBand * 4 + 7)
+        val scores = ArrayList<Triple<Long, Long, Float>>(outOfBand + 2)
+        val confusable = LinkedHashMap<Long, List<Long>>()
+        for (j in 0 until outOfBand) {
+            val a = (j + 1).toLong()
+            val b = (101 + j).toLong()
+            ids.add(a)
+            ids.add(b)
+            ids.add((201 + 2 * j).toLong())
+            ids.add((202 + 2 * j).toLong())
+            scores.add(Triple(a, b, 0.5f))
+            confusable[a] = listOf(b)
+        }
+        ids.addAll(listOf(33L, 265L, 266L, 267L, 37L))        // 下标 128..132 ⇒ (33,37) 的 gap 4，落在带内
+        ids.addAll(listOf(34L, 38L))                          // 下标 133、134 ⇒ gap 1，越界且预算已尽
+        scores.add(Triple(33L, 37L, 0.5f))
+        scores.add(Triple(34L, 38L, 0.5f))
+        confusable[33L] = listOf(37L)
+        confusable[34L] = listOf(38L)
+        val plan = QueueBuilder.build(
+            drillItems(ids.map { it to "A" }),
+            bandSim(*scores.toTypedArray()),
+            emptyList(),
+            confusable,
+            p,
+        )
+        assertEquals(135, plan.queue.size)
+        assertEquals(33, plan.drillPairs.size)                 // ⛔ 32 次挪动 + 1 条带内记录（旧实现只有 32 条）
+        assertEquals(33L, plan.drillPairs.last().aId)
+        assertEquals(37L, plan.drillPairs.last().bId)
+        assertEquals(4, plan.drillPairs.last().gap)            // ⛔ 带内那条报它自己的真实距离
+        assertEquals(1, kotlin.math.abs(idxOf(plan, 34L) - idxOf(plan, 38L)))   // 第 34 对没被挪：预算照样封着挪位
         assertTrue(plan.unresolved.isEmpty())
     }
 }

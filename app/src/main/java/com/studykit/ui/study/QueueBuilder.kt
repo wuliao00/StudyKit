@@ -14,6 +14,7 @@ internal data class QueueItem(val id: Long, val urgency: Float, val subject: Str
  * 一对被判定为易混的对子，[gap] 是**最终**队列里两者的距离（不是移动前的）。
  * 口径由 [QueueBuilder.stampGaps] 负责：drills 之后还有复扫，复扫可能又把其中一张换走，
  * 所以 gap 是在 `build` 全部走完之后再盖一次，而不是挪完就地取值。
+ * 它报的是**真实距离**而不是"保证落在 `[gapLo, gapHi]` 内"：出带的三条成因见 [QueueBuilder.applyDrills]。
  */
 internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
 
@@ -47,7 +48,10 @@ internal data class QueuePlan(
  *      - 换位项：`n × (lookahead + 1) × maxRepairRounds`（每个位置 1 次相邻判定 + 窗口内至多 lookahead 次候选判定）；
  *      - **复扫项**：`n × (lookahead + 1)` —— [repairAdjacent] 在 drills **真挪动过卡**之后以 `rounds = 1` 再跑一轮。
  *        这一项是**有条件**的：`confusable` 给空映射、或每一对本来就隔在 `gapLo..gapHi` 之内、
- *        或每一次尝试都被落点拒掉时，`relocated` 是 0 ⇒ 这一轮根本不跑 ⇒ 这项为 0；
+ *        或每一次尝试都被落点拒掉、或每一次都落回**自己刚被抽出来的那一格**（[placeBeside] 的 `target == ib`）时，
+ *        `relocated` 是 0 ⇒ 这一轮根本不跑 ⇒ 这项为 0；
+ *        同一个条件也管**位移**那一半：这一轮真跑了，"往队首方向"就多开一个窗口，
+ *        [swapInWindow] 那句界从 `lookahead × maxRepairRounds` 变成 `lookahead × (maxRepairRounds + 1)`；
  *      - **插池扫描项**：`insertBuffer` 是在**每个**违规位置上都试的（只要 `pulled < pullCap` 还没耗尽），
  *        每试一次最坏扫完整池、每条候选查两个邻居 ⇒ `违反位置数 × maxRepairRounds × |pool| × 2`，
  *        其中违反位置数 ≤ `n`。池里有几百张都不像的卡时这一项比换位项大一个数量级
@@ -62,7 +66,9 @@ internal data class QueuePlan(
  *  2. drills 之后**复扫**一遍（参考实现挪完 b 就不管新邻居了，偏差 D6 第 2 条）；
  *  3. `maxAdjSim` 用 `maxOfOrNull`，少于两条给 null，不抛；
  *  4. 一切遍历序定死：排序键 `(urgency desc, id asc)`，混淆映射按 id 升序走（[applyDrills] 外层 `TreeMap` 归一化，
- *     不跟着调用方给的 `Map` 迭代序漂）。
+ *     不跟着调用方给的 `Map` 迭代序漂 —— 调用方给 `java.util.HashMap` 时桶序**不等于**升序
+ *     （id 15 落第 15 桶、id 17 落第 1 桶），归一化不做到这一层就会当场现形，
+ *     测试「HashMap 的桶序不许带着结果漂」钉的就是这一档），伙伴清单同样按 id 升序（`partners.sorted()`）。
  *
  * 纯函数：不吃 Android、不吃 Room、不做 IO，相似度一律从注入的 [Simularity] 拿。
  * [build] 的 `confusable` 是**输入**而不是现场算出来的（文档 L1226 那张 `confusable` 表的位置，语义包计划的事）；
@@ -80,8 +86,14 @@ internal object QueueBuilder {
      * drills 那一遍**尝试**挪位的次数上限（不是"挪成了多少次"：落点被拒掉的那次同样查过落点的两个邻居，
      * 成本已经花出去了）。存在的理由与 [PULL_CAP_PERCENT] 同类，但它封的是**查表**那一半：
      * 没有上限，落点检查就是 `对子数 × 2` 次查表，类 KDoc 里 `DRILL_MOVE_BUDGET × 2` 那一项也就不再与映射的大小脱钩。
-     * 下标扫描那一半它封不住：每一对先要用 [gapOf] 判在不在带内，那是 `对子数 × n` 次 `indexOfFirst`，
-     * 与本预算无关 —— 上界那笔账记的是查表次数，不是下标扫描次数。
+     * 下标扫描那一半它封不住：每一对先要定位两侧下标（[applyDrills] 里的两次 `indexOfFirst`）才能判在不在带内，
+     * 那是 `对子数 × n`，与本预算无关 —— 上界那笔账记的是查表次数，不是下标扫描次数。
+     *
+     * 它封的**只有挪位这一种动作**，不封记录：带内的对子零成本（一步队列都不动），预算耗尽之后照样记进
+     * `drillPairs`。这条是裁定不是权衡 —— `drillPairs` 经 [drillNoteIds] 就是会话内提示的来源，
+     * 提示不许因为预算到了就静默缺席。预算到了之后**不再被尝试**的那些越界对子不记（它们连一次落点都没查过），
+     * 而尝试过但被落点拒掉的那一对照旧记、报原距离（见 [applyDrills] 与「挪不动时宁可不挪也不能造违规」）。
+     * `target == ib` 那一趟一次查表都没做，但仍然计一次尝试 —— 封得比界更紧，不会低估那一半。
      */
     private const val DRILL_MOVE_BUDGET = 32
 
@@ -102,9 +114,11 @@ internal object QueueBuilder {
         //
         // 为什么要 `relocated > 0` 挡着（简报那版是无条件跑）：drills 一张都没动时队列没变，
         // 而这一遍是**又一轮完整前扫**，它会接着把第一遍搬不动的卡继续往队首搬 ——
-        // 每轮最多一个窗口（`lookahead` 格），第一遍 KDoc 那句"总位移受 lookahead × maxRepairRounds 约束"
+        // 每轮最多一个窗口（`lookahead` 格），所以跑过这一轮时"总位移受 lookahead × maxRepairRounds 约束"
+        // 那句界要改成 `lookahead × (maxRepairRounds + 1)`（[swapInWindow] 的 KDoc 同口径），
         // 连带钉它的那条用例（`QueueBuilderAdjacentTest.换位只往后看 lookahead 个位置`，实跑 11 变 1）就一起被推翻。
-        // 挪动过才需要复扫，没挪动就不该有第五轮。
+        // 挪动过才需要复扫，没挪动就不该有第五轮；"没挪动"含两种：落点被拒、以及落点恰好是刚抽出来的那一格
+        // （`target == ib` 的字节级原地放回，见 [placeBeside] 与测试「落点等于原位时不算挪动：不追加复扫」）。
         if (relocated > 0) {
             repairAdjacent(q, inQueue, sim, emptyList(), policy, rounds = 1, pullCap = 0)
         }
@@ -185,9 +199,15 @@ internal object QueueBuilder {
      * 把窗口 `[i+2, i+1+lookahead]`（右端截到队尾）内第一条"与 `q[i]` 足够不像"的题换到 `i+1`。
      *
      * 窗口约束的是**单次位移**，不是总位移：一张卡换到 `i+1` 之后指针就越过它，本轮不会再有位置比它
-     * 更靠前的违规把它当候选，所以它**往队首方向**每轮最多被搬一次、每次最多 lookahead 格，
-     * 总位移受 `lookahead × maxRepairRounds` 约束（被它换走那条往队尾方向的挪动不设这条界）。
-     * 60 条夹具实测就是这个乘积：59 → 47 → 35 → 23 → 11。返回是否动了
+     * 更靠前的违规把它当候选，所以它**往队首方向**每轮最多被搬一次、每次最多 lookahead 格。
+     * 总位移的界是**轮数 × lookahead**，而轮数取决于 drills 有没有真挪动过卡：
+     *  - `confusable` 空、或每一对本来就带内、或每一次尝试都被落点拒掉/落回原格 ⇒ `relocated` 为 0 ⇒
+     *    [build] 不追加复扫 ⇒ 界是 `lookahead × maxRepairRounds`；60 条夹具实测就是这个乘积：59 → 47 → 35 → 23 → 11
+     *    （`QueueBuilderAdjacentTest.换位只往后看 lookahead 个位置` 钉着这一档）；
+     *  - drills **真挪走**过一张 ⇒ 复扫那一轮以 `rounds = 1` 再前扫一遍 ⇒ 界变成 `lookahead × (maxRepairRounds + 1)`，
+     *    同一份 60 条夹具多出的那一轮会把那张怪卡从下标 11 再拽到下标 1（测试
+     *    「落点等于原位时不算挪动：不追加复扫」在撤掉 `target == ib` 那道门时观测到的就是这个 1）。
+     * 被它换走那条往队尾方向的挪动两档都不设界。返回是否动了
      */
     private fun swapInWindow(q: MutableList<QueueItem>, i: Int, sim: Simularity, policy: InterleavePolicy): Boolean {
         val from = i + 2
@@ -243,7 +263,11 @@ internal object QueueBuilder {
      * 第二遍：把混淆映射里的对子挪到距 anchor `gapLo..gapHi` 题的位置。
      *
      * 遍历序全部定死（偏差 D6 第 4 条）：外层按 `aId` 升序（[TreeMap] 归一化，调用方给 `HashMap`
-     * 还是 `LinkedHashMap` 都不改结果），内层按伙伴 id 升序，并且只处理规范化方向（`bId > aId`）——
+     * 还是 `LinkedHashMap` 都不改结果 —— `java.util.HashMap` 的桶序在这里**不是**升序（id 15 落第 15 桶、
+     * id 17 落第 1 桶 ⇒ 迭代先出 17），所以"归一化"在 `HashMap` 上不是空话，测试
+     * 「HashMap 的桶序不许带着结果漂」钉着它），内层按伙伴 id 升序（`partners.sorted()`：同一 anchor 挂多个伙伴时，
+     * 跟着调用方给的清单序走就会让 `drillPairs` 的**记录序**漂 —— 末序两档相同，只有记录序能看出差别，
+     * 见测试「伙伴清单的升序决定 drillPairs 的记录序」），并且只处理规范化方向（`bId > aId`）——
      * 对称写入的映射如果两侧都处理一遍，同一对会被挪两次，第二次的起点还是第一次的结果，队列就随插入序漂了。
      *
      * 这一遍**只看映射，不看分值也不看学科**：混淆带 `[drillLo, drillHi]` 与「仅同学科内」两道过滤
@@ -252,8 +276,20 @@ internal object QueueBuilder {
      * `confusable` 表就是这么当输入用的）。
      * 映射里不在本轮队列的 id 直接跳过：drills 只对本轮真正同场的对子负责。
      *
-     * 返回的第二项是**真的把卡挪走了多少次**（落点被拒、原位放回的那些不计）——
-     * [build] 用它决定要不要复扫，别让"记了几条 drill"冒充"动了几次队列"。
+     * 预算 [DRILL_MOVE_BUDGET] 封的是**挪位**，不是记录：带内的对子零成本，预算耗尽后仍然记进 `drillPairs`
+     * （那条清单经 [drillNoteIds] 就是会话内提示的来源，不许静默缺席）。预算到了之后**没被尝试过**的越界对子不记 ——
+     * 它本来就没被 drill，报出去等于承诺了一次没发生过的隔开；而尝试过、落点被拒的那一对照旧记，报的是原距离。
+     *
+     * 最终 `gap` 出带有**三条**路，[QueueDrill.gap] 三条都如实上报、都不兜住：
+     *  1. 落点被 [violates] 拒掉 ⇒ 留在原距离（见 [placeBeside]，测试「挪不动时宁可不挪也不能造违规」报 7）；
+     *  2. `coerceIn` 够不着 `gapLo` ⇒ 夹到队尾，实际距离短于 `gapLo`（测试「够不着 gapLo 时夹到队尾也如实报真实距离」报 1）；
+     *  3. **后一次 drill 自己的动作**拆掉前一对的间隔：前一对挪完那一刻确实在带内，后一对往它们中间插一张就把间距
+     *     拉大，把夹在它们中间的那张抽走另放就把间距缩小（测试「HashMap 的桶序不许带着结果漂」钉的是后一档：
+     *     (15,16) 挪完那刻是 3，(17,18) 那一挪把夹在中间的 18 搬走 ⇒ 最终 2）。
+     *     这不是这里的 bug：`gap` 的口径就是**最终**队列里的真实距离（[stampGaps]），带内与否由调用方自己判。
+     *
+     * 返回的第二项是**真的把卡挪走了多少次**（落点被拒的、以及 `target == ib` 那种放回原格、队列逐字节未变的
+     * 都不计）—— [build] 用它决定要不要复扫，别让"记了几条 drill"冒充"动了几次队列"。
      */
     private fun applyDrills(
         q: MutableList<QueueItem>,
@@ -267,33 +303,39 @@ internal object QueueBuilder {
         for ((aId, partners) in TreeMap(confusable)) {
             for (bId in partners.sorted()) {
                 if (bId <= aId) continue                      // 规范化方向：一对只处理一次
-                if (attempts >= DRILL_MOVE_BUDGET) break      // 封顶的是尝试次数，落点被拒的那次也算尝试
                 val ia = q.indexOfFirst { it.id == aId }
                 if (ia < 0) continue
                 val ib = q.indexOfFirst { it.id == bId }
                 if (ib < 0) continue
-                val gap = gapOf(q, aId, bId)
+                val gap = gapOf(ia, ib)                       // 两侧下标就在手上，不必再按 id 找一遍
                 if (gap in policy.gapLo..policy.gapHi) {
                     drills.add(QueueDrill(aId, bId, gap))     // 已经隔开了，不动也记：调用方要的是"这一场有成对出现"
-                    continue
+                    continue                                  // 零成本，所以预算到没到都记
                 }
+                if (attempts >= DRILL_MOVE_BUDGET) continue    // 封顶的是挪位尝试次数（落点被拒的那次也算），不封记录
                 val moving = q.removeAt(ib)
                 if (placeBeside(q, ia, ib, moving, sim, policy)) relocated++
                 attempts++
-                drills.add(QueueDrill(aId, bId, gapOf(q, aId, bId)))
+                drills.add(QueueDrill(aId, bId, gapOf(q, aId, bId)))  // 挪完两侧下标都变了，只能重新定位
             }
         }
         return drills to relocated
     }
 
     /**
-     * 两者在 [q] 里的距离。gap 的**唯一**算法在这里（[violates] 之于相邻判定是同一个规矩）。
+     * 两个**下标**的距离 —— gap 公式唯一的家（[violates] 之于相邻判定是同一个规矩）。
+     * [applyDrills] 带内那一句判定用的就是这一档：两侧下标已经在手上了，不必回头按 id 再找一遍。
+     */
+    private fun gapOf(ia: Int, ib: Int) = abs(ia - ib)
+
+    /**
+     * 两者在 [q] 里的距离：按 id 定位之后交给上面那个唯一公式，这里不另写第二遍 `abs`。
      *
      * 前置条件：两个 id 都在 `q` 里 —— 只有 [applyDrills] 确认过两侧都找得到之后才会调它，
      * 而 drills 与复扫都不增不减条目，所以 [stampGaps] 再算一遍时这个前提仍然成立。
      */
     private fun gapOf(q: List<QueueItem>, aId: Long, bId: Long): Int =
-        abs(q.indexOfFirst { it.id == aId } - q.indexOfFirst { it.id == bId })
+        gapOf(q.indexOfFirst { it.id == aId }, q.indexOfFirst { it.id == bId })
 
     /**
      * 把 [moving] 放到距 anchor [InterleavePolicy.gapLo] 题的位置 —— **想去的那个位置够不着时由
@@ -307,6 +349,11 @@ internal object QueueBuilder {
      * 交错的目的就是把像的题分开，用制造新违规的方式消除旧违规是倒着走。放弃之后这一对就留在原距离上，
      * 由 [QueueDrill.gap] 如实报出来（见测试「挪不动时宁可不挪也不能造违规」）。
      *
+     * `coerceIn` 那一档还有一个极端：夹回来的位置**恰好是刚把它抽出来的那一格**（`b` 贴着队尾、
+     * `anchor + gapLo` 已经越过了队尾）—— 放回 `ib` 等于整趟没做过任何事，队列逐字节未变。
+     * 这一档单独挡在落点检查**之前**并返回 false：它既没查落点、也没挪卡，
+     * 冒充一次挪动就会让 [build] 为一个空操作打开复扫轮（见测试「落点等于原位时不算挪动：不追加复扫」）。
+     *
      * 返回是否真的挪成了（原位放回给 false）—— [build] 的复扫门只看真挪动过的次数。
      */
     private fun placeBeside(
@@ -319,6 +366,10 @@ internal object QueueBuilder {
     ): Boolean {
         val anchor = if (ib < ia) ia - 1 else ia
         val target = (anchor + policy.gapLo).coerceIn(0, q.size)
+        if (target == ib) {
+            q.add(ib, moving)                                 // 夹回来正好是抽它出来的那一格：整趟是空操作
+            return false                                      // 不冒充挪动 —— 否则 [build] 会为逐字节未变的队列开复扫轮
+        }
         val clashes = (target > 0 && violates(moving, q[target - 1], sim, policy)) ||
             (target < q.size && violates(moving, q[target], sim, policy))
         if (clashes) {
@@ -414,6 +465,8 @@ internal object QueueBuilder {
  * 会话内提示该挂在哪几张题上：一个 drill 对子里**排在后面的那张**。
  *
  * 挂在前面那张没意义 —— 用户还没遇到伙伴，提示就成了剧透。
+ * 返回的是 `HashSet`：**只作成员判定，不承诺遍历序**（调用方要的是"这张卡该不该挂提示"，
+ * 顺序由队列自己给 —— 它已经在 `queue` 里排好了）。
  * 队列里不存在的 id 直接忽略：调用方传的可能是一整份映射（文档 L1226 那张 `confusable` 表按题存，
  * 不按这一轮存），里面的伙伴不一定都在这轮队列里。缓冲卡拉进来的那张会不会撞上这条，
  * 要等 Task 5 的装配层真把它喂进 `build` 才有实测答案，这里只保证不抛。
