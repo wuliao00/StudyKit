@@ -44,11 +44,24 @@ internal data class QuestionQueuePlan(
  * 换句话说：这一层只会在真的看到相似题时才动手，它不动手的时候必须看得见「什么都没变」。
  *
  * 候选池 [pool] 不参与学科层，也不参与第二遍的配对输入（[QueueBuilder.confusablePairs] 喂的是
- * 会话那批卡，所以拉进来的缓冲卡永远不会挂 drill 提示），只当缓冲卡来源。池里与本轮同 id 的条目
- * 先按 id 滤掉，免得同一个 id 出现两次把判重绕过去。池中的题是用户这一轮新见到的，
+ * 会话那批卡，所以拉进来的缓冲卡永远不会挂 drill 提示 —— 测试「拉进来的缓冲卡不挂 drill 提示」
+ * 钉的就是这句话：池里放一张与某张会话题同科同考点的卡，落地 `drillIds` 是空集，
+ * 把 `items + poolItems` 一起喂进去才长出那一张，而两档的**末序逐格相同**），
+ * [pool] 只当缓冲卡来源。池里与本轮同 id 的条目先按 id 滤掉：[cards] 用 `associateBy` 建、
+ * **后者胜**，不滤就会让池里那个同 id 对象顶掉本轮那一份（用户正在做的这张题被换成池里的替身）。
+ * `QueueBuilder` 的判重（`inQueue`）只兜「重复入列」，兜不住「顶掉实例」
+ * —— 见测试「session 与 pool 有同 id 时不重复入列且会话那份胜出」。
+ * 池中的题是用户这一轮新见到的，
  * 所以 [QueueBuilder] 的 pull 上限（条数一成）是唯一的护栏 —— 见测试「池里的条数受一成上限」。
  * 队列映射回 [Question] 用的必须是同一批实例；`check` 守卫防「队列里有 id 回不到题」——
  * 丢了要当场炸，不许静默少题（测试「缓冲卡来自池且是同一个对象」把这一刀钉着）。
+ * 这条守卫在生产输入下**走不到**（[cards] 覆盖 `result.queue` 的每一个 id）：它**杀得掉变异，
+ * 不是跑得到的分支** —— 报告 §5 M4（`cards` 只由 base 建）实测把它踩红过。
+ *
+ * 两道早退里只有 `!semantic` 是语义守卫。`base.size < 2` 那一半是**成本优化，不是语义守卫**：
+ * [QueueBuilder.build] 对 n<2 自己也不崩（前扫空转、`maxOfOrNull` 给 null），删掉它之后三个读数与
+ * 队列内容逐格相同（报告 §5 M10 实测全绿、没有任何用例能显形），留着只省掉一次无谓的
+ * [QueueItem] / [QuestionSimularity] 构造。
  */
 internal fun planQuestionQueue(
     session: List<Question>,
@@ -61,14 +74,20 @@ internal fun planQuestionQueue(
     if (!semantic || base.size < 2) {
         return QuestionQueuePlan(questions = base, pulled = 0, maxAdjSim = null, drillIds = emptySet())
     }
-    // 池里去掉与本轮重复的 id：同 id 出现两次会让后面 cards/池候选的判重语义变得含混
+    // 池里去掉与本轮重复的 id：[cards] 是 associateBy 建的、后者胜，不滤就会被池里那个同 id 对象顶掉本轮那一份
     val baseIds = base.mapTo(HashSet(base.size)) { it.id }
     val extra = pool.filter { it.id !in baseIds }
     val cards = (base + extra).associateBy { it.id }
+    // 相似度快照必须连池一起收：insertBuffer 要问「池卡 vs 本轮两侧邻居」的分值。
+    // 只喂 base 的话 Simularity 对不认识的 id 一律给 0f ⇒ 池里的题永远「不像」 ⇒ 连与本轮同文的池卡也会被插进来
+    // （测试「缓冲卡来自池且是同一个对象」的两张池卡夹具 + 字面末序钉着这一档）。
     val sim = QuestionSimularity(base + extra)
     val items = base.mapIndexed { index, card ->
         QueueItem(id = card.id, urgency = (base.size - index).toFloat(), subject = card.subject)
     }
+    // 池候选的 urgency 是**惰性字段**：QueueBuilder.build 只对 due 那批按 urgency 排初值序，
+    // 池那批走 insertBuffer 的清单序（firstOrNull），这个字段在本装配的接线下没有读者 —— 别「修」它，
+    // 换成真实到期值不会改变一条结果，反而会让人以为它参与过排序。
     val poolItems = extra.map { QueueItem(id = it.id, urgency = 0f, subject = it.subject) }
     val result = QueueBuilder.build(items, sim, poolItems, QueueBuilder.confusablePairs(items, sim, policy), policy)
     val ordered = result.queue.mapNotNull { cards[it.id] }
@@ -88,6 +107,16 @@ internal fun planQuestionQueue(
  * 禁词表由测试「设置行文案不许承诺语义包或模型」执行：这一层是词面判据，
  * 不许说「语义/模型/MB/向量/下载/嵌入」。简报 Step 3 的原稿写着「不额外下载东西」，
  * 「下载」正在禁词表里 —— 按测试改成「不装额外东西」，意图不变（报告里记为 brief 缺陷 ⑤）。
+ *
+ * T5-R5 又把它三句超诺的承诺逐句收窄（Task 6 渲染的就是下面这一句，测试「设置行文案逐字钉住」整句钉着，
+ * 禁词表拦不住「把『尽量』删回去」那种回填）：
+ *  1. 原稿「考点标签相同的题会被**安排在同一轮里**」结构上就做不到 —— [QueueBuilder.confusablePairs]
+ *     只喂会话内的题，而 `insertBuffer` 要求缓冲卡与两侧邻居都 `< tauLo` ⇒ 被拉进来的池卡永远不可能是
+ *     混淆伙伴（测试「拉进来的缓冲卡不挂 drill 提示」）。改成「同一轮里**已经出现的**同考点题」。
+ *  2. 原稿「别让它们连着出现」是无条件承诺，而落点被拒或夹到队尾时**会**留下 `sim > tauHi` 的相邻
+ *     （本仓夹具里就有一轮末态 `maxAdjSim = 1.0`）⇒ 加「尽量」，并补「挪不开就照原样出」。
+ *  3. 原稿「隔三到五题再遇一次」是**目标带**不是结果（`placeBeside` 可拒、`coerceIn` 可夹）⇒ 同样加「尽量」。
+ * 另：`unresolved` 在装配层被丢弃、UI 拿不到它 ⇒ 这句更不能承诺「绝不连着出现」，只能承诺尽力。
  */
 internal fun semanticInterleaveHint(): String =
     "把题面文字上就很像的题尽量隔开几道出；同一轮里已经出现的同考点题，会尽量隔三到五题再遇一次 —— " +
