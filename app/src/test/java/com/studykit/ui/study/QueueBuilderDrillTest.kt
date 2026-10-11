@@ -171,13 +171,29 @@ class QueueBuilderDrillTest {
         //    代价是 30 离 anchor 从带内的 3 格涨成 **8** 格 ⇒ 报出来的最终 gap 出带，往上尾。
         // 杀的变异（真跑）：删掉 build 里那句复扫调用 ⇒ 30 停在下标 15、gap 停在带内的 3，
         // 下面第一句红（`expected:<8> but was:<3>`），末序那句同时红（变异 M3 的取证见 Task 8 报告）。
+        //
+        // 这一条的**射程**要说准：喂进 `build` 的整份映射是手搓的（`applyDrills` 上面那段明说映射是输入、
+        // 既不看分值也不看学科），所以这条钉的是"第四 mover 在 `build` 这一层的契约里出得来"，
+        // 不是"装配层今天就会长成这样"。这一刀的合格判据住在 `swapInWindow`：它问的是**违规对的左邻**
+        // `q[i]`（这里是 4）与窗口内候选 `q[j]`（这里是被 drill 挪到下标 15 的那张伙伴 30）的分值，
+        // 两侧都不是 anchor(13) ⇒ 成立与否只看 `sim(4, 30)`，与混淆带无关（这里就是 0f < tauLo）。
+        // 反过来，如果左邻**恰好是 anchor**，那一刀在生产输入下永远落不到伙伴身上：`confusablePairs`
+        // 只收 `[drillLo, drillHi]` 内的对子 ⇒ `sim(anchor, partner) ≥ drillLo = 0.40 > tauLo = 0.15`
+        // ⇒ 伙伴当候选时一只都合格不了 —— 这一条走得出来靠的正是"4 不是 anchor"。
+        // 装配层那一头说得更窄一些：那里**没有任何一道过滤拦得住**这一刀（`q[i]` 与伙伴的分值不归混淆带管），
+        // 但**也没有任何用例在那一层把它造出来过** —— `QuestionQueuePlan` 压根不暴露 `gap`，
+        // 而 `StudyQueueWiringTest` 的 ⑥ 只证明了复扫在生产路径上跑过：那一轮换走的是 8，不是 drill 成员 7。
+        // 所以"第四个搬家者"落到夹具上是**当候选的那只伙伴**：被换离 anchor 的是 `q[j]`，`q[i]` 只是打分的那一侧。
         val items = drillItems(listOf(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L, 17L, 18L, 19L, 30L).map { it to "A" })
         val sim = bandSim(
             Triple(4L, 5L, 0.9f),                          // 相邻违规：> tauHi，且高于 drillHi ⇒ 只归第一遍/复扫管
             Triple(4L, 6L, 0.4f), Triple(4L, 7L, 0.4f), Triple(4L, 8L, 0.4f), Triple(4L, 9L, 0.4f),
             Triple(4L, 10L, 0.4f), Triple(4L, 11L, 0.4f), Triple(4L, 12L, 0.4f), Triple(4L, 13L, 0.4f),
             Triple(4L, 14L, 0.4f), Triple(4L, 15L, 0.4f), Triple(4L, 16L, 0.4f), Triple(4L, 17L, 0.4f),
-            Triple(13L, 30L, 0.5f),                        // 混淆对：带内（0.40..0.75）⇒ 生产输入也长得出这个形状
+            Triple(13L, 30L, 0.5f),                        // 混淆对：0.5 在带内 [0.40,0.75] 且同学科 ⇒ 只有**这一对**是 `confusablePairs` 长得出来的形状；
+            // 整份夹具不是 —— 上面那 12 个 0.4 同样落在带内、同样同科，真映射会把它们一并收进去
+            // （4 那一侧 12 个伙伴还要被 topK = 8 截一刀），于是 drills 会先挪别的对子、末序就不是下面那句了。
+            // 这就是上面那段射程存在理由的具体版本：夹具直接喂映射，问的是 `build` 的契约，不是装配层的形状。
         )
         val plan = QueueBuilder.build(items, sim, emptyList(), mapOf(13L to listOf(30L)), p)
         assertEquals(8, plan.drillPairs.first().gap)       // ⛔ 高于 gapHi 5 的字面量：第四条路出到上尾
