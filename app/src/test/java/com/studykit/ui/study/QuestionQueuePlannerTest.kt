@@ -20,6 +20,10 @@ import org.junit.Test
  * **加固**四条既有用例（T5-R1 池项换成同 id 的另一个对象、T5-R3 池换成两张、T5-R7 的两处
  * `pulled == 0` 原本配的是「早返回 + 空池」= 永真断言），另按 T5-R6 换掉一处断言消息里的作废手推值；
  * 每条注释里标了对应的 `T5-Rn`。用例数 16 → 19。
+ * 修复轮 2 再**新增**一条：T5-R4 那条只拧过 `gapLo`，而 `confusablePairs` 不读 `gapLo`（读的是 drillLo /
+ * drillHi / topK）⇒「`confusablePairs` 那一处的 policy 是摆设」这一刀原有的 19 条全都看不见（实跑见报告）。
+ * 那条新用例拧的是混淆带，用例数 19 → **20**；同一轮还按 Item 2 把设置行整句换成加了「同一学科」的新串
+ * （只改字符串与该条的期望值，不增删用例）。
  * ⛔ 标记的用例钉字面量，不读生产常量当期望值。
  */
 class QuestionQueuePlannerTest {
@@ -195,6 +199,50 @@ class QuestionQueuePlannerTest {
         )
         assertEquals(listOf(11L, 12L, 14L, 13L), byGapLoOne.questions.map { it.id })   // ⛔ 同一份输入，换了 gapLo 就该停在这儿
         assertEquals("gapLo=1 时对子本来就隔在带内，提示仍挂在靠后那张: ${byGapLoOne.drillIds}", setOf(14L), byGapLoOne.drillIds)
+    }
+
+    @Test fun `policy 参数不是摆设：混淆带上界接不住同考点地板时就不配对`() {
+        // T5-R4 只换过 `gapLo`（`DEFAULT.copy(gapLo = 1)`），而 [QueueBuilder.confusablePairs] **压根不读 gapLo**
+        // （它读的只有 drillLo / drillHi / topK）⇒ 把装配里 `confusablePairs(items, sim, policy)` 的第三个实参
+        // 硬编码成 `LexicalInterleave.DEFAULT`（只这一处，`build` 那一处仍旧用传进来的 policy）让本仓**原有 19 条
+        // 用例全部照绿** —— policy 这道缝只被 gapLo 那一半挡住过，drill 带这一半从来没有用例能让它红。本条补的就是那一半。
+        // 夹具沿用「成对出现的那张…」那四题，逐对手推（实跑核对，⛔ 期望值全是字面量）：
+        //  - 同学科（语文）之间的两两比对只有 11 与 14 这一对：12（数学）、13（英语）各自独占一科，
+        //    `b.subject != a.subject` 就把它们全筛掉了。
+        //  - sim(11,14) 的字面 Dice = 2*4/(12+17) = 8/29 = 0.276（归一化后 13 字 / 18 字，重合的二元组只有
+        //    下列、的一、一项、项是 四个）⇒ 落不进任何带；同考点标签「病句辨析」把它抬到**恰好 0.65**，
+        //    于是「配不配得上对」这一件事整个押在混淆带**上界**摆在哪 —— 这一条要的就是这一格可拧。
+        //  - 其余五对（11-12、11-13、12-13、12-14、13-14）字面 Dice 为 0，两档下都收不进带。
+        //  - DEFAULT（[0.40,0.75]）：0.65 在带内 ⇒ 成对 ⇒ 学科层初序 [11,12,14,13] 的间距 2 不在 gapLo..gapHi ⇒
+        //    第二遍把 14 挪到下标 3（落点两侧 sim=0，不被 `violates` 拒）⇒ `drillIds == {14}`。
+        //  - `copy(drillHi = 0.60f)`：0.65 在带**外**（`value in drillLo..drillHi` 为假）⇒ partners 为空 ⇒
+        //    两张卡都因为 `partners.isEmpty() continue` 不挂键 ⇒ 映射是空的 ⇒ 第二遍零对子可挪、一步都不动
+        //    ⇒ `drillIds` 是空集，末序停在 [11,12,14,13]。
+        // 杀的变异：**只有**这一条看得见那个硬编码（实跑：20 条里只有本条红、其余 19 条全绿 ⇒ 「policy 是摆设」
+        //   这一刀此前只被 gapLo 那一半挡住过）。按现行断言序，红象是空集那一句
+        //   （`expected:<[]> but was:<[14]>`）；把两句暂时调换后，末序那句也实跑红过
+        //   （`expected:<[11, 12, 14, 13]> but was:<[11, 12, 13, 14]>`，探完已换回）—— JUnit 只报第一个失败，
+        //   所以同一刀下每次留下的红象只有一句，两句都在同一刀下为假是这两跑分别读到的。
+        //   空集那句之前的 DEFAULT 档是反向闸：两档都空集的话「谁都配不上对」也能骗过它 ⇒ 默认档必须真配上对。
+        //   红输出全文在报告 Fix round 2 的 Item 3。
+        val session = listOf(
+            q(11, "语文", "下列句子中没有语病的一项是", "病句辨析"),
+            q(12, "数学", "已知集合 A 等于 x 满足 x 平方小于 4 求 A"),
+            q(13, "英语", "Choose the right answer about tense"),
+            q(14, "语文", "下列各句中加点的成语使用恰当的一项是", "病句辨析"),
+        )
+        val byDefault = planQuestionQueue(session, emptyList(), interleaving = true, semantic = true)
+        assertEquals("默认档要真配上对，否则下面那句空集是白给的: ${byDefault.drillIds}", setOf(14L), byDefault.drillIds)
+        val narrowBand = planQuestionQueue(
+            session, emptyList(), interleaving = true, semantic = true,
+            policy = LexicalInterleave.DEFAULT.copy(drillHi = 0.60f),
+        )
+        assertEquals(
+            "带上界 0.60 接不住同考点地板抬出来的 0.65 时对子进不了映射，提示该缺席: ${narrowBand.drillIds}",
+            emptySet<Long>(),
+            narrowBand.drillIds,
+        )
+        assertEquals(listOf(11L, 12L, 14L, 13L), narrowBand.questions.map { it.id })   // ⛔ 没成对 ⇒ 第二遍一步都不动
     }
 
     @Test fun `拉进来的缓冲卡不挂 drill 提示`() {
