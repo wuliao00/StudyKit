@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -59,6 +60,9 @@ import com.studykit.ui.components.QuizOptionTile
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.TipCard
 import com.studykit.ui.theme.AppTheme
+
+/** 会话内「隔开放是故意的」提示的 testTag */
+const val QuizDrillNoteTag = "quiz_drill_note"
 
 /**
  * 题库练习页：学科选择 → 逐题作答（作答前可挤牙膏式要提示，作答后三层反馈）→ 正确率环形结果页。
@@ -152,13 +156,11 @@ fun QuizScreen(
                 onBack = onBack,
             )
 
-            current != null -> QuestionView(
-                question = current,
-                selected = state.selected,
+            current != null -> QuizQuestionBranch(
+                state = state,
                 confidenceEnabled = confidenceEnabled,
                 onSelect = { index, conf -> viewModel.selectOption(index, conf) },
                 onNext = { viewModel.nextQuestion() },
-                isLast = state.index == state.total - 1,
             )
 
             else -> SubjectPicker(
@@ -325,6 +327,58 @@ internal fun quizOptionState(
 
     pending == index -> QuizOptionState.Selected
     else -> QuizOptionState.Idle
+}
+
+/**
+ * 练习页「当前这一题」那一支：混淆提示行（只在 `state.currentIsDrill` 时出现）+ 题目本体。
+ *
+ * ## 为什么抽成独立可组合
+ * JVM 侧的渲染守卫起不了整屏 `QuizScreen`（整屏要 [StudyViewModel] 与 `ImportViewModel`，背后是 Room
+ * 与 OCR 那套管线），口径同 [MockExamRenderTest] 只摆 `MockExamBody` / [com.studykit.ui.settings.SettingsSemanticRowRenderTest]
+ * 只摆 `SchedulePracticeSettings`。而"这一行挂在哪张题上、什么时候消失"这件事全部住在这一支里，
+ * 所以把这一支整体交给测试真组合一次，[QuizScreen] 只负责把状态与两条回调递进来。
+ *
+ * ## 提示的两条口径
+ *  - **文案只有一份**：这一行念的是 [confusableDrillTip()]，界面里不抄第二份字面量
+ *   —— 抄一份逐字相同的拷贝在本仓任何测试里都不现形（这条 lane 在 T6 就为文案撞过一次），
+ *   所以这里**调函数**而不是重写那句话。
+ *  - **不做"每场只出现一次"的收口**：出现与消失完全由 [QuizUiState.currentIsDrill] 驱动，
+ *   随翻页逐次发生。产品判断：同一场里出现两个混淆对，就该两次都解释到位 ——
+ *   把"只提示一次"当默认，第二次遇到的用户反而不知道自己在看什么（第一次的解释早就翻过去了）。
+ *   判据本身（哪个 id 该挂）全在纯函数那一层（`QueueBuilder.drillNoteIds` → `planQuestionQueue`），
+ *   这一支只做一次集合查，不开第二个判断家。
+ *
+ * 颜色与字号只用既有档位（`texts.caption` + `colors.secondaryText`，与遮挡编辑器那行提示同一族）：
+ * **不新增色值**，也不给这条提示加图标或卡片 —— 它是一句解释，不是一个需要用户操作的东西。
+ */
+@Composable
+internal fun QuizQuestionBranch(
+    state: QuizUiState,
+    confidenceEnabled: Boolean,
+    onSelect: (Int, Confidence?) -> Unit,
+    onNext: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val current = state.current ?: return
+    Column {
+        if (state.currentIsDrill) {
+            Text(
+                text = confusableDrillTip(),
+                style = texts.caption,
+                color = colors.secondaryText,
+                modifier = Modifier.testTag(QuizDrillNoteTag),
+            )
+        }
+        QuestionView(
+            question = current,
+            selected = state.selected,
+            confidenceEnabled = confidenceEnabled,
+            onSelect = onSelect,
+            onNext = onNext,
+            isLast = state.index == state.total - 1,
+        )
+    }
 }
 
 /**
