@@ -38,9 +38,11 @@ import org.robolectric.annotation.GraphicsMode
  *
  * ## 它防的是什么（纯函数测不到）
  * [com.studykit.data.AppSettingsTest] 与 [AppSettingsInterleavingTest] 钉的是 `toMap/fromMap` 的
- * 键值口径；它们回答不了「页面上这两枚磁贴 / 两颗开关有没有真接上 `schedulingKernel` /
- * `confidenceEnabled` / `interleavingEnabled` 这三条写回」——磁贴画错 id、开关接反、副标题把
- * 那句诚实口径写丢了，纯数据测试全绿，界面却是坏的。这一条把 [SchedulePracticeSettings] 真组合出来，
+ * 键值口径；它们回答不了「页面上**本守卫负责的那几格** —— 两枚排期内核磁贴、先自评把握与交错练习
+ * 两颗开关 —— 有没有真接上 `schedulingKernel` / `confidenceEnabled` / `interleavingEnabled` 这三条
+ * 写回」——磁贴画错 id、开关接反、副标题把那句诚实口径写丢了，纯数据测试全绿，界面却是坏的。
+ * （这一簇在 v3.0-C T6 多了第四格「相似题打散」，不归本类管：宿主给它空实现，见 `BehaviorHost`；
+ * 那一格由 [SettingsSemanticRowRenderTest] 钉。）这一条把 [SchedulePracticeSettings] 真组合出来，
  * 走一遍点击，断言写回的值与界面读数一致。
  *
  * ## 为什么只有一个 @Test / 走 Robolectric
@@ -192,7 +194,7 @@ private fun BehaviorHost(
                     onConfidence = onConfidence,
                     onInterleaving = onInterleaving,
                     // 本守卫（v2.7 B20）钉的是前三件，早于 T6 那一格：这里给空实现只是补齐签名，
-                    // 「相似题打散」的渲染与回调由 SettingsSemanticRowRenderTest 负责， assertions 一条不动。
+                    // 「相似题打散」的渲染与回调由 SettingsSemanticRowRenderTest 负责，断言一条不动。
                     onSemanticInterleave = {},
                 )
             }
