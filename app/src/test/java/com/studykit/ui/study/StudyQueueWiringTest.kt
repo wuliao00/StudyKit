@@ -478,7 +478,7 @@ class StudyQueueWiringTest {
     // ── ⑥ drill 在生产路径上真的把一张卡挪到了新位置 ──────────────────
 
     /**
-     * ⛔ Task 4 复审记的那笔账：drill 出带的三条路线只在 `QueueBuilderDrillTest` 的夹具里各钉过一条，
+     * ⛔ Task 4 复审记的那笔账：drill 出带的四条路线只在 `QueueBuilderDrillTest` 的夹具里各钉过一条，
      * 全仓**没有任何用例**在装配层/入口这一头造过那些形状。本条补最实在的一件：
      * 一次真正的挪位（不是"本来就在带内、只记不动"），而且复扫那一轮真的跑过。
      *

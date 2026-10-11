@@ -13,11 +13,12 @@ import com.studykit.data.entity.Question
  * @param drillIds 该挂「这两张卡容易混」提示的题 id（每个 drill 对子里靠后的那张）。
  *        口径只住在 [QueueBuilder] 那一处，这里不兜底、不改口径、也不重述一遍（同一件事两处各说一套是这条 lane
  *        的红线）：配对只发生在**学科相同且非空白**的题之间（`confusablePairs`），而一对子进了映射之后，它最终的
- *        实际距离有**三条**出带的路、**上下两尾都出得到** —— 落点被拒时停在**原**距离（那一档可以高于 `gapHi`），
- *        `coerceIn` 夹到队尾时短于 `gapLo`，后一次 drill 的动作还能把前一对的间隔往两个方向再改一次。三条的推演
+ *        实际距离有**四条**出带的路、**上下两尾都出得到** —— 落点被拒时停在**原**距离（那一档可以高于 `gapHi`），
+ *        `coerceIn` 夹到队尾时短于 `gapLo`，后一次 drill 的动作还能把前一对的间隔往两个方向再改一次，
+ *        而 drills 之后那一轮**复扫**为了拆掉相邻违规，可以把记录在案的对子里的一张换走（两尾都出得到）。四条的推演
  *        与夹具全在 `QueueBuilder.applyDrills` 的注释里、由 `QueueBuilderDrillTest` 一条钉一条（被拒那一档它的
  *        夹具报的是 7，在 `gapHi = 5` 之上）。
- *        ⛔ 这三条**没有一条**由本层的用例钉着：[QuestionQueuePlan] 压根不暴露 `gap`，装配层造不出带外的形状。
+ *        ⛔ 这四条**没有一条**由本层的用例钉着：[QuestionQueuePlan] 压根不暴露 `gap`，装配层造不出带外的形状。
  *        这一段只拦一个误读 —— 别把「id 在 drillIds 里」读成「这一对隔在 `gapLo..gapHi` 之间」。
  */
 internal data class QuestionQueuePlan(

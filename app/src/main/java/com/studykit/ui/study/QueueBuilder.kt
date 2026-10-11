@@ -5,8 +5,9 @@ import kotlin.math.abs
 
 /**
  * 队列里的一项。[urgency] 越大越该先出。
- * 「装配层用它承载原序位置」是**前瞻**：那个装配层是 `QuestionQueuePlanner`（Task 5），本任务里还没有读这个字段的代码
- * —— 现在唯一用到它的是 [build] 的排序键。
+ * 装配层 [planQuestionQueue]（Task 5 已落地）用它承载**学科层给出的原序位置**（`urgency = 条数 - 下标`），
+ * 于是 [build] 的排序键还原出的初序就是那一层的输出顺序 —— 没有相似题要分开时输出逐元素等于输入。
+ * 读这个字段的只有那个排序键（池候选那批的 urgency 是惰性字段，装配层 KDoc 里写着）。
  */
 internal data class QueueItem(val id: Long, val urgency: Float, val subject: String)
 
@@ -14,7 +15,7 @@ internal data class QueueItem(val id: Long, val urgency: Float, val subject: Str
  * 一对被判定为易混的对子，[gap] 是**最终**队列里两者的距离（不是移动前的）。
  * 口径由 [QueueBuilder.stampGaps] 负责：drills 之后还有复扫，复扫可能又把其中一张换走，
  * 所以 gap 是在 `build` 全部走完之后再盖一次，而不是挪完就地取值。
- * 它报的是**真实距离**而不是"保证落在 `[gapLo, gapHi]` 内"：出带的三条成因见 [QueueBuilder.applyDrills]。
+ * 它报的是**真实距离**而不是"保证落在 `[gapLo, gapHi]` 内"：出带的**四条**成因见 [QueueBuilder.applyDrills]。
  */
 internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
 
@@ -61,8 +62,11 @@ internal data class QueuePlan(
  *        预算封顶的是"尝试次数"（被落点拒掉的也算一次），所以这一项与映射里有多少对子无关。
  *        `gap` 与 drill 落位用的都是下标查找（[gapOf]/[stampGaps]），不查表 ⇒ 不进这笔账；
  *      - 外加 [report] 的 `2 × (n − 1)` 次读数（`maxAdjSim` 一遍、`unresolved` 走 [violates] 一遍）。
- *     上界存在 Task 8 才钉得住，届时按这五项推（它那些用例的 `confusable` 都是空映射 ⇒ 一张都不会真挪 ⇒
- *     **第二、四项为 0**；第三项要看池子 —— Task 8 里有一条 500 张缓冲池的用例，那一条它不为 0）；
+ *     上界已由 Task 8 的 `QueueBuilderStressTest` 钉住，五项各有一条用例让它非零：
+ *     空池 + 空映射那一条走满**换位项与读数项**，其余三项在那份夹具下就是 0（用例注释把"哪三项为 0"写在账上）；
+ *     500 张全不合格池那一条走满**插池扫描项**（实测读数比省掉这一项的上界高一个数量级，那条同时把这一句钉成断言）；
+ *     真挪动过卡那一条让**复扫项与落点项**变活，并把五项合计的**精确**读数钉成字面量 ——
+ *     少跑一轮复扫、或落点少查一个邻居，那一条就红；
  *  2. drills 之后**复扫**一遍（参考实现挪完 b 就不管新邻居了，偏差 D6 第 2 条）；
  *  3. `maxAdjSim` 用 `maxOfOrNull`，少于两条给 null，不抛；
  *  4. 一切遍历序定死：排序键 `(urgency desc, id asc)`，混淆映射按 id 升序走（[applyDrills] 外层 `TreeMap` 归一化，
@@ -72,7 +76,8 @@ internal data class QueuePlan(
  *
  * 纯函数：不吃 Android、不吃 Room、不做 IO，相似度一律从注入的 [Simularity] 拿。
  * [build] 的 `confusable` 是**输入**而不是现场算出来的（文档 L1226 那张 `confusable` 表的位置，语义包计划的事）；
- * 生产路径由 Task 5 的装配层调 [confusablePairs] 算好再喂进来 —— 那一步是前瞻，本任务的调用点只有测试。
+ * 生产路径上它由装配层 [planQuestionQueue] 调 [confusablePairs] 算好再喂进来（Task 5 已落地，
+ * 读点在 `StudyViewModel` 的两个组轮入口：`startQuiz` 与 `startMixedQuiz`），测试仍可以直接喂一份映射进来。
  */
 internal object QueueBuilder {
 
@@ -280,12 +285,19 @@ internal object QueueBuilder {
      * （那条清单经 [drillNoteIds] 就是会话内提示的来源，不许静默缺席）。预算到了之后**没被尝试过**的越界对子不记 ——
      * 它本来就没被 drill，报出去等于承诺了一次没发生过的隔开；而尝试过、落点被拒的那一对照旧记，报的是原距离。
      *
-     * 最终 `gap` 出带有**三条**路，[QueueDrill.gap] 三条都如实上报、都不兜住：
+     * 最终 `gap` 出带有**四条**路，[QueueDrill.gap] 四条都如实上报、都不兜住：
      *  1. 落点被 [violates] 拒掉 ⇒ 留在原距离（见 [placeBeside]，测试「挪不动时宁可不挪也不能造违规」报 7）；
      *  2. `coerceIn` 够不着 `gapLo` ⇒ 夹到队尾，实际距离短于 `gapLo`（测试「够不着 gapLo 时夹到队尾也如实报真实距离」报 1）；
      *  3. **后一次 drill 自己的动作**拆掉前一对的间隔：前一对挪完那一刻确实在带内，后一对往它们中间插一张就把间距
      *     拉大，把夹在它们中间的那张抽走另放就把间距缩小（测试「HashMap 的桶序不许带着结果漂」钉的是后一档：
      *     (15,16) 挪完那刻是 3，(17,18) 那一挪把夹在中间的 18 搬走 ⇒ 最终 2）。
+     *  4. **drills 之后那一轮复扫**换走对子里的一张：复扫（[build] 里 `relocated > 0` 才追加的那一轮）只为拆掉
+     *     挪位新造出、或第一遍本来就拆不动的相邻违规，而它的换位窗口 [swapInWindow] 是 `i + 2 .. i + 1 + lookahead`，
+     *     **够得着刚被挪到 anchor 旁边的那张**。被换走的恰好是记录在案的对子成员时，最终距离就离带，
+     *     上下两尾都出得到：测试「挪完又被复扫换开的对子报最终距离」报 2（带内的 3 被拆到 `gapLo` 之下）、
+     *     「复扫换走带内那对的一张时间距涨到 gapHi 之外」报 8（涨到 `gapHi` 之上）。
+     *     这一条与 [stampGaps] 的理由本是同一件事的两面 —— 正因为复扫会换走成员，`gap` 才要等全部走完再复盖；
+     *     Task 4 把它跑出来过一次，但当时只记在"最终距离"的口径下、没进这条数目（数目停在三是过时的，Task 8 的 R3 收的账）。
      *     这不是这里的 bug：`gap` 的口径就是**最终**队列里的真实距离（[stampGaps]），带内与否由调用方自己判。
      *
      * 返回的第二项是**真的把卡挪走了多少次**（落点被拒的、以及 `target == ib` 那种放回原格、队列逐字节未变的
@@ -384,7 +396,9 @@ internal object QueueBuilder {
      * 把 drill 的 `gap` 换成**最终队列**里的真实距离 —— [QueueDrill.gap] 的口径就是这么定的。
      *
      * 为什么不在 [applyDrills] 里就地定稿：drills 之后还有复扫，复扫为了拆掉新造出的相邻违规，
-     * 可能把这一对里的某一张再换走一格。不重盖的话，报出来的就是"挪完那一刻"的距离而不是最终距离。
+     * 可能把这一对里的某一张再换走一格（那就是 [applyDrills] 注释里出带的**第四条**路，
+     * 夹具是「挪完又被复扫换开的对子报最终距离」与「复扫换走带内那对的一张时间距涨到 gapHi 之外」两条）。
+     * 不重盖的话，报出来的就是"挪完那一刻"的距离而不是最终距离。
      * 这一趟只有下标查找、没有查表 ⇒ [build] 的查找上界那笔账不因为它加项。
      */
     private fun stampGaps(q: List<QueueItem>, drills: List<QueueDrill>): List<QueueDrill> =
@@ -468,8 +482,11 @@ internal object QueueBuilder {
  * 返回的是 `HashSet`：**只作成员判定，不承诺遍历序**（调用方要的是"这张卡该不该挂提示"，
  * 顺序由队列自己给 —— 它已经在 `queue` 里排好了）。
  * 队列里不存在的 id 直接忽略：调用方传的可能是一整份映射（文档 L1226 那张 `confusable` 表按题存，
- * 不按这一轮存），里面的伙伴不一定都在这轮队列里。缓冲卡拉进来的那张会不会撞上这条，
- * 要等 Task 5 的装配层真把它喂进 `build` 才有实测答案，这里只保证不抛。
+ * 不按这一轮存），里面的伙伴不一定都在这轮队列里。
+ * 缓冲卡拉进来的那张撞不撞这条，Task 5 的装配层已经跑出实测答案：**撞不上** —— [planQuestionQueue] 只把
+ * 会话那批卡喂给 [confusablePairs]（池那批只当缓冲卡来源），池里的 id 因此进不了映射、当不上 drill 成员
+ * （测试「拉进来的缓冲卡不挂 drill 提示」钉着这一档；[insertBuffer] 那道"与两侧邻居都 `< tauLo`"的门槛
+ * 是同一条理由的第二处：混淆伙伴的分值下界 `drillLo` 本来就高于 `tauLo`）。本函数自己只保证不抛。
  */
 internal fun drillNoteIds(queue: List<QueueItem>, drills: List<QueueDrill>): Set<Long> {
     if (drills.isEmpty()) return emptySet()

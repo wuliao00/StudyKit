@@ -152,6 +152,44 @@ class QueueBuilderDrillTest {
         assertTrue("未解决: ${plan.unresolved}", plan.unresolved.isEmpty())
     }
 
+    @Test fun `复扫换走带内那对的一张时间距涨到 gapHi 之外`() {
+        // ⛔ 这条钉的是 [QueueBuilder.applyDrills] 注释里**第四条**出带路（原稿只写三条）：
+        // drills 之后那一轮复扫为了拆掉自己那趟扫描够得着的违规，把记录在案的对子里的一张换走 ⇒ 最终距离离带。
+        // 上尾（3 → 8 > gapHi 5）由这一条钉；下尾（3 → 2 < gapLo 3）上面那条
+        // 「挪完又被复扫换开的对子报最终距离」早就跑出来过 —— 它当时的标题说的是"最终距离"的口径，
+        // 而数目那句停在"三条"，于是同一件事在两处各写一套（Task 8 的 R3 收的就是这笔账）。
+        //
+        // 形状（`drillItems` 把初序摆成下面那份清单）：
+        //  - 4 在下标 3、5 在下标 4，sim 0.9 > tauHi ⇒ **第一遍就有一处违规**，而它修不动：
+        //    窗口是下标 5..16（`i + 2 .. i + 1 + lookahead`），那 12 格上是 id 6..17，与 4 全给 0.4
+        //    ≥ tauLo ⇒ 一只合格候选都没有；池是空的（20 条的 cap = 2 也开着，但没有东西可插）⇒ 原地留下。
+        //  - 混淆对 (13, 30)：初距 7 > gapHi ⇒ 一定要挪。drills 把 30 从下标 19 抽出来，插到
+        //    anchor(13，下标 12) 后第三格 = 下标 15 —— 那一格**正好落在 4 的那只窗口里**，
+        //    而 sim(4, 30) = 0 < tauLo ⇒ 它是这轮里第一只合格候选。落点两侧不撞：
+        //    sim(30, 15) = sim(30, 16) = 0 ⇒ relocated = 1 ⇒ 复扫那一轮跑起来（`rounds = 1`）。
+        //  - 复扫在 i=3 那一站把 q[4]（= 5）与 q[15]（= 30）对调：违规拆掉了（unresolved 空），
+        //    代价是 30 离 anchor 从带内的 3 格涨成 **8** 格 ⇒ 报出来的最终 gap 出带，往上尾。
+        // 杀的变异（真跑）：删掉 build 里那句复扫调用 ⇒ 30 停在下标 15、gap 停在带内的 3，
+        // 下面第一句红（`expected:<8> but was:<3>`），末序那句同时红（变异 M3 的取证见 Task 8 报告）。
+        val items = drillItems(listOf(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L, 17L, 18L, 19L, 30L).map { it to "A" })
+        val sim = bandSim(
+            Triple(4L, 5L, 0.9f),                          // 相邻违规：> tauHi，且高于 drillHi ⇒ 只归第一遍/复扫管
+            Triple(4L, 6L, 0.4f), Triple(4L, 7L, 0.4f), Triple(4L, 8L, 0.4f), Triple(4L, 9L, 0.4f),
+            Triple(4L, 10L, 0.4f), Triple(4L, 11L, 0.4f), Triple(4L, 12L, 0.4f), Triple(4L, 13L, 0.4f),
+            Triple(4L, 14L, 0.4f), Triple(4L, 15L, 0.4f), Triple(4L, 16L, 0.4f), Triple(4L, 17L, 0.4f),
+            Triple(13L, 30L, 0.5f),                        // 混淆对：带内（0.40..0.75）⇒ 生产输入也长得出这个形状
+        )
+        val plan = QueueBuilder.build(items, sim, emptyList(), mapOf(13L to listOf(30L)), p)
+        assertEquals(8, plan.drillPairs.first().gap)       // ⛔ 高于 gapHi 5 的字面量：第四条路出到上尾
+        assertEquals(8, kotlin.math.abs(idxOf(plan, 13L) - idxOf(plan, 30L)))
+        assertEquals(
+            listOf(1L, 2L, 3L, 4L, 30L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 5L, 16L, 17L, 18L, 19L),
+            plan.queue.map { it.id },
+        )
+        assertEquals(20, plan.queue.size)                  // 挪位与复扫都不增不减
+        assertTrue("未解决: ${plan.unresolved}", plan.unresolved.isEmpty())   // 复扫确实把 (4,5) 那一刀拆掉了
+    }
+
     @Test fun `混淆映射的迭代序不影响结果`() {
         // ⛔ 钉偏差 D6 第 4 条（Map 迭代序不定）。两份内容相同、插入序相反的映射必须给同一个末序。
         // 杀的变异：`for ((aId, partners) in TreeMap(confusable))` 改回直接吃 `confusable`（吃调用方的迭代序）。
