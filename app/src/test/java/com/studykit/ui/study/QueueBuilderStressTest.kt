@@ -40,10 +40,26 @@ import kotlin.system.measureTimeMillis
  * 上界公式里的 `lookahead` / `maxRepairRounds` 读的是注入的 policy（那九个数由 `InterleavePolicyTest`
  * 用字面量钉着，漂不了），而被上界管的 [QueueBuilder] 内部预算（`PULL_CAP_PERCENT` / `DRILL_MOVE_BUDGET`）
  * 在断言里**全是字面量**。
+ *
+ * ⚠️ 上面这些**精确读数**（`7407` / `1998` —— 由 `assertEquals` 钉死；以及逐条 `trace` 打进报告与发版说明的
+ * `13516` / `256907`）都是 `LexicalInterleave.DEFAULT` 那组标定值的函数。真正驱动这四个数的是
+ * `lookahead = 12` 与 `maxRepairRounds = 4`（窗口宽度 × 轮数）；同一组里的 `topK = 8` 管的是
+ * [QueueBuilder.confusablePairs] 的伙伴截断，而这几条夹具要么传空映射、要么把映射当输入直接给定，
+ * 所以 topK **没进这四个数**（它一旦标定，`drillPairs` 那类精确读数会跟着动，见「两次构建逐元素相等」那条）。
+ * 语义包将来重新标定这几个数，**相应那批字面量会按设计变红**（`7407`/`1998` 直接红，`13516`/`256907` 只是
+ * 打印值随之改变、报告须重取）—— 那是在提醒"上界口径要跟着重推"，不是实现退化了：一次标定 PR 把它们读红，
+ * 别当成回归去 revert，要按新标定重推这些数。
  */
 class QueueBuilderStressTest {
 
     private val p = LexicalInterleave.DEFAULT
+
+    /**
+     * 换位项 `n × (lookahead + 1) × maxRepairRounds` 唯一的家（口径住在 [QueueBuilder] 类 KDoc，这里只是
+     * 给这条本 lane "一处计算一处家"的规矩一个落点，不复述成新口径）。复扫项那条（`n × (lookahead + 1)`）
+     * 是**另一项**，在各条 bound 里单独加，不走这个 helper。
+     */
+    private fun swapTerm(n: Int) = n * (p.lookahead + 1) * p.maxRepairRounds
 
     /** 500 条：urgency 递减 ⇒ `build` 的排序键还原成 id 升序；簇按 [clusterWidth] 连号给。 */
     private fun itemsOf(clusterWidth: Int): List<QueueItem> =
@@ -101,10 +117,10 @@ class QueueBuilderStressTest {
         //  - drills 落点项：DRILL_MOVE_BUDGET × 2 ⇒ 空映射时为 0
         //  - 读数项：report 把每一对相邻读两遍（maxAdjSim 一遍、violates 一遍）⇒ 2 × (n − 1)
         // 注：T3 评审把「每轮 2n+4 步预算」连同换位后回退一格一起删了，所以原稿那个公式已经作废。
-        val swapTerm = items.size * (p.lookahead + 1) * p.maxRepairRounds     // 500 × 13 × 4 = 26000
+        val swap = swapTerm(items.size)                                       // 500 × 13 × 4 = 26000
         val poolTerm = 0                                                      // 空池 ⇒ 这一项为 0（不是"没写就不算"）
         val reportTerm = 2 * (items.size - 1)                                 // 998
-        val bound = swapTerm + poolTerm + reportTerm
+        val bound = swap + poolTerm + reportTerm
         assertTrue("lookups=${sim.lookups} 超上界 $bound", sim.lookups <= bound)
         // 这一句方向相反，是**下沿**：它拦的是"这条其实在空跑"。推得死的部分只有两处必然发生的读数 ——
         // report 那两遍整列相邻读数（2 × 499 = 998）加第一遍至少一轮整列前扫（`while (i < q.size - 1)`
@@ -139,7 +155,7 @@ class QueueBuilderStressTest {
         //    只有这一句精确读数看得见那一刀。这就是"钉上界"之外还要钉精确读数的理由。
         val (denseItems, denseSim) = oneClusterFiveHundred()
         val densePlan = QueueBuilder.build(denseItems, denseSim, emptyList(), emptyMap(), p)
-        val denseBound = denseItems.size * (p.lookahead + 1) * p.maxRepairRounds + 2 * (denseItems.size - 1)
+        val denseBound = swapTerm(denseItems.size) + 2 * (denseItems.size - 1)
         assertTrue("lookups=${denseSim.lookups} 超上界 $denseBound", denseSim.lookups <= denseBound)
         assertEquals(7407, denseSim.lookups)
         assertEquals(500, densePlan.queue.size)                               // 空池：上限开着也没东西可插
@@ -157,16 +173,16 @@ class QueueBuilderStressTest {
         val pool = (2000L until 2000L + poolSize).map { QueueItem(it, 0f, subject = "P") }
         val sim = FixtureSim(emptyMap(), constant = 0.9f)
         val plan = QueueBuilder.build(items, sim, pool, emptyMap(), p)
-        val swapTerm = items.size * (p.lookahead + 1) * p.maxRepairRounds
+        val swap = swapTerm(items.size)
         val poolTerm = items.size * p.maxRepairRounds * poolSize * 2
-        val bound = swapTerm + poolTerm + 2 * (items.size - 1)                 // 26000 + 2000000 + 998
+        val bound = swap + poolTerm + 2 * (items.size - 1)                     // 26000 + 2000000 + 998
         assertTrue("lookups=${sim.lookups} 超上界 $bound", sim.lookups <= bound)
         // 上面那句是**天花板**，下面那句才是"这一项不许从账上省掉"：KDoc 里那句「n=500、|pool|=500 时
         // 约为第一项的 80 倍」要能被观测到，靠的就是这一句。实跑 256907（第 0 轮把整只池扫完就早停 ——
         // 一处都没改动过，`changed` 为假），而省掉插池项的上界只有 26998 ⇒ 差一个数量级。
         // 杀的变异（真跑）：把 `insertBuffer` 首行改成 `return false`（= 插池那半整段没了）⇒ 整只池一次都没被扫，
         // 读数掉回 7407（变异 M4 实跑红在这一句：`实测 7407 没有高出『省掉插池项』那个上界 26998`）。
-        val boundWithoutPoolTerm = swapTerm + 2 * (items.size - 1)
+        val boundWithoutPoolTerm = swap + 2 * (items.size - 1)
         assertTrue(
             "实测 ${sim.lookups} 没有高出『省掉插池项』那个上界 $boundWithoutPoolTerm ⇒ 插池扫描没走进账（五项里的第三项白写了）",
             sim.lookups > boundWithoutPoolTerm,
@@ -189,7 +205,7 @@ class QueueBuilderStressTest {
         val far = FixtureSim(items.associate { it.id to (if (it.id == 400L) 7L else it.id).toInt() })
         val confusable = mapOf(7L to listOf(400L))          // a=7 < b=400 ⇒ 规范化方向会处理
         val plan = QueueBuilder.build(items, far, emptyList(), confusable, p)
-        val bound = items.size * (p.lookahead + 1) * (p.maxRepairRounds + 1) +   // 换位项 + 复扫项
+        val bound = swapTerm(items.size) + items.size * (p.lookahead + 1) +       // 换位项 + 复扫项（复扫 = n×(lookahead+1)×1 轮）
             32 * 2 +                                                              // drills 落点项（预算封顶）
             2 * (items.size - 1)                                                  // 读数项
         assertTrue("lookups=${far.lookups} 超上界 $bound", far.lookups <= bound)
