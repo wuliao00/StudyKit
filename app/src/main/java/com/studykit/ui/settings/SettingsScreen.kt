@@ -1028,7 +1028,8 @@ private fun MessageBanner(text: String, onDismiss: () -> Unit) {
  * 四件的写回都只走各条既有开关的 [SettingsViewModel] 方法（整表 upsert），**不新增任何判定**：
  * 交错这里只是 [AppSettings.interleavingEnabled] 的镜像，真打散的判定仍只有 `QuestionOrdering.interleaveBySubject` 一处；
  * ④ 同理只是 [AppSettings.semanticInterleaveEnabled] 的镜像，题面层的判定只在
- * [com.studykit.ui.study.planQuestionQueue] 的 `semantic` 形参那一处，而它的**读点要等 Task 7** 才接到组轮入口。
+ * [com.studykit.ui.study.planQuestionQueue] 的 `semantic` 形参那一处 —— 读点已由 v3.0-C Task 7 接到组轮入口
+ * （`StudyViewModel.startQuiz` / `startMixedQuiz`），这一格拨动即改变下一轮题的顺序。
  */
 @Composable
 fun SchedulePracticeSettings(

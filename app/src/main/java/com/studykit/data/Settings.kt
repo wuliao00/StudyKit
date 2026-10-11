@@ -42,11 +42,11 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  * `StudyViewModel.markFlipTipSeen` 写，每次安装只出现一次；口径与 recallGateHintSeen 一致）；
  * [interleavingEnabled] → 题库轮次的取数排序（`StudyViewModel.startQuiz` / `startMixedQuiz`
  * 读它传进 `QuestionOrdering.interleaveBySubject`，**全仓只有那一处判定**；关掉就退回取数原序）；
- * [semanticInterleaveEnabled] → 题库轮次的**题面层**（v3.0-C Task 6）。它的**解释**只有一处：
- * `ui/study/QuestionQueuePlanner.kt` 的 `planQuestionQueue(…, semantic = …)` 那个形参 —— 设置页与
- * ViewModel 都只是它的读写镜像，不新增第二处判定。**读点尚未接上**：把这一项交给组轮入口
- * （`StudyViewModel.startQuiz` / `startMixedQuiz`）是 **Task 7** 的活，本条是全仓唯一一条
- * 「存了还没人读」的设置，Task 7 落地前它不改变任何人的刷题顺序（默认关 + 无人读，双重不动）。
+ * [semanticInterleaveEnabled] → 题库轮次的**题面层**（v3.0-C Task 6 立设置行，Task 7 接上读点）。
+ * 它的**解释**只有一处：`ui/study/QuestionQueuePlanner.kt` 的 `planQuestionQueue(…, semantic = …)`
+ * 那个形参 —— 设置页与 ViewModel 都只是它的读写镜像，不新增第二处判定。读点在组轮入口
+ * （`StudyViewModel.startQuiz` / `startMixedQuiz` 各读一次、传进那一处判定），关着时这一层不参与、
+ * 而且连缓冲池那一次取数都不做（`semanticPool` 的早退；"关掉就真的关掉"含 IO）。
  * [schedulingKernel] → 排期算哪个内核，消费点在 `ui/study/StudyViewModel.gradeCard`、评分按钮预览与明日预告（均经 `KernelHub.forId`，A-T9）；写侧是设置页「排期与练习」的二选一（计划 B Task 20，首个可切换的生产入口）。调用点交的是**整份** `AppSettings`（不只是这一项 id），于是 [fsrsActiveParams] 与它同时生效（v3.0-A T2.6）；
  * [confidenceEnabled] → 翻面/提交前的信心自评条（`CardStudyScreen` / `QuizScreen` 的 `ConfidenceRow`，采集 UI 已在计划 B Task 11-12 落地、设置页也能关（计划 B Task 20）；关掉即 conf 恒 null、confidence 列落 NULL（这一句说的是"关掉"那一侧的落库口径，不代表开关还没生效）。
  *

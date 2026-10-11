@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
+import com.studykit.data.AppSettings
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.MockSession
 import com.studykit.data.entity.Question
@@ -85,18 +86,29 @@ data class CardSessionUi(
     val finished: Boolean get() = index >= queue.size
 }
 
-/** 题库练习会话状态：学科 + 题目快照 + 当前题序 + 作答与对错统计 */
+/**
+ * 题库练习会话状态：学科 + 题目快照 + 当前题序 + 作答与对错统计
+ *
+ * [drillIds] 是这一轮里「与上一张像的那一张」的 id 清单（每个混淆对里**靠后**那张），
+ * 口径只住在 `QueueBuilder.drillNoteIds` 一处，由 [planQuestionQueue] 算完交给组轮入口，
+ * 这一份只是它的搬运 —— 这里不重算、不兜底、也不另开一个判断家（v3.0-C 这条 lane 的红线是
+ * 「同一件事两处各说一套」）。
+ */
 data class QuizUiState(
     val subject: String = "",
     val questions: List<Question> = emptyList(),
     val index: Int = 0,
     val selected: Int? = null,
     val correctCount: Int = 0,
+    /** 该挂「这两张卡容易混，隔开放是故意的。」的题 id（每个混淆对里靠后那张，由 `drillNoteIds` 判） */
+    val drillIds: Set<Long> = emptySet(),
 ) {
     val started: Boolean get() = questions.isNotEmpty()
     val current: Question? get() = questions.getOrNull(index)
     val finished: Boolean get() = started && index >= questions.size
     val total: Int get() = questions.size
+    /** 当前这题是某个混淆对里"后面那张"。判据全在纯函数那一层，这里只做一次集合查 */
+    val currentIsDrill: Boolean get() = current?.id?.let { it in drillIds } == true
     val accuracyPercent: Int
         get() = if (questions.isEmpty()) 0 else correctCount * 100 / questions.size
 }
@@ -565,36 +577,84 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val _quiz = MutableStateFlow(QuizUiState())
     val quiz: StateFlow<QuizUiState> = _quiz
 
-    /** 选择学科，开始一轮练习（该学科前 10 道题） */
+    /**
+     * 选择学科，开始一轮练习（该学科前 [QUIZ_SIZE] 道题）。
+     *
+     * 两个设置各自交出去的**判定**只有一处（读点不止这一处，判定只有一处）：
+     *  - [AppSettings.interleavingEnabled]（学科层）→ 传进 [planQuestionQueue] 的 `interleaving`，
+     *    判定住在 `QuestionOrdering.interleaveBySubject`；单科时它原样退回（交错对单一材料无意义），
+     *    所以**这一轮的学科层就是装配层里那唯一一次**；
+     *  - [AppSettings.semanticInterleaveEnabled]（题面层）→ 同一个函数的 `semantic`，
+     *    判定住在 `QuestionQueuePlanner.planQuestionQueue`，本文件不再判第二次
+     *    （这里唯一多出来的分支是 [semanticPool] 那句"要不要去取缓冲池"，它决定的是**取不取数**，不是怎么排）。
+     */
     fun startQuiz(subject: String) {
         viewModelScope.launch {
-            // `AppSettings.interleavingEnabled` 的消费点（设置页「每条设置必须有消费点」的规矩）：
-            // 读一次、传进纯函数那一处判定。单科时 interleaveBySubject 原样退回（交错对单一材料无意义）。
-            val interleaving = settingsRepository.current().interleavingEnabled
-            val questions = questionRepository.getBySubject(subject, QUIZ_SIZE, 0)
+            val settings = settingsRepository.current()
+            val session = questionRepository.getBySubject(subject, QUIZ_SIZE, 0)
+            val plan = planQuestionQueue(
+                session = session,
+                pool = semanticPool(settings, subject),
+                interleaving = settings.interleavingEnabled,
+                semantic = settings.semanticInterleaveEnabled,
+            )
             _quiz.value = QuizUiState(
                 subject = subject,
-                questions = interleaveBySubject(questions, enabled = interleaving),
+                questions = plan.questions,
+                drillIds = plan.drillIds,
             )
         }
     }
+
+    /**
+     * 语义层的缓冲卡来源：同一学科、排在 [QUIZ_SIZE] 之后的题。
+     * 开关关着就**不查这一次库** —— 少一次 IO 不是性能优化，是"关掉就真的关掉"的兑现
+     * （机检：`StudyQueueWiringTest.开语义层时才会多取一次候选池`，计数打在假 DAO 上）。
+     *
+     * ⛔ 只有**单科轮**走这里。综合练习**不调它**：那一轮的缓冲池是从已经取回的合并序列里切的
+     * （`ordered.drop(QUIZ_SIZE)`，见 [startMixedQuiz]），不是第二次查库 —— 别"顺手统一"成两边都查库，
+     * 那会让综合练习每轮多读 N 次（N = 学科数），而它本来一次合并取数就拿到了全部候选。
+     * 这条差别由 `StudyQueueWiringTest.综合练习开着语义层也不额外查库` 钉着。
+     */
+    private suspend fun semanticPool(settings: AppSettings, subject: String): List<Question> =
+        if (!settings.semanticInterleaveEnabled) emptyList()
+        else questionRepository.getBySubject(subject, QUIZ_SIZE, QUIZ_SIZE)
 
     /**
      * 综合练习：跨学科组一轮（每个已录入学科先取若干条，合并后按学科打散再截前 [QUIZ_SIZE] 道）。
      *
      * 这是交错真正生效的入口 —— 单科轮永远是原序，只有这一轮里多学科才谈得上「不连续多题同科」。
      * 取数只用现有的 `getBySubject` / `observeSubjects`，**不新增仓库方法、不碰 Room schema**。
+     *
+     * **学科层只跑一次，而且必须跑在截断之前**（v3.0-C Task 7）：
+     *  - 跑在截断之前：`pool` 是 `subjects.flatMap { getBySubject(it, QUIZ_SIZE, 0) }`，**按学科分组**，
+     *    先 `take(QUIZ_SIZE)` 就等于只取第一科 —— 综合练习会静默退化成单科练习，用户一眼看得见；
+     *  - 只跑一次：打散之后的前 [QUIZ_SIZE] 条交给装配层时显式传 `interleaving = false`，
+     *    理由是 `interleaveBySubject` 是「剩余桶最大者优先」的贪心重排、**不保序也不幂等**，
+     *    跑第二遍与跑一遍不等价（两道机检在 `StudyQueueWiringTest`「综合练习的学科层只在整份合并序列上跑一次」
+     *    与「综合练习这一轮里至少出现两个学科」两条里，各挡一刀）。
+     * 缓冲池同样从这份已经取回的序列里切（`ordered.drop(QUIZ_SIZE)`），**不调 [semanticPool]**。
      */
     fun startMixedQuiz() {
         viewModelScope.launch {
-            val interleaving = settingsRepository.current().interleavingEnabled
+            val settings = settingsRepository.current()
             val subjects = questionRepository.observeSubjects().first()
             // 各科给同样的余量再合并：交错要的是"轮流动"，先把每科各自的前若干条捞齐
             val pool = subjects.flatMap { questionRepository.getBySubject(it, QUIZ_SIZE, 0) }
-            val ordered = interleaveBySubject(pool, enabled = interleaving)
+            val ordered = interleaveBySubject(pool, enabled = settings.interleavingEnabled)
+            val plan = planQuestionQueue(
+                session = ordered.take(QUIZ_SIZE),
+                pool = ordered.drop(QUIZ_SIZE),
+                // 这里的 false **不是**「关掉学科打散」：学科层已由上面那一行在整份合并序列上跑过了，
+                // 装配层再跑就是双跑（贪心不幂等）。用户真关掉学科交错时，false 来自上面那一行的 enabled；
+                // 单科轮（[startQuiz]）传的才是 settings.interleavingEnabled 本身，那一轮学科层由装配层跑那唯一一次。
+                interleaving = false,
+                semantic = settings.semanticInterleaveEnabled,
+            )
             _quiz.value = QuizUiState(
                 subject = MIXED_SUBJECT_LABEL,
-                questions = ordered.take(QUIZ_SIZE),
+                questions = plan.questions,
+                drillIds = plan.drillIds,
             )
         }
     }
