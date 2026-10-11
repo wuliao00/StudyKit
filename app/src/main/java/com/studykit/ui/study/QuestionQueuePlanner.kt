@@ -121,10 +121,10 @@ internal fun planQuestionQueue(
  *  2. 原稿「别让它们连着出现」是无条件承诺，而落点被拒或夹到队尾时**会**留下 `sim > tauHi` 的相邻
  *     （本仓夹具里就有一轮末态 `maxAdjSim = 1.0`）⇒ 加「尽量」，并补「挪不开就照原样出」。
  *  3. 原稿「隔三到五题再遇一次」是**目标带**不是结果（`placeBeside` 可拒、`coerceIn` 可夹）⇒ 同样加「尽量」。
- * 修复轮 2 第 2 条给第 2、3 句补上一档「尽量」挡不住的限定：[QueueBuilder.confusablePairs] 的同学科过滤
- * （`b.subject != a.subject` 直接 `continue`）让**跨学科的同考点对子压根进不了映射、连一次挪位都不试** ——
- * 那不是「这一趟挪不动」而是「按设计就不试」，「尽量」不覆盖这一档 ⇒ 那句改成「同一学科同考点题」
- * （这道过滤住在 `QueueBuilderDrillTest.跨学科的对子不 drill`，本层不重复钉）。
+ * 修复轮 2 第 2 条又给上面**第 1 句**改出来的那半句补上一档限定 —— 它同样是「尽量」挡不住的那一类：
+ * [QueueBuilder.confusablePairs] 的同学科过滤（`b.subject != a.subject` 直接 `continue`）让**跨学科的
+ * 同考点对子压根进不了映射、连一次挪位都不试**，那不是「这一趟挪不动」而是「按设计就不试」 ⇒ 那句改成
+ * 「同一学科同考点题」（这道过滤住在 `QueueBuilderDrillTest.跨学科的对子不 drill`，本层不重复钉）。
  * 另：`unresolved` 在装配层被丢弃、UI 拿不到它 ⇒ 这句更不能承诺「绝不连着出现」，只能承诺尽力。
  */
 internal fun semanticInterleaveHint(): String =
