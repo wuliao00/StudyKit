@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -32,8 +33,10 @@ import org.robolectric.annotation.GraphicsMode
  *
  * ## 它防的是什么（`AppSettingsSemanticInterleaveTest` 测不到）
  * 那一头钉的是 `toMap/fromMap` 的键值口径，回答不了界面这一头的三件事：
- *  ① 这一格**画的是哪一条布尔** —— `checked` 接错线（写成 `interleavingEnabled`，M-R1）时存储层全绿、
- *    界面上「题面层还没开」却显示成已开；
+ *  ① 这一格**画的是哪一条布尔** —— `checked` 接错线时存储层全绿、界面读数却与真实设置不一致。接错线有
+ *    两种，各由一条用例分辨：接成默认**开**的 `interleavingEnabled`（M-R1）在「默认关着」那条就红
+ *    （默认值本该 Off 却画成 On）；接成另一条默认**关**的布尔（M-R1b，如 `recallGateHintSeen`）在默认态
+ *    下与正确写法长得一模一样，**只有**把这一格自己的入参拨到开再渲染（第三条用例）才分辨得出来；
  *  ② 拨动有没有把新值交给**这一格自己的**回调 —— `onCheckedChange` 串到 `onInterleaving`（M-R2）时
  *    存储层照旧绿，但用户点它其实改的是学科交错那一条；
  *  ③ 标题与说明有没有真上屏，且说明**取自** [semanticInterleaveHint()] —— 这一格不许有第二份文案
@@ -43,7 +46,7 @@ import org.robolectric.annotation.GraphicsMode
  * ## 走 Robolectric、只摆这一簇
  * 同 [SettingsBehaviorRenderTest] / [SettingsScreenExamsRenderTest]：整页要 [SettingsViewModel]
  * （背后是 Room），JVM 侧起不来，所以只把 [SchedulePracticeSettings] 真组合一次；
- * 一个测试只能 `setContent` 一次，故两条用例各自起一次宿主。
+ * 一个测试只能 `setContent` 一次，故三条用例各自起一次宿主。
  * `glass = OFF` + `reduceMotion = true` 让按压 spring 不建补间，测试才等得到 idle。
  *
  * ## 不测什么
@@ -68,12 +71,28 @@ class SettingsSemanticRowRenderTest {
         composeRule.waitForIdle()
     }
 
-    /** 杀 M-R1（`checked` 接成别的布尔）、M-R3（说明不走纯函数 / 那一格整格漏渲染） */
+    /** 杀 M-R1（`checked` 接成默认**开**的布尔，如 `interleavingEnabled`）、M-R3（说明不走纯函数 / 那一格整格漏渲染） */
     @Test fun `默认关着且标题与说明都在`() {
         setContentWith(AppSettings(glass = GlassLevel.OFF, reduceMotion = true))
         composeRule.onNodeWithTag(SwitchSemanticTag, useUnmergedTree = true).assertIsOff()
         composeRule.onNodeWithText("相似题打散").assertIsDisplayed()
         composeRule.onNodeWithText(semanticInterleaveHint()).assertIsDisplayed()
+    }
+
+    /**
+     * 杀 M-R1b（`checked` 接成另一条默认**关**的布尔，如 `settings.recallGateHintSeen`）：
+     * 上面两条都只看默认值，那条变异在它们眼里与正确写法逐像素一样（都画 Off、点击都给出 true）。
+     * 所以这一条把这一格自己的入参设成开再渲染 —— 接错线时这里读到的是别人的 false，红。
+     */
+    @Test fun `入参为开时开关画成已开`() {
+        setContentWith(
+            AppSettings(
+                glass = GlassLevel.OFF,
+                reduceMotion = true,
+                semanticInterleaveEnabled = true,
+            ),
+        )
+        composeRule.onNodeWithTag(SwitchSemanticTag, useUnmergedTree = true).assertIsOn()
     }
 
     /** 杀 M-R2（`onCheckedChange` 串到邻座那一条回调 / 写成空实现） */
