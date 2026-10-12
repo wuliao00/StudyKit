@@ -42,11 +42,19 @@ import kotlin.system.measureTimeMillis
  * 在断言里**全是字面量**。
  *
  * ⚠️ 上面这些**精确读数**（`7407` / `1998` —— 由 `assertEquals` 钉死；以及逐条 `trace` 打进报告与发版说明的
- * `13516` / `256907`）都是 `LexicalInterleave.DEFAULT` 那组标定值的函数。真正驱动这四个数的是
- * `lookahead = 12` 与 `maxRepairRounds = 4`（窗口宽度 × 轮数）；同一组里的 `topK = 8` 管的是
- * [QueueBuilder.confusablePairs] 的伙伴截断，而这几条夹具要么传空映射、要么把映射当输入直接给定，
- * 所以 topK **没进这四个数**（它一旦标定，`drillPairs` 那类精确读数会跟着动，见「两次构建逐元素相等」那条）。
- * 语义包将来重新标定这几个数，**相应那批字面量会按设计变红**（`7407`/`1998` 直接红，`13516`/`256907` 只是
+ * `13516` / `256907`）都是 `LexicalInterleave.DEFAULT` 那组标定值的函数。**动它们就会把这几条读红的标定格**至少有：
+ * `lookahead = 12` 与 `maxRepairRounds = 4`（窗口宽度 × 轮数）、`tauHi = 0.60` 与 `tauLo = 0.15`（前者就是
+ * [QueueBuilder.violates] 的谓词、后者决定换位候选与池卡合不合格 —— 把 `tauHi` 抬过夹具的 0.9 就一个违规都判不出来，
+ * 读数只剩 report 两遍加一轮前扫，也就是下面那句**下沿**）、以及 `1998` 那条还要算 `gapLo/gapHi`
+ * （它们决定那对题算不算"已经隔开"，判成带内就一步都不挪，而复扫那一轮只认真挪过卡）。
+ * 这份名单说的是"重标定这几个会读到红"，**不是**"只有这几个能动这四个数"。
+ * `drillLo/drillHi` 与 `topK = 8` 都不在这四个数里：它们只被 [QueueBuilder.confusablePairs] 读，而本文件的夹具
+ * 要么传空映射、要么把映射当输入直接喂给 [QueueBuilder.build]，**一条都不经 `confusablePairs`** ——
+ * [QueueBuilder.build] 自己从不读 `topK`（读它的是 `confusablePairs`），所以本文件「两次构建逐元素相等」那些
+ * `drillPairs` 读数吃的是**手搓映射**，拧 `topK` 它不动。`topK` 真正决定的字面量读数住在
+ * [QueueBuilderDrillTest] 的「每卡的混淆伙伴数不超过 topK」与「伙伴数超上界时截掉的是最不像的那几个」，
+ * 生产路径上再经装配层 `planQuestionQueue` 间接显形。
+ * 语义包将来重新标定上面那几个数，**相应那批字面量会按设计变红**（`7407`/`1998` 直接红，`13516`/`256907` 只是
  * 打印值随之改变、报告须重取）—— 那是在提醒"上界口径要跟着重推"，不是实现退化了：一次标定 PR 把它们读红，
  * 别当成回归去 revert，要按新标定重推这些数。
  */
@@ -58,6 +66,12 @@ class QueueBuilderStressTest {
      * 换位项 `n × (lookahead + 1) × maxRepairRounds` 唯一的家（口径住在 [QueueBuilder] 类 KDoc，这里只是
      * 给这条本 lane "一处计算一处家"的规矩一个落点，不复述成新口径）。复扫项那条（`n × (lookahead + 1)`）
      * 是**另一项**，在各条 bound 里单独加，不走这个 helper。
+     *
+     * 类 KDoc 把位置数写成 `≤ n + pullCap`，这里和插池项那个表达式代的都是 `n` —— **不是抄漏了**：钉上界的三个用例
+     * （共五处表达式）里，三处（空池 500 档 / 空池全同簇档 / 真挪动 far）喂的就是 `emptyList()` 池 ⇒ `insertBuffer`
+     * 连门都开不了、`q` 不会变长；剩下两处都在「全不合格池」那条，而它自己把 `pulled = 0` 断言死了 ⇒ 位置数就是 `n`。
+     * 真把 `q` 拉到 550 的只有「拉前受一成上限」，另一条池开着的用例是「两次构建逐元素相等」—— 这两条**一条上界都不钉**，
+     * 只钉 `pulled`/`queue`/`unresolved` 那类字面量 ⇒ 代 `n` 不会漏算任何一条在库断言（哪天给它们补上界，得连 `pullCap` 一起代）。
      */
     private fun swapTerm(n: Int) = n * (p.lookahead + 1) * p.maxRepairRounds
 
@@ -74,7 +88,7 @@ class QueueBuilderStressTest {
     /**
      * 全同簇那份：换位**永久**无路（窗口里的候选全与左邻同簇）。
      * 于是它一身两职 —— 配 100 张池卡时只剩插池一条路 ⇒ 能被走到一成上限；
-     * 配空池时每个违规位置都把整只窗口问完 ⇒ 上界那条用例的"换位项走满"那一档。
+     * 配空池时每个违规位置都把整只 lookahead 窗口问满 ⇒ 上界那条用例的"整窗问满"那一档（换位项本身没走满，账在 [QueueBuilder] 类 KDoc）。
      */
     private fun oneClusterFiveHundred(): Pair<List<QueueItem>, FixtureSim> {
         val items = (1L..500L).map { id -> QueueItem(id, (501 - id).toFloat(), subject = "A") }
@@ -131,7 +145,7 @@ class QueueBuilderStressTest {
         assertEquals(items.map { it.id }.sorted(), plan.queue.map { it.id }.sorted())   // 不丢不重不换血
         trace("空池 500", sim, plan)
 
-        // 同一句上界，换一份**把换位项走满**的夹具：全同簇 + 空池 ⇒ 每个违规位置都要把整只窗口问完
+        // 同一句上界，换一份**把整只 lookahead 窗口问满**的夹具：全同簇 + 空池 ⇒ 每个违规位置都要把窗口问到尽头
         // （候选全部 `0.9 >= tauLo`，一只都点不中），而插池那半空池一次都不问。
         // 这一档才是上界真正在管的那个形状：上面那份混合簇夹具**挡不住"撤掉窗口界"这一刀**（实跑取证：
         // 把 [QueueBuilder.swapInWindow] 的右端 `minOf(i + 1 + lookahead, q.lastIndex)` 撤成 `q.lastIndex`
