@@ -52,6 +52,16 @@ enum class GlassLevel { OFF, SOFT, STRONG }
  *
  * 所有字段都有默认值，[AppSettings] 的无参构造就是"从没进过设置页"时的行为，
  * 因此**首装即使一行都没写进库也不会改变现有观感**（玻璃默认 SOFT 是唯一例外，那是要给用户看见的新东西）。
+ *
+ * ## ⚠️ 别用位置解构 / 位置实参读这个类 —— 字段是**中途插入**的
+ *
+ * 后来的项按关注点插在中间，不追加到末尾：v3.0-B 的 [exams] / [examLimitMinutes] / [examPauseCountsTime]
+ * 插在 [examEpochDay] 之后，v3.0-C 的 [semanticInterleaveEnabled] 插在 [interleavingEnabled] 与
+ * [schedulingKernel] 之间。而 data class 的 `componentN()` 吃的就是**声明序** ⇒ 每插一格，
+ * 它下面所有位置的编号整体后移：`val (a, b) = settings` 这类解构、以及 `AppSettings(ThemeMode.DARK, …)`
+ * 这类位置实参，都会在**插入那一刻**静默改指到别的字段上（编译不报错，因为类型对得上时照样通过）。
+ * ⇒ 构造一律写具名参数，读一律写字段名。今天仓内确实安全（`AppSettings(` 的实参逐条看过全是具名，
+ * 全仓没有一处对 `AppSettings` 做位置解构），这一句是写给**下一个加设置项的人**的。
  */
 @Immutable
 data class AppSettings(
