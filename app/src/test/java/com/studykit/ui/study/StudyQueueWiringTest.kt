@@ -528,8 +528,9 @@ class StudyQueueWiringTest {
     // ── ⑥ drill 在生产路径上真的把一张卡挪到了新位置 ──────────────────
 
     /**
-     * ⛔ Task 4 复审记的那笔账：drill 出带的**四条**路线都由 `QueueBuilderDrillTest` 钉着（旧稿在这里写的
-     * 「各钉过一条」不成立 —— 路线四条与用例几条的对应账住在 `QueueBuilder.applyDrills` 和它自己那份文件里，
+     * ⛔ Task 4 复审记的那笔账：drill 出带的路线**清单只住在 `QueueBuilder.applyDrills` 的注释里**，钉这些形状的用例住在
+     * `QueueBuilderDrillTest` 自己那份文件里（这里从前数过路线的条数、还替那份文件许过「各钉过一条」式的覆盖账 —— 条数会随
+     * 清单改动变、覆盖到哪条只有那份文件自己说得清，两边的账都在那边记，
      * 这里不重述也不数），但全仓**没有任何用例**
      * 在装配层/入口这一头造过那些形状。本条补最实在的一件：
      * 一次真正的挪位（不是"本来就在带内、只记不动"），而且复扫那一轮真的跑过。
@@ -539,7 +540,7 @@ class StudyQueueWiringTest {
      * anchor 落在 `size - 2`（size = 把移动卡抽走之后那一份的长度），`(anchor + gapLo)` 越界被夹到队尾，
      * 夹完的落点左邻是 **anchor 之后的那一张**
      * 而不是 anchor 自己；移动卡与它得 0f 时 `placeBeside` 就接受 ⇒ 挪成了，实际距离短于 gapLo ——
-     * 那正是出带四条路线里的第 2 条（`QueueBuilderDrillTest.够不着 gapLo 时夹到队尾也如实报真实距离` 报 1）。
+     * 那正是 `QueueBuilder.applyDrills` 注释里「`coerceIn` 够不着 `gapLo` ⇒ 夹到队尾」那一路（`QueueBuilderDrillTest.够不着 gapLo 时夹到队尾也如实报真实距离` 报 1）。
      * 同考点地板 0.65f 挡不住它：落点检查问的是「移动卡 vs 左右邻居」，从来不是「移动卡 vs anchor」。
      * 所以这里只能声称"本轮没走到那一档"，理由是几何：唯一那一对在下标 0 与 6 的 10 张会话里 ⇒
      * `removeAt(6)` 后 `size = 9`、anchor = `ia` = 0 ⇒ `target = (0 + 3).coerceIn(0, 9) = 3`，
