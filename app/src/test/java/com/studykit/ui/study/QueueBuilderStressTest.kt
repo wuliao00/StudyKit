@@ -68,10 +68,11 @@ class QueueBuilderStressTest {
     /**
      * 换位项 `n × (lookahead + 1) × maxRepairRounds` 唯一的家（口径住在 [QueueBuilder] 类 KDoc，这里只是
      * 给这条本 lane "一处计算一处家"的规矩一个落点，不复述成新口径）。复扫项那条是**另一项**，在各条 bound 里单独加、
-     * 不走这个 helper —— 它通用那一格的位置数底与换位项同（住在类 KDoc 那句「违反位置数 × (lookahead + 1)」里），
+     * 不走这个 helper —— 它通用那一格的底与换位项同（住在类 KDoc 那句「扫描位置数 × (lookahead + 1)」里），
      * 本文件各条 bound 代进去的才是下面那段说清的 `n`。
      *
-     * 类 KDoc 把位置数写成 `≤ n + pullCap`，这里、上面那句提到的复扫项、以及插池项那个表达式代的都是 `n` —— **不是抄漏了**：钉上界的三个用例
+     * 类 KDoc 把换位项与复扫项的底写成扫描位置数 `≤ n + pullCap − 1`（插池项那一格是违规位置数 `≤ n + pullCap`），
+     * 这里、上面那句提到的复扫项、以及插池项那个表达式代的都是 `n` —— **不是抄漏了**：钉上界的三个用例
      * （共五处表达式）里，三处（空池 500 档 / 空池全同簇档 / 真挪动 far）喂的就是 `emptyList()` 池 ⇒ `insertBuffer`
      * 连门都开不了、`q` 不会变长；剩下两处都在「全不合格池」那条，而它自己把 `pulled = 0` 断言死了 ⇒ 位置数就是 `n`。
      * 真把 `q` 拉到 550 的只有「拉前受一成上限」，另一条池开着的用例是「两次构建逐元素相等」—— 这两条**一条上界都不钉**，
@@ -132,7 +133,7 @@ class QueueBuilderStressTest {
         // KDoc 是**五项**；本条夹具传 `confusable = emptyMap()` 且池是 `emptyList()`，所以其中三项为 0 ——
         // 这件事必须写在账上，否则读代码的人会以为下面三项就是全部上界。
         // 下面那五行是**本条夹具那一档**的取值（空池 ⇒ 队列没被拉长 ⇒ 位置数与最终条数都是 `n`）；通用底
-        // `违反位置数 ≤ n + pullCap`、`读数 ≤ 2 × (n + pullCap − 1)` 只住在类 KDoc，五处上界表达式为什么都能代 `n` 见 [swapTerm] 那段：
+        // `违规位置数 ≤ 扫描位置数 ≤ n + pullCap`、`读数 ≤ 2 × (n + pullCap − 1)` 只住在类 KDoc，五处上界表达式为什么都能代 `n` 见 [swapTerm] 那段：
         //  - 换位项：n × (lookahead + 1) × maxRepairRounds（每个位置 1 次相邻判定 + 窗口内至多 lookahead 次候选判定）
         //  - 复扫项：n × (lookahead + 1)，仅当 drills **真挪动过卡**才跑 ⇒ 空映射时为 0
         //  - 插池项：违反位置数 × maxRepairRounds × |pool| × 2 ⇒ **空池时为 0**（firstOrNull 一次都不问）
