@@ -35,9 +35,10 @@ internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
  * 「`unresolved` 在装配层被丢弃、UI 拿不到它」，`maxAdjSim` 为什么是 `Float?` 而不是拿 `0f` 当哨兵住在上面那条
  * `@param` 里 —— 两句这里都不重述。
  * 这四个读数钉的正是上面那笔上界账与「最终 gap 出带」的口径，所以这一处是
- * **有意例外于计划 §约束 那条「死代码是删的不是留注释的」**，不是漏。
+ * **有意例外于计划 Global Constraints 那条「死代码是删的不是留注释的」**，不是漏。
  * 同理，**别在这里补 `@Suppress("unused")`**：本仓的 lint 与 `compileDebugKotlin` 都没把这几个成员报成 unused
- * （`internal` 成员不在这两个工具的 unused 覆盖内，它们只报 `private`；留档报告的逐 id 普查见
+ * （口径收成**这棵树这次的实测**——本树留档的 lint 报告里 unused 家族 0 条；这只能证明"这一版产物报了 0 条"，
+ * 不是工具的普遍规则（lint 的 `UnusedSymbol` 是会看 app 模块里非 private 符号的，只是这版没报它们）；留档报告的逐 id 普查见
  * `.superpowers/sdd/2026-10-09-studykit-v3.0-c-semantic-interleave/task-final-report.md` 的 R11 段）
  * ⇒ 压一个并不存在的警告，只会让下一个读者以为这里报过警。
  */
