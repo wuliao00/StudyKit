@@ -75,8 +75,11 @@ const val QuizDrillNoteTag = "quiz_drill_note"
  *
  * v2.5 缺口补齐加的两件事都收在纯函数层（`QuestionOrdering.kt` / `QuizFeedback.kt`）：
  *  - **交错练习**：多学科轮次（[StudyViewModel.startMixedQuiz]）的题序在取数时已打散，
- *   这一页只负责按队列渲染；`AppTheme.settings.interleavingEnabled` 在这里**只被读来做展示与开关呈现**，
- *   打不打散的判定只有 `interleaveBySubject` 一处。
+ *   这一页只负责按队列渲染；`AppTheme.settings.interleavingEnabled` 在这里**只被读来做展示与开关呈现**。
+ *   v3.0-C 起这一页渲染的是**两层叠出来的输出**：学科层（`interleaveBySubject`）+ 题面层（`planQuestionQueue`），
+ *   题面层还给这一页多出那一行「隔开放是故意的」提示（`state.currentIsDrill` 驱动）。
+ *   这一页两层都不自己判定 —— 学科层的判定住在 `interleaveBySubject` 那一处，
+ *   题面层的判定住在 `planQuestionQueue` 的 `semantic` 形参那一处（`SettingsScreen` 的题面层开关行的注释同口径）。
  *  - **提示与分层反馈**：三档提示逐条揭示、都不给最终答案；答后按任务级 / 过程级 / 自我调节级三层给出。
  *
  * v2.7.0.1 右上角多了「录入」菜单（[BulkScreen.QUESTION_BANK] 那三项）：这屏就是题库，
@@ -237,8 +240,11 @@ private fun SubjectPicker(
                     )
                 }
                 Spacer(Modifier.height(AppTheme.space.sm))
-                // 交错开关：判定只有一处（`interleaveBySubject`），这里只是呈现与写回。
-                // 开关行本应归设置屏，那边本轮有人在看，先不放过去。
+                // 交错开关（学科层那一层的开关）：这里只是呈现与写回，打不打散住在 `interleaveBySubject` 那一处判定。
+                // 旧稿这里还写着「开关行本应归设置屏，那边本轮有人在看，先不放过去」—— 那句已经站不住了：
+                // 设置页自 v2.7（`d845c30`）就摆着同一个值的镜像行，v3.0-C Task 6 又在那儿加了题面层那一行开关。
+                // 于是现状是**两个入口拨同一个值**（都经各自 VM 写同一张 `app_settings`，谁都不新增判定），
+                // 这一页的这行是有意留下的，不是"还没搬过去"。
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
