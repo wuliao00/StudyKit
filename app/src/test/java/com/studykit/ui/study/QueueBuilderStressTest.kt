@@ -45,8 +45,11 @@ import kotlin.system.measureTimeMillis
  * `13516` / `256907`）都是 `LexicalInterleave.DEFAULT` 那组标定值的函数。**动它们就会把这几条读红的标定格**至少有：
  * `lookahead = 12` 与 `maxRepairRounds = 4`（窗口宽度 × 轮数）、`tauHi = 0.60` 与 `tauLo = 0.15`（前者就是
  * [QueueBuilder.violates] 的谓词、后者决定换位候选与池卡合不合格 —— 把 `tauHi` 抬过夹具的 0.9 就一个违规都判不出来，
- * 读数只剩 report 两遍加一轮前扫，也就是下面那句**下沿**）、以及 `1998` 那条还要算 `gapLo/gapHi`
- * （它们决定那对题算不算"已经隔开"，判成带内就一步都不挪，而复扫那一轮只认真挪过卡）。
+ * **扫得多的那三条读数（7407 / 13516 / 256907）因此塌到只剩 report 两遍加一轮前扫，也就是下面那句 1497 的下沿**；
+ * 这句**不含 `1998`**：far 那份夹具的初序本来就零违规，抬 `tauHi` 改不动它的四个加项 —— 前扫 499（一路走到队尾、
+ * 一处违规都没有）、落点 2（`placeBeside` 两侧都问，`clashes` 在 0.60 与"抬过 0.9"两档下都是假 ⇒ 一次都没少问）、
+ * 复扫 499（追加它的那道门是 `relocated > 0`，与分值无关）、读数 998 ⇒ 四笔照旧 = 1998。它押的是下一句那两个数）、
+ * 以及 `1998` 那条还要算 `gapLo/gapHi`（它们决定那对题算不算"已经隔开"，判成带内就一步都不挪，而复扫只认真挪过卡）。
  * 这份名单说的是"重标定这几个会读到红"，**不是**"只有这几个能动这四个数"。
  * `drillLo/drillHi` 与 `topK = 8` 都不在这四个数里：它们只被 [QueueBuilder.confusablePairs] 读，而本文件的夹具
  * 要么传空映射、要么把映射当输入直接喂给 [QueueBuilder.build]，**一条都不经 `confusablePairs`** ——
@@ -88,7 +91,9 @@ class QueueBuilderStressTest {
     /**
      * 全同簇那份：换位**永久**无路（窗口里的候选全与左邻同簇）。
      * 于是它一身两职 —— 配 100 张池卡时只剩插池一条路 ⇒ 能被走到一成上限；
-     * 配空池时每个违规位置都把整只 lookahead 窗口问满 ⇒ 上界那条用例的"整窗问满"那一档（换位项本身没走满，账在 [QueueBuilder] 类 KDoc）。
+     * 配空池时每个违规位置都把它那一只窗口问到尽头（尾部那几格被 `swapInWindow` 的 `q.lastIndex` 截短，`i = 498` 那一只空到一眼都不问；
+     * 逐笔账在下面那条用例的推导里）
+     * ⇒ 上界那条用例的"问到尽头"那一档（换位项本身没走满，账在 [QueueBuilder] 类 KDoc）。
      */
     private fun oneClusterFiveHundred(): Pair<List<QueueItem>, FixtureSim> {
         val items = (1L..500L).map { id -> QueueItem(id, (501 - id).toFloat(), subject = "A") }
@@ -124,12 +129,15 @@ class QueueBuilderStressTest {
         val plan = QueueBuilder.build(items, sim, emptyList(), emptyMap(), p)
         // 上界住在 [QueueBuilder] 的类 KDoc 里（那里是唯一事实源，两处各写一份就是一份债）。
         // KDoc 是**五项**；本条夹具传 `confusable = emptyMap()` 且池是 `emptyList()`，所以其中三项为 0 ——
-        // 这件事必须写在账上，否则读代码的人会以为下面三项就是全部上界：
+        // 这件事必须写在账上，否则读代码的人会以为下面三项就是全部上界。
+        // 下面那五行是**本条夹具那一档**的取值（空池 ⇒ 队列没被拉长 ⇒ 位置数与最终条数都是 `n`）；通用底
+        // `违反位置数 ≤ n + pullCap`、`读数 ≤ 2 × (n + pullCap − 1)` 只住在类 KDoc，五处上界表达式为什么都能代 `n` 见 [swapTerm] 那段：
         //  - 换位项：n × (lookahead + 1) × maxRepairRounds（每个位置 1 次相邻判定 + 窗口内至多 lookahead 次候选判定）
         //  - 复扫项：n × (lookahead + 1)，仅当 drills **真挪动过卡**才跑 ⇒ 空映射时为 0
         //  - 插池项：违反位置数 × maxRepairRounds × |pool| × 2 ⇒ **空池时为 0**（firstOrNull 一次都不问）
         //  - drills 落点项：DRILL_MOVE_BUDGET × 2 ⇒ 空映射时为 0
-        //  - 读数项：report 把每一对相邻读两遍（maxAdjSim 一遍、violates 一遍）⇒ 2 × (n − 1)
+        //  - 读数项：report 读的是**走完全部趟之后**那只队列，每一对相邻读两遍（maxAdjSim 一遍、violates 一遍）
+        //    ⇒ 通用口径是 `2 × (最终条数 − 1)`，底和上面三项同那一格（那笔账住在类 KDoc）；本条空池 ⇒ 代的就是 `2 × (n − 1)` = 998
         // 注：T3 评审把「每轮 2n+4 步预算」连同换位后回退一格一起删了，所以原稿那个公式已经作废。
         val swap = swapTerm(items.size)                                       // 500 × 13 × 4 = 26000
         val poolTerm = 0                                                      // 空池 ⇒ 这一项为 0（不是"没写就不算"）
@@ -145,13 +153,14 @@ class QueueBuilderStressTest {
         assertEquals(items.map { it.id }.sorted(), plan.queue.map { it.id }.sorted())   // 不丢不重不换血
         trace("空池 500", sim, plan)
 
-        // 同一句上界，换一份**把整只 lookahead 窗口问满**的夹具：全同簇 + 空池 ⇒ 每个违规位置都要把窗口问到尽头
-        // （候选全部 `0.9 >= tauLo`，一只都点不中），而插池那半空池一次都不问。
+        // 同一句上界，换一份**把窗口问到尽头**的夹具：全同簇 + 空池 ⇒ 每个违规位置都把它那一只窗口问到尽头
+        // （尾部被 `q.lastIndex` 截短：`i = 487..497` 各问 11..1 眼、`i = 498` 那一只窗口是空的、一眼都不问 —— 逐笔账就在下面那段推导里）；
+        // 候选全部 `0.9 >= tauLo` ⇒ 一只都点不中，而插池那半空池一次都不问。
         // 这一档才是上界真正在管的那个形状：上面那份混合簇夹具**挡不住"撤掉窗口界"这一刀**（实跑取证：
         // 把 [QueueBuilder.swapInWindow] 的右端 `minOf(i + 1 + lookahead, q.lastIndex)` 撤成 `q.lastIndex`
         // 之后，上面那份夹具六个用例全绿 —— 异簇卡挨得近，有界无界都只问得出那几眼，读数没跨过 26998；
         // 红的是 `QueueBuilderAdjacentTest.换位只往后看 lookahead 个位置`（`expected:<11> but was:<1>`），
-        // 那是**位移**那一半，不是查表次数这一半。所以上界必须有一份"窗口永远问不满"的夹具陪着钉）。
+        // 那是**位移**那一半，不是查表次数这一半。所以上界必须有一份"窗口里永远点不出合格候选"的夹具陪着钉）。
         //
         // ⛔ 精确读数逐笔推（不是上界）：
         //  - 相邻判定：`while (i < q.size - 1)` ⇒ i = 0..498 ⇒ 499 次；
