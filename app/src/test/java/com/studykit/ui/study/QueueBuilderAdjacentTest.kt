@@ -300,7 +300,7 @@ class QueueBuilderAdjacentTest {
         val items = listOf(QueueItem(1, 3f, "A"), QueueItem(2, 2f, "A"), QueueItem(3, 1f, "A"))
         val plan = QueueBuilder.build(items, simOf(items), emptyList(), emptyMap(), p)
         assertTrue(plan.unresolved.isNotEmpty())
-        assertTrue(plan.maxAdjSim!! > p.tauHi)
+        assertTrue(plan.maxAdjSim!! > 0.60f)   // ⛔ 字面量 = DEFAULT.tauHi 的值，不读常量
         // `assertEquals(0, plan.pulled)` 修复轮 2 删掉了（同上一条那两句的理由）：池是 `emptyList()` ⇒
         // 这张空池里什么都拉不出来，那句在任何实现下都红不了。这条真正钉的是上面两句加下面 size。
         assertEquals(3, plan.queue.size)                  // 上报不等于顺手丢条目
