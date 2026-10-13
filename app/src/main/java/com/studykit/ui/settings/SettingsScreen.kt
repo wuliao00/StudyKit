@@ -1029,8 +1029,12 @@ private fun MessageBanner(text: String, onDismiss: () -> Unit) {
  * 交错这里只是 [AppSettings.interleavingEnabled] 的镜像，真打散的判定仍只有 `QuestionOrdering.interleaveBySubject` 一处；
  * ④ 同理只是 [AppSettings.semanticInterleaveEnabled] 的镜像，题面层的判定只在
  * [com.studykit.ui.study.planQuestionQueue] 的 `semantic` 形参那一处 —— 读点已由 v3.0-C Task 7 接到组轮入口
- * （`StudyViewModel.startQuiz` / `startMixedQuiz`），这一格拨动改变的是**这一层的参与与否**（连带那次缓冲池取数
- * 做不做）：它不承诺"拨一下顺序就变"——那一轮里若没有一对够着阈值，题面层本来一步都不动，开与关逐格相同。
+ * （`StudyViewModel.startQuiz` / `startMixedQuiz`），这一格拨动改变的是**这一层的参与与否**：它不承诺"拨一下顺序
+ * 就变"——那一轮里若没有一对够着阈值，题面层本来一步都不动，开与关逐格相同。
+ * 而"连带决定缓冲池取数做不做"**只在单科那一轮成立**：那次取数走 `StudyViewModel.semanticPool`，只有 `startQuiz`
+ * 调它，关着就返回空清单、连库都不查（`StudyQueueWiringTest.开语义层时才会多取一次候选池`）；综合练习那一轮压根
+ * 不调它，缓冲池是从已经取回的合并序列里切的（`ordered.drop(QUIZ_SIZE)`），所以那一轮的取数次数与这一格无关
+ * （`StudyQueueWiringTest.综合练习开着语义层也不额外查库`）。
  */
 @Composable
 fun SchedulePracticeSettings(

@@ -33,7 +33,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * 会话内「这两张卡容易混，隔开放是故意的。」那一行的**渲染守卫**（v3.0-C Task 7b）。
+ * 会话内 [confusableDrillTip] 那句提示的**渲染守卫**（v3.0-C Task 7b）。
  *
  * ## 它防的是什么（`StudyQueueWiringTest` 测不到）
  * 那一头钉的是 VM 状态里的 `drillIds` 有没有真长出来；这一头钉的是**屏幕上那一行**：

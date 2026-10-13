@@ -48,7 +48,9 @@ internal data class QueuePlan(
  *     替掉最坏 O(n²) 的全尾扫描 —— 查表次数上界由**五项**相加，少写任何一项都会低估：
  *      - 换位项：`违反位置数 × (lookahead + 1) × maxRepairRounds`（每个位置 1 次相邻判定 + 窗口内至多 lookahead 次候选判定；
  *        位置数那一格与下面插池项同口径，**是 `≤ n + pullCap` 而不是 `n`** —— 推法只住在插池项那一段，这里不另写一遍）；
- *      - **复扫项**：`n × (lookahead + 1)` —— [repairAdjacent] 在 drills **真挪动过卡**之后以 `rounds = 1` 再跑一轮。
+ *      - **复扫项**：`违反位置数 × (lookahead + 1)` —— [repairAdjacent] 在 drills **真挪动过卡**之后以 `rounds = 1` 再跑一轮。
+ *        位置数那一格与上面换位项同口径（**是 `≤ n + pullCap` 而不是 `n`**：第一遍插进来的缓冲卡此时已经在队列里，
+ *        而这一轮自己 `pullCap = 0`、不再往里加卡）。
  *        这一项是**有条件**的：`confusable` 给空映射、或每一对本来就隔在 `gapLo..gapHi` 之内、
  *        或每一次尝试都被落点拒掉、或每一次都落回**自己刚被抽出来的那一格**（[placeBeside] 的 `target == ib`）时，
  *        `relocated` 是 0 ⇒ 这一轮根本不跑 ⇒ 这项为 0；
