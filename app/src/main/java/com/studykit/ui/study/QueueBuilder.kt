@@ -38,8 +38,8 @@ internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
  * **有意例外于计划 Global Constraints 那条「死代码是删的不是留注释的」**，不是漏。
  * 同理，**别在这里补 `@Suppress("unused")`**：本仓的 lint 与 `compileDebugKotlin` 都没把这几个成员报成 unused
  * （口径收成**这棵树这次的实测**——本树留档的 lint 报告里 unused 家族 0 条；这只能证明"这一版产物报了 0 条"，
- * 不是工具的普遍规则（lint 的 `UnusedSymbol` 是会看 app 模块里非 private 符号的，只是这版没报它们）；留档报告的逐 id 普查见
- * `.superpowers/sdd/2026-10-09-studykit-v3.0-c-semantic-interleave/task-final-report.md` 的 R11 段）
+ * 不是工具的普遍规则（lint 的 `UnusedSymbol` 是会看 app 模块里非 private 符号的，只是这版没报它们）；逐 id 普查的原始过程当时写在本地工作区 `.superpowers/` 下的留档报告里、
+ * **不随仓库分发**（干净克隆拿不到那份报告），这里不引它的路径，结论以本段为准）
  * ⇒ 压一个并不存在的警告，只会让下一个读者以为这里报过警。
  */
 internal data class QueuePlan(
