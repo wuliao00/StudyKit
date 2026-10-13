@@ -419,11 +419,11 @@ abstract class AppDatabase : RoomDatabase() {
          * `deadline_ts`/`result` 可空且无 DEFAULT：NULL 就是"不限时"/"未交卷"，不能拿 0 冒充。
          *
          * **v9 就地改过一次（评审 F1）**：`mock_sessions` 的建表语句里多了 `paused_at`（可空、无
-         * DEFAULT，同一口径）。这一版没进过任何发版批次：仓里最后一个改版本号的提交是 `dd55e71`
-         * （`chore(v2.9): 发版 2.9.0/19 …`），那个提交上 Room 还是 `version = 8`、`app/schemas` 里只有
-         * 6/7/8.json，而 v9 是它之后的 `698a127` 才落地的（两条都可 `git show` 复验）。
-         * 这条 lane（v3.0-C）没有把任何东西推出去过：本 shell 拿不到凭据，推送与 `git fetch` 归用户在
-         * 正常终端做，所以远端此刻的真实状态不由这里断言 —— 这句只报本地能复验的部分。
+         * DEFAULT，同一口径）。v9 落地那会儿版本号没跟着动：`698a127` 之前最后一个改
+         * `app/build.gradle.kts` 版本号的提交是 `dd55e71`（`chore(v2.9): 发版 2.9.0/19 …`），而那个提交上
+         * Room 还是 `version = 8`、`app/schemas` 里只有 6/7/8.json（两句都可 `git show` 复验）。
+         * v3.0-C 这条 lane 也没把任何东西推出去过：本 shell 拿不到凭据，推送与 `git fetch` 归用户在正常
+         * 终端做，远端此刻的真实状态不由这里断言 —— 这句只报本地复验得到的部分。
          * 折进这一版而不是另起 v10：加一轮 `ALTER TABLE` 迁移只会给"从来没有过旧行"的表造一段
          * 没人跑得过的代码路径，而 8→9 那条 CREATE TABLE 本来就要跟着改。
          */

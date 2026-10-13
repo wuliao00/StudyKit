@@ -19,10 +19,10 @@ import org.robolectric.annotation.Config
  * 2) 迁移产物 `mock_sessions` 建表列**逐字**取自 `app/schemas/com.studykit.data.AppDatabase/9.json`
  *    （`${TABLE_NAME}` 换成真实表名）—— 差一个 `NOT NULL`/DEFAULT 就红，不再等真机撞运气；
  *    评审 F1 那轮把 `paused_at`（暂停起点）**折进这一版本的 CREATE TABLE** 而不是另起 v10：
- *    这里复验得到的前提是 v9 没进过任何发版批次 —— 最后一个改版本号的提交 `dd55e71`（发版 2.9.0/19）
- *    上 Room 还是 `version = 8`、`app/schemas` 里没有 `9.json`，v9 是它之后的 `698a127` 才落地的；
- *    而这条 lane（v3.0-C）从未推送（推送与 `git fetch` 归用户在正常终端做，本 shell 拿不到凭据，
- *    远端状态不由这句断言）。F1 就按这两条判定不为它写 `ALTER TABLE`、就地补进建表语句。
+ *    这里复验到的前提是 v9 落地时版本号没跟着动 —— `698a127` 之前最后一个改版本号的提交是 `dd55e71`
+ *    （发版 2.9.0/19），它上面 Room 还是 `version = 8`、`app/schemas` 里没有 `9.json`；而 v3.0-C 这条
+ *    lane 从未推送（推送与 `git fetch` 归用户在正常终端做，本 shell 拿不到凭据，远端状态不由这句断言）。
+ *    F1 就按这两条判定不为它写 `ALTER TABLE`、就地补进建表语句。
  *    代价只有一条：本用例的期望列集合要跟着加一列；
  * 3) ⛔ 旧错题行零丢失，且新列 `kind=0`/`extra='{}'` 读回来就是「普通错题、无遮挡」（计划硬闸）；
  * 4) 新表能写能读，`deadline_ts`/`result`/`paused_at` 未填保持 NULL（不限时 = 截止时刻为空、
