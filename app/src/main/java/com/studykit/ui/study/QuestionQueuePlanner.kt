@@ -24,6 +24,8 @@ import com.studykit.data.entity.Question
  *        （只提一句被拒那一档的形状：它的夹具报的是 7，在 `gapHi = 5` 之上。）
  *        ⛔ 这些出带路径**没有一条**由本层的用例钉着：[QuestionQueuePlan] 压根不暴露 `gap`，装配层造不出带外的形状。
  *        这一段只拦一个误读 —— 别把「id 在 drillIds 里」读成「这一对隔在 `gapLo..gapHi` 之间」。
+ * ⛔ [pulled] 与 [maxAdjSim] 是**只被测试读的测量面**（[drillIds] 有生产读者：`StudyViewModel` 的两个组轮入口），
+ *        为什么刻意留着、以及为什么这里不写 `@Suppress("unused")`，口径只住在 [QueuePlan] 的那一段，本层不重述。
  */
 internal data class QuestionQueuePlan(
     val questions: List<Question>,

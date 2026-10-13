@@ -27,6 +27,19 @@ internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
  * @param drillPairs 第二遍记下的混淆对；`confusable` 给空映射时它就是空。
  *        已隔开在带内的那一对也会记 —— 调用方要的是"这一场有成对出现"，不是"这一场动过谁"。
  * @param unresolved 最终仍违反 `sim > tauHi` 的相邻位置下标（空 = 修干净了）
+ *
+ * ⛔ **这几个读数是有意的测量面**：`pulled` / `maxAdjSim` / `unresolved` 与 [QueueDrill.gap] 在**生产里没有一个消费者**。
+ * 逐字说清读到了哪一格（免得这句话被读成"主源里零次读取"）：`pulled` 与 `maxAdjSim` 只被装配层
+ * [planQuestionQueue] 原样转抄进 [QuestionQueuePlan] 的同名字段，而那两个字段的读者全在测试那一侧；
+ * `unresolved` 与 [QueueDrill.gap] 连转抄都没有 —— `unresolved` 那半句住在 `QuestionQueuePlanner` 的
+ * 「`unresolved` 在装配层被丢弃、UI 拿不到它」，`maxAdjSim` 为什么是 `Float?` 而不是拿 `0f` 当哨兵住在上面那条
+ * `@param` 里 —— 两句这里都不重述。
+ * 这四个读数钉的正是上面那笔上界账与「最终 gap 出带」的口径，所以这一处是
+ * **有意例外于计划 §约束 那条「死代码是删的不是留注释的」**，不是漏。
+ * 同理，**别在这里补 `@Suppress("unused")`**：本仓的 lint 与 `compileDebugKotlin` 都没把这几个成员报成 unused
+ * （`internal` 成员不在这两个工具的 unused 覆盖内，它们只报 `private`；留档报告的逐 id 普查见
+ * `.superpowers/sdd/2026-10-09-studykit-v3.0-c-semantic-interleave/task-final-report.md` 的 R11 段）
+ * ⇒ 压一个并不存在的警告，只会让下一个读者以为这里报过警。
  */
 internal data class QueuePlan(
     val queue: List<QueueItem>,
