@@ -34,7 +34,8 @@ internal data class QueueDrill(val aId: Long, val bId: Long, val gap: Int)
  * `unresolved` 与 [QueueDrill.gap] 连转抄都没有 —— `unresolved` 那半句住在 `QuestionQueuePlanner` 的
  * 「`unresolved` 在装配层被丢弃、UI 拿不到它」，`maxAdjSim` 为什么是 `Float?` 而不是拿 `0f` 当哨兵住在上面那条
  * `@param` 里 —— 两句这里都不重述。
- * 这四个读数钉的正是上面那笔上界账与「最终 gap 出带」的口径，所以这一处是
+ * 这四个读数各自钉的闸并不相同：`pulled` 钉上面那笔**上界账**、`drillPairs` 与 [QueueDrill.gap] 钉**最终 gap 出带**，
+ * 而 `maxAdjSim` 与 `unresolved` 是 ⛔ **相邻率闸**的读数（最终队列里还有没有相邻对仍超 `tauHi`）——所以这一处是
  * **有意例外于计划 Global Constraints 那条「死代码是删的不是留注释的」**，不是漏。
  * 同理，**别在这里补 `@Suppress("unused")`**：本仓的 lint 与 `compileDebugKotlin` 都没把这几个成员报成 unused
  * （口径收成**这棵树这次的实测**——本树留档的 lint 报告里 unused 家族 0 条；这只能证明"这一版产物报了 0 条"，
