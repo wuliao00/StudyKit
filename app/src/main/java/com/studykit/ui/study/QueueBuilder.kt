@@ -191,8 +191,16 @@ internal object QueueBuilder {
      * **这一句要 `tauLo <= tauHi` 才成立**（[InterleavePolicy] 不校验它，是文档口径；真把 tauLo 调到 tauHi 之上，
      * 换进来那条就可能自己违规而前扫不再回看它）；
      * 其余三对分别在本轮的 `i+1`（下一步就查到）、`j-1`、`j` 三处被重新查到，
-     * `j > i+1` 保证指针一定追得上。插入只新增 `(i,i+1)` 与 `(i+1,i+2)` 两对，
-     * 两对都在插入前查过（两侧邻居都不像才让插），而 `(旧 i+1, 旧 i+2)` 在 `i+2` 处查到。
+     * `j > i+1` 保证指针一定追得上。
+     *
+     * **插入这一档的边界要说准 —— 别把上面那串读成"每一对相邻都被前扫检查过"**：插池成功后指针同样只 `i++`，
+     * 于是本轮前扫**跨过**的正是刚插出来的那两对 `(i,i+1)` 与 `(i+1,i+2)`，它们在本轮**不再被回查**。
+     * 挡住它们的是 [insertBuffer] 自己的门槛（候选与两侧邻居都得 `< tauLo`），而那句 `< tauLo` 只有在
+     * `tauLo <= tauHi` 时才蕴含"不算违规"（[InterleavePolicy] 同样不校验它，与上面换位那档的括注是同一条口径）。
+     * 被这一插挪走一格的 `(旧 i+1, 旧 i+2)` 则确实在 `i+2` 处查到。
+     * ⇒ 真出现那种"前扫不回查"的对子时，它要么被**后续轮**处理（下一轮从 0 重扫，那里就能查到它），
+     * 要么由 [report] 的 `unresolved` **如实报出**（[violates] 判的是最终队列，不管这对是谁造的）——
+     * 这段声明的是"不回退不会漏掉本轮改动的相邻对"，不是"所有相邻对都被检查过"。
      *
      * 旧稿在这里 `i = (i - 1).coerceAtLeast(0)` 回退一格，理由是"换位会改变 i-1 处的相邻关系" ——
      * 那句是错的：换位只动下标 `i+1` 与 `j` 两个位置，`i-1` 和 `i` 上的元素一个都没动
@@ -337,7 +345,11 @@ internal object QueueBuilder {
      *
      * 这四条**穷尽**了"记录之后还会移动某一张"的全部来源，没有第五个搬家者：一对的 gap 记进 `drills` 之后，
      * 能再挪走它某一张的只有 (i) 后一次 drill 自己的 `removeAt` + `add`（第 3 条）与 (ii) drills 之后那轮复扫的
-     * [swapInWindow]（第 4 条）。其余候选都排除：复扫走的是 `repairAdjacent(..., rounds = 1, pullCap = 0)`，
+     * [swapInWindow]（第 4 条）。
+     * **这段论证还压着一个此前没明写的前提：全类只有 [insertBuffer] 会让队列变长**（`q.add(i + 1, buffer)`）——
+     * [swapInWindow] 是两次赋值交换、[applyDrills] 是 `removeAt` 配 [placeBeside] 里的一次 `add`（放回原格与挪到新格都一进一出）、
+     * [stampGaps]/[report]/[drillNoteIds] 只读不改 ⇒ 条目数除插池外处处不变，下面那句"长度不变"就是这么来的。
+     * 其余候选都排除：复扫走的是 `repairAdjacent(..., rounds = 1, pullCap = 0)`，
      * `pulled < pullCap` 即 `0 < 0` 永远为假 ⇒ [insertBuffer] 那一半连门都进不去（且它这轮拿的是 `emptyList()` 池），
      * 所以插不进、也就搬不动，不构成第三个动 `q` 的人；落点被 [violates] 拒掉时 [placeBeside] 是 `removeAt(ib)`
      * 之后原 `ib` 放回、队列逐字节不变，`target == ib` 那趟同样是空操作并返回 false ⇒ 两者都不算搬家；而
