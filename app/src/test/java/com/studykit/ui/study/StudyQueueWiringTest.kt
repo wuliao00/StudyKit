@@ -63,18 +63,18 @@ private class RecordingQuestionDao : QuestionDao {
 }
 
 /**
- * 假 DAO 的转接口。
+ * 假 DAO 的转接口：[QuizQueueWiringTestApp] 在**构造**容器时把挂在 [RecordingQuestionDao] 上的仓储
+ * 交给 [AppContainer] 的 `questionRepository` 参数，用例再从这里取回那只假 DAO 数查询次数。
  *
- * ## 为什么要反射，而不是给生产构造子开一个注入口
+ * ## 为什么要假 DAO，而不是仿仓储
  * [StudyViewModel] 拿仓储只有一条路：`(application as StudyKitApp).container.questionRepository`，
  * 而 [AppContainer] 是 final 类、`questionRepository` 是 final val、[QuestionRepository] 本身也是 final 类
- * （`data/repository/QuestionRepository.kt:11`）—— 于是**既仿不了仓储类，也没有接缝能把假 DAO 塞进容器**，
- * 除非改生产构造子（简报明令不许，也不许新增仓库方法）。
+ * （`data/repository/QuestionRepository.kt`）—— 于是**仿不了仓储类**，只能换它底下那只 DAO。
  * 仓内既有先例是替 DAO 接口（`ui/habit/HabitTargetDaysTest.kt:129-158`），那一手在仓储测试里够用，
- * 因为那里的仓储是测试自己 `new` 的；这里仓储必须住在容器里，所以多走一步反射：
- * **生产代码一字未动**，被换掉的只是测试进程里这一份容器实例的字段。
+ * 因为那里的仓储是测试自己 `new` 的；这里仓储必须住在容器里，所以走 [AppContainer] 的那一个注入点：
+ * 默认值就是生产原来那句构造表达式，被换掉的只是测试进程里这一份容器实例用哪只仓储。
  *
- * ## 这条反射钉得住什么、钉不住什么
+ * ## 这一档钉得住什么、钉不住什么
  * 钉得住：取数次数（"关掉就真的关掉"里的那一次 IO）、取数参数（limit/offset 的档位）、
  * 以及"另一科的题没被读"。钉不住：Room 那条 SQL 的真实语义（列映射、排序稳定性），
  * 那一份由 `QuestionDaoTest` 一类仓储级用例继续钉。
@@ -83,19 +83,13 @@ private object WiringHarness {
     @Volatile
     var dao: RecordingQuestionDao? = null
 
-    fun install(container: AppContainer, repository: QuestionRepository) {
-        val field = AppContainer::class.java.getDeclaredField("questionRepository")
-        field.isAccessible = true
-        field.set(container, repository)
-    }
-
     fun requireDao(): RecordingQuestionDao =
         dao ?: error("假 DAO 没装上：@Config(application = QuizQueueWiringTestApp::class) 用错了吗")
 }
 
 /**
  * 本文件唯一的容器覆写点：真库换成一次性内存库（姿势同 [MockExamResumeTestApp]），
- * 再把 `questionRepository` 那**一个**字段换成挂在 [RecordingQuestionDao] 上的仓储。
+ * 构造这一只容器时就把挂在 [RecordingQuestionDao] 上的那**一个**仓储交进去。
  * 其余仓储（settings / mockSession / practice / reviewLog）仍走真 Room —— 模考那两条用例要真落一行卷。
  * Robolectric 每个用例重建 Application ⇒ 每个用例一只干净的假 DAO。
  */
@@ -104,11 +98,9 @@ class QuizQueueWiringTestApp : StudyKitApp() {
         val db = Room.inMemoryDatabaseBuilder(this, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        val container = AppContainer(db)
         val fake = RecordingQuestionDao()
         WiringHarness.dao = fake
-        WiringHarness.install(container, QuestionRepository(fake, db.practiceDao()))
-        return container
+        return AppContainer(db, QuestionRepository(fake, db.practiceDao()))
     }
 }
 
