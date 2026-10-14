@@ -20,15 +20,20 @@ import com.studykit.optimize.NativeFsrsTrainer
  *
  * 由 [StudyKitApp] 在启动时初始化（生产走 [Context] 那一个构造子，拿进程单例的 [AppDatabase]）。
  *
- * 两个构造子参数各自对应一条测试目的：
+ * 每个构造子参数各对应一条测试目的：
  *
  *  - [database]：单测（Robolectric）能把整只容器换成一次性内存库。不加这层的话，`AppDatabase.instance`
  *    那个进程单例会跨用例存活，而 Robolectric 每个用例都会拆掉 SQLite 影子连接 —— 第二个用例起就会撞
  *    `Illegal connection pointer`（Room 缓存的编译语句指着已经死掉的连接）。
- *  - [questionRepository]：组轮那批接线用例只换这一个仓储（挂一只假 DAO），好让生产容器一行代码都不必
- *    为了测试改形状。这是**注入点**，不是给生产代码开的口子：默认值就是原来 body 里那一句构造表达式，
- *    类型、`val`、初始化表达式全部一字未改。有了它，`StudyQueueWiringTest` 那一处不再需要反射 ——
- *    反射改写 `val` 的写法，字段哪天改名不会编译失败，只会在运行期抛 `NoSuchFieldException`。
+ *  - [questionRepository]：组轮那批接线用例只换这一个仓储（挂一只假 DAO），于是 `StudyQueueWiringTest`
+ *    那一处不再需要反射 —— 反射改写 `val` 是拿字符串找字段，字段哪天改名不会编译失败，只会在运行期抛
+ *    `NoSuchFieldException`。
+ *    默认值就是原来 body 里那一句构造表达式，类型、`val`、初始化表达式一字未改，所以**调用点**一行都不必
+ *    动：[StudyKitApp] 那句 `AppContainer(this)`，与 `ReviewLogScheduledDaysWriterTest` /
+ *    `MockSessionResumeWriterTest` 里按位置传 `db` 的覆写点，都还是原样。
+ *    **代价写在明面上**：想让测试在容器里换掉这只仓储，这个生产类的构造子就多了一个带默认值的参数 ——
+ *    容器的形状确实是为测试改的，改的只有形状：默认走的仍是同一句表达式，生产的**行为**没被开口子。
+ *    （"不再需要反射"说的只是这一处，`ReviewLogDaoTest` 钉 append-only 的只读反射照旧在。）
  *
  * 本仓无 Hilt，注入就停在容器这一层（同 [fsrsTrainer] 那条评论）。
  */
