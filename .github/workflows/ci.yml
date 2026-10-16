@@ -54,6 +54,12 @@ jobs:
             exit 1
           fi
 
+      # 「UI 文案不许抄第二份」这条规矩的机器版体检（v3.0-C 复审留下的最后一格欠账，当时只写了规矩没建闸门）。
+      # 抄一份字节相同的第二份进第三个文件，全仓没有任何测试看得见（render 测试比的是「屏上文本 vs 同一个函数的返回值」），
+      # 所以这一步按「文件路径集合」比白名单；弱点逐条写在 .github/check-copied-strings.sh 的头部注释里。
+      - name: 复制的 UI 文案不许出现第二个家（比的是文件集合，不是出现次数）
+        run: bash .github/check-copied-strings.sh
+
       - name: Lint, unit tests and debug build
         run: ./gradlew lint testDebugUnitTest assembleDebug
 

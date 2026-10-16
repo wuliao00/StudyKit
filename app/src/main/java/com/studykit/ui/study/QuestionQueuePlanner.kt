@@ -145,5 +145,6 @@ internal fun semanticInterleaveHint(): String =
  * （`QuestionQueuePlannerTest.会话内提示文案逐字钉住`），
  * 其余地方（生产代码、别的用例、注释与 KDoc 都算）一律引用本函数 —— 字节相同的第二份拷贝全仓没有任何测试看得见，
  * 抄一次就是给这句话开第二个家。
+ * 这条现在有机器守：`.github/check-copied-strings.sh`（CI 里紧跟 Room schema 那一步）。
  */
 internal fun confusableDrillTip(): String = "这两张卡容易混，隔开放是故意的。"
