@@ -19,6 +19,9 @@ junit = "4.13.2"
 # Compose 渲染守卫：Robolectric 让 ui-test 跑在 `testDebugUnitTest` 里，不占模拟器
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
+# androidTest 的执行器（AndroidJUnitRunner）。版本与 androidx.test:core 对齐；
+# 本仓的 instrumented test 至今**只编译、从未执行**（本机没有设备/模拟器镜像）。
+androidxTestRunner = "1.6.1"
 espressoCore = "3.6.1"
 
 [libraries]
@@ -45,6 +48,8 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 json = { group = "org.json", name = "json", version.ref = "json" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+# `testInstrumentationRunner = androidx.test.runner.AndroidJUnitRunner` 这个类只在这个坐标里
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }

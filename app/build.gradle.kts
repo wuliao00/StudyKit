@@ -72,6 +72,10 @@ android {
         targetSdk = 35
         versionCode = 20
         versionName = "3.0.0"
+        // instrumented test 的执行器。本机没有设备也没有模拟器镜像，CI 里只有
+        // `:app:assembleDebugAndroidTest` 这条「只编译」的闸 —— 这些用例**从未在设备上执行过**，
+        // 真跑是 `:app:connectedDebugAndroidTest`（需要接到一台设备/一个模拟器）。
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 端侧 OCR 走 PP-OCRv6（ONNX Runtime Android），每个 ABI 各带一份 libonnxruntime.so
         // （arm64-v8a 约 32MB + armeabi-v7a 约 22.7MB，stored 不压缩）。本仓是**直接发 APK**
         // （GitHub Release / 网盘），不是走应用商店的 per-device split，故只留两个 arm ABI：
@@ -213,6 +217,21 @@ dependencies {
     // `Unable to resolve activity for Intent { cmp=com.studykit/...ComponentActivity }`，
     // 看着像断言失败，其实一个测试都没跑起来（见 robolectric/robolectric#4736）。
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // ── instrumented tests（app/src/androidTest）────────────────────────────
+    // 这个源集是 v3.0-C 第 8 条欠账的补课：设备基准（50/200/500 三档）与一条真实 Activity 冒烟。
+    // ⛔ 它们**从未在任何设备或模拟器上执行过**（本机既无设备镜像也无 AVD；CI 只跑
+    //    `:app:assembleDebugAndroidTest`，只证明编得过）。第一份真实读数要由用户在真机上跑
+    //    `.\gradlew.bat :app:connectedDebugAndroidTest` 取得。
+    // 依赖尽量复用版本目录里的既有坐标；只有 runner 是新坐标（AndroidJUnitRunner 的家），
+    // 版本与 androidx.test:core 对齐，见 gradle/libs.versions.toml。
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    // Compose 的 createAndroidComposeRule / createComposeRule 需要 BOM 对齐的 ui-test-junit4
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }
 
 // 测试失败时把完整堆栈打到 CI 控制台。默认只给一个异常类名，等于每排查一次就要重跑一轮构建
