@@ -14,6 +14,7 @@ import com.studykit.data.repository.WordListRepository
 import com.studykit.data.repository.WordRepository
 import com.studykit.optimize.FsrsTrainer
 import com.studykit.optimize.NativeFsrsTrainer
+import com.studykit.ui.study.BgeEmbeddingProvider
 
 /**
  * 手动依赖注入容器：持有数据库与全部仓储实例。
@@ -35,15 +36,23 @@ import com.studykit.optimize.NativeFsrsTrainer
  *    容器的形状确实是为测试改的，改的只有形状：默认走的仍是同一句表达式，生产的**行为**没被开口子。
  *    （"不再需要反射"说的只是这一处，`ReviewLogDaoTest` 钉 append-only 的只读反射照旧在。）
  *
+ *  - [embeddingProvider]：语义组轮（v3.1 Task 3）的嵌入提供方。默认 [EmbeddingProvider.Disabled] 是
+ *    **刻意的**：JVM 单测用 `AppContainer(db, fakeRepo)`，绝不能因此去加载 24MB 模型、拷资产、建 ORT session。
+ *    只有生产 [Context] 构造子才注入 [BgeEmbeddingProvider]（它本身还懒加载，第一次真正嵌入时才碰模型）。
+ *
  * 本仓无 Hilt，注入就停在容器这一层（同 [fsrsTrainer] 那条评论）。
  */
 class AppContainer(
     val database: AppDatabase,
     val questionRepository: QuestionRepository =
         QuestionRepository(database.questionDao(), database.practiceDao()),
+    val embeddingProvider: EmbeddingProvider = EmbeddingProvider.Disabled,
 ) {
 
-    constructor(context: Context) : this(AppDatabase.getInstance(context))
+    constructor(context: Context) : this(
+        AppDatabase.getInstance(context),
+        embeddingProvider = BgeEmbeddingProvider(context.applicationContext),
+    )
 
     val wordRepository: WordRepository = WordRepository(database.wordDao())
 

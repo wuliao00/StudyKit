@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.zip
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.time.LocalDate
 import java.time.ZoneId
@@ -587,17 +588,26 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      *  - [AppSettings.semanticInterleaveEnabled]（题面层）→ 同一个函数的 `semantic`，
      *    判定住在 `QuestionQueuePlanner.planQuestionQueue`，本文件不再判第二次
      *    （这里唯一多出来的分支是 [semanticPool] 那句"要不要去取缓冲池"，它决定的是**取不取数**，不是怎么排）。
+     *
+     * v3.1 Task 3：语义开着时把容器里的嵌入提供方交给 planner；**关着时连 provider 都不碰**
+     * （`embed` 直接给 null）。`planQuestionQueue` 首次可能加载模型 + 二十来次前向，
+     * 所以它整体包在 `Dispatchers.Default` 里，不许占主线程。
      */
     fun startQuiz(subject: String) {
         viewModelScope.launch {
             val settings = settingsRepository.current()
             val session = questionRepository.getBySubject(subject, QUIZ_SIZE, 0)
-            val plan = planQuestionQueue(
-                session = session,
-                pool = semanticPool(settings, subject),
-                interleaving = settings.interleavingEnabled,
-                semantic = settings.semanticInterleaveEnabled,
-            )
+            val pool = semanticPool(settings, subject)
+            val embed = if (settings.semanticInterleaveEnabled) container.embeddingProvider::embed else null
+            val plan = withContext(Dispatchers.Default) {
+                planQuestionQueue(
+                    session = session,
+                    pool = pool,
+                    interleaving = settings.interleavingEnabled,
+                    semantic = settings.semanticInterleaveEnabled,
+                    embed = embed,
+                )
+            }
             _quiz.value = QuizUiState(
                 subject = subject,
                 questions = plan.questions,
@@ -634,6 +644,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      *    跑第二遍与跑一遍不等价（两道机检在 `StudyQueueWiringTest`「综合练习的学科层只在整份合并序列上跑一次」
      *    与「综合练习这一轮里至少出现两个学科」两条里，各挡一刀）。
      * 缓冲池同样从这份已经取回的序列里切（`ordered.drop(QUIZ_SIZE)`），**不调 [semanticPool]**。
+     *
+     * v3.1 Task 3 的接线与 [startQuiz] 相同：语义开着才把容器里的嵌入提供方交给 planner，关着不碰 provider；
+     * `planQuestionQueue` 包在 `Dispatchers.Default` 里（首次可能加载模型 + 二十来次前向）。
      */
     fun startMixedQuiz() {
         viewModelScope.launch {
@@ -642,15 +655,19 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             // 各科给同样的余量再合并：交错要的是"轮流动"，先把每科各自的前若干条捞齐
             val pool = subjects.flatMap { questionRepository.getBySubject(it, QUIZ_SIZE, 0) }
             val ordered = interleaveBySubject(pool, enabled = settings.interleavingEnabled)
-            val plan = planQuestionQueue(
-                session = ordered.take(QUIZ_SIZE),
-                pool = ordered.drop(QUIZ_SIZE),
-                // 这里的 false **不是**「关掉学科打散」：学科层已由上面那一行在整份合并序列上跑过了，
-                // 装配层再跑就是双跑（贪心不幂等）。用户真关掉学科交错时，false 来自上面那一行的 enabled；
-                // 单科轮（[startQuiz]）传的才是 settings.interleavingEnabled 本身，那一轮学科层由装配层跑那唯一一次。
-                interleaving = false,
-                semantic = settings.semanticInterleaveEnabled,
-            )
+            val embed = if (settings.semanticInterleaveEnabled) container.embeddingProvider::embed else null
+            val plan = withContext(Dispatchers.Default) {
+                planQuestionQueue(
+                    session = ordered.take(QUIZ_SIZE),
+                    pool = ordered.drop(QUIZ_SIZE),
+                    // 这里的 false **不是**「关掉学科打散」：学科层已由上面那一行在整份合并序列上跑过了，
+                    // 装配层再跑就是双跑（贪心不幂等）。用户真关掉学科交错时，false 来自上面那一行的 enabled；
+                    // 单科轮（[startQuiz]）传的才是 settings.interleavingEnabled 本身，那一轮学科层由装配层跑那唯一一次。
+                    interleaving = false,
+                    semantic = settings.semanticInterleaveEnabled,
+                    embed = embed,
+                )
+            }
             _quiz.value = QuizUiState(
                 subject = MIXED_SUBJECT_LABEL,
                 questions = plan.questions,

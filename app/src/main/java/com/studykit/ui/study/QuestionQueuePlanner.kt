@@ -74,13 +74,32 @@ internal data class QuestionQueuePlan(
  * [QueueBuilder.build] 对 n<2 自己也不崩（前扫空转、`maxOfOrNull` 给 null），删掉它之后三个读数与
  * 队列内容逐格相同（报告 §5 M10 实测全绿、没有任何用例能显形），留着只省掉一次无谓的
  * [QueueItem] / [QuestionSimularity] 构造。
+ *
+ * ## 提供方选择（v3.1 Task 3）
+ *
+ * `semantic = true` 时优先走嵌入：把 `base + extra` 交给 [EmbeddingSimularity]（构造时 eager 嵌入每个不同题干），
+ * 只有它报告 `unresolvedCount == 0` 才整轮用**嵌入提供方 + `policy ?: EmbeddingInterleave.DEFAULT`**。
+ *
+ * 以下**三种**情况整轮回退词面（[QuestionSimularity] + `policy ?: LexicalInterleave.DEFAULT`），
+ * 回退结果与引入嵌入前逐格相同：
+ *  1. **模型/资产加载失败** —— 提供方整体不可用：`embed` 为 null（调用方没提供）或它对每次调用都返回 null
+ *     （[com.studykit.AppContainer] 默认的 [com.studykit.EmbeddingProvider.Disabled] 就是这一档）；
+ *  2. **任一题干嵌入失败** —— 提供方只对某几条题干返回 null，那几题 unresolved；
+ *  3. **维度不一致** —— 某条向量与首个成功向量的长度不同，那几题 unresolved。
+ *
+ * 回退是**整轮**的，不是逐题混用：同一轮里一半余弦、一半 Dice 会让 [QueueBuilder] 的阈值失去意义。
+ * [policy] 为 null 表示"按当前提供方自动选刻度"；显式传入时（测试或将来别的实验档）两个提供方都用它。
+ *
+ * @param embed 题干 → 向量；null 表示调用方没有可用的嵌入（不触碰任何模型）。只有 `semantic = true` 时才会被调用。
+ * @param policy 阈值的唯一来源；null = 嵌入档用 [EmbeddingInterleave.DEFAULT]、词面档用 [LexicalInterleave.DEFAULT]。
  */
 internal fun planQuestionQueue(
     session: List<Question>,
     pool: List<Question>,
     interleaving: Boolean,
     semantic: Boolean,
-    policy: InterleavePolicy = LexicalInterleave.DEFAULT,
+    policy: InterleavePolicy? = null,
+    embed: ((String) -> FloatArray?)? = null,
 ): QuestionQueuePlan {
     val base = interleaveBySubject(session, enabled = interleaving)
     if (!semantic || base.size < 2) {
@@ -93,7 +112,19 @@ internal fun planQuestionQueue(
     // 相似度快照必须连池一起收：insertBuffer 要问「池卡 vs 本轮两侧邻居」的分值。
     // 只喂 base 的话 Simularity 对不认识的 id 一律给 0f ⇒ 池里的题永远「不像」 ⇒ 连与本轮同文的池卡也会被插进来
     // （测试「缓冲卡来自池且是同一个对象」的两张池卡夹具 + 字面末序钉着这一档）。
-    val sim = QuestionSimularity(base + extra)
+    //
+    // 提供方选择在**构造前**分两档；嵌入档只在 embed 非 null 时构造（关开关不碰 provider），
+    // 且 unresolvedCount 必须为 0 才整轮采用 —— 回退的三条原因写在函数 KDoc 里。
+    val embeddingSim = embed?.let { EmbeddingSimularity(base + extra, it) }
+    val sim: Simularity
+    val effectivePolicy: InterleavePolicy
+    if (embeddingSim != null && embeddingSim.unresolvedCount == 0) {
+        sim = embeddingSim
+        effectivePolicy = policy ?: EmbeddingInterleave.DEFAULT
+    } else {
+        sim = QuestionSimularity(base + extra)
+        effectivePolicy = policy ?: LexicalInterleave.DEFAULT
+    }
     val items = base.mapIndexed { index, card ->
         QueueItem(id = card.id, urgency = (base.size - index).toFloat(), subject = card.subject)
     }
@@ -101,7 +132,11 @@ internal fun planQuestionQueue(
     // 池那批走 insertBuffer 的清单序（firstOrNull），这个字段在本装配的接线下没有读者 —— 别「修」它，
     // 换成真实到期值不会改变一条结果，反而会让人以为它参与过排序。
     val poolItems = extra.map { QueueItem(id = it.id, urgency = 0f, subject = it.subject) }
-    val result = QueueBuilder.build(items, sim, poolItems, QueueBuilder.confusablePairs(items, sim, policy), policy)
+    val result = QueueBuilder.build(
+        items, sim, poolItems,
+        QueueBuilder.confusablePairs(items, sim, effectivePolicy),
+        effectivePolicy,
+    )
     val ordered = result.queue.mapNotNull { cards[it.id] }
     check(ordered.size == result.queue.size) { "装配丢条目: 队列 ${result.queue.size} 题，映射回 ${ordered.size} 题" }
     return QuestionQueuePlan(

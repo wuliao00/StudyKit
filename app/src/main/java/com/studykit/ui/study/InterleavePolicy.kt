@@ -37,7 +37,7 @@ internal data class InterleavePolicy(
  *
  * 文档 §② 给的是**余弦相似度的尺子**：`TAU_HI = 0.85f`、`TAU_LO = 0.30f`、混淆带 `[0.7, 0.9]`。
  * 那份数值不在下面 —— 照搬会让相邻修复在词面上很少触发（功能静默死）。
- * 语义包到位时，为它单开一个 `EmbeddingInterleave.DEFAULT`（沿用文档原值），不要改这里。
+ * 语义包（v3.1）已为它单开 `EmbeddingInterleave.DEFAULT`（沿用文档原值），不要改这里。
  */
 internal object LexicalInterleave {
     val DEFAULT = InterleavePolicy(
@@ -45,6 +45,31 @@ internal object LexicalInterleave {
         tauLo = 0.15f,
         drillLo = 0.40f,
         drillHi = 0.75f,
+        gapLo = 3,
+        gapHi = 5,
+        topK = 8,
+        lookahead = 12,
+        maxRepairRounds = 4,
+    )
+}
+
+/**
+ * 嵌入提供方的刻度：**余弦相似度的尺子**，不是 [LexicalInterleave] 那套字符二元组 Dice 的尺子，
+ * 两套数值不可互换（余弦 0.85 与 Dice 0.60 说的不是同一件事）。
+ *
+ * 数值沿用文档 §② 的余弦口径：`tauHi = 0.85`、`tauLo = 0.30`、混淆带 `[0.70, 0.90]`；
+ * 其余结构参数与词面档相同（gap 3..5 / topK 8 / lookahead 12 / maxRepairRounds 4）。
+ *
+ * ⛔ **未校准**：这些值来自文档与 bge-small-zh 的一般经验，本仓**没有**在 200+200 人工标注对上量过分布，
+ * 更没有针对本应用题库的高考/语言类语料调过。真实校准（AUC ≥ 0.85）属语义包计划，不在这份计划里；
+ * 在那之前不要把这里的数值当成"实测最优"，也不要拿它去改 [LexicalInterleave.DEFAULT] —— 两份尺子各归各的提供方。
+ */
+internal object EmbeddingInterleave {
+    val DEFAULT = InterleavePolicy(
+        tauHi = 0.85f,
+        tauLo = 0.30f,
+        drillLo = 0.70f,
+        drillHi = 0.90f,
         gapLo = 3,
         gapHi = 5,
         topK = 8,

@@ -24,6 +24,7 @@ import org.junit.Test
  * drillHi / topK）⇒「`confusablePairs` 那一处的 policy 是摆设」这一刀原有的 19 条全都看不见（实跑见报告）。
  * 那条新用例拧的是混淆带，用例数 19 → **20**；同一轮还按 Item 2 把设置行整句换成加了「同一学科」的新串
  * （只改字符串与该条的期望值，不增删用例）。
+ * v3.1 Task 3 再**新增**两条：嵌入可用时走嵌入策略、嵌入全失败时逐格回退词面（用例数 20 → **22**）。
  * ⛔ 标记的用例钉字面量，不读生产常量当期望值。
  */
 class QuestionQueuePlannerTest {
@@ -423,6 +424,55 @@ class QuestionQueuePlannerTest {
         assertEquals(a.drillIds, b.drillIds)
         assertEquals(a.pulled, b.pulled)
         assertEquals(a.maxAdjSim, b.maxAdjSim)
+    }
+
+    @Test fun `嵌入可用时按嵌入策略隔开词面无关的两题`() {
+        // v3.1 T3：三题词面两两不沾字（Dice = 0 ⇒ 词面档一步都不动），但 1 与 2 的假向量余弦 0.95
+        // 越过 EmbeddingInterleave.DEFAULT.tauHi = 0.85 ⇒ 嵌入档把 2 与 3 换位。
+        // 手推（嵌入档）：初序 [1,2,3] → i=0 的 (1,2) 违规，窗口 [2,2] 里 3 与 1 的余弦 0 < tauLo 0.30
+        // ⇒ 换位得 [1,3,2]。词面档：三对 Dice 都是 0 ⇒ 保持 [1,2,3]。
+        // 杀的变异：planner 在 embed != null 时仍用 QuestionSimularity（第二句停在 [1,2,3]）、
+        //          或用了词面 policy 的 0.60（同样不动）—— 两句对照把「换提供方 + 换刻度」一起钉住。
+        val session = listOf(
+            q(1, "语文", "甲乙丙丁"),
+            q(2, "语文", "子丑寅卯"),
+            q(3, "语文", "春夏秋冬"),
+        )
+        // 2 是单位向量 (0.95, sqrt(1-0.95²))，与 1 的余弦恰是 0.95；3 与 1 正交。
+        val vectors = mapOf(
+            "甲乙丙丁" to floatArrayOf(1f, 0f),
+            "子丑寅卯" to floatArrayOf(0.95f, 0.3122499f),
+            "春夏秋冬" to floatArrayOf(0f, 1f),
+        )
+        val lexical = planQuestionQueue(session, emptyList(), interleaving = true, semantic = true)
+        assertEquals("词面档必须保持原序，否则下面那条对照没有意义", listOf(1L, 2L, 3L), lexical.questions.map { it.id })
+        val embedded = planQuestionQueue(
+            session, emptyList(), interleaving = true, semantic = true,
+            embed = { vectors[it] },
+        )
+        assertEquals("嵌入档应把 2 与 3 换位: ${embedded.questions.map { it.id }}", listOf(1L, 3L, 2L), embedded.questions.map { it.id })
+    }
+
+    @Test fun `嵌入全失败时逐格回退到词面档`() {
+        // v3.1 T3 回退链：embed 非 null 但每题都返回 null ⇒ unresolvedCount > 0 ⇒ 词面 + 词面刻度。
+        // 夹具用「只有一个学科时语义遍仍然生效」那一份：词面档会把贴邻的同文对 1/2 换成 [1,3,2,4]，
+        // 所以「逐格相同」不是两队都不动的空话。四格（顺序 / pulled / maxAdjSim / drillIds）都要对上。
+        val session = listOf(
+            q(1, "语文", "甲乙丙丁戊己庚辛壬癸"),
+            q(2, "语文", "甲乙丙丁戊己庚辛壬癸"),
+            q(3, "语文", "子丑寅卯辰巳午未申酉戌亥"),
+            q(4, "语文", "春夏秋冬东南西北中发白"),
+        )
+        val without = planQuestionQueue(session, emptyList(), interleaving = true, semantic = true)
+        val allNull = planQuestionQueue(
+            session, emptyList(), interleaving = true, semantic = true,
+            embed = { null },
+        )
+        assertEquals(listOf(1L, 3L, 2L, 4L), without.questions.map { it.id })
+        assertEquals(without.questions.map { it.id }, allNull.questions.map { it.id })
+        assertEquals(without.pulled, allNull.pulled)
+        assertEquals(without.maxAdjSim, allNull.maxAdjSim)
+        assertEquals(without.drillIds, allNull.drillIds)
     }
 
     @Test fun `会话内提示文案逐字钉住`() {
