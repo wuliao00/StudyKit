@@ -111,6 +111,22 @@ fun MistakeCaptureScreen(
     // 这一次性标记刻意用 rememberSaveable：转屏重建组合时不能重跑自动识别（同一张图识别两遍）
     var autoExtractTried by rememberSaveable { mutableStateOf(false) }
 
+    // 题库「拍照录题」解析不出四选一时，照片与 OCR 文本经应用内单槽转到这里：首次组合消费一次。
+    // 必须排在 title/note/autoExtractTried 的声明之后 —— 回填读的正是这三枚字段；而 `take()` 取完即清空，
+    // 转屏重建时这个 LaunchedEffect 会再跑一次却拿不到东西，同一张图不会被消费两遍。
+    LaunchedEffect(Unit) {
+        val handoff = MistakeCaptureHandoff.take() ?: return@LaunchedEffect
+        viewModel.setPendingCapture(handoff.first)
+        // 与分享收件那条回填口径完全一致：首行 ≤40 字当标题，其余进备注
+        val lines = handoff.second.lines().filter { it.isNotBlank() }
+        if (lines.isNotEmpty()) {
+            title = lines.first().take(40)
+            note = lines.drop(1).joinToString("\n")
+        }
+        // 这张图在题库那条路上已经 OCR 过一次；标成「已试过」，页内自动识别不再对同一张图跑第二遍
+        autoExtractTried = true
+    }
+
     val finalSubject = newSubject.ifBlank { selectedSubject }
 
     Column(

@@ -366,6 +366,11 @@ fun AppNav(
                     onPreviewImport = {
                         navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
+                    // 书页解析不出四选一：照片与文本已由拍照那条路交给错题本的单槽，
+                    // 这里只把既有拍照录入页推上来（默认 auto=false、subject=""，不加新参数）
+                    onPhotoFallback = {
+                        navController.navigate(MistakeRoutes.capture()) { launchSingleTop = true }
+                    },
                 )
             }
             composable(Tab.Habit.route) {
@@ -504,6 +509,10 @@ fun AppNav(
                     },
                     onPreviewImport = {
                         navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
+                    },
+                    // 同上：题库练习页拍照解析不出四选一时转错题本，复用既有拍照录入页
+                    onPhotoFallback = {
+                        navController.navigate(MistakeRoutes.capture()) { launchSingleTop = true }
                     },
                 )
             }

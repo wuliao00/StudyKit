@@ -92,13 +92,15 @@ fun QuizScreen(
     onBack: () -> Unit,
     onNavigate: (String) -> Unit,
     onPreviewImport: () -> Unit,
+    onPhotoFallback: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.quiz.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
-    // 拍照录题：相机 → OCR → 既有预览屏（与单词库「截图取词」同一条管线）
-    val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport)
+    // 拍照录题：相机 → OCR → 既有预览屏（与单词库「截图取词」同一条管线）；
+    // 解析不出四选一时转错题本（导航由 onPhotoFallback 交给 AppNav）
+    val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport, onPhotoFallback)
     // 与 CardStudyScreen 读 recallBeforeGrade 同一姿势：组合期读一枚布尔，喂给展示与开关
     val interleaving = AppTheme.settings.interleavingEnabled
     // 信心条开关（v2.7 计划 B Task 12）：组合期读一枚布尔，喂给提交前的信心行；关掉 = 退回 v2.6 交互（不采集，conf 恒 null）

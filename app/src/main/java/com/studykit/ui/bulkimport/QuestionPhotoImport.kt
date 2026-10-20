@@ -16,10 +16,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.studykit.ui.mistake.MistakeCaptureHandoff
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
+import com.studykit.util.importer.ImportPlan
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +40,35 @@ class QuestionPhotoImport internal constructor(
 )
 
 /**
+ * 一次拍照 OCR 文本的三条去向，见 [decidePhotoImport]。
+ */
+internal sealed interface PhotoImportOutcome {
+    /** 解析出了至少一条四选一题目：照旧进批量导入的预览屏。 */
+    data class Preview(val plan: ImportPlan) : PhotoImportOutcome
+
+    /** 没有四选一条目、但文本非空：把照片与文本转进错题本。 */
+    data class Fallback(val text: String) : PhotoImportOutcome
+
+    /** 文本是空白：连错题本都填不出内容，只剩重拍提示。 */
+    data object Empty : PhotoImportOutcome
+}
+
+/**
+ * 拍照 OCR 之后的**纯决策**（不碰 Compose、不碰文件），单测直接调它：
+ * 四选一解析出条目 ⇒ [PhotoImportOutcome.Preview]；条目为空但还有字 ⇒
+ * [PhotoImportOutcome.Fallback]（一页教科书正文永远走这里）；连字都没有 ⇒
+ * [PhotoImportOutcome.Empty]。判定只此一处，UI 只负责按结果分派。
+ */
+internal fun decidePhotoImport(ocrText: String): PhotoImportOutcome {
+    val plan = ImportKind.QUESTION.parse(ocrText)
+    return when {
+        plan.items.isNotEmpty() -> PhotoImportOutcome.Preview(plan)
+        ocrText.isNotBlank() -> PhotoImportOutcome.Fallback(ocrText)
+        else -> PhotoImportOutcome.Empty
+    }
+}
+
+/**
  * 拍照录入题目：相机 → [OcrTextExtractor] → [ImportKind.QUESTION] 的解析器 → 既有的预览 / 结果两屏。
  *
  * 刻意与单词库那条「截图取词」汇成同一条管线（都收口在 [ImportViewModel.loadPlan] + `onPreview`）：
@@ -50,13 +81,19 @@ class QuestionPhotoImport internal constructor(
  *    可能被回收，`remember` 里的 File 会随之消失，回投拿到 null 就静默丢图（终审 C3 同一件事）；
  *  - 权限被拒后展示指引（saveable：转屏不该把指引抹掉只剩一个没反应的按钮）。
  *
- * OCR 出来的照片是**一次性的**：识别完就删（错题那条路要把原图入库，所以那边不删）。
- * 相机临时目录原本就有 `capture_*.jpg` 堆积问题，这条路只在磁盘上多停留几秒。
+ * OCR 出来的照片默认是**一次性的**：识别成四选一、进预览之后才删；解析不出四选一时**不删**
+ * （转给错题本当图片，之后由错题本录入页在保存或放弃时清理）。
+ * 相机临时目录原本就有 `capture_*.jpg` 堆积问题，四选一与空结果两条路仍只在磁盘上多停留几秒。
+ *
+ * **解析不出四选一不是死路**：题库只收「题干 | 选项… | 答案」，书页永远过不了这一关；
+ * 此时照片**不删**，连同 OCR 文本经 [MistakeCaptureHandoff] 交给错题本录入页
+ * （`onFallbackToMistake` 负责导航）。错题本不需要选项与答案，图片 + 自由文本正好落得下。
  */
 @Composable
 fun rememberQuestionPhotoImport(
     importViewModel: ImportViewModel,
     onPreview: () -> Unit,
+    onFallbackToMistake: () -> Unit,
 ): QuestionPhotoImport {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -82,18 +119,35 @@ fun rememberQuestionPhotoImport(
             val result = withContext(Dispatchers.IO) { OcrTextExtractor.recognize(context, file) }
             when (result) {
                 is OcrResult.Text -> {
-                    val plan = ImportKind.QUESTION.parse(result.value)
                     busy = false
-                    file.delete()
-                    if (plan.items.isEmpty()) {
-                        Toast.makeText(
-                            context,
-                            "没认出题目，一行一题写「题干 | 选项 | 答案」再重拍试试",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    } else {
-                        importViewModel.loadPlan(plan)
-                        onPreview()
+                    when (val outcome = decidePhotoImport(result.value)) {
+                        is PhotoImportOutcome.Preview -> {
+                            // 四选一：保持今天的行为 —— 图进预览屏之后就没用了，删掉
+                            file.delete()
+                            importViewModel.loadPlan(outcome.plan)
+                            onPreview()
+                        }
+
+                        is PhotoImportOutcome.Fallback -> {
+                            // 不删图：这张照片就是错题本的图片。文本可能有上千字，走应用内单槽
+                            // 而不是导航参数（Binder 事务上限，见 MistakeCaptureHandoff）。
+                            MistakeCaptureHandoff.stash(file, outcome.text)
+                            Toast.makeText(
+                                context,
+                                "这页不是四选一格式，已转到错题本，可在那儿保存",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            onFallbackToMistake()
+                        }
+
+                        PhotoImportOutcome.Empty -> {
+                            file.delete()
+                            Toast.makeText(
+                                context,
+                                "没认出题目，一行一题写「题干 | 选项 | 答案」再重拍试试",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
                     }
                 }
 
