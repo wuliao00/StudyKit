@@ -89,12 +89,12 @@ check_copied_string "confusableDrillTip() 的会话内提示整句" \
   "app/src/test/java/com/studykit/ui/study/QuestionQueuePlannerTest.kt"
 
 check_copied_string "semanticInterleaveHint() 设置行说明整句·前半段" \
-  "把题面文字上就很像的题尽量隔开几道出；同一轮里已经出现的同一学科同考点题，会尽量隔三到五题再遇一次" \
+  "把题面意思相近的题尽量隔开几道出；同一轮里已经出现的同一学科同考点题，会尽量隔三到五题再遇一次" \
   "app/src/main/java/com/studykit/ui/study/QuestionQueuePlanner.kt" \
   "app/src/test/java/com/studykit/ui/study/QuestionQueuePlannerTest.kt"
 
 check_copied_string "semanticInterleaveHint() 设置行说明整句·后半段" \
-  "挪不开就照原样出。判据是题干文字与考点标签，不联网、不装额外东西。关掉这一层就只按学科打散。" \
+  "挪不开就照原样出。判据是端侧模型算出的题干相似度，不联网、不装额外东西。关掉这一层就只按学科打散。" \
   "app/src/main/java/com/studykit/ui/study/QuestionQueuePlanner.kt" \
   "app/src/test/java/com/studykit/ui/study/QuestionQueuePlannerTest.kt"
 
