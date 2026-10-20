@@ -63,9 +63,9 @@ jobs:
       - name: Lint, unit tests and debug build
         run: ./gradlew lint testDebugUnitTest assembleDebug
 
-      # 只编译 androidTest 源集，不执行：这些用例（设备基准 + 真实 Activity 冒烟）从未在任何设备上跑过。
-      # **运行**它们需要设备/模拟器作业（:app:connectedDebugAndroidTest），本仓暂时没有那个作业，
-      # 这里也不写一个没人验证过的 emulator job —— 本闸只能证明它们编得起来。
+      # 只编译 androidTest 源集，不执行：这些用例（设备基准 + 真实 Activity 冒烟）已于
+      # 2026-10-20 在真机上手工跑过一次（读数见 CHANGELOG 的 [3.0.0] 段）；**运行**它们仍需设备/
+      # 模拟器作业（:app:connectedDebugAndroidTest），本仓暂时没有那个作业，这里仍只证明它们编得起来。
       - name: Compile instrumented tests (androidTest, no device)
         run: ./gradlew :app:assembleDebugAndroidTest
 

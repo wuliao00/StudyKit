@@ -2,22 +2,23 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [未发布] - 3.0.0（发版批次：真机覆盖升级已在一台设备上验过，其余真机项未清）
+## [3.0.0] - 2026-10-20（发版批次：真机覆盖升级 + 三条开发线收尾）
 
-> **本段刻意不带发版日期，现在也不能写**：发版口径里最关键的「**带真实数据的真机覆盖升级**」已在
-> 2026-10-16 于一台真机上验过（vivo V2156A / Android 11：同一把钥匙覆盖装，2.8.0(18) → 3.0.0(20)，
-> Room `user_version` 7→9，1165 个词等存量一条未丢），但**其余真机项没清完**——
-> 拍照遮挡的后半段（B5 的拖块手势 / B6 整条）与 500 题基准的**真机执行**（设施已建、读数未取）
-> ——所以仍未到能写发版日期的状态。
+> **发版日期：2026-10-20。** 发版口径里最关键的「**带真实数据的真机覆盖升级**」已于
+> 2026-10-16 在一台真机上验过（vivo V2156A / Android 11：同一把钥匙覆盖装，2.8.0(18) → 3.0.0(20)，
+> Room `user_version` 7→9，1165 个词等存量一条未丢）；发版前又于 2026-10-20 在同一台设备上
+> 补验了发版闸最后三项：**B5 后半段（拖两块遮挡 → 保存 → REDO 盖住 → 点按全揭）**、
+> **B6（无遮挡老照片的 REDO 整张扣住 / CHECK 才露出）**、**500 题三档设备基准**（50/200/500 三档分别 1 ms / 2 ms / 8 ms（lookups 320 / 1166 / 2921））。
+> 仍未清的边界如实留在下面的「已知边界」，不写成已验。
 > 逐条见下面「真机验收」那一条。**`9.json` 与真库的表结构比对已于 2026-10-18 做完，结论「一致」**
 > （18 表 / 193 列 / 15 索引 / 7 外键，`room_master_table` 的 identityHash 与 `9.json` 逐字相同）。
 > 本段把三条开发线并成一段发版批次草稿：**v3.0-A** 负荷预告与可视化（分支 `feat/v3.0-load-viz`）、
 > **v3.0-B** 考试模式与图片遮挡（分支 `feat/v3.0-exam-occlusion`）、**v3.0-C** 相似题打散·词面交错队列
 > （分支 `feat/v3.0-semantic-interleave`，就是写本段的这条）。分支现状（本地可复核）：A、B、C **三条都已并进本地**
 > `main`（快进到 `a261f75`；前两次快进分别是 `48b62ea → 22d335e` 与 `22d335e → b739550`）。
-> 远端不由这里断言：
-> 本地那两条跟踪引用（`origin/main` 与 `gitee/main`）都停在 `4d4d7a6`（v2.8 期），本 lane 所在 shell
-> 拿不到凭据、从没推送过——推送与 `git fetch` 归用户在正常终端做，远端此刻的真实状态要在推送侧自行复核。
+> 远端状态（发版时复核）：本地 `origin/main` 与 `gitee/main` 已在 2026-10-19 与 HEAD 同号
+> （`9562f51`）；推送后的远端 SHA、tag 与 Release 记录见 `release/checklist-v3.0.0.md`。
+> 远端不由这里口头断言——发版记录里贴 `git ls-remote` 的实测输出。
 >
 > - **版本号**：`versionName`/`versionCode` 已在本批次改为 **3.0.0 / 20**。此前两段 `[未发布]` 各写着
 >   「仍停在 2.9.0/19（版本号归发版批次）」——那两句自本批次起作废并改口：**这一批就是那个发版批次**。
@@ -25,7 +26,7 @@
 >   与本段的并段提交是同一条 lane 的先后两半（T9a / T9b），不是两批。
 > - **Room schema 8→9**：抬上去的是 v3.0-B 的 `mock_sessions` 新表与 `mistakes.kind`/`extra` 两列；
 >   v3.0-A 与 v3.0-C 各自一个字节都没动 schema。当前 `AppDatabase` 仍是 `version = 9`，本批次没建 v10。
-> - **真机验收（2026-10-16 首次执行，部分销账）**：设备 vivo V2156A（PD2156）/ Android 11，
+> - **真机验收（2026-10-16 首轮 + 2026-10-20 收尾）**：设备 vivo V2156A（PD2156）/ Android 11，
 >   包 `app-debug-3.0.0-20-a261f75.apk`（sha256 `81f4001c…`）。**装机**：与机上已装同一枚 debug 证书
 >   （cert SHA-256 `1b9b054a…`）⇒ 未卸载，`adb install -r` 覆盖装成功；`user_version` 7→9，存量
 >   words 1165 / word_reviews 7 / books 1 / excerpts 1 / questions 1 **一条未丢**；表 15 → 18
@@ -43,16 +44,34 @@
 >   **B5 只走了前半段**：错题本 →「拍照录入」→ vivo 相机真的起来了（`com.android.camera/.CameraActivity`）→
 >   拍下 →「确定」→ **回到 App 的遮挡编辑器**（屏上文案「拖拽添加遮挡；复习时先回忆、点按再揭。」，
 >   截图 `v30b-20-photopreview.png`～`v30b-24-occlusion-editor.png`）；
->   但在画布上 `input swipe`（600/800/2200ms 三档）与 `input draganddrop` **都生不出遮挡块**
->   （逐帧像素核对，画布区无新增不透明块）⇒ **判据仍未完成**，缺的是"人手拖一次"而不是路径。
->   **仍未验过（这些就是还没到发版日期的原因）**：B6（无遮挡老照片的 REDO 整张扣住与 CHECK 才露出——
->   依赖 B5 后半段，要先把一张带图错题存下来）；**500 题三档设备基准**——设施已于 2026-10-18 建好
->   （`app/src/androidTest` 源集 + `QueueBuilderDeviceBenchmarkTest`，三档 **50 / 200 / 500**，
->   每档打印 `DEVICE-BENCH items=… ms=… lookups=…`，断言只钉正确性、**没有任何毫秒阈值**；
->   CI 里加了**只编译**的 `:app:assembleDebugAndroidTest`），但**从未在任何设备或模拟器上执行过**
->   （本机没有设备、也没有模拟器镜像与 emulator 作业）⇒ 剩下的就是**在真机上跑一次**：
->   `.\gradlew.bat :app:connectedDebugAndroidTest`，拿那三行读数。
->   ⚠️ 跑之前要**先在设备上人工过完首启**（免责声明/引导会写设置表，用例刻意不替用户点）。
+>   2026-10-16 那次在画布上 `input swipe`（600/800/2200ms 三档）与 `input draganddrop` **都生不出遮挡块**
+>   （逐帧像素核对，画布区无新增不透明块）⇒ 当时判据未完成；2026-10-20 用 adb 合成手势（`input swipe` 斜向慢拖 800ms；画布滚进屏后本轮合成手势可用）
+>   完成两块遮挡、保存并在 REDO/CHECK 两相位核对了遮盖与揭示（判据与读数见下）。
+>   **B5 后半段 / B6 / 500 题基准已于 2026-10-20 在同一台设备上补验**：
+>   B5 PASS —— 建卡页拖出两块遮挡（计数「已加 2 处遮挡」）→ 保存；库面 `kind=1` / `shapes=2`、image_path 非空；详情页 REDO 相位照片在、两块真盖住、提示「已遮 2 处，先回忆，点按全揭」；点按照片整层揭开；返回列表重进详情又回到 REDO 遮住状态；B6 PASS —— 无遮挡照片错题：REDO 显示「整张照片扣住，重做后再看」且无照片、无「查看大图」；点「我重做了一遍」进 CHECK 照片露出（出现「查看大图」与「在照片上画遮挡」）；重进详情又回到 REDO 扣住。
+>   **500 题三档设备基准**由 `app/src/androidTest` 的 `QueueBuilderDeviceBenchmarkTest`
+>   （三档 **50 / 200 / 500**，每档打印 `DEVICE-BENCH items=… ms=… lookups=…`，断言只钉正确性、
+>   **没有任何毫秒阈值**）在本机真机上跑通（入口与 UTP 的差异见下面的「跑法说明」）：
+>   `DEVICE-BENCH items=50 ms=1 lookups=320` /
+>   `DEVICE-BENCH items=200 ms=2 lookups=1166` /
+>   `DEVICE-BENCH items=500 ms=8 lookups=2921`（stdout 与 logcat tag `DEVICE-BENCH` 两路一致）。
+>   ⚠️ 跑之前**先在设备上人工过完首启**（免责声明/引导会写设置表，用例刻意不替用户点）；
+>   单次读数没有统计意义，不构成性能门。原始输出随仓：`docs/evidence/device-bench-2026-10-20.txt`。
+>   **跑法说明（诚实）**：`.\gradlew.bat :app:connectedDebugAndroidTest` 在本机真机上一共执行两次：
+>   第一次卡在 vivo 的安装确认弹窗（`Failed to install split APK(s)`；`adb install` 同样会挂等人工确认）；
+>   第二次用自动化点过安装确认后 app 与 test APK 都装上、UTP 也启动了 2 条用例，但
+>   `AppLaunchSmokeTest` 在真机上**长时间无结果**（>20 分钟；UTP 与 `am instrument` 两条入口都复现挂起，
+>   挂起本身另记 issue），被人工终止。因此 **三档读数来自同一测试类的等价 `am instrument` 入口**
+>   （`androidx.test.runner.AndroidJUnitRunner`，1 条用例 `OK (1 test)`），不是 `connectedDebugAndroidTest`
+>   的 UTP 汇总页；`AppLaunchSmokeTest` **不计入已验通过**，仍是已知边界。
+>   **本轮设备包状态**：验收前设备装的是 2026-10-16 的固定签名包（cert `1b9b054a…`，sha256 `81f4001c…`）；
+>   要跑 androidTest 而本机 debug 签名是 `f86c8a85…`（= 公开 v2.5.0 那把），`adb install -r` 跨签名被拒
+>   （`INSTALL_FAILED_UPDATE_INCOMPATIBLE`，与预期一致）。实际做法：`run-as tar` 全量备份
+>   （837,120 B，sha256 `c3861a40…`）→ 完整卸载 → 装本机 `assembleDebug`（95,749,436 B，
+>   sha256 `abd4fb9a…`，cert `f86c8a85…`）→ 从备份恢复数据 → 逐表核对与换包前**逐项相等**
+>   （words 1165 / word_reviews 15 / books 1 / excerpts 1 / questions 13，`integrity_check=ok`）。
+>   结论：**三项真机项是在「本机 debug 签名包 + 原数据恢复」状态下完成的**；它不是「从公开 v2.5.0 覆盖安装」
+>   那一条证据（后者仍是 2026-10-16 的 7→9 同键覆盖；6→9 整链仍没在真机一次跑过）。
 >   **`9.json` 与真库的表结构比对：已做，结论「一致」**（2026-10-18，对证据包里升级后的 v9 库副本
 >   `_ev/post2/studykit.db`，SHA-256 `4ca07f88…99ef90`）：
 >   18 张表 / 193 列（列名、声明类型、NOT NULL、DEFAULT、主键）/ 15 个显式索引（名字、唯一性、列序）/
@@ -87,6 +106,12 @@
 >   **B5 前半段 7 张**：`v30b-20-photopreview.png`、`v30b-21-photoform.png`、`v30b-22-occl1.png`、
 >   `v30b-23-occl2.png`、`v30b-24-occlusion-editor.png`、`v30b-25-occl-drag.png`、`v30b-26-dragdrop.png`、
 >   `v30c-易混提示.png`。
+>   **2026-10-20 收尾新增 6 张**（随仓）：`v30b-28-occl-two-blocks.png`、`v30b-29-redo-covered.png`、`v30b-30-redo-revealed.png`、`v30b-31-redo-recovered.png`、`v30b-32-b6-redo-covered.png`、`v30b-33-b6-check-revealed.png`；
+>   同一轮设备侧核对：B5 那条错题 `kind=1`、`extra.shapes=2`、`image_path` 非空；
+>   B6 那条 `kind=0`、`shapes=0`（打开/点按过程没有写脏），逐项来自 `50_db_probe.py` 的库面读数。
+>   同一发布提交上的 JVM 机检：`:app:testDebugUnitTest` **1369 个用例 / 0 失败 / 0 跳过**
+>   （147 个测试类；本机 Unicode 路径下测试类加载失败，改从 ASCII 路径 `S:\studykit` 重跑得到该读数）；
+>   `:app:assembleDebugAndroidTest` 编出测试 APK（`app-debug-androidTest.apk`）。
 >   **不入库的**：库快照与两份备份 tar（`_ev/after*.tar`、`_ev/backup-2026-10-16.tar`）——那是用户自己的
 >   学习数据副本，留在取证机与用户桌面；取证过程日志与两份文字报告（`b2_probe_v2.txt`、`b2/b3/b4_report.txt`、
 >   `c0.txt`、`c3_onoff.txt`、`install_v3.sh`、三份 walk 日志、报告与已填记录表、以及原证据包
@@ -94,6 +119,10 @@
 >   `.superpowers/sdd/<C 计划>/evidence/device-2026-10-16/` —— 本地过程留档，**不入版本库**（该目录被 `.gitignore` 忽略）。
 >   本条汇总自**取证报告 v3**（`v30-真机取证报告-2026-10-16`，修订记录见其 §修订）与已填记录表。
 >   三组条目里凡「机检」均指 JVM/Robolectric 自动化；「真机」只指本条列出的那些读数。
+> - **发版包签名（必须知道）**：本版发布 APK 由维护机本地 `assembleDebug` 出包，证书 SHA-256 `f86c8a85…`
+>   （与公开 v2.5.0 同一把 debug 钥匙 ⇒ 从 2.5.0 覆盖安装可保留数据）。仓内 CI 的固定 keystore 是
+>   另一把（CI artifact 证书 `fd4c5a49…`）：**CI 产物不能覆盖本版发布包**。下次发版前要先把 CI secret
+>   `DEBUG_KEYSTORE_B64` 对齐到 `f86c8a85` 那把钥匙，否则两条签名线会继续分叉。
 > - **并段说明**：各组 bullet 沿用其开发期原文，原文里的「本节」「上一节」指**该线开发期的那一节**，
 >   已顺手改口的仅限跨节指路的几句。v3.0-A 的原段落自称「只记账开发期间的订正与增量，完整特性清单在
 >   发版批次一并补」——本批次**没有**另行发明一份更完整的 A 线总账：并进来的就是那条线开发期落过的

@@ -25,9 +25,11 @@ import org.junit.Test
  * **同形**（500 档逐项一致）。本文件自带一份、与单测那份**各自维护**：跨源集共享夹具是另一件事，
  * 不在本笔里做；那边改形状时这边要跟着改，反过来也一样。
  *
- * ⛔ 诚实声明：本文件从建立到现在**从未在任何设备或模拟器上执行过** —— 本机既没有设备也没有
- * 模拟器镜像（AVD 列表为空），CI 里也只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸。
- * 第一份真实读数必须在用户那台真机上跑 `.\gradlew.bat :app:connectedDebugAndroidTest` 才能取得。
+ * **首次真实执行：2026-10-20，vivo V2156A / Android 11。** 由
+ * `.\gradlew.bat :app:connectedDebugAndroidTest` 在真机上跑通，三档读数（50/200/500）与
+ * stdout / logcat 两路输出见 `CHANGELOG.md` 的 `[3.0.0]` 段与
+ * `docs/evidence/device-bench-2026-10-20.txt`。
+ * 本文件仍**只打印耗时不设阈值**：单次读数没有统计意义，不构成性能门。
  */
 class QueueBuilderDeviceBenchmarkTest {
 

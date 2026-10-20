@@ -1,0 +1,17 @@
+StudyKit v3.0 真机设备基准（DEVICE-BENCH）原始读数
+device : vivo V2156A (PD2156) / Android 11 / SDK 30 / serial 35152127910030J
+date   : 2026-10-20 12:06 (Asia/Shanghai)
+apk    : app-debug.apk 95,749,436 B  sha256 abd4fb9a80c53ada08ec2ed5f0aac4ace3d5775c2782ec1ca683ac094b9b6cb1  (cert f86c8a85…)
+entry  : adb shell am instrument -w -r -e class com.studykit.ui.study.QueueBuilderDeviceBenchmarkTest com.studykit.test/androidx.test.runner.AndroidJUnitRunner
+
+=== logcat tag DEVICE-BENCH（三行，原样）===
+10-20 12:06:44.292 12468 12493 I DEVICE-BENCH: DEVICE-BENCH items=50 ms=1 lookups=320
+10-20 12:06:44.314 12468 12493 I DEVICE-BENCH: DEVICE-BENCH items=200 ms=2 lookups=1166
+10-20 12:06:44.343 12468 12493 I DEVICE-BENCH: DEVICE-BENCH items=500 ms=8 lookups=2921
+
+=== am instrument stdout（结果节选）===
+Time: 0.096
+OK (1 test)
+INSTRUMENTATION_CODE: -1
+
+NOTE: 该读数只打印、不设毫秒阈值（用例设计如此）；单次读数没有统计意义，不构成性能门。
