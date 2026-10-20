@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "3.0.0"
+        versionCode = 21
+        versionName = "3.1.0-alpha1"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。
@@ -142,6 +142,14 @@ android {
             "boolean",
             "SEED_SYNTH_LOG",
             "${project.findProperty("seedSynth") == "true"}",
+        )
+
+        // v3.1 模型包分区开关，**默认关**：五个包都未上架，发版构建不露出空壳 UI。
+        // 本地预览：./gradlew assembleDebug -PmodelPackUi=true
+        buildConfigField(
+            "boolean",
+            "MODEL_PACK_UI",
+            "${project.findProperty("modelPackUi") == "true"}",
         )
     }
 

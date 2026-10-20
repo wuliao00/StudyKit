@@ -271,6 +271,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ![重做阶段：照片上的两块被盖住](docs/screenshots/v30b-29-redo-covered.png)
 
+### v3.1（开发中）：模型包管理地基
+
+> **这里没有 AI 功能可用。** v3.1 的目标是五个可选模型包（解释 / 朗读 / 背诵验收 / 高配结构 / 去手写），
+> 需要模型产线与端侧运行时；本轮只落地共同的模型包管理：清单校验、下载、sha256 校验、安装/删除、
+> 600MB 预算守卫，以及设置页「模型包（可选）」分区（默认构建开关关闭）。
+> 机检通过、**未做真机验证**；计划与边界见 [`docs/superpowers/plans/2026-10-19-studykit-v3.1-plan.md`](docs/superpowers/plans/2026-10-19-studykit-v3.1-plan.md)。
 ## 🙏 致谢
 
 部分功能交互参考了「小计划」应用（com.bakira.plan）与「作业帮」，**仅借鉴功能形态、未使用其任何代码**，特此致谢。
