@@ -217,6 +217,9 @@ dependencies {
     // `Unable to resolve activity for Intent { cmp=com.studykit/...ComponentActivity }`，
     // 看着像断言失败，其实一个测试都没跑起来（见 robolectric/robolectric#4736）。
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // 真模型测试：Robolectric 跑在宿主 JVM 上，`onnxruntime-android` 的 .so 是 Android ABI
+    // 原生库，JVM 加载不了；这一坐标只给测试 classpath 提供桌面版原生库（版本与 Android 侧对齐）。
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.29.0")
 
     // ── instrumented tests（app/src/androidTest）────────────────────────────
     // 这个源集是 v3.0-C 第 8 条欠账的补课：设备基准（50/200/500 三档）与一条真实 Activity 冒烟。
@@ -234,6 +237,16 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }
 
+// 单元测试的 classpath 上，`onnxruntime-android`（AAR）与桌面版 `onnxruntime`（JAR）提供同一批
+// `ai.onnxruntime.*` 类；JVM 只认先出现的那一份，而 AAR 里的 .so 是 Android ABI，宿主 JVM 加载不了。
+// 真模型测试必须用桌面 JAR，所以**只从测试的两条 classpath** 里排掉 AAR；生产编译与 instrumented
+// 测试仍走 `onnxruntime-android`，Android 侧依赖和版本一行没动。
+configurations.configureEach {
+    if (name == "debugUnitTestCompileClasspath" || name == "debugUnitTestRuntimeClasspath") {
+        exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
+    }
+}
+
 // 测试失败时把完整堆栈打到 CI 控制台。默认只给一个异常类名，等于每排查一次就要重跑一轮构建
 // —— 而本仓唯一的执行器是 CI，一轮七八分钟，看不见的失败就是白跑。
 tasks.withType<Test>().configureEach {
@@ -242,4 +255,10 @@ tasks.withType<Test>().configureEach {
         showStackTraces = true
         events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
     }
+    // 环境修法，不是放宽断言：本机 TMP/TEMP 指向 `C:\Windows\Temp`（Gradle 已经报过
+    // `Failed to open directory: C:\Windows\Temp`），而 ONNX Runtime 的桌面 JAR 会把
+    // 原生库解压到 `java.io.tmpdir`。指到构建目录内，避免写系统临时目录、也避免解压失败。
+    val testTmpDir = layout.buildDirectory.dir("tmp/unit-test").get().asFile
+    doFirst { testTmpDir.mkdirs() }
+    systemProperty("java.io.tmpdir", testTmpDir.absolutePath)
 }
