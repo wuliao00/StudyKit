@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "3.0.0"
+        versionCode = 21
+        versionName = "3.1.0"
         // instrumented test 的执行器。本机没有设备也没有模拟器镜像，CI 里只有
         // `:app:assembleDebugAndroidTest` 这条「只编译」的闸 —— 这些用例**从未在设备上执行过**，
         // 真跑是 `:app:connectedDebugAndroidTest`（需要接到一台设备/一个模拟器）。
@@ -219,7 +219,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     // 真模型测试：Robolectric 跑在宿主 JVM 上，`onnxruntime-android` 的 .so 是 Android ABI
     // 原生库，JVM 加载不了；这一坐标只给测试 classpath 提供桌面版原生库（版本与 Android 侧对齐）。
-    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.29.0")
+    testImplementation(libs.onnxruntime)
 
     // ── instrumented tests（app/src/androidTest）────────────────────────────
     // 这个源集是 v3.0-C 第 8 条欠账的补课：设备基准（50/200/500 三档）与一条真实 Activity 冒烟。
