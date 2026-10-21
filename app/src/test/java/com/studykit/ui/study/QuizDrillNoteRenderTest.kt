@@ -9,13 +9,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
 import com.studykit.data.entity.Question
@@ -53,7 +51,7 @@ import org.robolectric.annotation.GraphicsMode
  * `glass = OFF` + `reduceMotion = true` 让按压 spring 不建补间，测试才等得到 idle。
  *
  * ## 位置
- * 答完后「下一题」那颗按钮在长滚动列的折叠线以下 —— 先 `performScrollToNode` 再点（口径同
+ * 答完后「下一题」那颗按钮现在钉在底部操作条里（v3.3），直接点即可（旧版要先滚到折叠线以下；
  * [MockExamRenderTest]），不然失败原因是"看不见"而不是被测行为不对。提示行本身在题目**之上**，
  * 不需要滚动就能断言。
  */
@@ -137,8 +135,7 @@ class QuizDrillNoteRenderTest {
         // 答完这一题仍然不许挂提示——提示说的是"下一张与上一张像"，挂在刚答过的这张上是剧透
         composeRule.onNodeWithTag(QuizDrillNoteTag, useUnmergedTree = true).assertDoesNotExist()
 
-        // 前进到第 2 题（既有的答题姿势：先滚到折叠线以下的「下一题」再点）
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("下一题"))
+        // 前进到第 2 题：v3.3 起「下一题」钉在底部操作条里，不再需要先滚到底
         composeRule.onNodeWithText("下一题").performClick()
         composeRule.waitForIdle()
 

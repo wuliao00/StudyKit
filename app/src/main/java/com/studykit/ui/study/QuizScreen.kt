@@ -1,13 +1,16 @@
 package com.studykit.ui.study
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,15 +18,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -54,6 +62,7 @@ import com.studykit.data.entity.Question
 import com.studykit.data.memory.Confidence
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.QuizOptionState
 import com.studykit.ui.components.QuizOptionTile
@@ -151,6 +160,31 @@ fun QuizScreen(
 
         if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
 
+        // v3.3：进度不再只靠右上角那行「第 x / y 题」—— 一条 3dp 的细进度条让
+        // 「还剩多少」在一眼之内可读，且不抢题干。与 CardStudyScreen 的进度条同一形态。
+        if (state.started && !state.finished) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            val progress by animateFloatAsState(
+                targetValue = if (state.total == 0) 0f else state.index.toFloat() / state.total,
+                animationSpec = MotionSpec.ring,
+                label = "quizProgress",
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(colors.divider.copy(alpha = 0.55f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .background(colors.accentInk, RoundedCornerShape(2.dp)),
+                )
+            }
+        }
+
         val current = state.current
         when {
             state.finished -> QuizResult(
@@ -224,11 +258,18 @@ private fun SubjectPicker(
                         Text(
                             text = MIXED_SUBJECT_LABEL,
                             style = texts.cardTitle,
-                            modifier = Modifier.weight(1f),
                         )
-                        Text(
-                            text = "开始混合练习",
-                            style = texts.caption.copy(color = colors.accentInk),
+                        Spacer(Modifier.width(AppTheme.space.sm))
+                        AppPill(
+                            container = colors.accentSoft,
+                            ink = colors.accentInk,
+                            label = "推荐",
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = colors.accentInk,
                         )
                     }
                     Spacer(Modifier.height(AppTheme.space.xs))
@@ -286,15 +327,32 @@ private fun SubjectPicker(
                         .clickable { onPick(subject) },
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 学科首字做成一枚圆形标识：一列同形卡片里，扫视时先认字再读标题。
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(colors.accentSoft),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = subject.take(1),
+                                style = texts.cardTitle.copy(
+                                    color = colors.accentInk,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                        }
+                        Spacer(Modifier.width(AppTheme.space.md))
                         Text(
                             text = subject,
                             style = texts.cardTitle,
                             modifier = Modifier.weight(1f),
                         )
-                        // accent 作文字色在白底只有 3.04:1，按 T1 裁定走 accentInk
-                        Text(
-                            text = "开始练习",
-                            style = texts.caption.copy(color = colors.accentInk),
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = colors.secondaryText,
                         )
                     }
                 }
@@ -431,10 +489,13 @@ private fun QuestionView(
     // 选择题是“选中即提交”，所以信心行①在选项之上、②点选项时把当前 conf 一起带走；答后仍读它驱动超纠正 Tip。
     var conf by remember(question.id) { mutableStateOf<Confidence?>(null) }
 
+    // v3.3：作答后把「下一题」钉在底部 —— 解析可能很长，主行动不该被滚出屏幕。
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = if (answered) 84.dp else AppTheme.space.lg),
     ) {
         Spacer(Modifier.height(AppTheme.space.md))
         Text(
@@ -505,12 +566,22 @@ private fun QuestionView(
                 }
             }
             if (hintLevel < HINT_TIER_COUNT) {
-                AppButton(
-                    text = if (hintLevel == 0) "给点提示" else "再往前推一步（第 ${hintLevel + 1} / $HINT_TIER_COUNT 档）",
-                    secondary = true,
-                    onClick = { hintLevel = nextHintLevel(hintLevel) },
-                )
-                Spacer(Modifier.height(AppTheme.space.sm))
+                // 提示是二级动作：不再占一整条描边按钮（那会和"点选项作答"抢视觉），
+                // 收成右下角的一枚文字按钮，仍保留可点区域与同一句文案。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = { hintLevel = nextHintLevel(hintLevel) }) {
+                        Text(
+                            text = if (hintLevel == 0) "给点提示" else "再往前推一步（第 ${hintLevel + 1} / $HINT_TIER_COUNT 档）",
+                            style = texts.aux.copy(
+                                color = colors.accentInk,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        )
+                    }
+                }
             }
         }
 
@@ -560,7 +631,16 @@ private fun QuestionView(
                     TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
                 }
             }
-            Spacer(Modifier.height(AppTheme.space.md))
+        }
+    }
+    if (answered) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(colors.background.copy(alpha = 0.96f))
+                .padding(top = AppTheme.space.sm),
+        ) {
             AppButton(
                 text = if (isLast) "查看结果" else "下一题",
                 onClick = {
@@ -571,7 +651,7 @@ private fun QuestionView(
                 },
             )
         }
-        Spacer(Modifier.height(AppTheme.space.lg))
+    }
     }
 }
 
@@ -651,8 +731,10 @@ private fun QuizResult(
             )
         }
         Spacer(Modifier.height(AppTheme.space.lg))
-        AppButton(text = "返回", onClick = onBack)
+        // v3.3：主行动是"继续练"而不是"离开"—— 结果页最常见的意图是再来一轮；
+        // 返回收成次级描边，和全 app「一屏一个实心」的口径一致。
+        AppButton(text = "再来一轮", onClick = onRestart)
         Spacer(Modifier.height(AppTheme.space.md))
-        AppButton(text = "换个学科再来一轮", secondary = true, onClick = onRestart)
+        AppButton(text = "返回", secondary = true, onClick = onBack)
     }
 }

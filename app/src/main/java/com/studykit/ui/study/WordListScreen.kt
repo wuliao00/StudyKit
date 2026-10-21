@@ -191,21 +191,55 @@ fun WordListScreen(
         }
 
         Spacer(Modifier.height(AppTheme.space.md))
-        AppButton(
-            text = "开始学习（今日待复习 ${home.dueCount} 个）",
-            onClick = onStartStudy,
-        )
-        Spacer(Modifier.height(AppTheme.space.md))
-        AppButton(
-            text = if (ocrRunning) "识别中…" else "截图取词",
-            secondary = true,
-            enabled = !ocrRunning,
-            onClick = {
-                pickImage.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        // v3.3：把「开始学习」做成这一屏唯一的一张重点卡 —— 大数字 + 一句状态 + 实心主行动；
+        // 「截图取词」降为右下角文字动作，不再和主行动各占一条整宽按钮。
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = "今日待复习", style = texts.caption)
+                    Spacer(Modifier.height(AppTheme.space.xs))
+                    Text(text = "${home.dueCount} 个", style = texts.statValue)
+                    Spacer(Modifier.height(AppTheme.space.xs))
+                    Text(
+                        text = if (home.dueCount == 0) "今天没有到期的词，想练可以补一轮"
+                        else "按到期顺序推进，背完自动排下一次",
+                        style = texts.caption,
+                    )
+                }
+                Spacer(Modifier.width(AppTheme.space.md))
+                Icon(
+                    imageVector = Icons.Outlined.Star,
+                    contentDescription = null,
+                    tint = colors.accentInk.copy(alpha = 0.55f),
                 )
-            },
-        )
+            }
+            Spacer(Modifier.height(AppTheme.space.md))
+            AppButton(
+                text = "开始学习（${home.dueCount} 个）",
+                onClick = onStartStudy,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(
+                    enabled = !ocrRunning,
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                ) {
+                    Text(
+                        text = if (ocrRunning) "识别中…" else "截图取词",
+                        style = texts.aux.copy(
+                            color = if (ocrRunning) colors.secondaryText else colors.accentInk,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(AppTheme.space.md))
 
         if (words.isEmpty()) {
@@ -226,20 +260,22 @@ fun WordListScreen(
                             .fillMaxWidth()
                             .animateItem(),
                     ) {
+                        // v3.3：两行式 —— 第一行词头（主）+ 熟练度；第二行释义（次）。
+                        // 旧版三者挤一行，释义被压成省略号，扫读时反而先看到状态标签。
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = word.word,
                                 style = texts.cardTitle,
-                            )
-                            Spacer(Modifier.width(AppTheme.space.md))
-                            Text(
-                                text = word.meaning,
-                                style = texts.caption,
-                                maxLines = 1,
                                 modifier = Modifier.weight(1f),
                             )
                             WordStatusIndicator(word.status)
                         }
+                        Spacer(Modifier.height(AppTheme.space.xs))
+                        Text(
+                            text = word.meaning,
+                            style = texts.caption,
+                            maxLines = 2,
+                        )
                     }
                 }
                 item { Spacer(Modifier.height(AppTheme.space.md)) }
