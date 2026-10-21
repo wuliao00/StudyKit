@@ -69,6 +69,7 @@ import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.ConfirmDialog
+import com.studykit.modelpack.ModelPackCopy
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.optimize.CalibrateViewModel
 import com.studykit.ui.optimize.CalibrationCard
@@ -845,6 +846,11 @@ fun SettingsScreen(
                     style = texts.caption.copy(color = if (failed) colors.warningInk else colors.secondaryText),
                 )
             }
+        }
+
+        if (BuildConfig.MODEL_PACK_UI) {
+            SectionHeader(title = ModelPackCopy.sectionTitle(), modifier = Modifier.padding(top = AppTheme.space.lg))
+            ModelPackSettingsEntry()
         }
 
         SectionHeader(title = "关于与支持", modifier = Modifier.padding(top = AppTheme.space.lg))

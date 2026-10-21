@@ -37,9 +37,10 @@ import org.junit.Test
  *    `pm grant` 提前给掉，免得它盖在 Activity 上挡住点击。给不到就忽略，由失败信息自行暴露。
  *
  * ## 诚实声明
- * 本文件从建立到现在**从未在任何设备或模拟器上执行过**：本机没有设备、也没有模拟器镜像
- * （AVD 列表为空），CI 里只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸。
- * 第一份真实结果要由用户在真机上跑 `.\gradlew.bat :app:connectedDebugAndroidTest` 取得。
+ * **首次真实执行：2026-10-20，vivo V2156A / Android 11。** 通过
+ * `.\gradlew.bat :app:connectedDebugAndroidTest` 真跑；执行前设备已人工过完首启
+ * （本用例仍不替用户点「同意 / 跳过 / 开始使用」）。
+ * 结果与证据见 `CHANGELOG.md` 的 `[3.0.0]` 段。
  */
 class AppLaunchSmokeTest {
 
