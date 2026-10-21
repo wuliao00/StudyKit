@@ -1,8 +1,11 @@
 package com.studykit.ui.study
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,17 +28,21 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -57,11 +63,10 @@ import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EntryMenuButton
 import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
-import com.studykit.ui.components.StatTile
-import com.studykit.ui.components.StatTileTier
 import com.studykit.ui.components.TipCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.StaggeredIn
+import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
 
@@ -151,12 +156,16 @@ fun StudyHomeScreen(
         if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
 
         Spacer(Modifier.height(AppTheme.space.md))
-        TodayHeroCard(
-            todayDone = state.todayDone,
-            dueCount = state.dueCount,
-            streakDays = state.streakDays,
-            onStart = onOpenWords,
-        )
+        // v3.2：hero 也加入同一支入场序列（原来是"整块瞬间出现"），
+        // 下面三张入口卡顺延 1/2/3 级；每级 40ms，展开时像光先把主卡点亮。
+        StaggeredIn(index = 0) {
+            TodayHeroCard(
+                todayDone = state.todayDone,
+                dueCount = state.dueCount,
+                streakDays = state.streakDays,
+                onStart = onOpenWords,
+            )
+        }
 
         // 连续满 21 天那次的一次性提醒（hero 正下方，紧贴火焰徽章的语义落点）。
         // 走现成的 TipCard，不新增颜色；文案与证据都由 StudyTips 单点维护。
@@ -168,32 +177,16 @@ fun StudyHomeScreen(
         }
 
         Spacer(Modifier.height(AppTheme.space.md))
-        // 三块磁贴全部走 Reference 档：这屏的第一等重点已经在上面那块（今日待办 + 主行动），
-        // 这里只放"查得到"的参考数字。原来三块等重的 34sp 大数把顶部压成了一排同样重的白板，
-        // 重点浮不出来（2026-09-26 使用者反馈「没有突出重点」）。
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
-            modifier = Modifier.height(IntrinsicSize.Max),
-        ) {
-            StatTile(
-                value = "${state.dueCount}",
-                label = "今日待复习",
-                modifier = Modifier.weight(1f),
-                tier = StatTileTier.Reference,
-            )
-            StatTile(
-                value = "${state.totalCount}",
-                label = "单词总数",
-                modifier = Modifier.weight(1f),
-                tier = StatTileTier.Reference,
-            )
-            StatTile(
-                value = "${state.masteredCount}",
-                label = "已掌握",
-                modifier = Modifier.weight(1f),
-                tier = StatTileTier.Reference,
-            )
-        }
+        // v3.2：三块各自独立的灰卡收成一条数据带 —— 同一张卡面、两枚细分割线。
+        // 三个数从"三块板子"变成"同一组读数"，重点仍由上面的 hero 承担；
+        // 标签在上、数值在下，长值（1165）不再把标签挤成两行。
+        MetricsStrip(
+            items = listOf(
+                "${state.dueCount}" to "今日待复习",
+                "${state.totalCount}" to "单词总数",
+                "${state.masteredCount}" to "已掌握",
+            ),
+        )
 
         // 「明天预计复习 N 词 · 到时候大约还记得 X%」这一行同时兼任记忆看板的入口：
         // 它讲的就是"接下来要还多少债、到时候还剩多少"，点进去看详情是同一个心智动作，
@@ -225,7 +218,7 @@ fun StudyHomeScreen(
         // 「背单词」那张入口卡已删：它的职责被上面 hero 里的实心主行动接手了。
         // 留着的代价是同一屏出现两条通往同一个地方的路，而且那条路和「题库练习」「错题本」
         // 长得一模一样 —— 这屏就不再有一个"该往哪走"的答案。
-        StaggeredIn(index = 0) {
+        StaggeredIn(index = 1) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,
                 iconColor = colors.success,
@@ -254,7 +247,7 @@ fun StudyHomeScreen(
             )
         }
         Spacer(Modifier.height(AppTheme.space.md))
-        StaggeredIn(index = 1) {
+        StaggeredIn(index = 2) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,
                 iconColor = colors.accent,
@@ -265,7 +258,7 @@ fun StudyHomeScreen(
             )
         }
         Spacer(Modifier.height(AppTheme.space.md))
-        StaggeredIn(index = 2) {
+        StaggeredIn(index = 3) {
             EntryCard(
                 icon = Icons.Outlined.Close,
                 iconColor = colors.warning,
@@ -329,6 +322,9 @@ private fun TodayHeroCard(
                     modifier = Modifier.fillMaxSize(),
                     strokeWidth = 9.dp,
                     color = if (progress >= 1f && total > 0) colors.goldInk else colors.accent,
+                    // v3.2：环底从 divider 改成 14% 的主文字色 —— 旧版在夜间那圈几乎看不见，
+                    // 看上去像一条断掉的弧。
+                    trackColor = colors.primaryText.copy(alpha = 0.14f),
                 )
                 // 环心读数用既有的 statValue 原样：这里此前是 `statValue.copy(fontSize = 28.sp)`，
                 // 凭空造了一个刻度外的字号。statValue 本就是「粗体 + (-0.5)sp 字距」的大数字档，
@@ -415,10 +411,21 @@ private fun EntryCard(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val texts = AppTheme.texts
+    // v3.2：入口卡按下时轻微回弹（0.98），与按钮同一套；graphicsLayer 只缩绘制层，不挤邻居。
+    val interaction = remember { MutableInteractionSource() }
+    val scale by rememberPressScale(interaction)
     AppCard(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -442,6 +449,65 @@ private fun EntryCard(
                 Text(text = caption, style = texts.caption)
             }
             trailing?.invoke()
+        }
+    }
+}
+
+/**
+ * 首页的三枚参考读数（v3.2）。三块独立卡片收成一条卡面上的数据带：
+ * 同一张卡、两枚细分割线，标签在上、数值在下。它比三块等重的小卡安静，
+ * 也让「1165」这类长值不再把标签挤成两行（旧版「今日待复习」在窄屏会折行）。
+ * @param items 从左到右的 `数值 to 标签`
+ */
+@Composable
+private fun MetricsStrip(items: List<Pair<String, String>>) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val border = remember(colors.divider) {
+        BorderStroke(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                0f to colors.divider.copy(alpha = 0.90f),
+                1f to colors.divider.copy(alpha = 0.30f),
+            ),
+        )
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(AppTheme.radius.lg),
+        color = colors.card,
+        contentColor = colors.primaryText,
+        border = border,
+        shadowElevation = AppTheme.elevation.none,
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = AppTheme.space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items.forEachIndexed { index, (value, label) ->
+                if (index > 0) {
+                    Box(
+                        Modifier
+                            .width(1.dp)
+                            .height(38.dp)
+                            .background(colors.divider.copy(alpha = 0.65f)),
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = AppTheme.space.sm),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(text = label, style = texts.caption, maxLines = 1)
+                    Spacer(Modifier.height(AppTheme.space.xs))
+                    Text(
+                        text = value,
+                        style = texts.statValue.copy(fontSize = 26.sp),
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }

@@ -22,9 +22,9 @@ import com.studykit.data.AppSettings
  * `accentInk` = accent 的「墨水」变体，专用于纯文字/图标场景（描边按钮文案、空态图标等），
  * 因为浅色主题下 accent(#00A78E) 在白底只有 3.04:1，不满足正文文本 AA。
  *
- * `onAccent` = 实底 accent/accentInk 容器上的文字色：浅色为纯白（accentInk 上 5.81:1），夜间为暖墨
- * `#1C1B18`（accentInk #65D7C2 上 9.88:1，白字只有 1.74:1）。注意 `card` **随主题变化**
- * （light `#FFFFFF` / dark `#26241F`），不能再被当作「白」来给文字着色。
+ * `onAccent` = 实底按钮上的文字色：浅色为纯白（accentInk `#00735F` 上 5.81:1），夜间为近黑墨
+ * `#07110E`（accent `#3ECBB6` 上 9.51:1，白字只有约 2.0:1）。注意 `card` **随主题变化**
+ * （light `#FFFFFF` / dark `#15181D`），不能再被当作「白」来给文字着色。
  *
  * ## 墨水令牌（T15 批次）
  *
@@ -103,15 +103,26 @@ data class AppTexts(
     val statValue: TextStyle, val heroNumber: TextStyle,
 )
 
+/**
+ * 字号阶梯（v3.2 微调）：标题收紧字距、正文降半档、数字统一等宽（`tnum`）——
+ * 等宽数字让「3 / 8」「1165」这类读数在换值时不左右跳，也是这套界面"精密"观感的来源之一。
+ * 只动视觉，不动任何文案；正文从 17 收到 16 是为了让卡片里的行距更从容。
+ */
 fun buildAppTexts(c: AppColors): AppTexts = AppTexts(
-    largeTitle = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, color = c.primaryText),
-    pageTitle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = c.primaryText),
-    cardTitle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, color = c.primaryText),
-    body = TextStyle(fontSize = 17.sp, color = c.primaryText),
-    aux = TextStyle(fontSize = 15.sp, color = c.primaryText),
-    caption = TextStyle(fontSize = 13.sp, color = c.secondaryText),
-    statValue = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp, color = c.primaryText),
-    heroNumber = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp, color = c.primaryText),
+    largeTitle = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp, color = c.primaryText),
+    pageTitle = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp, color = c.primaryText),
+    cardTitle = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.1).sp, color = c.primaryText),
+    body = TextStyle(fontSize = 16.sp, color = c.primaryText),
+    aux = TextStyle(fontSize = 14.sp, color = c.primaryText),
+    caption = TextStyle(fontSize = 13.sp, letterSpacing = 0.1.sp, color = c.secondaryText),
+    statValue = TextStyle(
+        fontSize = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp,
+        fontFeatureSettings = "tnum", color = c.primaryText,
+    ),
+    heroNumber = TextStyle(
+        fontSize = 46.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.2).sp,
+        fontFeatureSettings = "tnum", color = c.primaryText,
+    ),
 )
 
 @Immutable
@@ -201,24 +212,23 @@ object AppTheme {
      * 玻璃材质度量（`ui/material/Glass.kt`）。与主题无关，故与 `space`/`radius` 一样是普通 `val`；
      * 颜色部分不在这里，在 `AppTheme.colors.glassTint` / `.glassSpec`。
      *
-     * `tintAlphaSoft` 的 0.72 是**下限**而不是审美选择：低于它，浮层后面的内容会直接参与
+     * `tintAlphaSoft` 的 0.78 是**下限**而不是审美选择：低于它，浮层后面的内容会直接参与
      * 浮层上那行 13sp 标签的对比度计算，而本仓的 AA 数字全是按实底卡面算的。
-     * STRONG 只把底压得更实（0.86），不改高光与描边 —— 浓度的差别应当是"透不透"，不是"亮不亮"。
+     * STRONG 只把底压得更实（0.92），不改高光与描边 —— 浓度的差别应当是"透不透"，不是"亮不亮"。
+     *
+     * v3.2 去掉了流动亮带：底部导航与打卡弹层上的那道绿光是整屏最像"廉价高光"的东西。
+     * 现在玻璃只有三层（中性底、顶部白高光、一圈细边缘），不需要任何滚动/按压输入。
      */
     object glass {
-        val tintAlphaSoft: Float = 0.72f
-        val tintAlphaStrong: Float = 0.86f
+        val tintAlphaSoft: Float = 0.78f
+        val tintAlphaStrong: Float = 0.92f
 
-        /** 顶部入射光的强度（往下 50% 处已淡到不可见） */
-        val glossTopAlpha: Float = 0.34f
+        /** 顶部入射光的强度（往下约 45% 处淡到不可见；纯白，不再带品牌色） */
+        val glossTopAlpha: Float = 0.10f
 
-        /** 内描边：上缘亮、下缘暗 */
-        val edgeAlphaLight: Float = 0.85f
-        val edgeAlphaDark: Float = 0.30f
+        /** 内描边：上缘亮、下缘几乎消失；像一片玻璃的切割边，不像一圈描边 */
+        val edgeAlphaLight: Float = 0.16f
+        val edgeAlphaDark: Float = 0.04f
         val edgeWidth: Dp = 1.dp
-
-        /** 流动亮带：宽度按容器宽的比例给，基线 alpha 很低，靠按压与滚动把它推上来 */
-        val bandWidthFraction: Float = 0.38f
-        val bandAlpha: Float = 0.20f
     }
 }

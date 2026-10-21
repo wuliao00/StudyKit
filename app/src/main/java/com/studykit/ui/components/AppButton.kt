@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.motion.rememberPressScale
@@ -29,8 +30,8 @@ import com.studykit.ui.theme.AppTheme
  * 这两条是同一个决定的两半。分开成两个参数就能被调用方配错（绿描边配红字），
  * 成对给出则结构上不可能 —— 这正是 [com.studykit.ui.components.QuizOptionTile] 的取色分工。
  *
- * 只在 `secondary = true` 的描边分支生效；实底分支恒为 `accentInk` 容器 + `onAccent` 字
- * （「白字压实底」按 T15 裁定只留给 accent 一处）。
+ * 只在 `secondary = true` 的描边分支生效；实底分支是 `onAccent` 字（「白字压实底」按 T15 裁定
+ * 只留给 accent 一处），容器色 v3.2 起按主题分档（见 [AppButton] 的 KDoc）。
  */
 enum class AppButtonTone { Default, Success, Warning }
 
@@ -39,8 +40,10 @@ enum class AppButtonTone { Default, Success, Warning }
  * （[rememberPressScale] → `MotionSpec.press`）。
  *
  * 颜色显式取自 [AppTheme.colors]，不依赖 MaterialTheme 的部分覆写：
- * - 实底按钮 = `accentInk` 容器 + `onAccent` 文案。浅色主题是 `#00735F` 上的白字（5.81:1），
- *   夜间主题是 `#65D7C2` 上的暖墨字（9.88:1）；白字若留在 `#65D7C2` 上只有 1.74:1，故两主题各自达标。
+ * - 实底按钮 = `onAccent` 文案，容器按主题分档（v3.2）：
+ *   浅色是 `accentInk #00735F` 上的白字（5.81:1）；
+ *   夜间是 `accent #3ECBB6` 上的暖墨字（9.51:1）。夜间不再拿 `accentInk` 当底 ——
+ *   那会把主行动画成一块很亮的薄荷糖，和石墨底不在同一材质体系里。
  * - 描边按钮 = `accent` 描边 + `accentInk` 文案（accent 在白底仅 3.04:1，纯文本需更深的 ink 变体）。
  *   需要换族时用 [tone]（如背单词的「认识/不认识」走 success / warning 档），
  *   容器仍是透明描边形态，只把描边与本族 ink 一起换。
@@ -79,7 +82,12 @@ fun AppButton(
         secondary -> toneInk
         else -> colors.onAccent
     }
-    val containerColor = if (enabled) colors.accentInk else disabledTint
+    val dark = colors.background.luminance() < 0.5f
+    val containerColor = when {
+        !enabled -> disabledTint
+        dark -> colors.accent
+        else -> colors.accentInk
+    }
     val borderColor = if (enabled) toneStroke else disabledTint
     val labelStyle = texts.body.copy(fontWeight = FontWeight.Medium, color = labelColor)
     val contentPadding = PaddingValues(

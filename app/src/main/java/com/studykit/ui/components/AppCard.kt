@@ -4,11 +4,15 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.theme.AppTheme
 
@@ -24,7 +28,7 @@ import com.studykit.ui.theme.AppTheme
  *
  * ## 为什么卡片**不做**透明
  *
- * 卡面取 `colors.card`，**随主题变化**（浅色 `#FFFFFF`／夜间 `#26241F`），且保持不透明：
+ * 卡面取 `colors.card`，**随主题变化**（浅色 `#FFFFFF`／夜间 `#15181D`），且保持不透明：
  * M1 定下的那一整套 WCAG AA 实测数字（`accentInk` 5.81:1、`successInk` 5.39:1、
  * `goldInk` 5.93:1 ……）全是按实底卡面算的。卡片一透明，卡上 13sp 文字背后的内容就参与对比度计算，
  * 那批数字全体失效。所以本版只有**浮层**用玻璃（`ui/material/Glass.kt`），卡片一律实底。
@@ -46,6 +50,21 @@ fun AppCard(
             ),
         )
     }
+    // 夜间给卡面顶端加一层极淡的白（3.5%），让"光从上方来"这件事落在材质上；
+    // 浅色纸面不需要这层 —— 白压白只会把卡面抬成死白，丢掉暖纸感。
+    val dark = colors.background.luminance() < 0.5f
+    val sheen = remember(dark) {
+        if (dark) {
+            Modifier.background(
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.035f),
+                    0.55f to Color.Transparent,
+                ),
+            )
+        } else {
+            Modifier
+        }
+    }
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(AppTheme.radius.lg),
@@ -54,8 +73,10 @@ fun AppCard(
         border = border,
         shadowElevation = AppTheme.elevation.hairline,
     ) {
-        Column(modifier = Modifier.padding(AppTheme.space.card)) {
-            content()
+        Box(modifier = sheen) {
+            Column(modifier = Modifier.padding(AppTheme.space.card)) {
+                content()
+            }
         }
     }
 }

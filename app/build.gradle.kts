@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "3.1.0"
+        versionCode = 22
+        versionName = "3.2.0"
         // instrumented test 的执行器。本机没有设备也没有模拟器镜像，CI 里只有
         // `:app:assembleDebugAndroidTest` 这条「只编译」的闸 —— 这些用例**从未在设备上执行过**，
         // 真跑是 `:app:connectedDebugAndroidTest`（需要接到一台设备/一个模拟器）。

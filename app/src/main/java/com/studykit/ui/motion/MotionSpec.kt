@@ -75,15 +75,6 @@ object MotionSpec {
     const val ShakeMs = 420
 
     /**
-     * 玻璃亮带扫过一次底栏/弹层的时长，Int 毫秒。
-     *
-     * 只在**切 Tab** 与**弹层入场**这两个一次性事件里跑，跑完就静止：让亮带跟着列表滚动连续走，
-     * 要么得把每个页面的 scrollState 递到底栏这一层（多一条跨屏管道），要么让底栏每帧重绘
-     * （白烧 GPU，与本版「稳定满帧」的目标相反）。620ms 是"看得见一次流过、又不像加载动画"的量级。
-     */
-    const val SweepMs = 620
-
-    /**
      * 错峰入场（[StaggeredIn]）的下标限幅：`minOf(index, StaggerIndexCap)`。
      *
      * 每级 [StaggerMs](40ms)，8 级封顶 = 320ms，与首屏入场序列同量级；

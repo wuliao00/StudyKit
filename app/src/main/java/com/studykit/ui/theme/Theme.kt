@@ -16,9 +16,9 @@ import androidx.core.view.WindowCompat
 import com.studykit.data.AppSettings
 
 // onPrimary / onError 取 `c.onAccent`（「压实底上的字」那一档），**不取 c.card**：
-// AppColors 的 KDoc 明令 card 随主题变化（light #FFFFFF / dark #26241F），不能再被当作「白墨」
+// AppColors 的 KDoc 明令 card 随主题变化（light #FFFFFF / dark #15181D），不能再被当作「白墨」
 // 给文字着色。浅色下两者同值（LightOnAccent 就是卡面白），改的只有夜间：
-// 由 card #26241F 换成暖墨 #1C1B18 —— 与 AppButton 实底按钮的文案同一档。
+// 由 card #15181D 换成近黑墨 #07110E —— 与 AppButton 实底按钮的文案同一档。
 private fun scheme(dark: Boolean, c: AppColors) = if (dark) darkColorScheme(
     primary = c.accent, onPrimary = c.onAccent,
     background = c.background, onBackground = c.primaryText,

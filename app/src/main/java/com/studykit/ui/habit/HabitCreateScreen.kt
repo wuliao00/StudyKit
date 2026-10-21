@@ -54,7 +54,7 @@ private val IconOptions = listOf("📖", "📝", "🏃", "💪", "🎧", "🎯",
  *
  * 颜色与文字样式取 `AppTheme`；间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的 dp 常量。
  * 选中的目标天数磁贴是**实底强调色容器** → `accentInk` 底 + `onAccent` 字（与 AppButton 同一套，
- * 夜间主题下白字压在亮色上只有 1.74:1，故实底必须用 ink 变体）；图标格与类型磁贴是柔底
+ * 夜间主题下白字压在亮色上只有约 2.0:1，故实底必须用 ink 变体）；图标格与类型磁贴是柔底
  * → `accentSoft` 底 + `accentInk` 字，描边用 `accent`。
  */
 @OptIn(ExperimentalLayoutApi::class)

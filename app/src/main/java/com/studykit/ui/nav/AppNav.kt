@@ -1,8 +1,6 @@
 package com.studykit.ui.nav
 
 import android.net.Uri
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
@@ -15,6 +13,9 @@ import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -25,6 +26,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -254,8 +258,22 @@ fun AppNav(
     // 七张表单页（单词/题目/习惯/书/摘录/评述录入 + 错题拍照）的键盘补偿只有这一处，
     // 页面内不得再补 `.imePadding()` / `.safeDrawingPadding()`。各页根 `Column` 本来就是
     // `verticalScroll`，NavHost 一缩就能滚到保存按钮。
+    // 全屏底纹（v3.2）：从顶部卡片色淡淡过渡到页面底色，给所有屏一层"光从上方来"的空气感。
+    // Scaffold 自身透明，底纹由这一层画；各页面不铺不透明背景，所以转场时也不会出现一道底色缝。
+    val backdrop = AppTheme.colors
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    0f to backdrop.card.copy(alpha = 0.72f),
+                    0.30f to backdrop.background,
+                    1f to backdrop.background,
+                ),
+            ),
+    ) {
     Scaffold(
-        containerColor = AppTheme.colors.background,
+        containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
             if (showBottomBar) {
@@ -773,6 +791,7 @@ fun AppNav(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -791,23 +810,14 @@ private fun AppBottomBar(
             bottomEnd = 0.dp,
         )
     }
-    // 亮带只在**切 Tab** 时扫过一次就停（理由见 MotionSpec.SweepMs 的 KDoc）。
-    // 减弱动效或玻璃关掉时根本不跑这次动画 —— 不是"跑了但看不见"，是一次重绘都不产生。
-    // `AppTheme.settings` 是 @Composable getter，只能在组合层读一次再带进协程里用。
-    val reduceMotion = AppTheme.settings.reduceMotion
-    val sweep = remember { Animatable(0f) }
-    LaunchedEffect(currentRoute, glass.enabled) {
-        if (!glass.enabled || reduceMotion) return@LaunchedEffect
-        sweep.snapTo(0f)
-        sweep.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = MotionSpec.SweepMs, easing = MotionSpec.Easing),
-        )
-    }
     // tonalElevation = 0：Material3 会按容器色做色调叠加，置 0 才能让 card 原色呈现。
     // 玻璃开着时 containerColor 退成透明，那层底由 glassSurface 自己画（见 glassContainerColor）。
+    // v3.2 起没有流动亮带：底栏只是一片中性烟熏玻璃 + 顶部一道白切割边。
     NavigationBar(
-        modifier = Modifier.glassSurface(style = glass, shape = shape, scrollPhase = { sweep.value }),
+        // 一层很轻的投影把底栏从滚动内容上托起来；夜间几乎看不见，白天靠它和纸面分开。
+        modifier = Modifier
+            .shadow(elevation = 10.dp, shape = shape, clip = false)
+            .glassSurface(style = glass, shape = shape),
         containerColor = glassContainerColor(),
         tonalElevation = 0.dp,
     ) {
@@ -837,11 +847,13 @@ private fun AppBottomBar(
                 colors = NavigationBarItemDefaults.colors(
                     // 图标是非文本元素（3:1 达标）；文案按 T1 裁定走 accentInk，
                     // accent 在 card 上只有 3.04:1，撑不起 13sp 文本 AA。
-                    selectedIconColor = colors.accent,
+                    selectedIconColor = colors.accentInk,
                     selectedTextColor = colors.accentInk,
                     unselectedIconColor = colors.secondaryText,
                     unselectedTextColor = colors.secondaryText,
-                    indicatorColor = colors.accentSoft,
+                    // v3.2：选中态从一整枚高饱和青胶囊收成一枚 10% 的柔底 ——
+                    // 夜间底栏上那枚亮胶囊曾经是整屏最抢眼的东西，比主行动还亮。
+                    indicatorColor = colors.accent.copy(alpha = 0.10f),
                 ),
             )
         }

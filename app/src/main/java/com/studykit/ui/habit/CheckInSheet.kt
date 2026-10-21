@@ -1,7 +1,5 @@
 package com.studykit.ui.habit
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,7 +10,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,7 +24,6 @@ import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.material.glassSurface
 import com.studykit.ui.material.rememberGlassStyle
-import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
 
@@ -67,19 +63,6 @@ fun CheckInSheet(
 
     val glass = rememberGlassStyle()
     val sheetShape = RoundedCornerShape(AppTheme.radius.lg)
-    // `AppTheme.settings` 是 @Composable getter，只能在组合层读，
-    // 所以先把这一档取成普通局部量再带进 LaunchedEffect（在协程里读它编译不过）
-    val reduceMotion = AppTheme.settings.reduceMotion
-    val sweep = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        if (glass.enabled && !reduceMotion) {
-            sweep.snapTo(0f)
-            sweep.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = MotionSpec.SweepMs, easing = MotionSpec.Easing),
-            )
-        }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -88,9 +71,8 @@ fun CheckInSheet(
         // uiautomator 里也查不到任何节点（2026-09-24 真机 A/B 定位：只切「玻璃材质」这一个变量，
         // 开 = dump 2663 字节仅「关闭工作表」，关 = 5951 字节含「确认补卡」等全部节点，开→关→开可复现）。
         // 所以底色的活交给 containerColor 画整块面板（连拖动手柄那一条一起画，不留接缝），
-        // 入射光、亮带与描边画在下面那个内容 Column 上 —— 那里是普通 composable，
-        // 与底栏、词库状态卡是同一种用法，那两处的玻璃一直是好的。
-        // 弹入时亮带仍扫过一次（一次性动画，跑完即静止）；减弱动效或玻璃关掉时这次动画根本不排。
+        // 顶部高光与细切割边画在下面那个内容 Column 上 —— 那里是普通 composable，
+        // 与底栏、词库状态卡是同一种用法。v3.2 起不再有任何亮带动画。
         sheetState = rememberModalBottomSheetState(),
         containerColor = if (glass.enabled) glass.tint else colors.card,
         shape = sheetShape,
@@ -102,7 +84,6 @@ fun CheckInSheet(
                     style = glass,
                     shape = sheetShape,
                     paintTint = false,
-                    scrollPhase = { sweep.value },
                 )
                 .padding(horizontal = AppTheme.space.pageH)
                 .padding(bottom = AppTheme.space.xl),

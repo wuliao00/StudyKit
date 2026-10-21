@@ -374,7 +374,7 @@ private suspend fun resolveMistakeImage(thumbCandidate: File?, fullCandidate: Fi
  *
  * `modifier` 由调用方（`LazyItemScope`）传入 `Modifier.animateItem()`，挂到卡片根，
  * 于是条目的进出与让位都走动画；缩略图按 brief「图片卡」口径统一为
- * `radius.lg` 圆角 + 1dp `divider` 描边——夜间卡面 `#26241F` 与照片暗部同亮度时，
+ * `radius.lg` 圆角 + 1dp `divider` 描边——夜间卡面 `#15181D` 与照片暗部同亮度时，
  * 没有这条发丝线图片会直接糊进卡里。
  * 行内的「已掌握」小票**已删**：信息已由页顶掌握态 chip 承担（「待复习」一侧不可能有掌握项，
  * 「已掌握」一侧整列都是），留着只是同义反复；保留的是页头的计数文案。

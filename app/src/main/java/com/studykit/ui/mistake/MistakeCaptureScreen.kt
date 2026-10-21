@@ -57,7 +57,7 @@ import com.studykit.ui.theme.AppTheme
  *
  * 颜色与文字样式统一取 [AppTheme]，间距/圆角取 `AppTheme.space` / `AppTheme.radius` 的度量常量。
  * 两处动效/观感：照片预览按「图片卡」口径给 `radius.lg` 圆角 + 1dp `divider` 发丝描边
- * （夜间卡面 `#26241F` 与照片暗部同亮度时，没有描边会看不出图片边界）；
+ * （夜间卡面 `#15181D` 与照片暗部同亮度时，没有描边会看不出图片边界）；
  * 学科选项的选中态底色/描边/墨色用 `animateColorAsState` + `tween(MotionSpec.FadeMs)` 交叉补间
  * （`MotionSpec` 的 spring 都是 `Float` 向，颜色补间按映射表走 tween 分支）。
  *

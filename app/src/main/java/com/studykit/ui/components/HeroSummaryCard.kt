@@ -17,12 +17,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.studykit.data.GlassLevel
-import com.studykit.ui.material.glassSurface
-import com.studykit.ui.material.rememberGlassStyle
 import com.studykit.ui.theme.AppTheme
 
 /**
@@ -35,25 +37,26 @@ import com.studykit.ui.theme.AppTheme
  * 这一块把"今天要做的那个数"和"那件事的入口"绑在一起放在最上面，
  * 其余统计退成参考数字（[StatTileTier.Reference]）。
  *
- * ## 为什么本体从 accent 取色，而不是复用底栏那套玻璃
+ * ## v3.2：从"半透明绿玻璃"改成"被灯照到的一张卡"
  *
- * 玻璃的本体色（`glassTint` = `#FBF9F3`，alpha 0.72）是为**压在滚动内容上**的浮层调的；
- * 而页面底色是 `#FAF8F2` —— 两者叠出来的结果与页面底色几乎同值，**在纸色页面上它等于不存在**，
- * 只会留下一道边缘光。所以这一块的本体色改成从品牌色取：`accentSoft` 压在卡面上得到一片很淡的
- * 暖青底，再按玻璃的 alpha 铺出去。这样它在浅色纸面上**看得见**，同时底够浅、文字仍是
- * `primaryText`（深暖墨）压在近白底上，AA 不受影响，也不需要新增任何墨水令牌。
+ * 旧版把这一块画成 accent 柔底的半透明玻璃，结果在夜间是一整片橄榄绿的蒙层：
+ * 背景的绿、玻璃的绿、高光的绿叠在一起，文字反而退后（2026-10-20 使用者反馈「毛玻璃很丑」）。
+ * v3.2 把它改成**实底渐变 + 一处径向光晕**：卡面从一点点品牌色过渡到 card，光晕只落在
+ * 左侧读数环周围，像台灯照在桌面上的一张纸。玻璃从此只属于**真正浮在内容之上**的层
+ * （底栏、弹层、临时状态卡），重点卡不再参与玻璃。
+ *
+ * 光晕强度随主题分档：夜间 0.18、浅色 0.10 —— 浅色纸上再强就会变成一块青色污渍。
+ * 文字仍落在足够实的底上，`primaryText` / `secondaryText` 的 AA 数字全部不变。
  *
  * ## 为什么层级不依赖玻璃开关
  *
- * 玻璃关掉时（`GlassLevel.OFF`）这一块退回**同一片 accent 底**的实底卡，只是少了光泽与亮带 ——
- * 也就是说"它是这一屏的重点"这件事由**配色**保证，材质只负责让它更好看。
- * 反过来做（关掉玻璃就变成普通白卡）会让强调彻底消失，那是把重点交给了设置项。
+ * 这一块从 v3.2 起与玻璃设置无关：它就是一张被照亮的实底卡。
+ * 用户关掉玻璃，只会影响底栏/弹层，这一屏的重点不会跟着消失。
  *
  * ## 与 AppCard 的关系
  *
- * `AppCard` 的 KDoc 写着"卡片一律实底"（那批 WCAG 数字都按实底卡面算的）。这一块是**刻意的例外**，
- * 但只破在这一处：文字仍落在足够实的底上（见上一条），且**每屏只有一块**。
- * 其余卡片继续实底 —— 例外只有一处才叫重点，多了就又是板子。
+ * `AppCard` 的 KDoc 写着"卡片一律实底"（那批 WCAG 数字都按实底卡面算的）。
+ * 这一块同样是实底，只是多了一层**装饰性**光晕与品牌色渐变；每屏只有一块，别处不再复制。
  *
  * @param value 第一等数字，唯一一处用 [com.studykit.ui.theme.AppTexts.heroNumber] 的地方
  * @param actionLabel 主行动按钮文案；为 null 时不画按钮（有些屏的重点是"看"不是"做"）
@@ -75,38 +78,37 @@ fun HeroSummaryCard(
     val texts = AppTheme.texts
     val shape = RoundedCornerShape(AppTheme.radius.lg)
 
-    // 本体色：品牌色柔底压在卡面上，得到一片不透明的淡青；再按玻璃 alpha 铺出去。
-    // `compositeOver` 而不是直接叠两层 background：只铺一层，符合"着色只允许一层"那条。
-    val body = remember(colors.accent, colors.card) {
-        colors.accent.copy(alpha = 0.10f).compositeOver(colors.card)
+    // v3.2：实底渐变（顶部混入一点品牌色，向下回到 card）+ 左侧读数环后的一团径向光晕。
+    // 夜间光晕比浅色强一档：浅色纸上再亮就会变成一块青色污渍。
+    val dark = colors.background.luminance() < 0.5f
+    val top = remember(colors.accent, colors.card, dark) {
+        colors.accent.copy(alpha = if (dark) 0.10f else 0.07f).compositeOver(colors.card)
     }
-    val glassOn = AppTheme.settings.glass != GlassLevel.OFF
-    val baseStyle = rememberGlassStyle()
-    val heroStyle = remember(baseStyle, body) {
-        baseStyle.copy(tint = body.copy(alpha = AppTheme.glass.tintAlphaSoft))
+    val glowAlpha = if (dark) 0.20f else 0.10f
+    val borderBrush = remember(colors.divider) {
+        Brush.verticalGradient(
+            0f to colors.divider.copy(alpha = 0.95f),
+            1f to colors.divider.copy(alpha = 0.28f),
+        )
     }
 
-    // 用 Box 而不是 Surface：**透明容器配 `Surface(shadowElevation = …)` 会把阴影露出来** ——
-    // 体是透明的，阴影没有东西盖住它，于是在卡片四周形成一圈灰框（2026-09-26 真机截图撞到，
-    // 看着像"方角浅底嵌在圆角灰框里"）。玻璃那条路的边缘感由 `glassSurface` 自己的 1dp 边缘光负责，
-    // 不需要、也不能再叠一层 Surface 阴影。
+    // 用 Box 而不是 Surface：`Surface(shadowElevation)` 会在卡片四周画一圈灰框，
+    // 而这里的层次靠渐变 + 光晕 + 1dp 切割边，不靠阴影。
     Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .then(
-                if (glassOn) {
-                    Modifier.glassSurface(style = heroStyle, shape = shape)
-                } else {
-                    Modifier
-                        .background(body)
-                        .border(
-                            width = 1.dp,
-                            color = colors.accent.copy(alpha = 0.18f),
-                            shape = shape,
-                        )
-                },
-            ),
+            .background(Brush.verticalGradient(0f to top, 1f to colors.card))
+            .drawBehind {
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(colors.accent.copy(alpha = glowAlpha), Color.Transparent),
+                        center = Offset(size.width * 0.22f, size.height * 0.46f),
+                        radius = size.minDimension * 0.95f,
+                    ),
+                )
+            }
+            .border(width = 1.dp, brush = borderBrush, shape = shape),
     ) {
         Column(modifier = Modifier.padding(AppTheme.space.card)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
