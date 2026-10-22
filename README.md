@@ -144,8 +144,10 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | 渠道 | 链接 / 口令 | 说明 |
 | --- | --- | --- |
 | 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；这是一个**文件夹**分享，以后每版的 APK 都放进同一个目录，收藏这一条就够 |
-| 蓝奏云 | [https://www.ilanzou.com/s/qzGr5dNn](https://www.ilanzou.com/s/qzGr5dNn) | 那里放的是 **`.7z` 压缩包**，下完要先解压才能装；想要裸 APK 用上面的夸克网盘 |
+| 蓝奏云 | [https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | v3.2.0 的 **`.zip` 压缩包**（105.67 MB），下完要先解压才能装；想要裸 APK 用上面的夸克网盘 |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK。国内直连不稳，优先用上面两个渠道 |
+
+> **更新检查只走 Gitee**：App 启动时读 Gitee 仓库的 tags 判断版本；夸克、蓝奏云和 GitHub Releases 只是下载渠道，不参与版本判断。
 
 ## 🚦 首次启动会看到什么
 

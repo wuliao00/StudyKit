@@ -107,3 +107,13 @@
 | Room | `version = 9`（与 3.0.0 相同，无迁移） |
 | 机检 | CI 全绿（tag 提交）；159 类 / 1496 测 / 0 失败；lint 0 error（42 warning） |
 | 构建源码 | `caf88fa` + 信心条换行修复；tag 提交只多文档与预览图，不改其它 `app/**` |
+
+## 七、下载渠道
+
+| 渠道 | 位置 | 说明 |
+| --- | --- | --- |
+| 夸克网盘 | [pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 文件夹分享，提取码 `z4Yk`；v3.2.0 裸 APK 已放入 `StudyKit` 目录，旧版也在，注意选对文件 |
+| 蓝奏云 | [ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | `StudyKit-v3.2.0-local-debug.zip`（105.67 MB，永久有效），需先解压 |
+| GitHub Releases | 本页 | 原始 APK + 浅色/夜间两张组件预览 |
+
+> **更新检查只走 Gitee tags**；夸克、蓝奏云和 GitHub Releases 只是下载渠道，不参与版本判断。

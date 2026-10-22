@@ -51,6 +51,12 @@
   三档信心条把「非常确定」挤成四行竖排；`ConfidenceRow` 从 `Row` 改成 `FlowRow` 换行，
   320dp 渲染测试钉住「换行而不是压扁」，三档落库口径与点击回调不变。
 
+### 下载渠道（2026-10-21 复核）
+
+- 蓝奏云换新分享：[https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb)，
+  里面是 `StudyKit-v3.2.0-local-debug.zip`（105.67 MB，永久有效）；三份 README 同步更新。
+- **更新检查仍只读 Gitee tags**；夸克 / 蓝奏云 / GitHub Releases 只是下载渠道，不参与版本判断。
+
 ### 边界
 
 - **APK**：本机 debug 3.2.0/22 = `110,804,175 B`，sha256 `8b5a365c…`，证书 `f86c8a85…`
