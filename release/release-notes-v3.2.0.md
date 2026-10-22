@@ -115,5 +115,6 @@
 | 夸克网盘 | [pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 文件夹分享，提取码 `z4Yk`；v3.2.0 裸 APK 已放入 `StudyKit` 目录，旧版也在，注意选对文件 |
 | 蓝奏云 | [ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | `StudyKit-v3.2.0-local-debug.zip`（105.67 MB，永久有效），需先解压 |
 | GitHub Releases | 本页 | 原始 APK + 浅色/夜间两张组件预览 |
+| Gitee Releases | [gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.2.0 发行版附件是 `.7z`（69,809,454 B；Gitee 单附件上限 100M，故压缩），解压后安装；更新检查读的也是 Gitee tags |
 
-> **更新检查只走 Gitee tags**；夸克、蓝奏云和 GitHub Releases 只是下载渠道，不参与版本判断。
+> **更新检查只走 Gitee tags**；夸克、蓝奏云、GitHub Releases 和 Gitee Release 附件只是下载渠道，不参与版本判断。
