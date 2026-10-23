@@ -144,7 +144,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | 渠道 | 链接 / 口令 | 说明 |
 | --- | --- | --- |
 | 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；这是一个**文件夹**分享，以后每版的 APK 都放进同一个目录，收藏这一条就够 |
-| 蓝奏云 | [https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | v3.2.0 的 **`.zip` 压缩包**（105.67 MB），下完要先解压才能装；想要裸 APK 用上面的夸克网盘 |
+| 蓝奏云 | [https://www.ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec) | v3.2.1 的 **`.7z` 压缩包**（69.8 MB），下完要先解压才能装；想要裸 APK 用上面的夸克网盘 |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK。国内直连不稳，优先用上面两个渠道 |
 | Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | 发行版附件是 **`.7z`**（约 69.8 MB，解压后安装）；更新检查读的也是 Gitee tags |
 

@@ -140,7 +140,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Channel | Link / Code | Notes |
 | --- | --- | --- |
 | Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Access code `z4Yk`. This is a **folder** share — every future release's APK lands in the same directory, so this one link stays current |
-| Lanzou Cloud | [https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | The **`.zip` archive** of v3.2.0 (105.67 MB) — extract it before installing; use the Quark Netdisk link above for the raw APK |
+| Lanzou Cloud | [https://www.ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec) | The **`.7z` archive** of v3.2.1 (69.8 MB) — extract it before installing; use the Quark Netdisk link above for the raw APK |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK of every release. Direct access from mainland China is unreliable — prefer the two channels above |
 | Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | Release assets are **`.7z`** archives (about 69.8 MB) — extract before installing; version checks also read Gitee tags |
 

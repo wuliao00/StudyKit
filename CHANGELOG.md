@@ -63,13 +63,15 @@
   三档信心条把「非常确定」挤成四行竖排；`ConfidenceRow` 从 `Row` 改成 `FlowRow` 换行，
   320dp 渲染测试钉住「换行而不是压扁」，三档落库口径与点击回调不变。
 
-### 下载渠道（2026-10-22 复核）
+### 下载渠道（2026-10-23 复核）
 
-- 蓝奏云换新分享：[https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb)，
-  里面是 `StudyKit-v3.2.0-local-debug.zip`（105.67 MB，永久有效）；三份 README 同步更新。
-- Gitee Releases 已建 v3.2.0 发行版，附件 `StudyKit-v3.2.0-local-debug.7z`（69,809,454 B）；
-  因 Gitee 单附件上限 100M，7z 压缩后 66.6 MB。三份 README 同步。
-- **更新检查仍只读 Gitee tags**；夸克 / 蓝奏云 / GitHub Releases 只是下载渠道，不参与版本判断。
+- 四个渠道都已放 3.2.1：夸克 `StudyKit-v3.2.1-local-debug.apk`；百度网盘 `StudyKit` 目录同名 APK；
+  123 云盘 `StudyKit` 目录同名 APK；蓝奏云新分享
+  [https://www.ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec)
+  （`StudyKit-v3.2.1-local-debug.7z`，69,808,023 B，永久有效）。
+- Gitee Releases 已建 v3.2.1 发行版，附件 `StudyKit-v3.2.1-local-debug.7z`（69,808,023 B）；
+  因 Gitee 单附件上限 100M，7z 压缩后 66.6 MiB。三份 README 同步。
+- **更新检查仍只读 Gitee tags**；夸克 / 百度 / 123 / 蓝奏云 / GitHub Releases 只是下载渠道，不参与版本判断。
 
 ### 边界
 

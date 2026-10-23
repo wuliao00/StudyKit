@@ -34,7 +34,7 @@
 | --- | --- | --- |
 | Gitee Releases | [gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | 发行版附件 `.7z`（约 69.8MB），解压后安装；更新检查读的也是 Gitee tags |
 | 夸克网盘 | [pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 文件夹分享，提取码 `z4Yk`；裸 APK 在 `StudyKit` 目录 |
-| 蓝奏云 | [ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | 当前是 v3.2.0 的 `.zip`；3.2.1 未上传时以 Gitee 为准 |
+| 蓝奏云 | [ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec) | `StudyKit-v3.2.1-local-debug.7z`（69,808,023 B，永久有效），需先解压 |
 | GitHub Releases | [github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 原始 APK |
 
 ## 校验
