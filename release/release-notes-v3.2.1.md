@@ -45,6 +45,7 @@
 | 文件 | `StudyKit-v3.2.1-local-debug.apk` |
 | 大小 | `110,804,175` B |
 | SHA-256 | `1d10e6dc8f544735e42d62d3c7a63d3478ce5fee411482bb71bed177cf1748d8` |
+| Gitee 7z | `69,808,023` B / sha256 `55219046dc14bb5d14bc19b0fd0065f6ab9833a8f53534cbd8bdc6722be917b3` |
 | 证书 SHA-256 | `f86c8a854723cd50231a3173f80f96e0f32db3d0bb3d7047379c0ba75f5d61f5` |
 | Room | `version = 9`（与 3.2.0 相同，无迁移） |
 | 构建源码 | tag 提交（只改 `UpdateChecker`、版本号与文档） |
