@@ -2,7 +2,7 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [3.2.1] - 2026-10-22（更新下载页切到 Gitee Releases）
+## [3.2.1] - 2026-10-23（更新下载页切到 Gitee Releases）
 
 > 只改「去下载」去向与版本号，不改功能、数据、调度；Room 仍 v9。
 >
