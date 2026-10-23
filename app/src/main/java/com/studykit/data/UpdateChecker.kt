@@ -16,11 +16,13 @@ import org.json.JSONObject
  * 后果是原来的 GitHub 实现会永远走"取不到 ⇒ 放行"，**连"有新版本"的提醒都不会有**，
  * 这个功能等于不存在。Gitee 在这台设备上可达，且仓库本来就有 Gitee 镜像。
  *
- * ## 为什么读 tags 而不是 releases（也是实测出来的）
+ * ## 为什么读 tags 而不是 releases
  *
- * Gitee 的 `/releases/latest` 对本站返回 **404**、`/releases` 返回**空数组** ——
- * 这个镜像只有 tag，没有建过 Release。照搬 GitHub 那套 `/releases/latest` 会永远取不到，
+ * Gitee 的 `/releases/latest` 在 2026-09 对本站返回 **404**、`/releases` 返回**空数组** ——
+ * 当时这个镜像只有 tag，没有建过 Release。照搬 GitHub 那套 `/releases/latest` 会永远取不到，
  * 换了源等于没换。tags 接口实测可用（`[{"name":"v2.4.1",...}, …]`）。
+ * 2026-10 起 Gitee 侧已建发行版，但**版本判断仍只认 tags**：发版流程的第一步就是打 tag，
+ * 下载页与附件可以晚一步维护，不该让"附件还没传完"影响"有没有新版"的判断。
  *
  * ## 护栏（"有新版本就拦"这个档位下必须有）
  *
@@ -28,17 +30,14 @@ import org.json.JSONObject
  *    界面当作"无需升级"。让一次网络抖动具备"把用户锁在门外"的能力是不可接受的。
  * 2. **只认形如版本号的 tag**（`v2.4.5` / `2.4.5`）：tags 里可能混进 `test-xxx` 这类标记，
  *    而它们没法参与版本比较。这条替代了原先"必须带 APK 附件"那道护栏 ——
- *    Gitee 侧没有 Release 也就没有附件可查，判据落到 tag 名字本身。
+ *    版本判断只看 tag 名字本身。
  *
  * ## 下载去向
  *
- * 判定有新版时给的是**夸克网盘那个文件夹分享**（见 [DOWNLOAD_PAGE]）。2026-09-27 之前这里给的是
- * Gitee 的 releases 页 —— 而那个镜像只有 tag、从没建过 Release，所以点过去是一个空页。
- * 换成网盘文件夹分享的理由是**它自己会更新**：以后每版的 APK 都放进同一个目录，
- * 链接不变，拿到的永远是最新那个，不用每发一版就改一次代码、再发一版应用。
- *
- * 这份链接是**永久有效**的（夸克侧 `expired_type = 1`），并且分享的是公开目录而不是某个具体文件 ——
- * 分享单个文件会把它锁死在那个版本上。
+ * 判定有新版时给的是 **Gitee Releases 页**（见 [DOWNLOAD_PAGE]）。2026-10-22 起 Gitee 发行版
+ * 会带一个 `.7z` 附件：Gitee 单附件上限 100M，而 debug APK 约 110.8MB，7z 压缩后约 69.8MB。
+ * 页面同时给出解压与覆盖安装说明；版本判断仍只读 tags，下载页与附件只是分发渠道。
+ * 夸克 / 蓝奏云 / GitHub Releases 继续作为并列下载渠道，不参与版本判断。
  */
 object UpdateChecker {
 
@@ -46,10 +45,10 @@ object UpdateChecker {
         "https://gitee.com/api/v5/repos/wuliao11541/studykit/tags?per_page=100"
 
     /**
-     * 「去下载」打开的地方：**夸克网盘的一个文件夹分享**（永久有效）。
-     * 分享的是目录而不是单个文件 —— 目录里的包会换，链接不用换。
+     * 「去下载」打开的地方：**Gitee Releases 页**。
+     * 每次发版前先把 tag 推上去，再把 `.7z` 附件传到对应发行版；页面始终列最新发行版。
      */
-    private const val DOWNLOAD_PAGE = "https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk"
+    private const val DOWNLOAD_PAGE = "https://gitee.com/wuliao11541/StudyKit/releases"
 
     /** 只认这两种形状：`v1.2.3` 与 `1.2.3`。其余 tag（`test-…`）不参与版本比较 */
     private val VERSION_TAG = Regex("^v?\\d+(\\.\\d+)*$")

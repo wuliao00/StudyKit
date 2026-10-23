@@ -144,7 +144,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Код доступа `z4Yk`. Это ссылка на **папку** — APK каждого следующего релиза попадает в тот же каталог, так что ссылка остаётся актуальной |
 | Lanzou Cloud | [https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | **`.zip`-архив** v3.2.0 (105,67 МБ) — перед установкой его нужно распаковать; за «голым» APK идите по ссылке Quark Netdisk выше |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | Исходный APK каждого релиза. Прямой доступ из материкового Китая нестабилен — используйте два канала выше |
-| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | Вложение релиза v3.2.0 — **`.7z`**-архив (69,8 МБ), перед установкой его нужно распаковать; проверка версий тоже читает tags Gitee |
+| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | Вложения релизов — **`.7z`**-архивы (около 69,8 МБ), перед установкой их нужно распаковать; проверка версий тоже читает tags Gitee |
 
 > **Проверка обновлений идёт только через Gitee**: при запуске приложение читает tags репозитория Gitee и по ним определяет, есть ли новая версия. Quark, Lanzou Cloud и GitHub Releases — только каналы скачивания; в проверке версий они не участвуют.
 
@@ -165,7 +165,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 > При запуске приложение один раз тихо проверяет новую версию: читается **API тегов репозитория на Gitee**
 > (не GitHub — из материкового Китая он нестабилен). Если найдена версия новее, приложение попросит сначала
-> обновиться, а «Перейти к загрузке» открывает страницу **Quark Netdisk**;
+> обновиться, а «Перейти к загрузке» открывает страницу **Gitee Releases**
+> (вложения релизов — `.7z`-архивы, перед установкой их нужно распаковать; лимит Gitee — 100 МБ на файл);
 > **если номер версии получить не удалось, вас всегда пропускают** — отсутствие сети, ограничение запросов
 > и ошибка разбора считаются отсутствием обновления, так что один сбой сети никого не оставит без доступа.
 

@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.2.1] - 2026-10-22（更新下载页切到 Gitee Releases）
+
+> 只改「去下载」去向与版本号，不改功能、数据、调度；Room 仍 v9。
+>
+> - **下载页**：`UpdateChecker.DOWNLOAD_PAGE` 从夸克文件夹分享换成
+>   [Gitee Releases](https://gitee.com/wuliao11541/StudyKit/releases)。Gitee 单附件上限 100M，
+>   发行版附件用 7z（debug APK 约 110.8MB → 7z 约 69.8MB）；版本判断仍只读 Gitee tags。
+> - **版本号**：`3.2.1 / 23`（`ReleaseVersionTest` 钉着）。
+> - **真机**：2026-10-22 在 vivo V2156A / Android 11 上从 3.2.0/22 覆盖安装；存量未丢，
+>   `versionName=3.2.1` / `versionCode=23`。
+> - **APK**：本机 debug = `110,804,175 B`，sha256 `1d10e6dc8f544735e42d62d3c7a63d3478ce5fee411482bb71bed177cf1748d8`，证书 `f86c8a85…`。
+
 ## [3.2.0] - 2026-10-21（UI 质感批：夜间与材质重做；真机冒烟 + 窄屏修复）
 
 > 只改观感、材质与交互层级，不改功能、数据与调度。

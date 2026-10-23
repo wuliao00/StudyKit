@@ -146,7 +146,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；这是一个**文件夹**分享，以后每版的 APK 都放进同一个目录，收藏这一条就够 |
 | 蓝奏云 | [https://www.ilanzou.com/s/nH7yZdwAb](https://www.ilanzou.com/s/nH7yZdwAb) | v3.2.0 的 **`.zip` 压缩包**（105.67 MB），下完要先解压才能装；想要裸 APK 用上面的夸克网盘 |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK。国内直连不稳，优先用上面两个渠道 |
-| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.2.0 发行版附件是 **`.7z`**（69.8 MB，解压后安装）；更新检查读的也是 Gitee tags |
+| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | 发行版附件是 **`.7z`**（约 69.8 MB，解压后安装）；更新检查读的也是 Gitee tags |
 
 > **更新检查只走 Gitee**：App 启动时读 Gitee 仓库的 tags 判断版本；夸克、蓝奏云、GitHub Releases 只是下载渠道，不参与版本判断。
 
@@ -162,7 +162,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    **免责声明**、**源码仓库**入口，以及当前版本与「检查更新」。
 
 > 启动时会静默检查一次新版本：读的是 **Gitee 仓库的 tags 接口**（不读 GitHub，那边国内直连不稳）。
-> 检测到更新的版本会要求先更新再使用，「去下载」打开的是**夸克网盘**那一页；
+> 检测到更新的版本会要求先更新再使用，「去下载」打开的是 **Gitee Releases** 页
+> （发行版附件是 `.7z`，解压后安装；Gitee 单附件上限 100M）；
 > **取不到版本号一律放行** —— 没网、被限流、解析失败都当作"无需升级"，
 > 不会因为一次网络抖动把人锁在门外。
 
@@ -276,6 +277,9 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ### v3.2.0：夜间「夜读」与交互主次
 
+> **v3.2.1（2026-10-22）**：只把「去下载」从夸克文件夹分享切到 **Gitee Releases**，
+> 功能、数据与调度不变；版本号 `3.2.1 / 23`，Room 仍 v9。
+>
 > **真机验证（2026-10-21）**：在同一台 vivo V2156A / Android 11 上从 3.0.0/20 覆盖安装
 > （同一把 `f86c8a85…` 钥匙；存量 1165 词 / 6 已掌握 / 2 到期一条未丢），下面两张是那台设备上的实拍。
 > 语义交错的设备延迟、拍照书页转错题本的完整串测仍未验，边界见 `CHANGELOG.md` 的 `[3.2.0]` 段。
