@@ -131,22 +131,29 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    /** 批量入题：题目没有天然唯一键，退化为「题干 + 全部选项」的内容判重 */
+    /** 批量入题：题目没有天然唯一键，退化为「题干 + 全部选项 + 阶段 + 题型 + 学科」的内容判重 */
     fun submitQuestions(onDone: () -> Unit) = commit(onDone) {
         val items = _state.value.visibleItems.filterIsInstance<ImportItem.Question>()
         val deduped = dedupeBy(
             items = items,
-            keyOf = { (listOf(it.stem) + it.options).joinToString(QUESTION_KEY_SEP) },
+            keyOf = {
+                (listOf(it.stem, it.stage.storageValue, it.subject, it.type.name) + it.options)
+                    .joinToString(QUESTION_KEY_SEP)
+            },
             displayOf = { it.stem },
         )
         val entities = deduped.kept.map { item ->
             Question(
                 uuid = UUID.randomUUID().toString(),
-                subject = UNGROUPED_SUBJECT,
+                subject = item.subject.ifBlank { UNGROUPED_SUBJECT },
                 stem = item.stem,
                 optionsJson = JSONArray(item.options).toString(),
                 answerIndex = item.answerIndex,
                 explanation = item.explanation,
+                questionType = item.type.storageValue,
+                answerIndicesJson = JSONArray(item.answerIndices.sorted().distinct()).toString(),
+                answerTextJson = JSONArray(item.acceptedAnswers).toString(),
+                examStage = item.stage.storageValue,
             )
         }
         ImportOutcome(

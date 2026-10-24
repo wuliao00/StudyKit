@@ -32,8 +32,8 @@ enum class ImportKind(
     ),
     QUESTION(
         title = "批量录入题目",
-        placeholder = "1/2 + 1/3 = ?|5/6|1/6|1|2/5|A",
-        hint = "竖线分列：题干 | 选项… | 答案（字母或选项原文）",
+        placeholder = "1/2 + 1/3 = ?|5/6|1/6|1|2/5|A\n[初中·数学·多选] 下列哪些是质数？|2|4|5|9|AC\n[高中·英语·填空] 水的化学式是？|H2O;H₂O\n[考研·政治·简答] 简述实践与认识的关系|参考答案|评分要点",
+        hint = "竖线分列；行首可写 [阶段·学科·题型]（阶段：初中/高中/大学/考研/考公；题型：单选/多选/判断/填空/计算/简答/主观/材料）",
         icon = Icons.Outlined.CheckCircle,
     ),
     ;
@@ -56,5 +56,8 @@ enum class ImportKind(
 internal fun RejectReason.label(): String = when (this) {
     RejectReason.EMPTY_FIELDS -> "内容为空"
     RejectReason.TOO_FEW_COLUMNS -> "列数不足"
-    RejectReason.ANSWER_NOT_FOUND -> "答案无法识别（暂不支持多选题）"
+    RejectReason.ANSWER_NOT_FOUND ->
+        "答案无法识别（单选填 A；多选填 AC / A,C / A、C；判断填 正确/错误；填空/计算用 ; 分隔答案）"
+    RejectReason.UNKNOWN_PREFIX ->
+        "方括号里的阶段/题型认不出来（写法：[阶段·学科·题型] 或 [题型]）"
 }

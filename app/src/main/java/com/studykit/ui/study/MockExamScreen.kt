@@ -72,7 +72,7 @@ fun MockExamScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.mockExam.collectAsStateWithLifecycle()
-    val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    val subjects by viewModel.mockExamSubjects.collectAsStateWithLifecycle()
     var showDiscard by remember { mutableStateOf(false) }
 
     // 每秒喂一次假时钟友好入口：`nowTs` 由页面给，纯层不碰 System.currentTimeMillis。

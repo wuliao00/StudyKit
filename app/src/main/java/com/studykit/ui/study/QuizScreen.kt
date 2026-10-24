@@ -3,8 +3,10 @@ package com.studykit.ui.study
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -58,11 +61,19 @@ import com.studykit.ui.bulkimport.dispatchEntryAction
 import com.studykit.ui.bulkimport.rememberQuestionPhotoImport
 import com.studykit.ui.components.EntryMenuButton
 import com.studykit.ui.motion.MotionSpec
+import com.studykit.data.dao.SubjectStageFormatCount
 import com.studykit.data.entity.Question
 import com.studykit.data.memory.Confidence
+import com.studykit.data.question.ExamStage
+import com.studykit.data.question.GradeResult
+import com.studykit.data.question.OptionGrade
+import com.studykit.data.question.QuestionType
+import com.studykit.data.question.QuizResponse
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.components.AppPill
+import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.QuizOptionState
 import com.studykit.ui.components.QuizOptionTile
@@ -106,7 +117,9 @@ fun QuizScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.quiz.collectAsStateWithLifecycle()
-    val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    val subjects by viewModel.quizSubjects.collectAsStateWithLifecycle()
+    val filterCounts by viewModel.subjectStageFormatCounts.collectAsStateWithLifecycle()
+    val filter by viewModel.quizFilter.collectAsStateWithLifecycle()
     // 拍照录题：相机 → OCR → 既有预览屏（与单词库「截图取词」同一条管线）；
     // 解析不出四选一时转错题本（导航由 onPhotoFallback 交给 AppNav）
     val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport, onPhotoFallback)
@@ -189,6 +202,7 @@ fun QuizScreen(
         when {
             state.finished -> QuizResult(
                 correctCount = state.correctCount,
+                selfJudgedCount = state.selfJudgedCount,
                 total = state.total,
                 percent = state.accuracyPercent,
                 onRestart = { viewModel.resetQuiz() },
@@ -199,11 +213,16 @@ fun QuizScreen(
                 state = state,
                 confidenceEnabled = confidenceEnabled,
                 onSelect = { index, conf -> viewModel.selectOption(index, conf) },
+                onSubmitResponse = { response, conf -> viewModel.submitQuizResponse(response, conf) },
+                onResolveSelfJudge = { correct, conf -> viewModel.resolveSelfJudge(correct, conf) },
                 onNext = { viewModel.nextQuestion() },
             )
 
             else -> SubjectPicker(
                 subjects = subjects,
+                counts = filterCounts,
+                filter = filter,
+                onFilter = viewModel::setQuizFilter,
                 interleaving = interleaving,
                 onPick = { viewModel.startQuiz(it) },
                 onPickMixed = { viewModel.startMixedQuiz() },
@@ -225,6 +244,9 @@ fun QuizScreen(
 @Composable
 private fun SubjectPicker(
     subjects: List<String>,
+    counts: List<SubjectStageFormatCount>,
+    filter: QuizFilter,
+    onFilter: (ExamStage?, QuestionType?) -> Unit,
     interleaving: Boolean,
     onPick: (String) -> Unit,
     onPickMixed: () -> Unit,
@@ -232,19 +254,101 @@ private fun SubjectPicker(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
+    val allCount = counts.sumOf { it.count }
+    fun stageMatches(actual: String, stage: ExamStage?): Boolean =
+        stage == null || actual == stage.storageValue
+
+    fun formatMatches(actual: String, format: QuestionType?): Boolean =
+        format == null || actual == format.storageValue
+
+    fun stageCount(stage: ExamStage?): Int = counts
+        .filter { stageMatches(it.stage, stage) && formatMatches(it.type, filter.format) }
+        .sumOf { it.count }
+
+    fun formatCount(format: QuestionType?): Int = counts
+        .filter { formatMatches(it.type, format) && stageMatches(it.stage, filter.stage) }
+        .sumOf { it.count }
+
+    fun subjectCount(subject: String): Int = counts
+        .filter {
+            it.subject == subject &&
+                stageMatches(it.stage, filter.stage) &&
+                formatMatches(it.type, filter.format)
+        }
+        .sumOf { it.count }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
         Spacer(Modifier.height(AppTheme.space.md))
+        if (allCount > 0) {
+            Text(text = "按阶段筛", style = texts.caption)
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            ) {
+                TypeFilterChip(
+                    label = "全部 ${stageCount(null)}",
+                    selected = filter.stage == null,
+                    enabled = true,
+                    onClick = { onFilter(null, filter.format) },
+                )
+                ExamStage.entries.forEach { stage ->
+                    val count = stageCount(stage)
+                    if (stage != ExamStage.UNSPECIFIED || count > 0) {
+                        TypeFilterChip(
+                            label = "${stage.label} $count",
+                            selected = filter.stage == stage,
+                            enabled = count > 0,
+                            onClick = { onFilter(stage, filter.format) },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(text = "按题型筛", style = texts.caption)
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            ) {
+                TypeFilterChip(
+                    label = "全部 ${formatCount(null)}",
+                    selected = filter.format == null,
+                    enabled = true,
+                    onClick = { onFilter(filter.stage, null) },
+                )
+                QuestionType.entries.forEach { type ->
+                    val count = formatCount(type)
+                    TypeFilterChip(
+                        label = "${type.label} $count",
+                        selected = filter.format == type,
+                        enabled = count > 0,
+                        onClick = { onFilter(filter.stage, type) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(AppTheme.space.md))
+        }
         Text(text = "选择学科，开始一轮练习", style = texts.caption)
         Spacer(Modifier.height(AppTheme.space.md))
         if (subjects.isEmpty()) {
             Spacer(Modifier.height(AppTheme.space.xl * 2))
+            val filtered = filter.stage != null || filter.format != null
             EmptyState(
-                title = "题库还是空的",
-                caption = "回到学习首页，在「题库练习」卡片上点击 + 录入第一道题",
+                title = if (!filtered) "题库还是空的" else "这个筛选下还没有题",
+                caption = if (!filtered) {
+                    "回到学习首页，在「题库练习」卡片上点击 + 录入第一道题"
+                } else {
+                    "换一个阶段或题型，或回到学习首页用「录入」加一道题"
+                },
                 icon = Icons.Outlined.CheckCircle,
             )
         } else {
@@ -349,6 +453,11 @@ private fun SubjectPicker(
                             style = texts.cardTitle,
                             modifier = Modifier.weight(1f),
                         )
+                        Text(
+                            text = "${subjectCount(subject)} 题",
+                            style = texts.caption.copy(color = colors.secondaryText),
+                        )
+                        Spacer(Modifier.width(AppTheme.space.sm))
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
@@ -360,6 +469,48 @@ private fun SubjectPicker(
             }
         }
         Spacer(Modifier.height(AppTheme.space.lg))
+    }
+}
+
+// ── 题型筛选条 ──────────────────────────────────────────────────────────
+
+/** 题型筛选胶囊：沿用 AppPill 的视觉，但需要点击/选中/禁用三态，所以单独实现 */
+@Composable
+private fun TypeFilterChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(50),
+        color = if (selected) colors.accentSoft else colors.card,
+        border = BorderStroke(
+            width = 1.dp,
+            color = when {
+                selected -> colors.accent
+                enabled -> colors.divider
+                else -> colors.divider.copy(alpha = 0.45f)
+            },
+        ),
+        contentColor = if (selected) colors.accentInk else colors.secondaryText,
+    ) {
+        Text(
+            text = label,
+            style = texts.aux.copy(
+                color = when {
+                    selected -> colors.accentInk
+                    enabled -> colors.secondaryText
+                    else -> colors.secondaryText.copy(alpha = 0.45f)
+                },
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            modifier = Modifier.padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
+        )
     }
 }
 
@@ -422,6 +573,8 @@ internal fun QuizQuestionBranch(
     state: QuizUiState,
     confidenceEnabled: Boolean,
     onSelect: (Int, Confidence?) -> Unit,
+    onSubmitResponse: (QuizResponse, Confidence?) -> Unit,
+    onResolveSelfJudge: (Boolean, Confidence?) -> Unit,
     onNext: () -> Unit,
 ) {
     val colors = AppTheme.colors
@@ -436,15 +589,35 @@ internal fun QuizQuestionBranch(
                 modifier = Modifier.testTag(QuizDrillNoteTag),
             )
         }
-        QuestionView(
+        TypedQuestionView(
             question = current,
-            selected = state.selected,
+            state = state,
             confidenceEnabled = confidenceEnabled,
             onSelect = onSelect,
+            onSubmitResponse = onSubmitResponse,
+            onResolveSelfJudge = onResolveSelfJudge,
             onNext = onNext,
             isLast = state.index == state.total - 1,
         )
     }
+}
+
+/** 旧签名保底：只认识单选的渲染守卫（如 [QuizDrillNoteRenderTest]）不用改 */
+@Composable
+internal fun QuizQuestionBranch(
+    state: QuizUiState,
+    confidenceEnabled: Boolean,
+    onSelect: (Int, Confidence?) -> Unit,
+    onNext: () -> Unit,
+) {
+    QuizQuestionBranch(
+        state = state,
+        confidenceEnabled = confidenceEnabled,
+        onSelect = onSelect,
+        onSubmitResponse = { _, _ -> },
+        onResolveSelfJudge = { _, _ -> },
+        onNext = onNext,
+    )
 }
 
 /**
@@ -656,6 +829,417 @@ private fun QuestionView(
 }
 
 /**
+ * v3.3 三题型作答页。单选沿用旧交互（点选项即提交），多选可勾选后统一提交，
+ * 填空先自动规范化比对，未命中时显示参考答案并让用户自评一次。
+ */
+@Composable
+private fun TypedQuestionView(
+    question: Question,
+    state: QuizUiState,
+    confidenceEnabled: Boolean,
+    onSelect: (Int, Confidence?) -> Unit,
+    onSubmitResponse: (QuizResponse, Confidence?) -> Unit,
+    onResolveSelfJudge: (Boolean, Confidence?) -> Unit,
+    onNext: () -> Unit,
+    isLast: Boolean,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val type = question.typeEnum
+    val options = parseOptions(question.optionsJson)
+    val answered = state.answered
+    var pending by rememberSaveable(question.id) { mutableIntStateOf(-1) }
+    var multiMask by rememberSaveable(question.id) { mutableIntStateOf(0) }
+    var fillText by rememberSaveable(question.id) { mutableStateOf("") }
+    var advanced by rememberSaveable(question.id) { mutableStateOf(false) }
+    var hintLevel by rememberSaveable(question.id) { mutableIntStateOf(0) }
+    var conf by remember(question.id) { mutableStateOf<Confidence?>(null) }
+
+    val selectedMulti = maskIndices(multiMask)
+    val displayOptions = if (type == QuestionType.TRUE_FALSE && options.isEmpty()) {
+        listOf("正确", "错误")
+    } else {
+        options
+    }
+    val canSubmit = when (type) {
+        QuestionType.SINGLE, QuestionType.TRUE_FALSE -> false
+        QuestionType.MULTIPLE -> selectedMulti.isNotEmpty()
+        QuestionType.FILL, QuestionType.CALCULATION -> fillText.isNotBlank()
+        QuestionType.SHORT_ANSWER, QuestionType.ESSAY, QuestionType.CASE_ANALYSIS -> true
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = if (answered) 84.dp else AppTheme.space.lg),
+        ) {
+            Spacer(Modifier.height(AppTheme.space.md))
+            Text(
+                text = question.subject,
+                style = texts.caption.copy(color = colors.accentInk, fontWeight = FontWeight.Medium),
+            )
+            Spacer(Modifier.height(AppTheme.space.sm))
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Text(text = question.stem, style = texts.body)
+            }
+
+            Spacer(Modifier.height(AppTheme.space.md))
+            if (!answered && confidenceEnabled) {
+                ConfidenceRow(selected = conf, onPick = { conf = it })
+                Spacer(Modifier.height(AppTheme.space.sm))
+            }
+
+            when (type) {
+                QuestionType.SINGLE, QuestionType.TRUE_FALSE -> {
+                    key(question.id) {
+                        displayOptions.forEachIndexed { index, option ->
+                            QuizOptionTile(
+                                optionText = option,
+                                index = index,
+                                state = optionStateFor(
+                                    index = index,
+                                    selected = state.selected?.let { setOf(it) } ?: emptySet(),
+                                    grade = state.grade,
+                                    pending = pending,
+                                ),
+                                enabled = !answered && pending < 0,
+                                onClick = {
+                                    if (!answered && pending < 0) {
+                                        pending = index
+                                        onSelect(index, conf)
+                                    }
+                                },
+                            )
+                            Spacer(Modifier.height(AppTheme.space.sm))
+                        }
+                    }
+                }
+
+                QuestionType.MULTIPLE -> {
+                    key(question.id) {
+                        options.forEachIndexed { index, option ->
+                            QuizOptionTile(
+                                optionText = option,
+                                index = index,
+                                state = optionStateFor(
+                                    index = index,
+                                    selected = selectedMulti,
+                                    grade = state.grade,
+                                    pending = -1,
+                                ),
+                                enabled = !answered,
+                                onClick = {
+                                    if (!answered) {
+                                        multiMask = multiMask xor (1 shl index)
+                                    }
+                                },
+                            )
+                            Spacer(Modifier.height(AppTheme.space.sm))
+                        }
+                    }
+                    Text(
+                        text = "多选题：选齐后点「提交答案」，全对才算过。",
+                        style = texts.caption.copy(color = colors.secondaryText),
+                    )
+                }
+
+                QuestionType.FILL, QuestionType.CALCULATION -> {
+                    if (!answered) {
+                        AppTextField(
+                            value = fillText,
+                            onValueChange = { fillText = it },
+                            label = if (type == QuestionType.CALCULATION) "最终答案" else "你的答案",
+                            placeholder = "写答案；多个可接受答案由录入者用 ; 分隔",
+                        )
+                    }
+                }
+
+                QuestionType.SHORT_ANSWER,
+                QuestionType.ESSAY,
+                QuestionType.CASE_ANALYSIS,
+                -> {
+                    if (!answered) {
+                        Text(
+                            text = "主观题：先自己作答，再看参考答案/评分要点自评。应用不会自动判分。",
+                            style = texts.caption.copy(color = colors.secondaryText),
+                        )
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        AppMultilineTextField(
+                            value = fillText,
+                            onValueChange = { fillText = it },
+                            label = "草稿/要点（可选，不判分）",
+                            placeholder = "可以先写下思路；不写也能看参考答案",
+                            minLines = 2,
+                        )
+                    }
+                }
+            }
+
+            // 提示：三档都不给最终答案；主观题不提供提示（提示很容易变成参考答案）
+            if (!answered && !type.isSelfRubric) {
+                val hints = revealedHints(question, hintLevel)
+                if (hints.isNotEmpty()) {
+                    AppCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(text = "提示（一步一步来，答案还是你自己找）", style = texts.caption)
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        hints.forEachIndexed { tier, line ->
+                            Text(text = "${tier + 1}. $line", style = texts.aux)
+                            Spacer(Modifier.height(AppTheme.space.xs))
+                        }
+                    }
+                    Spacer(Modifier.height(AppTheme.space.sm))
+                    StudyTips.forEvent(TipEvent.StrugglingReview)?.let { tip ->
+                        TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                    }
+                }
+                if (hintLevel < HINT_TIER_COUNT) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = { hintLevel = nextHintLevel(hintLevel) }) {
+                            Text(
+                                text = if (hintLevel == 0) "给点提示" else "再往前推一步（第 ${hintLevel + 1} / $HINT_TIER_COUNT 档）",
+                                style = texts.aux.copy(
+                                    color = colors.accentInk,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!answered && type != QuestionType.SINGLE && type != QuestionType.TRUE_FALSE) {
+                Spacer(Modifier.height(AppTheme.space.sm))
+                AppButton(
+                    text = if (type.isSelfRubric) "查看参考答案并自评" else "提交答案",
+                    enabled = canSubmit,
+                    onClick = {
+                        when (type) {
+                            QuestionType.MULTIPLE -> onSubmitResponse(
+                                QuizResponse.Multiple(selectedMulti),
+                                conf,
+                            )
+                            QuestionType.FILL, QuestionType.CALCULATION -> onSubmitResponse(
+                                QuizResponse.Fill(fillText.trim()),
+                                conf,
+                            )
+                            QuestionType.SHORT_ANSWER,
+                            QuestionType.ESSAY,
+                            QuestionType.CASE_ANALYSIS,
+                            -> onSubmitResponse(
+                                QuizResponse.SelfAssess(fillText.trim()),
+                                conf,
+                            )
+                            QuestionType.SINGLE, QuestionType.TRUE_FALSE -> Unit
+                        }
+                    },
+                )
+            }
+
+            if (answered) {
+                val grade = state.grade ?: return@Column
+                if (type == QuestionType.SINGLE || type == QuestionType.TRUE_FALSE) {
+                    val right = grade.correct
+                    val feedback = buildFeedback(
+                        question = question,
+                        selected = state.selected,
+                        options = options,
+                        hintsUsed = hintLevel,
+                    )
+                    AppCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = feedback.verdict,
+                            style = texts.cardTitle.copy(
+                                color = if (right) colors.successInk else colors.warningInk,
+                            ),
+                        )
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        Text(text = feedback.process, style = texts.aux)
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        Text(text = feedback.selfReg, style = texts.aux)
+                        if (shouldRevealFullExplanation(hintsUsed = hintLevel, correct = right) &&
+                            feedback.explanation.isNotBlank()
+                        ) {
+                            Spacer(Modifier.height(AppTheme.space.sm))
+                            Text(text = "完整解析：${feedback.explanation}", style = texts.aux)
+                        }
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        Text(
+                            text = FEEDBACK_SCOPE_NOTE,
+                            style = texts.caption.copy(color = colors.secondaryText),
+                        )
+                    }
+                    if (!right && conf == Confidence.SURE) {
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        StudyTips.forEvent(TipEvent.HighConfidenceMistake)?.let { tip ->
+                            TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                } else {
+                    TypedFeedbackCard(
+                        question = question,
+                        grade = grade,
+                        conf = conf,
+                        awaitingSelfJudge = state.awaitingSelfJudge,
+                        onResolveSelfJudge = { correct -> onResolveSelfJudge(correct, conf) },
+                    )
+                }
+            }
+        }
+
+        if (answered && !state.awaitingSelfJudge) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(colors.background.copy(alpha = 0.96f))
+                    .padding(top = AppTheme.space.sm),
+            ) {
+                AppButton(
+                    text = if (isLast) "查看结果" else "下一题",
+                    onClick = {
+                        if (!advanced) {
+                            advanced = true
+                            onNext()
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TypedFeedbackCard(
+    question: Question,
+    grade: GradeResult,
+    conf: Confidence?,
+    awaitingSelfJudge: Boolean,
+    onResolveSelfJudge: (Boolean) -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val type = question.typeEnum
+    val correct = grade.correct
+    val title = when {
+        awaitingSelfJudge && type.isSelfRubric -> "请对照参考答案自评"
+        awaitingSelfJudge -> "自动比对没对上"
+        grade.selfJudged -> if (correct) "自评：答对" else "自评：答错"
+        correct -> "回答正确"
+        else -> "回答错误"
+    }
+    val titleColor = when {
+        awaitingSelfJudge -> colors.accentInk
+        correct -> colors.successInk
+        else -> colors.warningInk
+    }
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = title, style = texts.cardTitle.copy(color = titleColor))
+        if (type == QuestionType.MULTIPLE) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = "选对 ${grade.partialCorrect} / ${grade.partialTotal} 个正确项；多选题全对才算过。",
+                style = texts.aux,
+            )
+        }
+        if (type.usesAcceptedAnswers) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(text = "你的答案：${grade.userAnswerText.ifBlank { "（空）" }}", style = texts.aux)
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Text(text = "参考答案：${grade.correctAnswerText}", style = texts.aux)
+        }
+        if (type.isSelfRubric) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = "参考答案：${grade.correctAnswerText.ifBlank { "（未提供）" }}",
+                style = texts.aux,
+            )
+            if (grade.userAnswerText.isNotBlank()) {
+                Spacer(Modifier.height(AppTheme.space.xs))
+                Text(text = "你的草稿：${grade.userAnswerText}", style = texts.aux)
+            }
+            if (question.explanation.isNotBlank()) {
+                Spacer(Modifier.height(AppTheme.space.xs))
+                Text(text = "评分要点：${question.explanation}", style = texts.aux)
+            }
+        } else if (question.explanation.isNotBlank()) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(text = "解析：${question.explanation}", style = texts.aux)
+        }
+        if (awaitingSelfJudge) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = if (type.isSelfRubric) {
+                    "主观题只能自评（应用不会自动判分）。对照参考答案与评分要点，给自己判这一次："
+                } else {
+                    "自动比对没对上。若你写的是同义答案，可以自己判这一次："
+                },
+                style = texts.caption.copy(color = colors.secondaryText),
+            )
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+                AppButton(
+                    text = "算我写对了",
+                    onClick = { onResolveSelfJudge(true) },
+                    modifier = Modifier.weight(1f),
+                )
+                AppButton(
+                    text = "算我写错",
+                    onClick = { onResolveSelfJudge(false) },
+                    secondary = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        if (grade.selfJudged) {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = "本题结果来自自评，只记入练习记录，不计入 FSRS 校准流。",
+                style = texts.caption.copy(color = colors.secondaryText),
+            )
+        }
+        Spacer(Modifier.height(AppTheme.space.sm))
+        Text(
+            text = FEEDBACK_SCOPE_NOTE,
+            style = texts.caption.copy(color = colors.secondaryText),
+        )
+    }
+    if (!awaitingSelfJudge && !correct && conf == Confidence.SURE) {
+        Spacer(Modifier.height(AppTheme.space.sm))
+        StudyTips.forEvent(TipEvent.HighConfidenceMistake)?.let { tip ->
+            TipCard(tip = tip, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** 多选位图 → 下标集合（最多 32 个选项，足够覆盖题库） */
+private fun maskIndices(mask: Int): Set<Int> =
+    (0 until 32).filter { mask and (1 shl it) != 0 }.toSet()
+
+/** 三题型共用的选项态映射：判定后读 [GradeResult.optionStates]，判定前读本地选中/按下 */
+private fun optionStateFor(
+    index: Int,
+    selected: Set<Int>,
+    grade: GradeResult?,
+    pending: Int,
+): QuizOptionState = when {
+    grade != null -> when (grade.optionStates[index]) {
+        OptionGrade.CORRECT -> QuizOptionState.Correct
+        OptionGrade.WRONG -> QuizOptionState.Wrong
+        OptionGrade.MISSED -> QuizOptionState.Missed
+        null -> QuizOptionState.Idle
+    }
+
+    index in selected || index == pending -> QuizOptionState.Selected
+    else -> QuizOptionState.Idle
+}
+
+/**
  * 结果页：环形正确率（132dp 居中）+ 百分比 + 答对题数。
  *
  * `progress` 直接取整数百分比 / 100，因此环与读数永远同一个口径、不会出现「99% 的环画满格」；
@@ -670,6 +1254,7 @@ private fun QuestionView(
 @Composable
 private fun QuizResult(
     correctCount: Int,
+    selfJudgedCount: Int,
     total: Int,
     percent: Int,
     onRestart: () -> Unit,
@@ -729,6 +1314,15 @@ private fun QuizResult(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
+            if (selfJudgedCount > 0) {
+                Spacer(Modifier.height(AppTheme.space.xs))
+                Text(
+                    text = "其中 $selfJudgedCount 题为主观/自评，只作练习记录，不计入自动校准",
+                    style = texts.caption.copy(color = colors.secondaryText),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
         Spacer(Modifier.height(AppTheme.space.lg))
         // v3.3：主行动是"继续练"而不是"离开"—— 结果页最常见的意图是再来一轮；

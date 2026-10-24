@@ -7,6 +7,8 @@ import com.studykit.AppContainer
 import com.studykit.StudyKitApp
 import com.studykit.data.AppDatabase
 import com.studykit.data.dao.QuestionDao
+import com.studykit.data.dao.SubjectStageFormatCount
+import com.studykit.data.dao.SubjectTypeCount
 import com.studykit.data.entity.Question
 import com.studykit.data.repository.QuestionRepository
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +46,70 @@ private class RecordingQuestionDao : QuestionDao {
             .drop(offset)
             .take(limit)
     }
+
+    override suspend fun getBySubjectAndType(
+        subject: String,
+        type: String,
+        limit: Int,
+        offset: Int,
+    ): List<Question> {
+        queries += Triple(subject, limit, offset)
+        return rows.filter { it.subject == subject && it.questionType == type }
+            .sortedBy { it.id }
+            .drop(offset)
+            .take(limit)
+    }
+
+    override suspend fun getBySubjectFiltered(
+        subject: String,
+        stage: String?,
+        type: String?,
+        limit: Int,
+        offset: Int,
+    ): List<Question> {
+        queries += Triple(subject, limit, offset)
+        return rows.filter {
+            it.subject == subject &&
+                (stage == null || it.examStage == stage) &&
+                (type == null || it.questionType == type)
+        }.sortedBy { it.id }.drop(offset).take(limit)
+    }
+
+    override suspend fun getBySubjectAndTypes(
+        subject: String,
+        stage: String?,
+        types: List<String>,
+        limit: Int,
+        offset: Int,
+    ): List<Question> {
+        queries += Triple(subject, limit, offset)
+        return rows.filter {
+            it.subject == subject &&
+                (stage == null || it.examStage == stage) &&
+                it.questionType in types
+        }.sortedBy { it.id }.drop(offset).take(limit)
+    }
+
+    override fun observeSubjectStageFormatCounts(): Flow<List<SubjectStageFormatCount>> = flow {
+        emit(
+            rows.groupBy { Triple(it.subject, it.examStage, it.questionType) }
+                .map { (key, items) ->
+                    SubjectStageFormatCount(key.first, key.second, key.third, items.size)
+                }
+                .sortedWith(compareBy({ it.subject }, { it.stage }, { it.type })),
+        )
+    }
+
+    override fun observeSubjectTypeCounts(): Flow<List<SubjectTypeCount>> = flow {
+        emit(
+            rows.groupBy { it.subject to it.questionType }
+                .map { (key, items) -> SubjectTypeCount(key.first, key.second, items.size) }
+                .sortedWith(compareBy({ it.subject }, { it.type })),
+        )
+    }
+
+    override suspend fun countBySubjectAndType(subject: String, type: String): Int =
+        rows.count { it.subject == subject && it.questionType == type }
 
     override fun observeSubjects(): Flow<List<String>> = flow {
         subjectsReads++

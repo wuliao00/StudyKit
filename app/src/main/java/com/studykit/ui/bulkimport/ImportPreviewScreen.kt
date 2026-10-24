@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.studykit.data.question.ExamStage
+import com.studykit.data.question.QuestionType
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.SectionHeader
@@ -175,7 +177,26 @@ private fun PreviewRow(item: ImportItem, excluded: Boolean, onToggle: () -> Unit
 /** 每个条目取一行人类可读的摘要 */
 private fun ImportItem.summary(): String = when (this) {
     is ImportItem.Word -> "$word  $meaning"
-    is ImportItem.Question -> "$stem（${options.size} 选项 · 答案 ${'A' + answerIndex}）"
+    is ImportItem.Question -> {
+        val tag = buildList {
+            if (stage != ExamStage.UNSPECIFIED) add(stage.label)
+            if (subject.isNotBlank()) add(subject)
+            add(type.label)
+        }.joinToString(" · ")
+        val detail = when (type) {
+            QuestionType.SINGLE -> "${options.size} 选项 · 答案 ${'A' + answerIndex}"
+            QuestionType.MULTIPLE -> "${options.size} 选项 · 答案 ${
+                answerIndices.sorted().joinToString(",") { ('A' + it).toString() }
+            }"
+            QuestionType.TRUE_FALSE -> "正确/错误 · 答案 ${if (answerIndex == 0) "正确" else "错误"}"
+            QuestionType.FILL, QuestionType.CALCULATION -> "答案 ${acceptedAnswers.joinToString(" / ")}"
+            QuestionType.SHORT_ANSWER,
+            QuestionType.ESSAY,
+            QuestionType.CASE_ANALYSIS,
+            -> "参考答案 ${acceptedAnswers.firstOrNull().orEmpty()}"
+        }
+        "$tag · $stem（$detail）"
+    }
     is ImportItem.Excerpt -> "$book：$excerpt"
     is ImportItem.Mistake -> "$subject · $title"
 }

@@ -6,6 +6,21 @@ import androidx.room.Query
 import com.studykit.data.entity.Question
 import kotlinx.coroutines.flow.Flow
 
+/** 学科 × 题型的题量计数（题库页分组用）。`type` 是数据库里的小写列值 */
+data class SubjectTypeCount(
+    val subject: String,
+    val type: String,
+    val count: Int,
+)
+
+/** v3.3：学科 × 阶段 × 题型的题量计数（双行筛选条与学科卡计数用） */
+data class SubjectStageFormatCount(
+    val subject: String,
+    val stage: String,
+    val type: String,
+    val count: Int,
+)
+
 @Dao
 interface QuestionDao {
 
@@ -18,11 +33,70 @@ interface QuestionDao {
     @Query("SELECT * FROM questions WHERE subject = :subject ORDER BY id LIMIT :limit OFFSET :offset")
     suspend fun getBySubject(subject: String, limit: Int, offset: Int): List<Question>
 
+    /** 按学科 + 题型取题；[type] 用 [com.studykit.data.question.QuestionType.storageValue] 的小写值 */
+    @Query(
+        "SELECT * FROM questions WHERE subject = :subject AND question_type = :type " +
+            "ORDER BY id LIMIT :limit OFFSET :offset",
+    )
+    suspend fun getBySubjectAndType(subject: String, type: String, limit: Int, offset: Int): List<Question>
+
+    /**
+     * v3.3：按学科 + 阶段 + 题型取题；[stage]/[type] 传 null = 不限（阶段空串是“未标注”，不是 null）。
+     */
+    @Query(
+        "SELECT * FROM questions WHERE subject = :subject " +
+            "AND (:stage IS NULL OR exam_stage = :stage) " +
+            "AND (:type IS NULL OR question_type = :type) " +
+            "ORDER BY id LIMIT :limit OFFSET :offset",
+    )
+    suspend fun getBySubjectFiltered(
+        subject: String,
+        stage: String?,
+        type: String?,
+        limit: Int,
+        offset: Int,
+    ): List<Question>
+
+    /** 模考只收单值可编码的客观题（SINGLE/TRUE_FALSE），阶段可选 */
+    @Query(
+        "SELECT * FROM questions WHERE subject = :subject " +
+            "AND (:stage IS NULL OR exam_stage = :stage) " +
+            "AND question_type IN (:types) " +
+            "ORDER BY id LIMIT :limit OFFSET :offset",
+    )
+    suspend fun getBySubjectAndTypes(
+        subject: String,
+        stage: String?,
+        types: List<String>,
+        limit: Int,
+        offset: Int,
+    ): List<Question>
+
     @Query("SELECT DISTINCT subject FROM questions ORDER BY subject")
     fun observeSubjects(): Flow<List<String>>
 
     @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
     suspend fun countBySubject(subject: String): Int
+
+    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject AND question_type = :type")
+    suspend fun countBySubjectAndType(subject: String, type: String): Int
+
+    /**
+     * 学科 × 题型题量。用 SQL 聚合而不是把全表捞进内存再 groupBy：
+     * 题库可能上千题，而且这个 Flow 会在题库页常驻订阅。
+     */
+    @Query(
+        "SELECT subject, question_type AS type, COUNT(*) AS count FROM questions " +
+            "GROUP BY subject, question_type ORDER BY subject",
+    )
+    fun observeSubjectTypeCounts(): Flow<List<SubjectTypeCount>>
+
+    /** v3.3：学科 × 阶段 × 题型，双行筛选的计数来源 */
+    @Query(
+        "SELECT subject, exam_stage AS stage, question_type AS type, COUNT(*) AS count FROM questions " +
+            "GROUP BY subject, exam_stage, question_type ORDER BY subject",
+    )
+    fun observeSubjectStageFormatCounts(): Flow<List<SubjectStageFormatCount>>
 
     /**
      * 同考点候选池（v2.7 计划 B Task 15「换一道同考点的」）。

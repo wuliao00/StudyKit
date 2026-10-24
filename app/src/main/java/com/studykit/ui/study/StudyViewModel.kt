@@ -21,6 +21,13 @@ import com.studykit.data.memory.kernelStateFor
 import com.studykit.data.memory.recallForDisplay
 import com.studykit.data.memory.toKernelRating
 import com.studykit.data.memory.toStorageInt
+import com.studykit.data.dao.SubjectStageFormatCount
+import com.studykit.data.question.ExamStage
+import com.studykit.data.question.GradeResult
+import com.studykit.data.question.GradingMode
+import com.studykit.data.question.QuestionGrader
+import com.studykit.data.question.QuestionType
+import com.studykit.data.question.QuizResponse
 import com.studykit.ui.mistake.MistakeIntake
 import com.studykit.util.OneShotGate
 import com.studykit.util.toast
@@ -87,6 +94,12 @@ data class CardSessionUi(
     val finished: Boolean get() = index >= queue.size
 }
 
+/** 题库练习的筛选状态：阶段 + 题型，二者都 null = 全部 */
+data class QuizFilter(
+    val stage: ExamStage? = null,
+    val format: QuestionType? = null,
+)
+
 /**
  * 题库练习会话状态：学科 + 题目快照 + 当前题序 + 作答与对错统计
  *
@@ -99,8 +112,17 @@ data class QuizUiState(
     val subject: String = "",
     val questions: List<Question> = emptyList(),
     val index: Int = 0,
+    /** 单选兼容位：旧 UI/旧测试仍读它；多选/填空为 null */
     val selected: Int? = null,
+    /** v3.3：本次作答（单选/多选/填空）；未作答为 null */
+    val response: QuizResponse? = null,
+    /** v3.3：判分结果；非空即已作答。填空自动不命中时 needsSelfJudge=true，等用户自评 */
+    val grade: GradeResult? = null,
+    /** 填空自评已经点过（无论算对算错）；此前不许进下一题 */
+    val selfJudgeResolved: Boolean = false,
     val correctCount: Int = 0,
+    /** 本轮有多少题的结果来自自评（填空回退/简答/主观/材料）；结果页据此标注“含自评” */
+    val selfJudgedCount: Int = 0,
     /** 该挂 [confusableDrillTip] 那句提示的题 id（每个混淆对里靠后那张，由 `drillNoteIds` 判；文案只有一个家，这里不抄第二份） */
     val drillIds: Set<Long> = emptySet(),
 ) {
@@ -108,6 +130,10 @@ data class QuizUiState(
     val current: Question? get() = questions.getOrNull(index)
     val finished: Boolean get() = started && index >= questions.size
     val total: Int get() = questions.size
+    /** 已作答（判分结果已回来；旧测试/旧路径只写 selected 时也算已答） */
+    val answered: Boolean get() = grade != null || selected != null
+    /** 填空自动比对没命中，等用户自评 */
+    val awaitingSelfJudge: Boolean get() = grade?.needsSelfJudge == true && !selfJudgeResolved
     /** 当前这题是某个混淆对里"后面那张"。判据全在纯函数那一层，这里只做一次集合查 */
     val currentIsDrill: Boolean get() = current?.id?.let { it in drillIds } == true
     val accuracyPercent: Int
@@ -323,6 +349,64 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     /** 题库学科列表（distinct subject） */
     val subjects: StateFlow<List<String>> = questionRepository.observeSubjects()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 学科 × 阶段 × 题型题量（双行筛选条与「该组合下还有没有题」共用） */
+    val subjectStageFormatCounts: StateFlow<List<SubjectStageFormatCount>> =
+        questionRepository.observeSubjectStageFormatCounts()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _quizFilter = MutableStateFlow(QuizFilter())
+    /** 当前阶段/题型筛选；两项都 null = 全部。只在练习入口读写，不碰设置表 */
+    val quizFilter: StateFlow<QuizFilter> = _quizFilter
+
+    /**
+     * 题库练习可选的学科：阶段 + 题型双筛选后只保留该组合下真有题的学科。
+     * 模考页用 [mockExamSubjects]（只收单值客观题），不用这一份。
+     */
+    val quizSubjects: StateFlow<List<String>> = combine(
+        subjects,
+        subjectStageFormatCounts,
+        quizFilter,
+    ) { all, counts, filter ->
+        counts.asSequence()
+            .filter {
+                it.count > 0 &&
+                    (filter.stage == null || it.stage == filter.stage.storageValue) &&
+                    (filter.format == null || it.type == filter.format.storageValue)
+            }
+            .map { it.subject }
+            .distinct()
+            .sorted()
+            .toList()
+            .ifEmpty { if (filter.stage == null && filter.format == null) all else emptyList() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 模考只收单值可编码的客观题（SINGLE/TRUE_FALSE），阶段筛选生效 */
+    val mockExamSubjects: StateFlow<List<String>> = combine(
+        subjects,
+        subjectStageFormatCounts,
+        quizFilter,
+    ) { all, counts, filter ->
+        val eligibleTypes = setOf(QuestionType.SINGLE.storageValue, QuestionType.TRUE_FALSE.storageValue)
+        val subjectsWith = counts.asSequence()
+            .filter {
+                it.count > 0 &&
+                    it.type in eligibleTypes &&
+                    (filter.stage == null || it.stage == filter.stage.storageValue)
+            }
+            .map { it.subject }
+            .toSet()
+        all.filter { it in subjectsWith }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setQuizFilter(stage: ExamStage?, format: QuestionType?) {
+        _quizFilter.value = QuizFilter(stage = stage, format = format)
+    }
+
+    /** 兼容旧 UI/测试：只改题型，阶段保持当前值 */
+    fun setQuestionTypeFilter(type: QuestionType?) {
+        _quizFilter.value = _quizFilter.value.copy(format = type)
+    }
 
     // ── 卡片学习会话 ──────────────────────────────────────────────────────
     private val _session = MutableStateFlow<CardSessionUi?>(null)
@@ -596,8 +680,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun startQuiz(subject: String) {
         viewModelScope.launch {
             val settings = settingsRepository.current()
-            val session = questionRepository.getBySubject(subject, QUIZ_SIZE, 0)
-            val pool = semanticPool(settings, subject)
+            val filter = _quizFilter.value
+            val session = questionRepository.getBySubject(subject, filter.stage, filter.format, QUIZ_SIZE, 0)
+            val pool = semanticPool(settings, subject, filter)
             val embed = if (settings.semanticInterleaveEnabled) container.embeddingProvider::embed else null
             val plan = withContext(Dispatchers.Default) {
                 planQuestionQueue(
@@ -626,9 +711,13 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      * 那会让综合练习每轮多读 N 次（N = 学科数），而它本来一次合并取数就拿到了全部候选。
      * 这条差别由 `StudyQueueWiringTest.综合练习开着语义层也不额外查库` 钉着。
      */
-    private suspend fun semanticPool(settings: AppSettings, subject: String): List<Question> =
+    private suspend fun semanticPool(
+        settings: AppSettings,
+        subject: String,
+        filter: QuizFilter,
+    ): List<Question> =
         if (!settings.semanticInterleaveEnabled) emptyList()
-        else questionRepository.getBySubject(subject, QUIZ_SIZE, QUIZ_SIZE)
+        else questionRepository.getBySubject(subject, filter.stage, filter.format, QUIZ_SIZE, QUIZ_SIZE)
 
     /**
      * 综合练习：跨学科组一轮（每个已录入学科先取若干条，合并后按学科打散再截前 [QUIZ_SIZE] 道）。
@@ -651,9 +740,12 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun startMixedQuiz() {
         viewModelScope.launch {
             val settings = settingsRepository.current()
+            val filter = _quizFilter.value
             val subjects = questionRepository.observeSubjects().first()
             // 各科给同样的余量再合并：交错要的是"轮流动"，先把每科各自的前若干条捞齐
-            val pool = subjects.flatMap { questionRepository.getBySubject(it, QUIZ_SIZE, 0) }
+            val pool = subjects.flatMap {
+                questionRepository.getBySubject(it, filter.stage, filter.format, QUIZ_SIZE, 0)
+            }
             val ordered = interleaveBySubject(pool, enabled = settings.interleavingEnabled)
             val embed = if (settings.semanticInterleaveEnabled) container.embeddingProvider::embed else null
             val plan = withContext(Dispatchers.Default) {
@@ -697,28 +789,85 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
      *
      * [conf] 由答题页信心条在**提交前**采集（计划 B Task 12）；null = 没选或关掉开关。
      * 它一次喂两处：`practice_records.confidence`（1..3/null）与答错入本的 `mistakes.priority`（经 [MistakeIntake]）。
+     *
+     * v3.3：单选只是 [QuizResponse] 的一个分支；多选/填空走 [submitQuizResponse]。
      */
     fun selectOption(selected: Int, conf: Confidence? = null) {
+        submitQuizResponse(QuizResponse.Single(selected), conf)
+    }
+
+    /**
+     * v3.3 的统一作答入口：单选/多选立即判分并落库；填空先做自动规范化比对，
+     * 自动不命中时只把预览判分挂到 UI（`needsSelfJudge=true`），**不落练习记录**，
+     * 等用户点「算我写对了 / 算我写错」再由 [resolveSelfJudge] 落一条最终记录。
+     * 这样自评不会产生两条 practice_records，也不会先记一次假错。
+     */
+    fun submitQuizResponse(response: QuizResponse, conf: Confidence? = null) {
         val state = _quiz.value
         val question = state.current ?: return
-        if (state.selected != null) return
+        if (state.answered) return
         viewModelScope.launch {
-            val correct = questionRepository.submitAnswer(question.id, selected, conf?.toStorageInt())
-            if (!correct) {
-                addMistakeIfAbsent(question, conf)
+            // 所有题型先做一次纯判分：只要 needsSelfJudge（填空/计算自动未命中、
+            // 简答/主观/材料的评分标准题），就先挂预览、不落练习记录，等用户自评一次。
+            val preview = QuestionGrader.grade(question, response)
+            if (preview.needsSelfJudge) {
+                _quiz.value = state.copy(
+                    selected = null,
+                    response = response,
+                    grade = preview,
+                    selfJudgeResolved = false,
+                )
+                return@launch
             }
-            _quiz.value = state.copy(
-                selected = selected,
-                correctCount = state.correctCount + if (correct) 1 else 0,
+            val grade = questionRepository.submitAnswer(question.id, response, conf?.toStorageInt())
+            finishAnswer(state, question, response, grade, conf)
+        }
+    }
+
+    /** 填空/计算自动未命中或主观题：用户自评一次；只在这里落最终练习记录 */
+    fun resolveSelfJudge(correct: Boolean, conf: Confidence? = null) {
+        val state = _quiz.value
+        val question = state.current ?: return
+        val response = state.response ?: return
+        if (!state.awaitingSelfJudge) return
+        viewModelScope.launch {
+            val grade = questionRepository.submitAnswer(
+                questionId = question.id,
+                response = response,
+                confidence = conf?.toStorageInt(),
+                selfJudgedCorrect = correct,
             )
-            // v2.9 Task 6 双写 review_log：练习的即时判定就是"一次已评分复习"，写在 submitAnswer(状态写)之后。
-            // 练习不进 FSRS 状态机、也没有逐卡的 Δt / 排出的间隔 / 作答耗时——这几列按 Step 0 定的默认填
-            // （elapsed/scheduled/duration=0、state=0New）；rating 由对错映射（判对→GOOD3、判错→AGAIN1），
-            // self_conf 与背词同口径（没选信心记 null，不拿 0 冒充"肯定不记得"）。
+            finishAnswer(state, question, response, grade, conf, selfJudgeResolved = true)
+        }
+    }
+
+    private suspend fun finishAnswer(
+        state: QuizUiState,
+        question: Question,
+        response: QuizResponse,
+        grade: GradeResult,
+        conf: Confidence?,
+        selfJudgeResolved: Boolean = false,
+    ) {
+        if (!grade.correct) {
+            addMistakeIfAbsent(question, conf, grade)
+        }
+        _quiz.value = state.copy(
+            selected = (response as? QuizResponse.Single)?.index,
+            response = response,
+            grade = grade,
+            selfJudgeResolved = selfJudgeResolved,
+            correctCount = state.correctCount + if (grade.correct) 1 else 0,
+            selfJudgedCount = state.selfJudgedCount + if (grade.selfJudged) 1 else 0,
+        )
+        // v2.9 Task 6 双写 review_log：练习的即时判定就是"一次已评分复习"，写在 submitAnswer(状态写)之后。
+        // v3.3：自评（填空/计算回退、简答/主观/材料）不写 review_log —— 自评不是伯努利结果，
+        // 写进校准流会让优化器把“用户宽容”学成记忆强度。PracticeRecord 仍记录自评结果，供本人回看。
+        if (grade.gradingMode != GradingMode.SELF_RUBRIC && !grade.selfJudged) {
             reviewLogRepository.recordGradedReview(
                 cardKind = ReviewLog.KIND_PRACTICE,
                 cardId = question.id,
-                rating = if (correct) KernelRating.GOOD.ordinal + 1 else KernelRating.AGAIN.ordinal + 1,
+                rating = if (grade.correct) KernelRating.GOOD.ordinal + 1 else KernelRating.AGAIN.ordinal + 1,
                 elapsedDays = 0.0,
                 scheduledDays = 0.0,
                 state = 0,
@@ -731,7 +880,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 答错入错题本：同一 question_id 已存在（以 note 中的 qid 标记判断）则不重复插入；priority 取超纠正命中档 */
-    private suspend fun addMistakeIfAbsent(question: Question, conf: Confidence?) {
+    private suspend fun addMistakeIfAbsent(question: Question, conf: Confidence?, grade: GradeResult) {
         val marker = "qid:${question.id}"
         val exists = mistakeRepository.observeAll().first().any {
             it.source == Mistake.SOURCE_PRACTICE && it.note == marker
@@ -743,7 +892,33 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             options.forEachIndexed { i, option ->
                 appendLine("${'A' + i}. $option")
             }
-            appendLine("正确答案：${'A' + question.answerIndex}. ${options.getOrNull(question.answerIndex).orEmpty()}")
+            when (question.typeEnum) {
+                QuestionType.SINGLE -> appendLine(
+                    "正确答案：${'A' + question.answerIndex}. ${options.getOrNull(question.answerIndex).orEmpty()}",
+                )
+
+                QuestionType.TRUE_FALSE -> {
+                    appendLine("正确答案：${grade.correctAnswerText}")
+                    appendLine("你的作答：${grade.userAnswerText}")
+                }
+
+                QuestionType.MULTIPLE,
+                QuestionType.FILL,
+                QuestionType.CALCULATION,
+                -> {
+                    // 「正确答案」是 RedoFlow 的切分标记；「你的作答」放在它后面，重做阶段一起遮住。
+                    appendLine("正确答案：${grade.correctAnswerText}")
+                    appendLine("你的作答：${grade.userAnswerText}")
+                }
+
+                QuestionType.SHORT_ANSWER,
+                QuestionType.ESSAY,
+                QuestionType.CASE_ANALYSIS,
+                -> {
+                    appendLine("参考答案：${grade.correctAnswerText}")
+                    appendLine("你的作答：${grade.userAnswerText.ifBlank { "（未填写草稿）" }}")
+                }
+            }
             append("解析：${question.explanation}")
         }
         mistakeRepository.add(
@@ -760,8 +935,14 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     /** 进入下一题；越过末尾后由 finished 标记接管显示结果页 */
     fun nextQuestion() {
         val state = _quiz.value
-        if (state.selected == null) return
-        _quiz.value = state.copy(index = state.index + 1, selected = null)
+        if (!state.answered || state.awaitingSelfJudge) return
+        _quiz.value = state.copy(
+            index = state.index + 1,
+            selected = null,
+            response = null,
+            grade = null,
+            selfJudgeResolved = false,
+        )
     }
 
     // ── 模考会话（v2.7 计划 B Task 13；v3.0-B T11 起可持久化 + 计时）────────────
@@ -802,8 +983,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun startMockExam(subject: String) {
         viewModelScope.launch {
             val settings = settingsRepository.current()
+            val stage = _quizFilter.value.stage
             val questions = interleaveBySubject(
-                questions = questionRepository.getBySubject(subject, MOCK_EXAM_SIZE, 0),
+                questions = questionRepository.getBySubjectAndTypes(
+                    subject = subject,
+                    stage = stage,
+                    types = setOf(QuestionType.SINGLE, QuestionType.TRUE_FALSE),
+                    limit = MOCK_EXAM_SIZE,
+                    offset = 0,
+                ),
                 enabled = settings.interleavingEnabled,
             )
             val now = System.currentTimeMillis()
@@ -1115,12 +1303,13 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 val selected = verdict.selected ?: return@forEach
                 val question = questionsById[questionId] ?: return@forEach
                 // 与练习同一 submitAnswer，只是 conf 传 null（模考不采集信心 → confidence 落 NULL）
-                val correct = questionRepository.submitAnswer(questionId, selected)
-                if (!correct) addMistakeIfAbsent(question, conf = null)
+                val response = QuizResponse.Single(selected)
+                val grade = questionRepository.submitAnswer(questionId, response)
+                if (!grade.correct) addMistakeIfAbsent(question, conf = null, grade = grade)
                 reviewLogRepository.recordGradedReview(
                     cardKind = ReviewLog.KIND_PRACTICE,
                     cardId = questionId,
-                    rating = if (correct) KernelRating.GOOD.ordinal + 1 else KernelRating.AGAIN.ordinal + 1,
+                    rating = if (grade.correct) KernelRating.GOOD.ordinal + 1 else KernelRating.AGAIN.ordinal + 1,
                     elapsedDays = 0.0,
                     scheduledDays = 0.0,
                     state = 0,
@@ -1162,14 +1351,41 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         explanation: String,
         onSaved: () -> Unit,
     ) {
+        saveQuestion(
+            type = QuestionType.SINGLE,
+            subject = subject,
+            stem = stem,
+            options = options,
+            answerIndices = listOf(answerIndex),
+            acceptedAnswers = emptyList(),
+            explanation = explanation,
+            onSaved = onSaved,
+        )
+    }
+
+    /** v3.3：按阶段 + 题型保存；单选/多选用下标，填空/计算用可接受答案，简答/主观/材料用参考答案 */
+    fun saveQuestion(
+        type: QuestionType,
+        stage: ExamStage = ExamStage.UNSPECIFIED,
+        subject: String,
+        stem: String,
+        options: List<String>,
+        answerIndices: List<Int>,
+        acceptedAnswers: List<String>,
+        explanation: String,
+        onSaved: () -> Unit,
+    ) {
         if (!savingQuestion.tryEnter()) return
         viewModelScope.launch {
             try {
                 questionRepository.add(
                     subject = subject.trim(),
+                    stage = stage,
                     stem = stem.trim(),
-                    options = options.map { it.trim() },
-                    answerIndex = answerIndex,
+                    options = options.map { it.trim() }.filter { it.isNotEmpty() },
+                    type = type,
+                    answerIndices = answerIndices,
+                    answerTexts = acceptedAnswers.map { it.trim() }.filter { it.isNotEmpty() },
                     explanation = explanation.trim(),
                 )
                 toast("已保存题目")

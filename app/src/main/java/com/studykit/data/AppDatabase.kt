@@ -59,10 +59,12 @@ import com.studykit.optimize.ParamSnapshot
         ParamSnapshot::class,
         MockSession::class,
     ],
+    // v11：v3.3——阶段列 exam_stage + (exam_stage, question_type, subject) 复合索引
+    // v10：题型扩展——questions 加 question_type / answer_indices_json / answer_text_json 三列
     // v9：v3.0-B——套卷会话持久化（mock_sessions）+ 错题遮挡两列（kind/extra）
     // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 9,
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -461,6 +463,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9 → v10：题库从「只有单选」扩到单选/多选/填空。三条**带默认值的 ADD COLUMN**，
+         * 不删不改任何既有列，旧题自动落成 `single` + 空 JSON 数组 —— 旧 UI 只读 `answerIndex`，
+         * 因此升级后行为与升级前完全一致。
+         *
+         * 默认值必须与 `10.json` 的 `defaultValue` 逐字一致（`'single'`、`'[]'`），
+         * 否则 [Migration9To10Test] 的 `validate=true` 会当场红。
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `question_type` TEXT NOT NULL DEFAULT 'single'")
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `answer_indices_json` TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `answer_text_json` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        /**
+         * v10 → v11：题库阶段（空串=未标注，不猜阶段）+ 阶段/题型/学科复合索引。
+         * 只加列与索引，不改既有行；`Migration10To11Test` 用 10.json 旧库逐字校验。
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `exam_stage` TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_questions_exam_stage_question_type_subject` " +
+                        "ON `questions` (`exam_stage`, `question_type`, `subject`)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -474,7 +506,8 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                        MIGRATION_7_8, MIGRATION_8_9,
+                        MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
+                        MIGRATION_10_11,
                     )
                     .addCallback(SeedCallback)
                     .build()

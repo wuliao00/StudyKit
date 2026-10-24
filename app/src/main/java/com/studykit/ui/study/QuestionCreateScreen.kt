@@ -2,6 +2,7 @@ package com.studykit.ui.study
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.studykit.data.question.ExamStage
+import com.studykit.data.question.QuestionType
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppMultilineTextField
@@ -42,20 +45,15 @@ import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.theme.AppTheme
 
 /**
- * 题目录入页：学科 + 题干 + 4 选项 + 正确答案选择 + 解析，保存入 questions 表。
+ * 题目录入页：阶段 + 题型 + 学科 + 题干 + 题型对应字段 + 解析/评分要点。
  *
- * 输入区按语义并成三张 [AppCard]：题目（学科 / 题干）、选项与正确答案（A–D + 选择器）、
- * 解析；保存走 `AppButton`。页面自上而下错峰入场（标题行 → 三张卡 → 按钮，`StaggeredIn`
- * 每级 40ms，下标都是固定小值、无需 minOf 限幅）。
+ * 题型字段不是一张固定表单：
+ * - 单选/多选：A–D 四个选项 + 正确项选择；
+ * - 判断：选项固定“正确/错误”，只选一个；
+ * - 填空/计算：可接受答案（`;` 分隔），应用做规范化比对；
+ * - 简答/主观/材料：参考答案（必填）+ 评分要点，应用只让你自评。
  *
- * 答案选择器：选中项 = `successSoft` 柔底 + `successInk` 字色 + `SemiBold` + `success` 描边，
- * 未选中 = `background` 底 + `divider` 描边 + `primaryText`；圆角仍取 `AppTheme.radius.md`。
- * 未选中底色不再取 `card`——四格本来就落在 `AppCard` 的 `card` 面上，同色只剩 1dp 描边区分；
- * 换 `background` 后是「卡面上的浅凹槽」，两主题都能一眼看出可点。
- * 字色走 `successInk`（T15 墨水批次）：旧写法是 `success` 实底 + `onAccent`，浅色主题那格白字
- * 压在亮绿上只有 2.2:1；白字/白图压实底按同一裁定只留给 accent 一处，其余一律「soft 底 + ink 字」。
- * 输入框沿用 T3 已迁移的 [AppTextField] / [AppMultilineTextField]（accent 光标、
- * divider 底线），本页不再重复给色。
+ * 阶段与题型都是**筛选元数据**，不替用户判断某道题“应该”属于哪个阶段。
  */
 @Composable
 fun QuestionCreateScreen(
@@ -66,15 +64,44 @@ fun QuestionCreateScreen(
     val texts = AppTheme.texts
     var subject by rememberSaveable { mutableStateOf("") }
     var stem by rememberSaveable { mutableStateOf("") }
+    var stage by rememberSaveable { mutableStateOf(ExamStage.UNSPECIFIED) }
+    var type by rememberSaveable { mutableStateOf(QuestionType.SINGLE) }
     var optionA by rememberSaveable { mutableStateOf("") }
     var optionB by rememberSaveable { mutableStateOf("") }
     var optionC by rememberSaveable { mutableStateOf("") }
     var optionD by rememberSaveable { mutableStateOf("") }
-    var answerIndex by rememberSaveable { mutableStateOf(0) }
+    var answerLetters by rememberSaveable { mutableStateOf("A") }
+    var fillAnswers by rememberSaveable { mutableStateOf("") }
+    var referenceAnswer by rememberSaveable { mutableStateOf("") }
     var explanation by rememberSaveable { mutableStateOf("") }
 
     val options = listOf(optionA, optionB, optionC, optionD)
-    val canSave = subject.isNotBlank() && stem.isNotBlank() && options.all { it.isNotBlank() }
+    val answerIndices = answerLetters.map { it - 'A' }.distinct().sorted()
+    val acceptedAnswers = fillAnswers
+        .split(';', '；')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+    val canSave = subject.isNotBlank() && stem.isNotBlank() && when (type) {
+        QuestionType.SINGLE -> options.all { it.isNotBlank() } && answerIndices.size == 1
+        QuestionType.MULTIPLE -> options.all { it.isNotBlank() } && answerIndices.size >= 2
+        QuestionType.TRUE_FALSE -> answerIndices.size == 1
+        QuestionType.FILL, QuestionType.CALCULATION -> acceptedAnswers.isNotEmpty()
+        QuestionType.SHORT_ANSWER,
+        QuestionType.ESSAY,
+        QuestionType.CASE_ANALYSIS,
+        -> referenceAnswer.isNotBlank()
+    }
+
+    fun resetFor(candidate: QuestionType) {
+        type = candidate
+        answerLetters = when (candidate) {
+            QuestionType.SINGLE, QuestionType.TRUE_FALSE -> "A"
+            else -> ""
+        }
+        fillAnswers = ""
+        referenceAnswer = ""
+    }
 
     Column(
         modifier = Modifier
@@ -89,7 +116,6 @@ fun QuestionCreateScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
-                        // 图标落在页面底色上，按 T1 裁定走 accentInk（accent 仅 3.04:1）
                         tint = colors.accentInk,
                     )
                 }
@@ -105,14 +131,14 @@ fun QuestionCreateScreen(
                     value = subject,
                     onValueChange = { subject = it },
                     label = "学科",
-                    placeholder = "例如：数学",
+                    placeholder = "例如：数学 / 行测 / 申论",
                 )
                 Spacer(Modifier.height(AppTheme.space.md))
                 AppMultilineTextField(
                     value = stem,
                     onValueChange = { stem = it },
                     label = "题干",
-                    placeholder = "输入题目内容",
+                    placeholder = "输入题目内容；材料题可把材料一并放在这里",
                     minLines = 3,
                 )
             }
@@ -121,81 +147,149 @@ fun QuestionCreateScreen(
         Spacer(Modifier.height(AppTheme.space.lg))
         StaggeredIn(index = 2, modifier = Modifier.fillMaxWidth()) {
             AppCard(modifier = Modifier.fillMaxWidth()) {
-                AppTextField(
-                    value = optionA,
-                    onValueChange = { optionA = it },
-                    label = "选项 A",
-                    placeholder = "输入选项内容",
-                )
-                Spacer(Modifier.height(AppTheme.space.md))
-                AppTextField(
-                    value = optionB,
-                    onValueChange = { optionB = it },
-                    label = "选项 B",
-                    placeholder = "输入选项内容",
-                )
-                Spacer(Modifier.height(AppTheme.space.md))
-                AppTextField(
-                    value = optionC,
-                    onValueChange = { optionC = it },
-                    label = "选项 C",
-                    placeholder = "输入选项内容",
-                )
-                Spacer(Modifier.height(AppTheme.space.md))
-                AppTextField(
-                    value = optionD,
-                    onValueChange = { optionD = it },
-                    label = "选项 D",
-                    placeholder = "输入选项内容",
-                )
-
-                Spacer(Modifier.height(AppTheme.space.lg))
-                Text(text = "正确答案", style = texts.caption)
+                Text(text = "阶段", style = texts.caption)
                 Spacer(Modifier.height(AppTheme.space.sm))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 这是一组「四选一」，读屏必须知道它是个单选组：横向滑动浏览选项、
-                        // 并播报「已选中/未选中」（终审 I10）。纯语义修饰，不参与布局。
+                        .horizontalScroll(rememberScrollState())
                         .selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                 ) {
-                    listOf("A", "B", "C", "D").forEachIndexed { index, letter ->
-                        val selected = index == answerIndex
-                        Box(
+                    ExamStage.entries.forEach { candidate ->
+                        FormChip(
+                            label = candidate.label,
+                            selected = stage == candidate,
+                            onClick = { stage = candidate },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(AppTheme.space.md))
+                Text(text = "题型", style = texts.caption)
+                Spacer(Modifier.height(AppTheme.space.sm))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                ) {
+                    QuestionType.entries.forEach { candidate ->
+                        FormChip(
+                            label = candidate.label,
+                            selected = type == candidate,
+                            onClick = { resetFor(candidate) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(AppTheme.space.lg))
+                when (type) {
+                    QuestionType.SINGLE, QuestionType.MULTIPLE -> {
+                        AppTextField(
+                            value = optionA,
+                            onValueChange = { optionA = it },
+                            label = "选项 A",
+                            placeholder = "输入选项内容",
+                        )
+                        Spacer(Modifier.height(AppTheme.space.md))
+                        AppTextField(
+                            value = optionB,
+                            onValueChange = { optionB = it },
+                            label = "选项 B",
+                            placeholder = "输入选项内容",
+                        )
+                        Spacer(Modifier.height(AppTheme.space.md))
+                        AppTextField(
+                            value = optionC,
+                            onValueChange = { optionC = it },
+                            label = "选项 C",
+                            placeholder = "输入选项内容",
+                        )
+                        Spacer(Modifier.height(AppTheme.space.md))
+                        AppTextField(
+                            value = optionD,
+                            onValueChange = { optionD = it },
+                            label = "选项 D",
+                            placeholder = "输入选项内容",
+                        )
+                        Spacer(Modifier.height(AppTheme.space.lg))
+                        Text(
+                            text = if (type == QuestionType.MULTIPLE) "正确答案（至少选两个）" else "正确答案",
+                            style = texts.caption,
+                        )
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                // 格体约 36dp 高（15sp 字母 + 上下 8dp），够不上 48dp 最小可点
-                                // 目标（终审 I9）。挂在链首：撑大的只是不可见的点击槽位，
-                                // 下面 clip/background/border 都在它下游，磁贴本身一分不变。
-                                .minimumInteractiveComponentSize()
-                                .clip(RoundedCornerShape(AppTheme.radius.md))
-                                .background(if (selected) colors.successSoft else colors.background)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (selected) colors.success else colors.divider,
-                                    shape = RoundedCornerShape(AppTheme.radius.md),
-                                )
-                                // `selectable` 而非 `clickable`：给语义挂上 Role.RadioButton + 选中态。
-                                // 它把 interactionSource / indication 一律传 null，而 clickable 对
-                                // null indication 的定义就是「用本地默认 indication」⇒ ripple 照旧，
-                                // 视觉与手感一分不改。
-                                .selectable(
-                                    selected = selected,
-                                    role = Role.RadioButton,
-                                    onClick = { answerIndex = index },
-                                )
-                                .padding(vertical = AppTheme.space.sm),
-                            contentAlignment = Alignment.Center,
+                                .fillMaxWidth()
+                                .selectableGroup(),
+                            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
                         ) {
-                            Text(
-                                text = letter,
-                                style = texts.aux.copy(
-                                    color = if (selected) colors.successInk else colors.primaryText,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                ),
-                            )
+                            listOf("A", "B", "C", "D").forEach { letter ->
+                                AnswerChip(
+                                    label = letter,
+                                    selected = letter in answerLetters,
+                                    role = if (type == QuestionType.MULTIPLE) Role.Checkbox else Role.RadioButton,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        answerLetters = when {
+                                            type == QuestionType.SINGLE -> letter
+                                            letter in answerLetters -> answerLetters.replace(letter, "")
+                                            else -> (answerLetters + letter).toSortedSet().joinToString("")
+                                        }
+                                    },
+                                )
+                            }
                         }
+                    }
+
+                    QuestionType.TRUE_FALSE -> {
+                        Text(text = "判断题选项固定为「正确 / 错误」，只选一个。", style = texts.aux)
+                        Spacer(Modifier.height(AppTheme.space.sm))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectableGroup(),
+                            horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+                        ) {
+                            listOf("A" to "正确", "B" to "错误").forEach { (letter, label) ->
+                                AnswerChip(
+                                    label = label,
+                                    selected = answerLetters == letter,
+                                    role = Role.RadioButton,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { answerLetters = letter },
+                                )
+                            }
+                        }
+                    }
+
+                    QuestionType.FILL, QuestionType.CALCULATION -> {
+                        AppMultilineTextField(
+                            value = fillAnswers,
+                            onValueChange = { fillAnswers = it },
+                            label = if (type == QuestionType.CALCULATION) {
+                                "可接受的最终答案（用 ; 分隔）"
+                            } else {
+                                "可接受答案（用 ; 分隔）"
+                            },
+                            placeholder = "答案1;答案2",
+                            minLines = 2,
+                        )
+                    }
+
+                    QuestionType.SHORT_ANSWER,
+                    QuestionType.ESSAY,
+                    QuestionType.CASE_ANALYSIS,
+                    -> {
+                        AppMultilineTextField(
+                            value = referenceAnswer,
+                            onValueChange = { referenceAnswer = it },
+                            label = "参考答案",
+                            placeholder = "写下参考答案；主观题只用于对照自评，不会自动判分",
+                            minLines = 3,
+                        )
                     }
                 }
             }
@@ -207,8 +301,12 @@ fun QuestionCreateScreen(
                 AppMultilineTextField(
                     value = explanation,
                     onValueChange = { explanation = it },
-                    label = "解析（可选）",
-                    placeholder = "解释正确答案的思路",
+                    label = if (type.isSelfRubric) "评分要点（可选）" else "解析（可选）",
+                    placeholder = if (type.isSelfRubric) {
+                        "评分点/采分点，便于自评时对照"
+                    } else {
+                        "解释正确答案的思路"
+                    },
                     minLines = 2,
                 )
             }
@@ -220,12 +318,112 @@ fun QuestionCreateScreen(
                 text = "保存题目",
                 enabled = canSave,
                 onClick = {
-                    viewModel.saveQuestion(subject, stem, options, answerIndex, explanation) {
+                    val saveOptions = when (type) {
+                        QuestionType.SINGLE, QuestionType.MULTIPLE -> options
+                        QuestionType.TRUE_FALSE -> listOf("正确", "错误")
+                        else -> emptyList()
+                    }
+                    val saveIndices = when (type) {
+                        QuestionType.SINGLE, QuestionType.MULTIPLE, QuestionType.TRUE_FALSE -> answerIndices
+                        else -> emptyList()
+                    }
+                    val saveTexts = when (type) {
+                        QuestionType.FILL, QuestionType.CALCULATION -> acceptedAnswers
+                        QuestionType.SHORT_ANSWER,
+                        QuestionType.ESSAY,
+                        QuestionType.CASE_ANALYSIS,
+                        -> listOf(referenceAnswer)
+                        else -> emptyList()
+                    }
+                    viewModel.saveQuestion(
+                        type = type,
+                        stage = stage,
+                        subject = subject,
+                        stem = stem,
+                        options = saveOptions,
+                        answerIndices = saveIndices,
+                        acceptedAnswers = saveTexts,
+                        explanation = explanation,
+                    ) {
                         onBack()
                     }
                 },
             )
         }
         Spacer(Modifier.height(AppTheme.space.xl))
+    }
+}
+
+@Composable
+private fun FormChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) colors.accentSoft else colors.background)
+            .border(
+                width = 1.dp,
+                color = if (selected) colors.accent else colors.divider,
+                shape = RoundedCornerShape(50),
+            )
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = texts.aux.copy(
+                color = if (selected) colors.accentInk else colors.primaryText,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun AnswerChip(
+    label: String,
+    selected: Boolean,
+    role: Role,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    Box(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(AppTheme.radius.md))
+            .background(if (selected) colors.successSoft else colors.background)
+            .border(
+                width = 1.dp,
+                color = if (selected) colors.success else colors.divider,
+                shape = RoundedCornerShape(AppTheme.radius.md),
+            )
+            .selectable(
+                selected = selected,
+                role = role,
+                onClick = onClick,
+            )
+            .padding(vertical = AppTheme.space.sm),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = texts.aux.copy(
+                color = if (selected) colors.successInk else colors.primaryText,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+        )
     }
 }

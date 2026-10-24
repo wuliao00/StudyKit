@@ -44,7 +44,7 @@ import kotlin.math.sin
 private const val ShakeAmplitudeDp = 10f
 
 /** 刷题选项砖块反馈态；映射规则见 `ui/study/QuizScreen.kt` 的 `quizOptionState` */
-enum class QuizOptionState { Idle, Selected, Correct, Wrong }
+enum class QuizOptionState { Idle, Selected, Correct, Wrong, Missed }
 
 /**
  * 刷题选项砖块：字母位（A/B/C/D，判定后换成 ✓/✗ 图标）+ 选项文案，
@@ -108,18 +108,21 @@ fun QuizOptionTile(
         QuizOptionState.Correct -> colors.success
         QuizOptionState.Wrong -> colors.warning
         QuizOptionState.Selected -> colors.accent
+        QuizOptionState.Missed -> colors.success
         QuizOptionState.Idle -> colors.divider
     }
     val container = when (state) {
         QuizOptionState.Correct -> colors.successSoft
         QuizOptionState.Wrong -> colors.warningSoft
         QuizOptionState.Selected -> colors.accentSoft
+        QuizOptionState.Missed -> colors.card
         QuizOptionState.Idle -> colors.card
     }
     val inkColor = when (state) {
         QuizOptionState.Correct -> colors.successInk
         QuizOptionState.Wrong -> colors.warningInk
         QuizOptionState.Selected -> colors.accentInk
+        QuizOptionState.Missed -> colors.successInk
         QuizOptionState.Idle -> colors.secondaryText
     }
 
@@ -141,6 +144,7 @@ fun QuizOptionTile(
                     QuizOptionState.Selected -> stateDescription = "已选中"
                     QuizOptionState.Correct -> stateDescription = "正确答案"
                     QuizOptionState.Wrong -> stateDescription = "你选的，回答错误"
+                    QuizOptionState.Missed -> stateDescription = "正确答案，漏选"
                     // 未选中 / 未判定：不给状态后缀，免得每道题都空念四声「未选中」
                     QuizOptionState.Idle -> Unit
                 }

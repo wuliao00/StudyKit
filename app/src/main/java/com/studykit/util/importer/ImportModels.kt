@@ -1,5 +1,8 @@
 package com.studykit.util.importer
 
+import com.studykit.data.question.ExamStage
+import com.studykit.data.question.QuestionType
+
 /**
  * 一行文本解析出来的待入库条目。四种目标类型共用一套「行号 + 原文」外壳，
  * 预览页与结果页因此只需要认这一个类型。
@@ -25,6 +28,15 @@ sealed interface ImportItem {
         val options: List<String>,
         val answerIndex: Int,
         val explanation: String = "",
+        /** v10 题型；无前缀/旧格式默认单选，老构造调用无需改 */
+        val type: QuestionType = QuestionType.SINGLE,
+        /** 多选正确下标；单选默认就是 [answerIndex]，填空为空 */
+        val answerIndices: List<Int> = listOf(answerIndex),
+        /** 填空/计算的可接受答案；简答/主观/材料这里是参考答案 */
+        val acceptedAnswers: List<String> = emptyList(),
+        /** v3.3 阶段/学科；旧格式为空，入库时由调用方补“未分类” */
+        val stage: ExamStage = ExamStage.UNSPECIFIED,
+        val subject: String = "",
     ) : ImportItem
 
     data class Excerpt(
@@ -45,7 +57,7 @@ sealed interface ImportItem {
 }
 
 /** 解析失败的原因。刻意不含「未知」：新增格式时必须在这里表态 */
-enum class RejectReason { EMPTY_FIELDS, TOO_FEW_COLUMNS, ANSWER_NOT_FOUND }
+enum class RejectReason { EMPTY_FIELDS, TOO_FEW_COLUMNS, ANSWER_NOT_FOUND, UNKNOWN_PREFIX }
 
 /** 解析失败/信息不全的行 —— 进「待修正」区，绝不静默丢弃（spec §5.1） */
 data class RejectedLine(val sourceLine: Int, val raw: String, val reason: RejectReason)
