@@ -26,7 +26,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +34,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppMultilineTextField
+import com.studykit.ui.components.ConfirmDialog
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.theme.AppTheme
+import com.studykit.util.importer.DocumentReadResult
+import com.studykit.util.importer.ImportDocumentReader
 import com.studykit.util.importer.ImportPlan
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -60,12 +63,27 @@ fun BulkPasteScreen(
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    var raw by rememberSaveable { mutableStateOf("") }
+    val raw by viewModel.draft(kind).collectAsStateWithLifecycle()
     var plan by remember { mutableStateOf<ImportPlan?>(null) }
     var parsing by remember { mutableStateOf(false) }
+    var readingFile by remember { mutableStateOf(false) }
+    var fileError by remember { mutableStateOf<String?>(null) }
+    var pendingReplace by remember { mutableStateOf<String?>(null) }
+    var pendingNote by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // 输入框已有内容时，选文件/示例题库不直接覆盖：先确认，避免一键抹掉刚整理好的几百行。
+    fun acceptText(text: String, note: String?) {
+        if (raw.isBlank()) {
+            viewModel.setDraft(kind, text)
+            note?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        } else {
+            pendingReplace = text
+            pendingNote = note
+        }
+    }
 
     // 读文件不在组合期做；读完只写 raw，解析与 parsing/plan 的翻转统一交给下面那个 LaunchedEffect。
     // 这里刻意不顺手清 plan / 置 parsing：万一文件内容与框里已有文本一模一样，
@@ -75,17 +93,50 @@ fun BulkPasteScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        stream.bufferedReader(Charsets.UTF_8).readText()
-                    }.orEmpty()
-                }.getOrDefault("")
+            readingFile = true
+            fileError = null
+            try {
+                when (val result = ImportDocumentReader.read(context, uri)) {
+                    is DocumentReadResult.Text -> acceptText(result.value, result.note)
+
+                    is DocumentReadResult.Failed -> fileError = result.message
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OutOfMemoryError) {
+                // 40MB 的 PDF 在低内存机上仍可能触顶；Error 不会被 Exception 接住，
+                // 不在这里兜的话表现是闪退而不是一句提示。
+                fileError = "文件太大，内存不足。请拆分文件，或只保留题目部分再导入。"
+            } catch (e: Exception) {
+                // 读文件/OCR 里没被包住的那一层（比如厂商 ContentProvider 抛 SecurityException）
+                // 也要落到一句人话上，不能让协程悄悄死掉、按钮一直转。
+                fileError = "文件读取失败：${e.localizedMessage ?: e.javaClass.simpleName}"
+            } finally {
+                readingFile = false
             }
-            if (text.isBlank()) {
-                Toast.makeText(context, "这个文件是空的或读不出来", Toast.LENGTH_SHORT).show()
-            } else {
-                raw = text
+        }
+    }
+
+    // 示例题库是 APK 内置资源，不走 SAF：用户点一下就能看到阶段×题型的完整写法，
+    // 再照着改成自己的题。内容为原创，不包含任何受版权保护的真题。
+    fun loadSampleBank() {
+        scope.launch {
+            readingFile = true
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.assets.open("question_banks/classic-starter.txt")
+                            .bufferedReader(Charsets.UTF_8)
+                            .use { it.readText() }
+                    }.getOrDefault("")
+                }
+                if (text.isBlank()) {
+                    fileError = "示例题库没读到，请重装应用后再试"
+                } else {
+                    acceptText(text, null)
+                }
+            } finally {
+                readingFile = false
             }
         }
     }
@@ -120,20 +171,65 @@ fun BulkPasteScreen(
             Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = kind.title, style = texts.pageTitle)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { openDocument.launch(arrayOf("text/*", "text/csv", "text/plain", "*/*")) }) {
+            TextButton(
+                onClick = { openDocument.launch(arrayOf("*/*")) },
+                enabled = !readingFile,
+            ) {
                 Text(text = "选文件", style = texts.aux.copy(color = colors.accentInk))
             }
         }
         Spacer(Modifier.height(AppTheme.space.md))
         AppMultilineTextField(
             value = raw,
-            onValueChange = { raw = it },
+            onValueChange = { viewModel.setDraft(kind, it) },
             label = "一行一条",
             placeholder = kind.placeholder,
             minLines = 8,
         )
+        if (kind == ImportKind.QUESTION) {
+            // 独立一行，不与标题和「选文件」挤在一条：320dp/1.15 倍字体下，
+            // 标题 + 两个 TextButton 会把最后一个按钮压成 0 宽。
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "示例题库：37 道原创题，覆盖 6 个阶段 × 8 种题型",
+                    style = texts.caption,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { loadSampleBank() }, enabled = !readingFile) {
+                    Text(text = "导入示例", style = texts.aux.copy(color = colors.accentInk))
+                }
+            }
+        }
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(
+            text = if (kind == ImportKind.QUESTION) {
+                "支持 .txt / .md / .docx / .pdf；扫描版 PDF 会走离线 OCR。" +
+                    "「示例题库」为原创题，可自由修改；导入他人题库前请确认授权。"
+            } else {
+                "支持 .txt / .md / .csv；中文旧编码（GBK/GB18030）会自动识别。"
+            },
+            style = texts.caption,
+        )
+        fileError?.let { message ->
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = message,
+                    style = texts.caption.copy(color = colors.warningInk),
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { fileError = null }) {
+                    Text(text = "知道了", style = texts.aux.copy(color = colors.accentInk))
+                }
+            }
+        }
         Spacer(Modifier.height(AppTheme.space.md))
         when {
+            readingFile -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
+                Spacer(Modifier.width(AppTheme.space.sm))
+                Text(text = "正在提取文件文字…", style = texts.caption)
+            }
             parsing -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp)
                 Spacer(Modifier.width(AppTheme.space.sm))
@@ -162,5 +258,25 @@ fun BulkPasteScreen(
             Text(text = "这一批已导入 ${state.outcome?.inserted ?: 0} 条", style = texts.caption)
         }
         Spacer(Modifier.height(AppTheme.space.xl))
+    }
+
+    pendingReplace?.let { replacement ->
+        ConfirmDialog(
+            title = "替换输入框内容？",
+            body = "输入框里已有 ${raw.lineSequence().count { it.isNotBlank() }} 行，" +
+                "替换后无法撤销。",
+            confirmLabel = "替换",
+            danger = false,
+            onConfirm = {
+                viewModel.setDraft(kind, replacement)
+                pendingReplace = null
+                pendingNote?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                pendingNote = null
+            },
+            onDismiss = {
+                pendingReplace = null
+                pendingNote = null
+            },
+        )
     }
 }

@@ -10,6 +10,7 @@ import com.studykit.BuildConfig
 import com.studykit.data.dao.AppSettingDao
 import com.studykit.data.dao.BookDao
 import com.studykit.data.dao.ContractDao
+import com.studykit.data.dao.DesignPlanDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
 import com.studykit.data.dao.MockSessionDao
@@ -25,6 +26,7 @@ import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Contract
+import com.studykit.data.entity.DesignPlan
 import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Habit
 import com.studykit.data.entity.Mistake
@@ -58,13 +60,15 @@ import com.studykit.optimize.ParamSnapshot
         ReviewLog::class,
         ParamSnapshot::class,
         MockSession::class,
+        DesignPlan::class,
     ],
+    // v12：学习设计——新增 design_plans（8 种模板共用，纯加表 + updated_at 索引）
     // v11：v3.3——阶段列 exam_stage + (exam_stage, question_type, subject) 复合索引
     // v10：题型扩展——questions 加 question_type / answer_indices_json / answer_text_json 三列
     // v9：v3.0-B——套卷会话持久化（mock_sessions）+ 错题遮挡两列（kind/extra）
     // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -81,6 +85,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun reviewLogDao(): ReviewLogDao
     abstract fun paramSnapshotDao(): ParamSnapshotDao
     abstract fun mockSessionDao(): MockSessionDao
+    abstract fun designPlanDao(): DesignPlanDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -493,6 +498,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v11 → v12：新增「学习设计」方案表 `design_plans` 与其 `updated_at` 索引。
+         *
+         * **纯加表，不动任何既有表** —— 词、题、错题、习惯、套卷一条不碰，升级只多出一张
+         * 供 8 种模板共用的方案表。
+         *
+         * 建表/建索引语句**逐字**取自 `app/schemas/com.studykit.data.AppDatabase/12.json`
+         * （exportSchema=true 的产物，只把 `${TABLE_NAME}` 换成真实表名），由
+         * `Migration11To12Test` 在 CI 里逐字校验 —— 沿用 A-T7 起那张 MigrationTestHelper
+         * 的网，schema 漂移不再靠真机撞运气。
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `design_plans` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`uuid` TEXT NOT NULL, " +
+                        "`mode` TEXT NOT NULL, " +
+                        "`title` TEXT NOT NULL, " +
+                        "`fields_json` TEXT NOT NULL, " +
+                        "`content` TEXT NOT NULL, " +
+                        "`created_at` INTEGER NOT NULL, " +
+                        "`updated_at` INTEGER NOT NULL" +
+                        ")",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_design_plans_updated_at` " +
+                        "ON `design_plans` (`updated_at`)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -507,7 +544,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                         MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
-                        MIGRATION_10_11,
+                        MIGRATION_10_11, MIGRATION_11_12,
                     )
                     .addCallback(SeedCallback)
                     .build()

@@ -2,6 +2,58 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.4.0] - 2026-10-25（学习设计工作台 + 题库文件导入）
+
+> **版本号**：`3.4.0 / 25`。**Room v11 → v12**：只新增 `design_plans` 表与 `updated_at` 索引，
+> 不改单词/习惯/读书/题库的任何既有列。旧机升级后原有数据一条不动。
+> 本段是**未发布草稿**：机检与真机结论在下面两行，发版前必须更新成实测值。
+
+### 学习设计（新 Tab「设计」）
+
+- 8 种模板：费曼学习、习题带练、学会学习、互动工作坊、系列课规划、逆向教学设计、
+  核心素养备课、螺旋式课程设计。
+- 每种模板有独立字段表、方法论依据（费曼技巧、波利亚四阶段、Dunlosky 2013、Kolb 体验式学习、
+  Wiggins & McTighe 逆向设计、中国学生发展核心素养、Bruner 螺旋课程）与 Markdown 生成器。
+- **纯本地拼装**：生成不调用任何模型；必填项缺失时显示「待补充」，不虚构用户没填的内容。
+- 方案落 `design_plans`：`fields_json` 保存字段，`content` 保存生成时刻快照（模板以后改了，
+  旧方案导出仍是当时的文本）。可继续编辑、复制全文、系统分享、删除（有确认框）。
+- 编辑草稿用 `rememberSaveable` 保存，转屏/进程回收后回来不丢。
+
+### 题库文件导入
+
+- `.txt/.md/.csv`：BOM 优先 → 严格 UTF-8 → 严格 GB18030 → UTF-8 兜底；中文旧编码不再整屏替换符。
+- `.docx`：解压 `word/document.xml`，还原段落、`<w:br/>`、制表符与 XML 实体；
+  公式/图片/批注/页眉页脚不导入（边界写进 UI 文案）。
+- `.pdf`：`pdfbox-android 2.0.27.0`（Apache-2.0）先取文字层；无文字层时用 `PdfRenderer`
+  逐页渲染 + PP-OCRv6 识别，**最多 20 页**，并在 Toast 里说明「扫描版、建议核对」。
+- 单文件上限 40MB；`.doc/.wps` 明确拒绝并给出转存指引；不支持的类型给一句人话。
+- 扫描版 PDF 的 OCR 结果只负责把字送进编辑框；竖线分列仍需用户核对，不假装能自动读懂版式。
+
+### 经典示例题库
+
+- `assets/question_banks/classic-starter.txt`：37 道**原创**题，覆盖初中/高中/大学/考研/考公
+  与单选/多选/判断/填空/计算/简答/主观/材料 8 种题型；每道题都有解析或评分要点。
+- 「示例题库」按钮只出现在题目批量录入页；导入后仍是普通的可编辑文本，不锁死。
+- **不内置真题**：高考/考研/国考真题与教材配套题有版权，公版古文除外。来源与授权边界见
+  [`docs/question-bank-sources.md`](docs/question-bank-sources.md)。
+
+### 验证与边界
+
+- **机检**：170 个测试类 / 1567 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
+  24 条都是既有的依赖版本提示、ExifInterface 与 ABI 建议）。
+  新增覆盖：`DocumentTextExtractorTest`（含 Word 表格、段落属性）、`PdfTextExtractorTest`
+  （文字层、水印页脚、文件重载）、`ClassicStarterBankTest`、`DesignGeneratorTest`、
+  `DesignPlanCodecTest`、`Migration11To12Test`。
+- **APK**：`120,362,173 B`，sha256
+  `ff0590f3353db620dc99b23c55c946fc69ecdd729f857c07001387628e9c03d2`，证书
+  `f86c8a85…`（与 3.0–3.3 同一把），版本 `3.4.0 / 25`。体积比 3.3 增加约 9.5MB，
+  主要是 pdfbox 的标准字体/CMap 资产（Apache-2.0）。
+- **真机**：待验。本轮 `adb devices` 为空，未做 v11→v12 覆盖安装、设计 Tab、txt/docx/pdf 冒烟；
+  因此**没有打 tag、没有发 Release、没有同步网盘**。
+- 未支持：`.doc/.wps`、PDF 公式/表格结构还原、扫描版 PDF 的版式理解、方案云同步。
+- PDF 解析依赖 `pdfbox-android`；标准字体在 APK assets 内，首次解析前调用
+  `PDFBoxResourceLoader.init`，不联网。
+
 ## [3.3.0] - 2026-10-24（题库：阶段 × 题型 × 判分方式）
 
 > **版本号**：`3.3.0 / 24`。**Room v9 → v10 → v11**（v10 三道题型列，v11 阶段列 + 复合索引）。

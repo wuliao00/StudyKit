@@ -7,7 +7,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84.svg?logo=android)
 ![API](https://img.shields.io/badge/API-26%2B-green.svg)
 
-> An Android learning management app with fully local data storage: vocabulary cards / quizzes, habit tracking, reading notes, and mistake collection — four core modules plus a calendar view enhancement, with all data stored on your own phone.
+> An Android learning management app with fully local data storage: vocabulary cards / quizzes, learning design, habit tracking, reading notes, and mistake collection — five core modules plus a calendar view enhancement, with all data stored on your own phone.
 
 ## ✨ Overview
 
@@ -15,7 +15,7 @@ StudyKit is an all-in-one learning assistant for students and self-learners, bui
 
 - Day/night dual themes and high-frame-rate interaction motion: a warm-paper light palette and a warm-black dark palette switch automatically with the system, while card flips, check-ins and session results all run on spring animations that follow 90/120Hz refresh rates frame by frame
 
-## 📦 Four Core Modules
+## 📦 Five Core Modules
 
 ### 📚 Study Module (Vocabulary / Quizzes)
 - **Word cards**: A flashcard learning mode showing the word on the front and its definition on the back; once flipped, you self-grade on three levels — "got it / vague / forgotten" — and mastery status is tracked automatically. "Recall before grading" is on by default: while the answer is still hidden, a swipe only flips the card instead of grading it (can be turned off in Settings)
@@ -36,6 +36,12 @@ StudyKit is an all-in-one learning assistant for students and self-learners, bui
 - **Mistake collection**: Automatically collected from question bank practice, with manual addition also supported (question, my answer, correct answer, explanation)
 - **Mistake details**: View full question information and explanations, with a "mastered" marker
 - **Export and share**: Export the mistake notebook as a text file for easy printing and review (an improved feature)
+
+### 🧭 Learning Design Module (v3.4)
+- **Eight templates**: Feynman technique, guided practice, learning how to learn, interactive workshop, course series planning, backward design, competency-based lesson prep, and spiral curriculum design
+- **Structured output**: each template has its own fields and a live Markdown preview; it assembles exactly what you enter, with no model calls and no network
+- **Portable**: plans are stored locally and can be edited, copied, or shared; drafts survive rotation and process recreation
+- **Traceable basis**: every card names its method (Feynman, Pólya, Dunlosky 2013, Kolb, Wiggins & McTighe, core competencies, Bruner) instead of vague "research shows" claims
 
 ### 📅 Calendar Enhancement
 - A global calendar view aggregating study tasks, habit check-ins, and reading records
@@ -181,6 +187,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ## 🙏 Acknowledgements
 
 Some feature interactions were inspired by the "Xiao Ji Hua" (Little Plan) app (com.bakira.plan). Special thanks to its developers.
+
+PDF text extraction uses [pdfbox-android](https://github.com/TomRoush/PdfBox-Android) (Apache License 2.0); on-device OCR uses PP-OCRv6 (ONNX Runtime, MIT).
 
 ## 📄 License
 

@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "3.3.0"
+        versionCode = 25
+        versionName = "3.4.0"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。
@@ -200,6 +200,10 @@ dependencies {
     // 截图取词 / 拍照录题：PP-OCRv6（det+rec+dict）离线打进 assets，全离线、不需要 GMS（spec §5.4）。
     // v2.8 起 ML Kit 已下线，onnxruntime 是唯一端侧 OCR 引擎的运行时。
     implementation(libs.onnxruntime.android)
+
+    // 题库文件导入：PDF 文字层提取（Apache-2.0）。只在导入路径用；扫描版 PDF 的
+    // 兜底仍然是已有的 PP-OCRv6，不引入第二套识别引擎。
+    implementation(libs.pdfbox.android)
 
     implementation(libs.androidx.core.ktx)
 

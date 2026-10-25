@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Create
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.List
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,10 @@ import com.studykit.ui.book.ExcerptEditScreen
 import com.studykit.ui.book.ExcerptReviewScreen
 import com.studykit.ui.book.ChapterTestScreen
 import com.studykit.ui.book.ReviewEditScreen
+import com.studykit.ui.design.DesignEditorScreen
+import com.studykit.ui.design.DesignHubScreen
+import com.studykit.ui.design.DesignViewModel
+import com.studykit.domain.design.DesignMode
 import com.studykit.ui.bulkimport.BulkAction
 import com.studykit.ui.bulkimport.BulkPasteScreen
 import com.studykit.ui.bulkimport.ImportKind
@@ -97,12 +102,13 @@ import kotlinx.coroutines.flow.StateFlow
 /** 底部 Tab 定义 */
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
     data object Study : Tab("study", "学习", Outlined.Create)
+    data object Design : Tab("design", "设计", Outlined.List)
     data object Habit : Tab("habit", "习惯", Outlined.DateRange)
     data object Book : Tab("book", "读书", Outlined.Favorite)
     data object Mistake : Tab("mistake", "错题", Outlined.CheckCircle)
 }
 
-private val Tabs = listOf(Tab.Study, Tab.Habit, Tab.Book, Tab.Mistake)
+private val Tabs = listOf(Tab.Study, Tab.Design, Tab.Habit, Tab.Book, Tab.Mistake)
 
 /**
  * 目的地路由是否落在这四个底部 Tab 之内。
@@ -141,6 +147,17 @@ object StudyRoutes {
 
     /** 记忆看板：半衰期模型的三块图（未来量 / 持久度分布 / 遗忘曲线） */
     const val STATS = "study/stats"
+}
+
+/**
+ * 学习设计：Tab 本身是模板/方案列表，编辑页是唯一的子路由。
+ *
+ * `planId = 0` 表示新建 —— 用 0 而不是可空参数，是因为 Navigation 的 Long 参数天然不支持 null，
+ * 而 0 在 SQLite 自增主键里永远不会是合法 id（首行从 1 开始）。
+ */
+object DesignRoutes {
+    const val EDITOR = "design/editor/{mode}/{planId}"
+    fun editor(mode: DesignMode, planId: Long = 0L) = "design/editor/${mode.name}/$planId"
 }
 
 /** 在线词库商店（唯一需要联网的界面） */
@@ -215,6 +232,7 @@ fun AppNav(
     val globalCalendarViewModel: GlobalCalendarViewModel = viewModel()
     val bookViewModel: BookViewModel = viewModel()
     val studyViewModel: StudyViewModel = viewModel()
+    val designViewModel: DesignViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
     val dictStoreViewModel: DictStoreViewModel = viewModel()
@@ -389,6 +407,39 @@ fun AppNav(
                     onPhotoFallback = {
                         navController.navigate(MistakeRoutes.capture()) { launchSingleTop = true }
                     },
+                )
+            }
+            composable(Tab.Design.route) {
+                DesignHubScreen(
+                    viewModel = designViewModel,
+                    onNewPlan = { mode ->
+                        navController.navigate(DesignRoutes.editor(mode)) { launchSingleTop = true }
+                    },
+                    onOpenPlan = { plan ->
+                        // 认不出模板就留在列表里只读；绝不拿一个默认模板去覆盖旧方案。
+                        DesignMode.fromStorage(plan.mode)?.let { mode ->
+                            navController.navigate(DesignRoutes.editor(mode, plan.id)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                )
+            }
+            composable(
+                route = DesignRoutes.EDITOR,
+                arguments = listOf(
+                    navArgument("mode") { type = NavType.StringType },
+                    navArgument("planId") { type = NavType.LongType; defaultValue = 0L },
+                ),
+            ) { entry ->
+                val mode = DesignMode.fromStorage(entry.arguments?.getString("mode"))
+                    ?: DesignMode.FEYNMAN
+                val planId = entry.arguments?.getLong("planId")?.takeIf { it > 0L }
+                DesignEditorScreen(
+                    viewModel = designViewModel,
+                    mode = mode,
+                    planId = planId,
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(Tab.Habit.route) {

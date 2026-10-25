@@ -65,6 +65,25 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
     private val _state = MutableStateFlow(ImportUiState())
     val state: StateFlow<ImportUiState> = _state.asStateFlow()
 
+    /**
+     * 粘贴/文件导入的原文草稿。
+     *
+     * 放在 ViewModel 而不是 `rememberSaveable`：文件导入上限是 2M 字符，塞进 saved instance state
+     * 会撞 Binder 事务上限（转屏/切后台时丢草稿，部分 ROM 直接抛 TransactionTooLargeException）。
+     * ViewModel 能跨转屏存活；进程被杀后草稿丢失是可接受的——重新选一次文件即可。
+     */
+    private val drafts: Map<ImportKind, MutableStateFlow<String>> = mapOf(
+        ImportKind.WORD to MutableStateFlow(""),
+        ImportKind.QUESTION to MutableStateFlow(""),
+    )
+
+    /** 按录入类型分开存：单词与题目共用一条草稿会让另一边莫名其妙出现一屏题干。 */
+    fun draft(kind: ImportKind): StateFlow<String> = drafts.getValue(kind)
+
+    fun setDraft(kind: ImportKind, value: String) {
+        drafts.getValue(kind).value = value
+    }
+
     private val committing = OneShotGate()
 
     fun loadPlan(plan: ImportPlan, dictSource: DictSourceMeta? = null) {

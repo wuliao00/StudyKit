@@ -4,6 +4,7 @@ import android.content.Context
 import com.studykit.data.AppDatabase
 import com.studykit.data.repository.BookRepository
 import com.studykit.data.repository.ContractRepository
+import com.studykit.data.repository.DesignPlanRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
 import com.studykit.data.repository.MockSessionRepository
@@ -72,6 +73,12 @@ class AppContainer(
 
     /** 套卷会话持久化（v3.0-B）：薄包装，逻辑全在 ViewModel/机器侧，这层只挡 Room */
     val mockSessionRepository: MockSessionRepository = MockSessionRepository(database.mockSessionDao())
+
+    /**
+     * 学习设计方案（v12）：8 种模板共用一张 `design_plans`。拼 Markdown 的是纯函数
+     * `DesignGenerator`（domain 层，无 Android 依赖），这层只负责存取。
+     */
+    val designPlanRepository: DesignPlanRepository = DesignPlanRepository(database.designPlanDao())
 
     val settingsRepository: SettingsRepository = SettingsRepository(database.appSettingDao())
 

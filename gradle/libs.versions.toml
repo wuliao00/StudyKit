@@ -14,6 +14,8 @@ work = "2.10.0"
 profileinstaller = "1.4.1"
 # PP-OCRv6 端侧引擎（ONNX Runtime Android，MIT），v2.8 起取代 ML Kit 成为唯一 OCR 后端
 onnxruntime = "1.29.0"
+# PDF 文本层提取（Apache-2.0）。题库导入先取文字层，扫描版再回退到端侧 OCR。
+pdfbox = "2.0.27.0"
 json = "20231013"
 junit = "4.13.2"
 # Compose 渲染守卫：Robolectric 让 ui-test 跑在 `testDebugUnitTest` 里，不占模拟器
@@ -44,6 +46,7 @@ androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx"
 androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }
 # 宿主 JVM 上的真模型单测（Robolectric）用桌面版；Android 生产侧仍用上面的 AAR
 onnxruntime = { group = "com.microsoft.onnxruntime", name = "onnxruntime", version.ref = "onnxruntime" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
