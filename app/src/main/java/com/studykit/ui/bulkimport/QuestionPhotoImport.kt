@@ -45,7 +45,7 @@ class QuestionPhotoImport internal constructor(
  * 一次拍照 OCR 文本的三条去向，见 [decidePhotoImport]。
  */
 internal sealed interface PhotoImportOutcome {
-    /** 解析出了至少一条四选一题目：照旧进批量导入的预览屏。 */
+    /** 解析出了至少一条题目（单选/多选/判断/填空/计算/简答/主观/材料都算）：进批量导入预览屏。 */
     data class Preview(val plan: ImportPlan) : PhotoImportOutcome
 
     /**
@@ -56,7 +56,7 @@ internal sealed interface PhotoImportOutcome {
      */
     data class NeedsFormatting(val text: String) : PhotoImportOutcome
 
-    /** 文本是空白：连错题本都填不出内容，只剩重拍提示。 */
+    /** 文本是空白：没有可编辑的内容，只剩重拍/重选提示。 */
     data object Empty : PhotoImportOutcome
 }
 
@@ -88,9 +88,8 @@ internal fun decidePhotoImport(ocrText: String): PhotoImportOutcome {
  *    可能被回收，`remember` 里的 File 会随之消失，回投拿到 null 就静默丢图（终审 C3 同一件事）；
  *  - 权限被拒后展示指引（saveable：转屏不该把指引抹掉只剩一个没反应的按钮）。
  *
- * OCR 出来的照片默认是**一次性的**：识别成四选一、进预览之后才删；解析不出四选一时**不删**
- * （转给错题本当图片，之后由错题本录入页在保存或放弃时清理）。
- * 相机临时目录原本就有 `capture_*.jpg` 堆积问题，四选一与空结果两条路仍只在磁盘上多停留几秒。
+ * OCR 出来的照片是**一次性的**：进入预览、进入编辑页或空结果后都会删；文字已经带走，
+ * 题库不需要把原图一起存。相机临时目录原本就有 `capture_*.jpg` 堆积问题，这里只在磁盘上多停留几秒。
  *
  * **解析不出分列不是死路，也不自动切错题本**：文字原样放进题库的批量编辑页
  * （`ImportViewModel` 的题目草稿），由用户补 `|` 或改成 `[阶段·学科·题型]` 前缀后再预览。
@@ -109,7 +108,7 @@ fun rememberQuestionPhotoImport(
     var showRationale by rememberSaveable { mutableStateOf(false) }
     var showSourceChooser by remember { mutableStateOf(false) }
 
-    /** 拍照与相册两条路的**共同下游**：OCR → 判断四选一/转错题本 → 预览。只此一份。 */
+    /** 拍照与相册两条路的**共同下游**：OCR → 判断能否解析 → 预览或题库编辑页。只此一份。 */
     fun handlePickedPhoto(file: File) {
         busy = true
         scope.launch {
