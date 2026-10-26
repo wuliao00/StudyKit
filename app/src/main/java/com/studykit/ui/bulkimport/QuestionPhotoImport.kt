@@ -1,12 +1,17 @@
 package com.studykit.ui.bulkimport
 
 import android.Manifest
+import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -100,20 +105,10 @@ fun rememberQuestionPhotoImport(
     var pendingPhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var showRationale by rememberSaveable { mutableStateOf(false) }
+    var showSourceChooser by remember { mutableStateOf(false) }
 
-    val takePicture = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture(),
-    ) { success ->
-        val file = pendingPhotoPath?.let(::File)
-        pendingPhotoPath = null
-        if (!success || file == null || !file.exists() || file.length() == 0L) {
-            file?.delete()
-            // 主动取消（success=false）不打扰；拍了却没留下文件才说白（进程重建后被清、或写盘失败）
-            if (success) {
-                Toast.makeText(context, "没拿到照片，请重新拍照", Toast.LENGTH_SHORT).show()
-            }
-            return@rememberLauncherForActivityResult
-        }
+    /** 拍照与相册两条路的**共同下游**：OCR → 判断四选一/转错题本 → 预览。只此一份。 */
+    fun handlePickedPhoto(file: File) {
         busy = true
         scope.launch {
             val result = withContext(Dispatchers.IO) { OcrTextExtractor.recognize(context, file) }
@@ -122,7 +117,7 @@ fun rememberQuestionPhotoImport(
                     busy = false
                     when (val outcome = decidePhotoImport(result.value)) {
                         is PhotoImportOutcome.Preview -> {
-                            // 四选一：保持今天的行为 —— 图进预览屏之后就没用了，删掉
+                            // 四选一：图进预览屏之后就没用了，删掉
                             file.delete()
                             importViewModel.loadPlan(outcome.plan)
                             onPreview()
@@ -144,7 +139,7 @@ fun rememberQuestionPhotoImport(
                             file.delete()
                             Toast.makeText(
                                 context,
-                                "没认出题目，一行一题写「题干 | 选项 | 答案」再重拍试试",
+                                "没认出题目，一行一题写「题干 | 选项 | 答案」再试一次",
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
@@ -156,6 +151,40 @@ fun rememberQuestionPhotoImport(
                     file.delete()
                     Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
                 }
+            }
+        }
+    }
+
+    val takePicture = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val file = pendingPhotoPath?.let(::File)
+        pendingPhotoPath = null
+        if (!success || file == null || !file.exists() || file.length() == 0L) {
+            file?.delete()
+            // 主动取消（success=false）不打扰；拍了却没留下文件才说白（进程重建后被清、或写盘失败）
+            if (success) {
+                Toast.makeText(context, "没拿到照片，请重新拍照", Toast.LENGTH_SHORT).show()
+            }
+            return@rememberLauncherForActivityResult
+        }
+        handlePickedPhoto(file)
+    }
+
+    // 系统照片选择器：Android 13+ 是 Photo Picker，旧系统由 activity 库回退到 OPEN_DOCUMENT；
+    // 两条路都只拿到一个临时读权限的 Uri，所以先复制进 cacheDir 再 OCR（Uri 授权不跨进程/不跨重启）。
+    val pickFromGallery = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            val file = withContext(Dispatchers.IO) { copyPickedImage(context, uri) }
+            if (file == null) {
+                busy = false
+                Toast.makeText(context, "这张图片读不出来，换一张试试", Toast.LENGTH_SHORT).show()
+            } else {
+                handlePickedPhoto(file)
             }
         }
     }
@@ -177,13 +206,71 @@ fun rememberQuestionPhotoImport(
         }
     }
 
+    if (showSourceChooser) {
+        AlertDialog(
+            onDismissRequest = { showSourceChooser = false },
+            title = { Text(text = "录入题目照片", style = AppTheme.texts.cardTitle) },
+            text = {
+                Text(
+                    text = "可以直接拍一张，也可以从相册选已经拍好的题。" +
+                        "识别后仍是先预览、再决定导入。",
+                    style = AppTheme.texts.aux,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSourceChooser = false
+                        requestPermission.launch(Manifest.permission.CAMERA)
+                    },
+                ) {
+                    Text(text = "拍照")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSourceChooser = false
+                        pickFromGallery.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                ) {
+                    Text(text = "从相册选择")
+                }
+            },
+        )
+    }
+
     return QuestionPhotoImport(
         start = {
-            if (!busy) requestPermission.launch(Manifest.permission.CAMERA)
+            // 不再直接拉相机：先让用户选“现拍”还是“相册里已有的题”。
+            if (!busy) showSourceChooser = true
         },
         isBusy = { busy },
         isRationaleVisible = { showRationale },
     )
+}
+
+/**
+ * 相册 Uri → cache 文件。系统照片选择器给的是临时读权限，OCR 又要 File；
+ * 先复制一份，后面“识别成四选一就删 / 转错题本就留着”的清理口径与相机完全一致。
+ */
+private fun copyPickedImage(context: Context, uri: Uri): File? {
+    val file = File(context.cacheDir, "gallery_${System.currentTimeMillis()}.jpg")
+    return try {
+        val input = context.contentResolver.openInputStream(uri) ?: return null
+        input.use { source ->
+            file.outputStream().use { target -> source.copyTo(target) }
+        }
+        file.takeIf { it.length() > 0 } ?: run {
+            file.delete()
+            null
+        }
+    } catch (e: Exception) {
+        file.delete()
+        null
+    }
 }
 
 /** 相机权限被拒后的指引（两个新屏共用这一份文案）。放在 Column 里：自带上方那段间距。 */
@@ -191,8 +278,8 @@ fun rememberQuestionPhotoImport(
 fun QuestionPhotoRationale(modifier: Modifier = Modifier) {
     Spacer(modifier.height(AppTheme.space.sm))
     Text(
-        text = "拍照录入题目需要相机权限。请在系统设置 → 应用 → StudyKit → 权限中允许「相机」，" +
-            "或再次点开「录入」菜单选「拍照录入题目」重新发起授权。",
+        text = "拍照需要相机权限（从相册选择不需要）。请在系统设置 → 应用 → StudyKit → 权限中" +
+            "允许「相机」，或再次点开「＋录入」菜单选「拍照 / 相册录题」重新发起授权。",
         style = AppTheme.texts.caption.copy(color = AppTheme.colors.warningInk),
     )
 }

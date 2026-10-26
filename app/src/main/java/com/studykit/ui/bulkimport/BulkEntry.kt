@@ -33,7 +33,7 @@ enum class BulkAction(val label: String) {
     DICT_STORE("从词库导入"),
     QUESTION_CREATE("单题录入题目"),
     QUESTION_BULK("批量录入题目"),
-    QUESTION_CAPTURE("拍照录入题目"),
+    QUESTION_CAPTURE("拍照 / 相册录题"),
     ;
 
     /**

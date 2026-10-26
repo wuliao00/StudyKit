@@ -26,6 +26,9 @@
   公式/图片/批注/页眉页脚不导入（边界写进 UI 文案）。
 - `.pdf`：`pdfbox-android 2.0.27.0`（Apache-2.0）先取文字层；无文字层时用 `PdfRenderer`
   逐页渲染 + PP-OCRv6 识别，**最多 20 页**，并在 Toast 里说明「扫描版、建议核对」。
+- **拍照录题可选相册**：菜单项改为「拍照 / 相册录题」，先选现拍或系统相册；
+  相册走 Photo Picker（旧系统自动回退），复制到 cache 后与相机共用同一条 OCR → 预览/错题本管线，
+  不需要存储权限。
 - 单文件上限 40MB。`.doc/.wps` 先看文件头再决定：实际是 zip/docx（改过后缀）直接按 docx 读；
   真 OLE2 二进制或 RTF 给“另存为”指引。不引入 Apache POI（约 +6MB，且有 R8 风险）。
 - 不支持的类型给一句人话，不再只说“暂不支持”。
@@ -52,7 +55,7 @@
   （`java.awt`/`javax.imageio`）已加 `-dontwarn`；本地 `:app:minifyReleaseWithR8` 通过，
   修掉 CI 上 `Missing class com.gemalto.jp2.JP2Decoder` 的 release 构建失败。
 - **APK**：`120,364,033 B`，sha256
-  `7c748021ba1d8012b7f35d1661fb2a96c797bc63f236521f910bcc5f441340ad`，证书
+  `56818540ae25ffda118e404137d351390e4da56e40a15fc46ad11aebf2a281a4`，证书
   `f86c8a85…`（与 3.0–3.3 同一把），版本 `3.4.0 / 25`。体积比 3.3 增加约 9.5MB，
   主要是 pdfbox 的标准字体/CMap 资产（Apache-2.0）。
 - **真机（2026-10-25，vivo V2156A / Android 11）**：从 3.2.1/Room9 覆盖安装后，

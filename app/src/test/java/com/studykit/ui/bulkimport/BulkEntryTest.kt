@@ -50,11 +50,11 @@ class BulkEntryTest {
     @Test
     fun 菜单文案与规格一字不差() {
         assertEquals(
-            listOf("录入单词", "拍照录入题目", "批量录入题目", "从词库导入"),
+            listOf("录入单词", "拍照 / 相册录题", "批量录入题目", "从词库导入"),
             BulkEntries.menuFor(BulkScreen.STUDY_HOME).map { it.label },
         )
         assertEquals(
-            listOf("拍照录入题目", "批量录入题目", "单题录入题目"),
+            listOf("拍照 / 相册录题", "批量录入题目", "单题录入题目"),
             BulkEntries.menuFor(BulkScreen.QUESTION_BANK).map { it.label },
         )
     }
