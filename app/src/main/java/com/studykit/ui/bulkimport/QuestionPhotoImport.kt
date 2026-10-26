@@ -1,8 +1,6 @@
 package com.studykit.ui.bulkimport
 
 import android.Manifest
-import android.content.Context
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -179,7 +177,7 @@ fun rememberQuestionPhotoImport(
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
         scope.launch {
-            val file = withContext(Dispatchers.IO) { copyPickedImage(context, uri) }
+            val file = withContext(Dispatchers.IO) { MistakeImageStore.importPicked(context, uri) }
             if (file == null) {
                 busy = false
                 Toast.makeText(context, "这张图片读不出来，换一张试试", Toast.LENGTH_SHORT).show()
@@ -250,27 +248,6 @@ fun rememberQuestionPhotoImport(
         isBusy = { busy },
         isRationaleVisible = { showRationale },
     )
-}
-
-/**
- * 相册 Uri → cache 文件。系统照片选择器给的是临时读权限，OCR 又要 File；
- * 先复制一份，后面“识别成四选一就删 / 转错题本就留着”的清理口径与相机完全一致。
- */
-private fun copyPickedImage(context: Context, uri: Uri): File? {
-    val file = File(context.cacheDir, "gallery_${System.currentTimeMillis()}.jpg")
-    return try {
-        val input = context.contentResolver.openInputStream(uri) ?: return null
-        input.use { source ->
-            file.outputStream().use { target -> source.copyTo(target) }
-        }
-        file.takeIf { it.length() > 0 } ?: run {
-            file.delete()
-            null
-        }
-    } catch (e: Exception) {
-        file.delete()
-        null
-    }
 }
 
 /** 相机权限被拒后的指引（两个新屏共用这一份文案）。放在 Column 里：自带上方那段间距。 */

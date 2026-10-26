@@ -52,6 +52,30 @@ object MistakeImageStore {
         }
     }
 
+    /**
+     * 从相册 Uri 复制出一份临时文件，供 OCR / 错题录入使用。
+     *
+     * 系统照片选择器只给临时读权限，OCR 与错题入库都要 `File`；复制到 cache 后，
+     * 后面“识别成四选一就删 / 转错题本再处理”的清理口径与相机临时文件完全一致。
+     * 读不出来或空文件返回 null，绝不把半张图交给下游。
+     */
+    fun importPicked(context: Context, uri: Uri): File? {
+        val file = File(context.cacheDir, "picked_${UUID.randomUUID()}.jpg")
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return null
+            input.use { source ->
+                file.outputStream().use { target -> source.copyTo(target) }
+            }
+            file.takeIf { it.length() > 0 } ?: run {
+                file.delete()
+                null
+            }
+        } catch (e: Exception) {
+            file.delete()
+            null
+        }
+    }
+
     /** 相对路径 → 应用内文件 */
     fun resolve(context: Context, relativePath: String): File = File(context.filesDir, relativePath)
 

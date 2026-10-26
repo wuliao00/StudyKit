@@ -3,6 +3,7 @@ package com.studykit.ui.mistake
 import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -27,13 +28,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.studykit.data.entity.Mistake
 import com.studykit.ui.components.AppCard
@@ -202,6 +207,7 @@ fun MistakeListScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val mistakes by viewModel.mistakes.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     val selected by viewModel.subjectFilter.collectAsStateWithLifecycle()
@@ -253,6 +259,59 @@ fun MistakeListScreen(
         }
     }
 
+    // 相册来源：与题库录题共用 MistakeImageStore.importPicked，复制到 cache 后再走既有的
+    // 录入页；相册不需要相机权限，所以相机被拒时这条路仍然可用。
+    var showSourceChooser by remember { mutableStateOf(false) }
+    val pickFromGallery = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val file = withContext(Dispatchers.IO) { MistakeImageStore.importPicked(context, uri) }
+            if (file == null) {
+                Toast.makeText(context, "这张图片读不出来，换一张试试", Toast.LENGTH_SHORT).show()
+            } else {
+                viewModel.setPendingCapture(file)
+                onOpenCapture()
+            }
+        }
+    }
+
+    if (showSourceChooser) {
+        AlertDialog(
+            onDismissRequest = { showSourceChooser = false },
+            title = { Text(text = "录入错题照片", style = texts.cardTitle) },
+            text = {
+                Text(
+                    text = "可以直接拍一张，也可以从相册选已经拍好的题。",
+                    style = texts.aux,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSourceChooser = false
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    },
+                ) {
+                    Text(text = "拍照")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSourceChooser = false
+                        pickFromGallery.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                ) {
+                    Text(text = "从相册选择")
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -274,15 +333,15 @@ fun MistakeListScreen(
             } else {
                 "答错的题会自动收入，点一条可设复习时间"
             },
-            actionLabel = "拍照录入",
-            onAction = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+            actionLabel = "拍照 / 相册",
+            onAction = { showSourceChooser = true },
         )
 
         if (showCameraRationale) {
             Spacer(Modifier.height(AppTheme.space.sm))
             Text(
-                text = "拍照录入需要相机权限。请在系统设置 → 应用 → StudyKit → 权限中允许「相机」，" +
-                    "或再次点击上面的「拍照录入」重新发起授权。",
+                text = "拍照需要相机权限（从相册选择不需要）。请在系统设置 → 应用 → StudyKit → " +
+                    "权限中允许「相机」，或再次点击上面的「拍照 / 相册」重新发起授权。",
                 style = texts.caption.copy(color = colors.warningInk),
             )
         }
@@ -305,7 +364,7 @@ fun MistakeListScreen(
             }
             val emptyCaption = when {
                 !hasAnyMistake || mistakes.isNotEmpty() ->
-                    "去「题库练习」答题自动收录，或点上面的「拍照录入」"
+                    "去「题库练习」答题自动收录，或点上面的「拍照 / 相册」"
                 !showMastered -> "上面的题都划掉了，切到上方「已掌握」可以回看"
                 else -> "在错题详情里点「标记掌握」，题目就会挪到这里"
             }
