@@ -32,10 +32,15 @@ object PdfTextExtractor {
             .filter { it.isNotEmpty() }
             .filterNot { PAGE_FURNITURE.matches(it) }
             .toList()
-        val alnum = bodyLines.sumOf { line -> line.count { it.isLetterOrDigit() } }
+        val lineCounts = bodyLines.map { line -> line.count { it.isLetterOrDigit() } }
+        val alnum = lineCounts.sum()
         if (alnum < 20) return false
-        // 至少 3 行“像正文”的内容（每行 ≥4 个字母/数字），否则交给 OCR。
-        return bodyLines.count { line -> line.count { it.isLetterOrDigit() } >= 4 } >= 3
+        // 1–2 行的 PDF 也可能是真题目（比如一份只有两道题的练习）；不能只按行数一票否决，
+        // 否则会掉进 OCR，既慢又把精确原文弄脏。这里要求：
+        //  - 至少 2 行像正文（每行 ≥4 个字母/数字）；
+        //  - 最长一行 ≥10 个字母/数字（页脚/水印通常是短句）。
+        // 只装一两道题的小 PDF 能通过；只剩“扫描全能王/第 1 页”的扫描件仍会走 OCR。
+        return lineCounts.count { it >= 4 } >= 2 && (lineCounts.maxOrNull() ?: 0) >= 10
     }
 
     private val PAGE_FURNITURE = Regex(

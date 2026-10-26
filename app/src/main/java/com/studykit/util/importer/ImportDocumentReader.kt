@@ -53,9 +53,8 @@ object ImportDocumentReader {
         val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull().orEmpty()
 
         when {
-            extension in setOf("doc", "wps") -> DocumentReadResult.Failed(
-                "暂不支持旧版 .doc/.wps。请用 Word/WPS“另存为” .docx 或 PDF 后再试。",
-            )
+            extension in setOf("doc", "wps") || mime == "application/msword" ->
+                readLegacyWord(context, uri)
 
             extension == "docx" || extension == "docm" || mime == DOCX_MIME ->
                 readDocx(context, uri)
@@ -91,6 +90,64 @@ object ImportDocumentReader {
             DocumentReadResult.Failed("这个文件里没有文字")
         } else {
             DocumentReadResult.Text(text)
+        }
+    }
+
+    /**
+     * `.doc/.wps` 先嗅探再决定：
+     * - 其实是 zip/docx（改过后缀）→ 直接走 docx 正文；
+     * - 真 OLE2 二进制 → 零依赖解析不了，明确让用户另存；
+     * - RTF → 也不硬啃控制字，提示另存。
+     *
+     * 这样不引入 Apache POI（+6MB、R8 风险）也能救回最常见的“伪 .doc”；
+     * 真二进制格式的支持边界继续写在 UI/文档里，不假装能读。
+     */
+    private fun readLegacyWord(context: Context, uri: Uri): DocumentReadResult {
+        val header = try {
+            readHeader(context, uri)
+        } catch (e: IOException) {
+            return DocumentReadResult.Failed("文件读不出来：${e.localizedMessage ?: "未知原因"}")
+        }
+        return when (LegacyWordSniffer.sniff(header)) {
+            LegacyWordKind.ZIP_CONTAINER -> {
+                val result = readDocx(context, uri)
+                if (result is DocumentReadResult.Failed) {
+                    DocumentReadResult.Failed(
+                        "这个 .doc/.wps 实际是压缩容器，但不是 Word 正文。" +
+                            "请用 Word/WPS“另存为” .docx 后再试。",
+                    )
+                } else {
+                    result
+                }
+            }
+
+            LegacyWordKind.OLE2_BINARY -> DocumentReadResult.Failed(
+                "这是旧版 Word 二进制文件（.doc）。应用不内嵌 Office 解析器，" +
+                    "请用 Word/WPS“另存为” .docx 或 PDF 后再试。",
+            )
+
+            LegacyWordKind.RTF -> DocumentReadResult.Failed(
+                "检测到 RTF 文档。请用 Word/WPS“另存为” .docx 或纯文本后再试。",
+            )
+
+            LegacyWordKind.UNKNOWN -> DocumentReadResult.Failed(
+                "认不出这个 .doc/.wps 的真实格式。请用 Word/WPS“另存为” .docx 或 PDF。",
+            )
+        }
+    }
+
+    private fun readHeader(context: Context, uri: Uri): ByteArray {
+        val input = context.contentResolver.openInputStream(uri)
+            ?: throw IOException("无法打开文件")
+        input.use { stream ->
+            val buffer = ByteArray(8)
+            var offset = 0
+            while (offset < buffer.size) {
+                val read = stream.read(buffer, offset, buffer.size - offset)
+                if (read < 0) break
+                offset += read
+            }
+            return buffer.copyOf(offset)
         }
     }
 

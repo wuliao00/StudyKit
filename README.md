@@ -292,10 +292,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - **保存与带走**：方案存本地 Room，可继续编辑、整份复制、用系统分享发给别人；离开页面再回来
   草稿还在。生成的是可复现的模板文本，不是“AI 作文”。
 - **题库文件导入**：`.txt/.md/.csv` 自动识别 UTF-8/UTF-16/GB18030；`.docx` 还原段落；
-  `.pdf` 先取文字层，扫描版回退到已有的 PP-OCRv6（最多 20 页，需核对）。旧 `.doc/.wps` 会提示转存。
+  `.pdf` 先取文字层，扫描版回退到已有的 PP-OCRv6（最多 20 页，需核对）。`.doc/.wps` 会先看文件头：
+  实际是 docx/zip 的直接读；真旧版二进制则提示另存。
 - **经典示例题库**：内置 37 道**原创**题，覆盖初中/高中/大学/考研/考公与 8 种题型，点一下就能
   看到完整格式，再照着改。不内置任何真题；来源与授权边界见
-  [`docs/question-bank-sources.md`](docs/question-bank-sources.md)。
+  [`docs/question-bank-sources.md`](docs/question-bank-sources.md)，格式取舍见
+  [`docs/import-boundaries.md`](docs/import-boundaries.md)。
 
 ### v3.3.0：题库阶段 × 题型 × 判分方式
 

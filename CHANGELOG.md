@@ -26,7 +26,9 @@
   公式/图片/批注/页眉页脚不导入（边界写进 UI 文案）。
 - `.pdf`：`pdfbox-android 2.0.27.0`（Apache-2.0）先取文字层；无文字层时用 `PdfRenderer`
   逐页渲染 + PP-OCRv6 识别，**最多 20 页**，并在 Toast 里说明「扫描版、建议核对」。
-- 单文件上限 40MB；`.doc/.wps` 明确拒绝并给出转存指引；不支持的类型给一句人话。
+- 单文件上限 40MB。`.doc/.wps` 先看文件头再决定：实际是 zip/docx（改过后缀）直接按 docx 读；
+  真 OLE2 二进制或 RTF 给“另存为”指引。不引入 Apache POI（约 +6MB，且有 R8 风险）。
+- 不支持的类型给一句人话，不再只说“暂不支持”。
 - 扫描版 PDF 的 OCR 结果只负责把字送进编辑框；竖线分列仍需用户核对，不假装能自动读懂版式。
 
 ### 经典示例题库
@@ -35,22 +37,30 @@
   与单选/多选/判断/填空/计算/简答/主观/材料 8 种题型；每道题都有解析或评分要点。
 - 「示例题库」按钮只出现在题目批量录入页；导入后仍是普通的可编辑文本，不锁死。
 - **不内置真题**：高考/考研/国考真题与教材配套题有版权，公版古文除外。来源与授权边界见
-  [`docs/question-bank-sources.md`](docs/question-bank-sources.md)。
+  [`docs/question-bank-sources.md`](docs/question-bank-sources.md)；为什么不做 POI/表格库/公式 OCR 见
+  [`docs/import-boundaries.md`](docs/import-boundaries.md)。
 
 ### 验证与边界
 
-- **机检**：170 个测试类 / 1567 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
+- **机检**：171 个测试类 / 1569 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
   24 条都是既有的依赖版本提示、ExifInterface 与 ABI 建议）。
   新增覆盖：`DocumentTextExtractorTest`（含 Word 表格、段落属性）、`PdfTextExtractorTest`
-  （文字层、水印页脚、文件重载）、`ClassicStarterBankTest`、`DesignGeneratorTest`、
-  `DesignPlanCodecTest`、`Migration11To12Test`。
-- **APK**：`120,362,173 B`，sha256
-  `ff0590f3353db620dc99b23c55c946fc69ecdd729f857c07001387628e9c03d2`，证书
+  （文字层、水印页脚、文件重载）、`LegacyWordSnifferTest`、`ClassicStarterBankTest`、
+  `DesignGeneratorTest`、`DesignPlanCodecTest`、`Migration11To12Test`；
+  `assembleDebugAndroidTest` 通过，含 DOCX/PDF 真机读取冒烟。
+- **APK**：`120,364,033 B`，sha256
+  `7c748021ba1d8012b7f35d1661fb2a96c797bc63f236521f910bcc5f441340ad`，证书
   `f86c8a85…`（与 3.0–3.3 同一把），版本 `3.4.0 / 25`。体积比 3.3 增加约 9.5MB，
   主要是 pdfbox 的标准字体/CMap 资产（Apache-2.0）。
-- **真机**：待验。本轮 `adb devices` 为空，未做 v11→v12 覆盖安装、设计 Tab、txt/docx/pdf 冒烟；
-  因此**没有打 tag、没有发 Release、没有同步网盘**。
-- 未支持：`.doc/.wps`、PDF 公式/表格结构还原、扫描版 PDF 的版式理解、方案云同步。
+- **真机（2026-10-25，vivo V2156A / Android 11）**：从 3.2.1/Room9 覆盖安装后，
+  `app_settings`/单词/题目/错题等原有数据迁移到 Room12 后仍在（1165 词 / 13 题 / 17 错题 /
+  64 条 review_log）；设计 Tab、8 模板列表、编辑页与“放弃编辑”确认可用；示例题库导入
+  **37 可导入 / 0 待修正**，提交后题目 13→50、8 种题型齐全；DOCX 表格在真机仪器测试中
+  读成 `题干|1|2|B`。
+- **未完成**：设计方案的设备端保存/分享、PDF 文字层与扫描版 OCR 的设备端仪器测试因
+  USB 断开中断；因此**没有打 tag、没有发 Release、没有同步网盘**。
+- 未支持：真 OLE2 二进制 `.doc/.wps`（需另存）、PDF 公式/表格结构还原、扫描版 PDF 的版式理解、
+  方案云同步。
 - PDF 解析依赖 `pdfbox-android`；标准字体在 APK assets 内，首次解析前调用
   `PDFBoxResourceLoader.init`，不联网。
 
