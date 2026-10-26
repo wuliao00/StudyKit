@@ -27,6 +27,18 @@ object TextCleaner {
         }
     }
 
+    /**
+     * 文件/OCR 导入时的空行折叠：连续空行只留一个换行。
+     *
+     * 题库契约是“一行一题”，空行除了让编辑框看起来一串回车，没有任何语义；
+     * 但题干内部真正的换行（简答/材料）不能动，所以只压“空行”，不压普通换行。
+     * 手动粘贴不经过这里，用户想留空行仍可留。
+     */
+    fun collapseBlankLines(value: String): String = value
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .replace(Regex("\\n[ \\t]*\\n+"), "\n")
+
     fun normalizeAccents(value: String): String {
         var result = value
         ACCENT_FOLDINGS.forEach { (from, to) -> result = result.replace(from, to) }

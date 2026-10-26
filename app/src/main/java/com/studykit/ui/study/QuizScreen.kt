@@ -113,6 +113,7 @@ fun QuizScreen(
     onNavigate: (String) -> Unit,
     onPreviewImport: () -> Unit,
     onPhotoNeedsFormatting: () -> Unit,
+    onOpenStore: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -231,13 +232,14 @@ fun QuizScreen(
                 onPick = { viewModel.startQuiz(it) },
                 onPickMixed = { viewModel.startMixedQuiz() },
                 onToggleInterleaving = { viewModel.setInterleavingEnabled(it) },
+                onOpenStore = onOpenStore,
             )
         }
     }
 }
 
 /**
- * 学科选择：从 questions 表 distinct subject 渲染入口卡片。
+ * 学科选择：从 questions 表 distinct subject 渲染入口卡片；顶部先给题库商店入口。
  *
  * 两个新增件：
  *  - **综合练习**（多学科 ≥ 2 才出现）：走 [StudyViewModel.startMixedQuiz]，题序已按学科打散；
@@ -255,6 +257,7 @@ private fun SubjectPicker(
     onPick: (String) -> Unit,
     onPickMixed: () -> Unit,
     onToggleInterleaving: (Boolean) -> Unit,
+    onOpenStore: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -286,6 +289,14 @@ private fun SubjectPicker(
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        // 题库商店入口放在筛选之前：空题库时它是“先把题装进来”的路径，
+        // 有题时它是“再下一套”的路径，两个场景都该先看见。
+        AppButton(
+            text = "题库商店 · 按阶段下载题包",
+            secondary = true,
+            onClick = onOpenStore,
+        )
         Spacer(Modifier.height(AppTheme.space.md))
         if (allCount > 0) {
             Text(text = "按阶段筛", style = texts.caption)

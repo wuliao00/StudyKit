@@ -1,0 +1,8 @@
+[大学·高等数学·单选] 极限 lim(x→0) sin x / x 等于？|0|1|+∞|不存在|B|这是第一重要极限，结果为 1。
+[大学·线性代数·多选] 设 A 为 n 阶方阵，下列条件中能保证 A 可逆的是？|A 的行列式不为零|A 的列向量组线性无关|齐次方程 Ax=0 只有零解|A 有零特征值|ABC|A 可逆 ⇔ det(A)≠0 ⇔ 列向量线性无关 ⇔ Ax=0 只有零解；A 有零特征值时 det(A)=0，矩阵不可逆。
+[大学·大学物理·判断] 在真空中，光速与光源的运动状态无关。|正确|狭义相对论的基本假设之一：真空光速对一切惯性系相同。
+[大学·概率论·填空] 掷一枚均匀硬币 3 次，恰有 2 次正面的概率是？|3/8;0.375|C(3,2)×(1/2)³=3/8。
+[大学·数据结构·计算] 对 n 个元素进行归并排序，平均时间复杂度用大 O 记号表示是什么？|O(nlogn);O(n log n)|归并排序每层合并 O(n)，共 O(log n) 层，总计 O(n log n)。
+[大学·马克思主义基本原理·简答] 简述实践是检验真理唯一标准的原因。|真理是主观认识与客观实际的符合。实践具有直接现实性，能把认识转化为现实结果，从而检验认识是否符合客观实际；离开实践，认识无法被最终证实或证伪。|答出真理的含义；答出实践的直接现实性；答出实践连接主观与客观；逻辑完整。
+[大学·管理学·材料] 材料：某团队原按职能分设多个小组，沟通层级多、响应慢。后来改为围绕用户问题组建跨职能小队，并下放部分决策权。问题：这体现了哪些组织设计思路？|减少管理层级、走向扁平化；以跨职能团队打通协作；下放决策权以提高响应速度；以用户价值为共同目标。|答出扁平化；答出跨职能协作；答出授权；结合材料说明效果。
+[大学·英语·主观] Write an essay of about 150 words on why reading matters in the age of short videos.|Short videos are built to be finished in seconds, and that is exactly why reading still matters. A book asks us to follow an argument across pages, to hold several ideas at once, and to notice what the author leaves out. Those are the skills behind careful judgment, and they cannot be trained by clips that end before a thought develops. Reading is also slower than scrolling, and that slowness is the point: it leaves room for doubt, for going back, for changing one's mind. Reading gives us words for feelings we have not yet named, which is why a novel can change how we see a person. In a feed that rewards speed, sitting with a difficult page is a quiet act of independence. I try to read twenty minutes a day, not to finish more books, but to keep that muscle alive.|观点清楚；论证有推进；有具体阅读体验；语言准确；词数接近要求。

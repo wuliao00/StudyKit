@@ -24,6 +24,7 @@ import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
 import com.studykit.util.importer.ImportPlan
+import com.studykit.util.importer.TextCleaner
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -128,7 +129,10 @@ fun rememberQuestionPhotoImport(
                             // 不切错题本：把 OCR 原文放进题库编辑框（ViewModel 草稿，不进 Bundle）。
                             // 用户补上 `题干|选项|答案` 或 `[阶段·学科·题型]` 前缀后即可预览。
                             file.delete()
-                            importViewModel.setDraft(ImportKind.QUESTION, outcome.text)
+                            importViewModel.setDraft(
+                                ImportKind.QUESTION,
+                                TextCleaner.collapseBlankLines(outcome.text),
+                            )
                             Toast.makeText(
                                 context,
                                 "没识别出竖线分列，文字已放进题库编辑页；补上「题干|选项|答案」再预览",

@@ -65,7 +65,7 @@ class PdfTextExtractorTest {
 
         val text = PdfTextExtractor.normalize(raw)
 
-        assertEquals("第一行\n\n第二行", text)
+        assertEquals("第一行\n第二行", text)
     }
 
     @Test

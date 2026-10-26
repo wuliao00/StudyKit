@@ -10,7 +10,7 @@ import org.junit.Test
 /**
  * 内置示例题库必须真的能导进去。
  *
- * 这条测试守的不是“文本非空”，而是整份资产的**格式契约**：37 行全部可解析、0 行待修正、
+ * 这条测试守的不是“文本非空”，而是整份资产的**格式契约**：38 行全部可解析、0 行待修正、
  * 6 个阶段与 8 种题型都出现。改题库时若多打一个竖线或写错题型别名，这里先红，
  * 而不是等用户点“示例题库”看到一片待修正。
  */
@@ -25,7 +25,7 @@ class ClassicStarterBankTest {
             0,
             plan.rejected.size,
         )
-        assertEquals(37, plan.items.size)
+        assertEquals(38, plan.items.size)
 
         val questions = plan.items.filterIsInstance<ImportItem.Question>()
         assertEquals(plan.items.size, questions.size)

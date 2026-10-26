@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "updated": "2026-10-26",
+  "notice": "题包为 StudyKit 原创示例，不含高考/考研/考公真题或教材原题；真题版权归各考试机构，导入他人题包前请确认授权。",
+  "packs": [
+    {
+      "id": "primary-foundation",
+      "title": "小学基础",
+      "stage": "primary",
+      "subjects": ["数学", "语文", "英语", "科学"],
+      "count": 10,
+      "description": "四则运算、质数、正方形周长、古诗与英语词汇，覆盖小学常见基础题型。",
+      "license": "CC BY 4.0 · StudyKit 原创",
+      "source": "StudyKit 原创示例",
+      "path": "packs/primary-foundation.txt",
+      "sha256": "59e32f2eaf048a98dc25ae5571ce62460d8b9035b5d153cc12028d78ccb96bbb"
+    },
+    {
+      "id": "junior-foundation",
+      "title": "初中核心",
+      "stage": "junior",
+      "subjects": ["数学", "物理", "化学", "语文", "历史", "道德与法治"],
+      "count": 8,
+      "description": "有理数、勾股定理、匀速直线运动、化学式与公版古文阅读。",
+      "license": "CC BY 4.0 · StudyKit 原创",
+      "source": "StudyKit 原创示例",
+      "path": "packs/junior-foundation.txt",
+      "sha256": "05c736879161ef6675c15ab664b28b13a7db20df319efdbcb84b1b8a2ddf73f7"
+    },
+    {
+      "id": "senior-foundation",
+      "title": "高中核心",
+      "stage": "senior",
+      "subjects": ["数学", "物理", "化学", "英语", "语文", "历史"],
+      "count": 8,
+      "description": "二次函数、牛顿第三定律、阿伏加德罗定律、英语反意疑问与材料分析。",
+      "license": "CC BY 4.0 · StudyKit 原创",
+      "source": "StudyKit 原创示例",
+      "path": "packs/senior-foundation.txt",
+      "sha256": "5405b30eebc946bbcd61990b34c9d9c804010180649d2d58a47d7ec355ea4ae6"
+    },
+    {
+      "id": "college-foundation",
+      "title": "大学基础",
+      "stage": "college",
+      "subjects": ["高等数学", "线性代数", "大学物理", "概率论", "数据结构", "马克思主义基本原理", "管理学", "英语"],
+      "count": 8,
+      "description": "极限、矩阵可逆、光速不变、概率、归并排序与课程论文写作。",
+      "license": "CC BY 4.0 · StudyKit 原创",
+      "source": "StudyKit 原创示例",
+      "path": "packs/college-foundation.txt",
+      "sha256": "ec3c792f15a69d20e564501ecdf0651d84654ff98d8db74a8fa5255476c02c4a"
+    },
+    {
+      "id": "postgrad-foundation",
+      "title": "考研基础",
+      "stage": "postgrad",
+      "subjects": ["数学一", "英语一", "政治", "管理学"],
+      "count": 8,
+      "description": "极值、定积分、语法辨析、矛盾论与管理控制，覆盖考研公共课常见题型。",
+      "license": "CC BY 4.0 · StudyKit 原创",
+      "source": "StudyKit 原创示例",
+      "path": "packs/postgrad-foundation.txt",
+      "sha256": "04cf83d0e0ec6013440ab27424ea27815e3f42a8ecd087d3c83df8acb174dd01"
+    },
+    {
+      "id": "civil-foundation",
+      "title": "考公基础",
+      "stage": "civil",
+      "subjects": ["行测", "申论"],
+      "count": 5,
+      "description": "数量关系、言语理解、资料分析、申论材料概括与议论文立意。",
+      "license": "CC BY 4.0 · StudyKit 原创",
+      "source": "StudyKit 原创示例",
+      "path": "packs/civil-foundation.txt",
+      "sha256": "ebc899211abdaf7e37f8aa1b7f0269cfe454124f74504feb902b9ab54d330543"
+    }
+  ]
+}

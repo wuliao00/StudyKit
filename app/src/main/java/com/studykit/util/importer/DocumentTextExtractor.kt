@@ -152,7 +152,8 @@ object DocumentTextExtractor {
         return out.toString()
             .replace("\u0000", "")
             .replace(Regex("[ \\t]+\\n"), "\n")
-            .replace(Regex("\\n{3,}"), "\n\n")
+            // 导入契约是“一行一题”：Word 表格/段落之间不保留空行，否则用户看到的是一串回车。
+            .replace(Regex("\\n{2,}"), "\n")
             .trim()
     }
 

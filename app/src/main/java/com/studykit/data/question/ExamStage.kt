@@ -8,6 +8,7 @@ package com.studykit.data.question
  */
 enum class ExamStage(val storageValue: String, val label: String) {
     UNSPECIFIED("", "未标注"),
+    PRIMARY("primary", "小学"),
     JUNIOR("junior", "初中"),
     SENIOR("senior", "高中"),
     COLLEGE("college", "大学"),
@@ -26,6 +27,7 @@ enum class ExamStage(val storageValue: String, val label: String) {
 
         /** 导入前缀/旧表单里的中文别名；认不出来返回 null，由调用方决定拒绝还是退回未标注 */
         fun fromAlias(raw: String): ExamStage? = when (raw.trim()) {
+            "小学", "小升初" -> PRIMARY
             "初中", "中考" -> JUNIOR
             "高中", "高考" -> SENIOR
             "大学", "本科" -> COLLEGE

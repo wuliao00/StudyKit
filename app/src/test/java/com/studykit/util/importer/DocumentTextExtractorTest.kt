@@ -6,6 +6,7 @@ import java.nio.charset.Charset
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -113,6 +114,7 @@ class DocumentTextExtractorTest {
         assertTrue(text, text.contains("题干一|A|B"))
         assertTrue(text, text.contains("题干二|C|D"))
         assertTrue("表格结束后正文要另起一行", text.contains("\n表后正文"))
+        assertFalse("行与行之间不要再留空行", text.contains("\n\n"))
     }
 
     @Test

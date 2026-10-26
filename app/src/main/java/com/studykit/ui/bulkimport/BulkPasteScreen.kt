@@ -41,6 +41,7 @@ import com.studykit.ui.theme.AppTheme
 import com.studykit.util.importer.DocumentReadResult
 import com.studykit.util.importer.ImportDocumentReader
 import com.studykit.util.importer.ImportPlan
+import com.studykit.util.importer.TextCleaner
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -76,11 +77,13 @@ fun BulkPasteScreen(
 
     // 输入框已有内容时，选文件/示例题库不直接覆盖：先确认，避免一键抹掉刚整理好的几百行。
     fun acceptText(text: String, note: String?) {
+        // 文件/示例导入的空行只留一个换行：题库是一行一题，空行只会让编辑框看起来是一串回车。
+        val normalized = TextCleaner.collapseBlankLines(text)
         if (raw.isBlank()) {
-            viewModel.setDraft(kind, text)
+            viewModel.setDraft(kind, normalized)
             note?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
         } else {
-            pendingReplace = text
+            pendingReplace = normalized
             pendingNote = note
         }
     }
@@ -191,7 +194,7 @@ fun BulkPasteScreen(
             // 标题 + 两个 TextButton 会把最后一个按钮压成 0 宽。
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "示例题库：37 道原创题，覆盖 6 个阶段 × 8 种题型",
+                    text = "示例题库：38 道原创题，覆盖 6 个阶段 × 8 种题型",
                     style = texts.caption,
                     modifier = Modifier.weight(1f),
                 )

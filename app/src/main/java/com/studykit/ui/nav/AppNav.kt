@@ -90,6 +90,8 @@ import com.studykit.ui.study.DictStoreViewModel
 import com.studykit.ui.study.ExamResultScreen
 import com.studykit.ui.study.MockExamScreen
 import com.studykit.ui.study.QuestionCreateScreen
+import com.studykit.ui.study.QuestionStoreScreen
+import com.studykit.ui.study.QuestionStoreViewModel
 import com.studykit.ui.study.QuizScreen
 import com.studykit.ui.study.StudyHomeScreen
 import com.studykit.ui.study.StudyViewModel
@@ -144,6 +146,9 @@ object StudyRoutes {
     /** 模考（v2.7 计划 B Task 13）：组卷作答 + 交卷后的成绩页两条路由 */
     const val MOCK_EXAM = "study/exam"
     const val EXAM_RESULT = "study/exam/result"
+
+    /** 题库商店：按阶段下载题包，下载后仍进批量导入预览 */
+    const val QUESTION_STORE = "study/question-store"
 
     /** 记忆看板：半衰期模型的三块图（未来量 / 持久度分布 / 遗忘曲线） */
     const val STATS = "study/stats"
@@ -232,6 +237,7 @@ fun AppNav(
     val globalCalendarViewModel: GlobalCalendarViewModel = viewModel()
     val bookViewModel: BookViewModel = viewModel()
     val studyViewModel: StudyViewModel = viewModel()
+    val questionStoreViewModel: QuestionStoreViewModel = viewModel()
     val designViewModel: DesignViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
@@ -586,6 +592,19 @@ fun AppNav(
                         navController.navigate(ImportRoutes.paste(ImportKind.QUESTION)) {
                             launchSingleTop = true
                         }
+                    },
+                    onOpenStore = {
+                        navController.navigate(StudyRoutes.QUESTION_STORE) { launchSingleTop = true }
+                    },
+                )
+            }
+            composable(StudyRoutes.QUESTION_STORE) {
+                QuestionStoreScreen(
+                    viewModel = questionStoreViewModel,
+                    importViewModel = importViewModel,
+                    onBack = { navController.popBackStack() },
+                    onPreview = {
+                        navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
                 )
             }

@@ -49,4 +49,13 @@ class TextCleanerTest {
     fun `中文与日文假名不受归一影响`() {
         assertEquals("苹果 形近词", TextCleaner.normalizeAccents("苹果 形近词"))
     }
+
+    @Test
+    fun `文件导入的连续空行压成单个换行`() {
+        val raw = "第一题|A|B|A\r\n\r\n\r\n第二题|C|D|C\n \n第三题|E|F|E"
+        assertEquals(
+            "第一题|A|B|A\n第二题|C|D|C\n第三题|E|F|E",
+            TextCleaner.collapseBlankLines(raw),
+        )
+    }
 }

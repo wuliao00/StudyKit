@@ -89,7 +89,8 @@ object PdfTextExtractor {
         .replace('\u00A0', ' ')
         .replace('\u3000', ' ')
         .replace(Regex("[ \\t]+\\n"), "\n")
-        .replace(Regex("\\n{3,}"), "\n\n")
+        // 一行一题：不要把分页/段落空行留在编辑框里，用户要的是连续的行。
+        .replace(Regex("\\n{2,}"), "\n")
         .trim()
 }
 

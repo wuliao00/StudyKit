@@ -8,7 +8,9 @@ import org.junit.Test
 class QuestionTypeAliasTest {
 
     @Test
-    fun `阶段别名覆盖中考高考与考公口语`() {
+    fun `阶段别名覆盖小学中考高考与考公口语`() {
+        assertEquals(ExamStage.PRIMARY, ExamStage.fromAlias("小学"))
+        assertEquals(ExamStage.PRIMARY, ExamStage.fromAlias("小升初"))
         assertEquals(ExamStage.JUNIOR, ExamStage.fromAlias("初中"))
         assertEquals(ExamStage.JUNIOR, ExamStage.fromAlias("中考"))
         assertEquals(ExamStage.SENIOR, ExamStage.fromAlias("高中"))

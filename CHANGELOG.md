@@ -19,11 +19,25 @@
   旧方案导出仍是当时的文本）。可继续编辑、复制全文、系统分享、删除（有确认框）。
 - 编辑草稿用 `rememberSaveable` 保存，转屏/进程回收后回来不丢。
 
+### 题库商店（新增）
+
+- 题库练习页新增「题库商店 · 按阶段下载题包」，当前 6 个包：小学/初中/高中/大学/考研/考公。
+- 每个包带 `id/title/stage/subjects/count/source/license/path/sha256` 元数据；下载前能看到来源与许可，
+  下载后校验 SHA-256，再交给批量导入的预览/去重/结果流程，不 fork 第二条入库路。
+- 目录与题包随 APK 打包在 `assets/question_banks/`，不联网、不需要存储权限；
+  远程源以后只需把 `path` 拼到远端 base，不改目录/预览/入库层。
+- **内容边界**：6 个包都是 StudyKit 原创示例，不含高考/考研/考公真题或教材原题；
+  真题再分发权不在应用手里，需用户自行取得授权后扩展 manifest 或手动导入。
+- 阶段枚举补 `PRIMARY("primary","小学")`，导入前缀支持「小学/小升初」；题库筛选多一枚小学 chip。
+  该列是 TEXT，无 Room 迁移。
+
 ### 题库文件导入
 
 - `.txt/.md/.csv`：BOM 优先 → 严格 UTF-8 → 严格 GB18030 → UTF-8 兜底；中文旧编码不再整屏替换符。
 - `.docx`：解压 `word/document.xml`，还原段落、`<w:br/>`、制表符与 XML 实体；
   公式/图片/批注/页眉页脚不导入（边界写进 UI 文案）。
+- **不再一串空行**：DOCX/PDF 提取结果把连续空行压成单个换行，导入框里是连续的一行一题；
+  题干内部本来就有换行的简答/材料仍保留内容。
 - `.pdf`：`pdfbox-android 2.0.27.0`（Apache-2.0）先取文字层；无文字层时用 `PdfRenderer`
   逐页渲染 + PP-OCRv6 识别，**最多 20 页**，并在 Toast 里说明「扫描版、建议核对」。
 - **拍照录题可选相册**：题库菜单项改为「拍照 / 相册录题」，错题本 hero 改为「拍照 / 相册」；
@@ -38,8 +52,10 @@
 
 ### 经典示例题库
 
-- `assets/question_banks/classic-starter.txt`：37 道**原创**题，覆盖初中/高中/大学/考研/考公
+- `assets/question_banks/classic-starter.txt`：38 道**原创**题，覆盖小学/初中/高中/大学/考研/考公
   与单选/多选/判断/填空/计算/简答/主观/材料 8 种题型；每道题都有解析或评分要点。
+- 另按阶段拆出 `assets/question_banks/packs/` 六个商店包（小学/初中/高中/大学/考研/考公），
+  manifest 逐包标来源与许可；「题库商店」下载后仍走批量导入预览。
 - 「示例题库」按钮只出现在题目批量录入页；导入后仍是普通的可编辑文本，不锁死。
 - **不内置真题**：高考/考研/国考真题与教材配套题有版权，公版古文除外。来源与授权边界见
   [`docs/question-bank-sources.md`](docs/question-bank-sources.md)；为什么不做 POI/表格库/公式 OCR 见
@@ -47,7 +63,7 @@
 
 ### 验证与边界
 
-- **机检**：171 个测试类 / 1570 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
+- **机检**：172 个测试类 / 1574 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
   24 条都是既有的依赖版本提示、ExifInterface 与 ABI 建议）。
   新增覆盖：`DocumentTextExtractorTest`（含 Word 表格、段落属性）、`PdfTextExtractorTest`
   （文字层、水印页脚、文件重载）、`LegacyWordSnifferTest`、`ClassicStarterBankTest`、
@@ -56,17 +72,20 @@
 - **Release R8**：pdfbox 的可选 JP2 解码（`com.gemalto.jp2`）与桌面 JDK 专属包
   （`java.awt`/`javax.imageio`）已加 `-dontwarn`；本地 `:app:minifyReleaseWithR8` 通过，
   修掉 CI 上 `Missing class com.gemalto.jp2.JP2Decoder` 的 release 构建失败。
-- **APK**：`120,444,814 B`，sha256
-  `fd323eb16e63d04804501e911ecbe0804f38bb4e23c859a8ca984d6dcd2b5c95`，证书
+- **APK**：`120,445,468 B`，sha256
+  `e08610a64f05322004d587fbbb46e3e02e1d9c5eefe578e5649cf5a2a3ebdcce`，证书
   `f86c8a85…`（与 3.0–3.3 同一把），版本 `3.4.0 / 25`。体积比 3.3 增加约 9.5MB，
   主要是 pdfbox 的标准字体/CMap 资产（Apache-2.0）。
 - **真机（vivo V2156A / Android 11）**：从 3.2.1/Room9 覆盖安装后，
   `app_settings`/单词/题目/错题等原有数据迁移到 Room12 后仍在（1165 词 / 13 题 / 17 错题 /
   64 条 review_log）；设计 Tab、8 模板列表、编辑页与“放弃编辑”确认可用；示例题库导入
-  **37 可导入 / 0 待修正**，提交后题目 13→50、8 种题型齐全。
+  **38 可导入 / 0 待修正**，提交后题目 13→51、8 种题型齐全。
 - **真机仪器测试（2026-10-26 最终包）**：`ImportDocumentReaderDeviceTest` 2/2 通过——
   DOCX 表格读成 `题干|1|2|B`，PDF 文字层包含题干与判断答案。最终包覆盖安装后仍是
   1165 词 / 13 题 / 17 错题 / 0 方案。
+- **题库商店（真机）**：题库练习页进入商店，6 个包（小学/初中/高中/大学/考研/考公）正常列出；
+  点「下载并预览」小学包 → 10 条全部可导入、0 待修正，阶段/题型/选项/答案正确；
+  导入成功后题目 13→23（10 道小学题），随后恢复测试前数据（13 题 / 0 方案）。
 - **相册入口**：题库「拍照 / 相册录题」与错题本「拍照 / 相册」都能弹出选择框；
   「从相册选择」确实拉起系统 `PickActivity`。但 adb 点击在 vivo 的 DocumentsUI 文件行上
   不生效，**相册选中后的 OCR 串测没有自动跑完**，需要在手机上手动点一次。
