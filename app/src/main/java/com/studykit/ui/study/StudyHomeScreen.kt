@@ -91,14 +91,18 @@ fun StudyHomeScreen(
     onOpenSettings: () -> Unit,
     onNavigate: (String) -> Unit,
     onPreviewImport: () -> Unit,
-    onPhotoFallback: () -> Unit,
+    onPhotoNeedsFormatting: () -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
     // 拍照录题就地完成（相机 → OCR → 预览屏），不另开一屏；菜单里其余项走路由。
-    // 解析不出四选一时（书页），照片与文本转错题本 —— 导航由 onPhotoFallback 交给 AppNav。
-    val photoImport = rememberQuestionPhotoImport(importViewModel, onPreviewImport, onPhotoFallback)
+    // 解析不出分列时，文字放进题库编辑页（不自动切错题本）。
+    val photoImport = rememberQuestionPhotoImport(
+        importViewModel,
+        onPreviewImport,
+        onPhotoNeedsFormatting,
+    )
 
     // ── SIXTY_SIX 贴士（计划 B Task 17 Step 2b / spec §8）：火焰徽章天数恰好走到 21 那天，
     // 在 hero 下方挂一次「21 天不是终点、66 天才是中位数」——每次安装一次（sixtySixTipSeen）。

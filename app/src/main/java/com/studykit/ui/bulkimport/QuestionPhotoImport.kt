@@ -19,7 +19,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.studykit.ui.mistake.MistakeCaptureHandoff
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.MistakeImageStore
 import com.studykit.util.OcrResult
@@ -49,8 +48,13 @@ internal sealed interface PhotoImportOutcome {
     /** 解析出了至少一条四选一题目：照旧进批量导入的预览屏。 */
     data class Preview(val plan: ImportPlan) : PhotoImportOutcome
 
-    /** 没有四选一条目、但文本非空：把照片与文本转进错题本。 */
-    data class Fallback(val text: String) : PhotoImportOutcome
+    /**
+     * 文本非空，但没有识别出「题干 | 选项 | 答案」的分列。
+     *
+     * **不再自动切错题本**：非选择题（填空/简答/主观/材料）本来就不该被“四选一”格式一票否决。
+     * 文字原样放进题库编辑页，由用户补竖线或改写题型，再决定导入。
+     */
+    data class NeedsFormatting(val text: String) : PhotoImportOutcome
 
     /** 文本是空白：连错题本都填不出内容，只剩重拍提示。 */
     data object Empty : PhotoImportOutcome
@@ -58,15 +62,15 @@ internal sealed interface PhotoImportOutcome {
 
 /**
  * 拍照 OCR 之后的**纯决策**（不碰 Compose、不碰文件），单测直接调它：
- * 四选一解析出条目 ⇒ [PhotoImportOutcome.Preview]；条目为空但还有字 ⇒
- * [PhotoImportOutcome.Fallback]（一页教科书正文永远走这里）；连字都没有 ⇒
- * [PhotoImportOutcome.Empty]。判定只此一处，UI 只负责按结果分派。
+ * 解析出条目（无论单选、填空还是简答）⇒ [PhotoImportOutcome.Preview]；
+ * 条目为空但还有字 ⇒ [PhotoImportOutcome.NeedsFormatting]（放进题库编辑页补竖线）；
+ * 连字都没有 ⇒ [PhotoImportOutcome.Empty]。判定只此一处，UI 只负责按结果分派。
  */
 internal fun decidePhotoImport(ocrText: String): PhotoImportOutcome {
     val plan = ImportKind.QUESTION.parse(ocrText)
     return when {
         plan.items.isNotEmpty() -> PhotoImportOutcome.Preview(plan)
-        ocrText.isNotBlank() -> PhotoImportOutcome.Fallback(ocrText)
+        ocrText.isNotBlank() -> PhotoImportOutcome.NeedsFormatting(ocrText)
         else -> PhotoImportOutcome.Empty
     }
 }
@@ -88,15 +92,15 @@ internal fun decidePhotoImport(ocrText: String): PhotoImportOutcome {
  * （转给错题本当图片，之后由错题本录入页在保存或放弃时清理）。
  * 相机临时目录原本就有 `capture_*.jpg` 堆积问题，四选一与空结果两条路仍只在磁盘上多停留几秒。
  *
- * **解析不出四选一不是死路**：题库只收「题干 | 选项… | 答案」，书页永远过不了这一关；
- * 此时照片**不删**，连同 OCR 文本经 [MistakeCaptureHandoff] 交给错题本录入页
- * （`onFallbackToMistake` 负责导航）。错题本不需要选项与答案，图片 + 自由文本正好落得下。
+ * **解析不出分列不是死路，也不自动切错题本**：文字原样放进题库的批量编辑页
+ * （`ImportViewModel` 的题目草稿），由用户补 `|` 或改成 `[阶段·学科·题型]` 前缀后再预览。
+ * 非选择题（填空/计算/简答/主观/材料）同样走这条，不再被“四选一”格式误判成错题。
  */
 @Composable
 fun rememberQuestionPhotoImport(
     importViewModel: ImportViewModel,
     onPreview: () -> Unit,
-    onFallbackToMistake: () -> Unit,
+    onNeedsFormatting: () -> Unit,
 ): QuestionPhotoImport {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -121,16 +125,17 @@ fun rememberQuestionPhotoImport(
                             onPreview()
                         }
 
-                        is PhotoImportOutcome.Fallback -> {
-                            // 不删图：这张照片就是错题本的图片。文本可能有上千字，走应用内单槽
-                            // 而不是导航参数（Binder 事务上限，见 MistakeCaptureHandoff）。
-                            MistakeCaptureHandoff.stash(file, outcome.text)
+                        is PhotoImportOutcome.NeedsFormatting -> {
+                            // 不切错题本：把 OCR 原文放进题库编辑框（ViewModel 草稿，不进 Bundle）。
+                            // 用户补上 `题干|选项|答案` 或 `[阶段·学科·题型]` 前缀后即可预览。
+                            file.delete()
+                            importViewModel.setDraft(ImportKind.QUESTION, outcome.text)
                             Toast.makeText(
                                 context,
-                                "这页不是四选一格式，已转到错题本，可在那儿保存",
+                                "没识别出竖线分列，文字已放进题库编辑页；补上「题干|选项|答案」再预览",
                                 Toast.LENGTH_LONG,
                             ).show()
-                            onFallbackToMistake()
+                            onNeedsFormatting()
                         }
 
                         PhotoImportOutcome.Empty -> {

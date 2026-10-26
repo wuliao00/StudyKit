@@ -402,10 +402,12 @@ fun AppNav(
                     onPreviewImport = {
                         navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
-                    // 书页解析不出四选一：照片与文本已由拍照那条路交给错题本的单槽，
-                    // 这里只把既有拍照录入页推上来（默认 auto=false、subject=""，不加新参数）
-                    onPhotoFallback = {
-                        navController.navigate(MistakeRoutes.capture()) { launchSingleTop = true }
+                    // 解析不出「题干|选项|答案」：文字已写进题库草稿，这里只把题库编辑页推上来，
+                    // 不再自动跳错题本（非选择题同样适用）。
+                    onPhotoNeedsFormatting = {
+                        navController.navigate(ImportRoutes.paste(ImportKind.QUESTION)) {
+                            launchSingleTop = true
+                        }
                     },
                 )
             }
@@ -579,9 +581,11 @@ fun AppNav(
                     onPreviewImport = {
                         navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true }
                     },
-                    // 同上：题库练习页拍照解析不出四选一时转错题本，复用既有拍照录入页
-                    onPhotoFallback = {
-                        navController.navigate(MistakeRoutes.capture()) { launchSingleTop = true }
+                    // 同上：题库练习页解析不出分列时，文字进题库编辑页，不自动切错题本。
+                    onPhotoNeedsFormatting = {
+                        navController.navigate(ImportRoutes.paste(ImportKind.QUESTION)) {
+                            launchSingleTop = true
+                        }
                     },
                 )
             }

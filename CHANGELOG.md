@@ -28,7 +28,9 @@
   逐页渲染 + PP-OCRv6 识别，**最多 20 页**，并在 Toast 里说明「扫描版、建议核对」。
 - **拍照录题可选相册**：题库菜单项改为「拍照 / 相册录题」，错题本 hero 改为「拍照 / 相册」；
   先选现拍或系统相册。相册走 Photo Picker（旧系统自动回退），复制到 cache 后与相机共用
-  同一条 OCR → 预览/错题本管线，不需要存储权限；相机权限被拒时相册仍然可用。
+  同一条 OCR 管线，不需要存储权限；相机权限被拒时相册仍然可用。
+- **不再自动切错题本**：OCR 没解析出「题干|选项|答案」时（非选择题、书页都算），
+  文字原样放进题库编辑页补竖线，由用户决定导入；不再把一张非选择题照片强行送进错题本。
 - 单文件上限 40MB。`.doc/.wps` 先看文件头再决定：实际是 zip/docx（改过后缀）直接按 docx 读；
   真 OLE2 二进制或 RTF 给“另存为”指引。不引入 Apache POI（约 +6MB，且有 R8 风险）。
 - 不支持的类型给一句人话，不再只说“暂不支持”。
@@ -45,7 +47,7 @@
 
 ### 验证与边界
 
-- **机检**：171 个测试类 / 1569 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
+- **机检**：171 个测试类 / 1570 个用例 / 0 失败；lint **0 error / 24 warning**（无新增代码告警，
   24 条都是既有的依赖版本提示、ExifInterface 与 ABI 建议）。
   新增覆盖：`DocumentTextExtractorTest`（含 Word 表格、段落属性）、`PdfTextExtractorTest`
   （文字层、水印页脚、文件重载）、`LegacyWordSnifferTest`、`ClassicStarterBankTest`、
@@ -55,7 +57,7 @@
   （`java.awt`/`javax.imageio`）已加 `-dontwarn`；本地 `:app:minifyReleaseWithR8` 通过，
   修掉 CI 上 `Missing class com.gemalto.jp2.JP2Decoder` 的 release 构建失败。
 - **APK**：`120,444,814 B`，sha256
-  `413bf88a031390384cc991a257a809ccd499bad5243f1aaa1de8051e96a47383`，证书
+  `fd323eb16e63d04804501e911ecbe0804f38bb4e23c859a8ca984d6dcd2b5c95`，证书
   `f86c8a85…`（与 3.0–3.3 同一把），版本 `3.4.0 / 25`。体积比 3.3 增加约 9.5MB，
   主要是 pdfbox 的标准字体/CMap 资产（Apache-2.0）。
 - **真机（vivo V2156A / Android 11）**：从 3.2.1/Room9 覆盖安装后，
@@ -68,7 +70,15 @@
 - **相册入口**：题库「拍照 / 相册录题」与错题本「拍照 / 相册」都能弹出选择框；
   「从相册选择」确实拉起系统 `PickActivity`。但 adb 点击在 vivo 的 DocumentsUI 文件行上
   不生效，**相册选中后的 OCR 串测没有自动跑完**，需要在手机上手动点一次。
-- **未完成**：设计方案保存/分享的设备端冒烟；因此**没有打 tag、没有发 Release、没有同步网盘**。
+- **非选择题不再自动切错题本**：OCR 没解析出竖线分列时，`decidePhotoImport` 返回
+  `NeedsFormatting`，文字写进题库草稿并打开编辑页；单测覆盖书页、无竖线试卷与
+  `[高中·数学·填空] …|H2O` 的预览分支。
+- **设计方案保存/分享（真机）**：费曼模板 6 个必填项填完后实时生成完整 Markdown；
+  点「分享」拉起系统 `ChooserActivity`；保存后 Hub 出现「费曼学习 · 10-26」卡片，
+  Room `design_plans` 落 1 行（mode=FEYNMAN，content 288 字符）。测试后已把该草稿清掉，
+  库里仍是 0 方案。
+- **未完成**：相册选中后的端到端 OCR 仍需手动点一次；除此之外没有发版阻塞项，
+  但**没有打 tag、没有发 Release、没有同步网盘**。
 - 测试期间临时锁定竖屏的开关已复位（`accelerometer_rotation=1`）。
 - 未支持：真 OLE2 二进制 `.doc/.wps`（需另存）、PDF 公式/表格结构还原、扫描版 PDF 的版式理解、
   方案云同步。

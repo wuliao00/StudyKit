@@ -5,8 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 拍照录题的三岔口（`decidePhotoImport`）：识别文本过得了四选一解析就照旧进预览，
- * 过不了但确实有字就转错题本（图片与文本原样带走），连字都没有才是真正的空结果。
+ * 拍照录题的三岔口（`decidePhotoImport`）：识别文本解析出条目就进预览，
+ * 过不了但确实有字就进题库编辑（原文原样带回，不自动切错题本），连字都没有才是真正的空结果。
  *
  * 这些断言全用字面量：真实书页那一条刻意长得像数学课本习题（编号行 + 小题行），
  * 它永远满足不了「题干 | 选项… | 答案」的竖线列数，正是本 bug 的现场输入。
@@ -23,7 +23,14 @@ class QuestionPhotoImportTest {
     }
 
     @Test
-    fun `教科书书页文本转错题本且原文原样带回`() {
+    fun `非选择题填空文本也能进预览`() {
+        val outcome = decidePhotoImport("[高中·数学·填空] 水的化学式是？|H2O")
+        assertTrue(outcome is PhotoImportOutcome.Preview)
+        assertEquals(1, (outcome as PhotoImportOutcome.Preview).plan.items.size)
+    }
+
+    @Test
+    fun `教科书书页文本进题库编辑且原文原样带回`() {
         val page = """
             8. 求下列函数的导数：
             (1) y=(arcsin x/2)^2
@@ -31,12 +38,12 @@ class QuestionPhotoImportTest {
             (3) y=e^(2x)cos 3x
         """.trimIndent()
         val outcome = decidePhotoImport(page)
-        assertTrue(outcome is PhotoImportOutcome.Fallback)
-        assertEquals(page, (outcome as PhotoImportOutcome.Fallback).text)
+        assertTrue(outcome is PhotoImportOutcome.NeedsFormatting)
+        assertEquals(page, (outcome as PhotoImportOutcome.NeedsFormatting).text)
     }
 
     @Test
-    fun `数学课本极限习题页转错题本且原文原样带回`() {
+    fun `数学课本极限习题页进题库编辑且原文原样带回`() {
         // 用户 2026-10-21 实拍的那页（习题 1-5）：编号行 + 小题行 + 数列判断题，没有竖线列。
         val page = """
             习题 1-5
@@ -50,14 +57,14 @@ class QuestionPhotoImportTest {
             (3) lim aₙcₙ 不存在
         """.trimIndent()
         val outcome = decidePhotoImport(page)
-        assertTrue(outcome is PhotoImportOutcome.Fallback)
-        assertEquals(page, (outcome as PhotoImportOutcome.Fallback).text)
+        assertTrue(outcome is PhotoImportOutcome.NeedsFormatting)
+        assertEquals(page, (outcome as PhotoImportOutcome.NeedsFormatting).text)
     }
 
     @Test
-    fun `高考试卷截图有选择题但非竖线格式也转错题本`() {
+    fun `高考试卷截图有选择题但非竖线格式也进题库编辑`() {
         // 用户 2026-10-21 发的第二张（2026 高考数学卷一）：有 A/B/C/D 选项，但没有「|」分列，
-        // 题库解析器照样不收；这条钉住"有选择题"不等于"能进题库"，照片仍要落到错题本。
+        // 题库解析器照样不收；这条钉住"有选择题"不等于"能进题库"，但也不再自动切错题本。
         val page = """
             2026年普通高等学校招生全国统一考试
             数学
@@ -68,8 +75,8 @@ class QuestionPhotoImportTest {
             A. y=x    B. y=2x    C. y=3x    D. y=4x
         """.trimIndent()
         val outcome = decidePhotoImport(page)
-        assertTrue(outcome is PhotoImportOutcome.Fallback)
-        assertEquals(page, (outcome as PhotoImportOutcome.Fallback).text)
+        assertTrue(outcome is PhotoImportOutcome.NeedsFormatting)
+        assertEquals(page, (outcome as PhotoImportOutcome.NeedsFormatting).text)
     }
 
     @Test
@@ -79,9 +86,9 @@ class QuestionPhotoImportTest {
     }
 
     @Test
-    fun `只有竖线但列数不够仍是转错题本`() {
+    fun `只有竖线但列数不够仍进题库编辑`() {
         val outcome = decidePhotoImport("a|b|c")
-        assertTrue(outcome is PhotoImportOutcome.Fallback)
-        assertEquals("a|b|c", (outcome as PhotoImportOutcome.Fallback).text)
+        assertTrue(outcome is PhotoImportOutcome.NeedsFormatting)
+        assertEquals("a|b|c", (outcome as PhotoImportOutcome.NeedsFormatting).text)
     }
 }
