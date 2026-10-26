@@ -48,6 +48,9 @@
   （文字层、水印页脚、文件重载）、`LegacyWordSnifferTest`、`ClassicStarterBankTest`、
   `DesignGeneratorTest`、`DesignPlanCodecTest`、`Migration11To12Test`；
   `assembleDebugAndroidTest` 通过，含 DOCX/PDF 真机读取冒烟。
+- **Release R8**：pdfbox 的可选 JP2 解码（`com.gemalto.jp2`）与桌面 JDK 专属包
+  （`java.awt`/`javax.imageio`）已加 `-dontwarn`；本地 `:app:minifyReleaseWithR8` 通过，
+  修掉 CI 上 `Missing class com.gemalto.jp2.JP2Decoder` 的 release 构建失败。
 - **APK**：`120,364,033 B`，sha256
   `7c748021ba1d8012b7f35d1661fb2a96c797bc63f236521f910bcc5f441340ad`，证书
   `f86c8a85…`（与 3.0–3.3 同一把），版本 `3.4.0 / 25`。体积比 3.3 增加约 9.5MB，
