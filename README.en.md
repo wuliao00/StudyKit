@@ -145,10 +145,11 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | Channel | Link / Code | Notes |
 | --- | --- | --- |
-| Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Access code `z4Yk`. This is a **folder** share — every future release's APK lands in the same directory, so this one link stays current |
-| Lanzou Cloud | [https://www.ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec) | The **`.7z` archive** of v3.2.1 (69.8 MB) — extract it before installing; use the Quark Netdisk link above for the raw APK |
-| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK of every release. Direct access from mainland China is unreliable — prefer the two channels above |
-| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | Release assets are **`.7z`** archives (about 69.8 MB) — extract before installing; version checks also read Gitee tags |
+| Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Access code `z4Yk`. This is a **folder** share — v3.4.1's `StudyKit-v3.4.1-debug.apk` (116 MB) and `StudyKit-v3.4.1-debug.7z` (76.3 MB) are in it, and future releases land there too |
+| Lanzou Cloud | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | The **`.7z` archive** of v3.4.1 (79,990,219 B), permanent and without an access code — extract it before installing |
+| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK and `.7z` of every release. Direct access from mainland China is unreliable — prefer the two channels above |
+| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.4.1 and v3.4.0 are published, assets are **`.7z`** archives (Gitee caps a single attachment at 100 MB); version checks also read Gitee tags |
+| Baidu / 123 Netdisk | — | Synced to each drive's `StudyKit` folder (not publicly shared; create a link inside the drive if you need one) |
 
 > **Update checks go through Gitee only**: on launch, the app reads the Gitee repository's tags to decide whether a new version exists. Quark, Lanzou Cloud and GitHub Releases are download channels only; they do not participate in version checks.
 

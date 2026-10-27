@@ -151,10 +151,11 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | 渠道 | 链接 / 口令 | 说明 |
 | --- | --- | --- |
-| 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；这是一个**文件夹**分享，以后每版的 APK 都放进同一个目录，收藏这一条就够 |
-| 蓝奏云 | [https://www.ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec) | v3.2.1 的 **`.7z` 压缩包**（69.8 MB），下完要先解压才能装；想要裸 APK 用上面的夸克网盘 |
-| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK。国内直连不稳，优先用上面两个渠道 |
-| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | 发行版附件是 **`.7z`**（约 69.8 MB，解压后安装）；更新检查读的也是 Gitee tags |
+| 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；**文件夹**分享，v3.4.1 的 `StudyKit-v3.4.1-debug.apk`（116 MB）与 `StudyKit-v3.4.1-debug.7z`（76.3 MB）已放进同一目录 |
+| 蓝奏云 | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | v3.4.1 的 **`.7z` 压缩包**（79,990,219 B），永久有效、无提取码；下完要先解压才能装 |
+| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK 与 `.7z`。国内直连不稳，优先用上面两个渠道 |
+| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.4.1 与 v3.4.0 都已建发行版，附件是 **`.7z`**（Gitee 单附件上限 100 MB）；更新检查读的也是 Gitee tags |
+| 百度 / 123 云盘 | — | 已同步到各自的 `StudyKit` 目录（未公开分享；需要链接时在网盘里自行创建） |
 
 > **更新检查只走 Gitee**：App 启动时读 Gitee 仓库的 tags 判断版本；夸克、蓝奏云、GitHub Releases 只是下载渠道，不参与版本判断。
 

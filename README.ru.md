@@ -147,10 +147,11 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | Канал | Ссылка / код | Примечания |
 | --- | --- | --- |
-| Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Код доступа `z4Yk`. Это ссылка на **папку** — APK каждого следующего релиза попадает в тот же каталог, так что ссылка остаётся актуальной |
-| Lanzou Cloud | [https://www.ilanzou.com/s/nIqyzX3Ec](https://www.ilanzou.com/s/nIqyzX3Ec) | **`.7z`-архив** v3.2.1 (69,8 МБ) — перед установкой его нужно распаковать; за «голым» APK идите по ссылке Quark Netdisk выше |
-| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | Исходный APK каждого релиза. Прямой доступ из материкового Китая нестабилен — используйте два канала выше |
-| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | Вложения релизов — **`.7z`**-архивы (около 69,8 МБ), перед установкой их нужно распаковать; проверка версий тоже читает tags Gitee |
+| Quark Netdisk | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | Код доступа `z4Yk`. Это ссылка на **папку** — в ней лежат `StudyKit-v3.4.1-debug.apk` (116 МБ) и `StudyKit-v3.4.1-debug.7z` (76,3 МБ) версии 3.4.1, туда же попадут следующие релизы |
+| Lanzou Cloud | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | **`.7z`-архив** v3.4.1 (79 990 219 Б), бессрочный и без кода доступа — перед установкой его нужно распаковать |
+| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | Исходный APK и `.7z` каждого релиза. Прямой доступ из материкового Китая нестабилен — используйте два канала выше |
+| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | Опубликованы v3.4.1 и v3.4.0, вложения — **`.7z`**-архивы (Gitee ограничивает один файл 100 МБ); проверка версий тоже читает tags Gitee |
+| Baidu / 123 Netdisk | — | Синхронизировано в папку `StudyKit` каждого диска (публичной ссылки нет; создайте её в самом диске при необходимости) |
 
 > **Проверка обновлений идёт только через Gitee**: при запуске приложение читает tags репозитория Gitee и по ним определяет, есть ли новая версия. Quark, Lanzou Cloud и GitHub Releases — только каналы скачивания; в проверке версий они не участвуют.
 
