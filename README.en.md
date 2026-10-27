@@ -149,7 +149,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | Lanzou Cloud | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | The **`.7z` archive** of v3.4.1 (79,990,219 B), permanent and without an access code — extract it before installing |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | The raw APK and `.7z` of every release. Direct access from mainland China is unreliable — prefer the two channels above |
 | Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.4.1 and v3.4.0 are published, assets are **`.7z`** archives (Gitee caps a single attachment at 100 MB); version checks also read Gitee tags |
-| Baidu / 123 Netdisk | — | Synced to each drive's `StudyKit` folder (not publicly shared; create a link inside the drive if you need one) |
+| 123 Netdisk | [https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW](https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW) | Access code `WiAW`; a `StudyKit` folder share with both the 3.4.1 APK and `.7z` |
+| Baidu Netdisk | [https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu](https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu) | Access code `b6pu`; a `StudyKit` folder share, same contents |
 
 > **Update checks go through Gitee only**: on launch, the app reads the Gitee repository's tags to decide whether a new version exists. Quark, Lanzou Cloud and GitHub Releases are download channels only; they do not participate in version checks.
 

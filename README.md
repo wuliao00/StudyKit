@@ -155,7 +155,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 | 蓝奏云 | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | v3.4.1 的 **`.7z` 压缩包**（79,990,219 B），永久有效、无提取码；下完要先解压才能装 |
 | GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK 与 `.7z`。国内直连不稳，优先用上面两个渠道 |
 | Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.4.1 与 v3.4.0 都已建发行版，附件是 **`.7z`**（Gitee 单附件上限 100 MB）；更新检查读的也是 Gitee tags |
-| 百度 / 123 云盘 | — | 已同步到各自的 `StudyKit` 目录（未公开分享；需要链接时在网盘里自行创建） |
+| 123 云盘 | [https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW](https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW) | 提取码 `WiAW`；`StudyKit` 目录分享，3.4.1 的 APK 与 `.7z` 都在里面 |
+| 百度网盘 | [https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu](https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu) | 提取码 `b6pu`；`StudyKit` 目录分享，同上 |
 
 > **更新检查只走 Gitee**：App 启动时读 Gitee 仓库的 tags 判断版本；夸克、蓝奏云、GitHub Releases 只是下载渠道，不参与版本判断。
 

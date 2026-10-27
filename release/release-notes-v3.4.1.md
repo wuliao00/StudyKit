@@ -32,6 +32,7 @@
 | 蓝奏云 | [ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | `StudyKit-v3.4.1-debug.7z`（79,990,219 B），永久有效、无提取码 |
 | Gitee Releases | [gitee.com/wuliao11541/StudyKit/releases/tag/v3.4.1](https://gitee.com/wuliao11541/StudyKit/releases/tag/v3.4.1) | 附件 `StudyKit-v3.4.1-debug.7z` |
 | GitHub Releases | [github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | APK + 7z 都有；国内直连不稳 |
-| 百度 / 123 云盘 | — | 已同步到 `StudyKit` 目录，未公开分享 |
+| 123 云盘 | [share.123pan.cn/…/w5lUjv-jGd3h?pwd=WiAW](https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW) | 提取码 `WiAW`；`StudyKit` 目录分享 |
+| 百度网盘 | [pan.baidu.com/s/1zgokGo5…?pwd=b6pu](https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu) | 提取码 `b6pu`；`StudyKit` 目录分享 |
 
 > 更新检查仍只读 Gitee tags；以上渠道只负责下载。
