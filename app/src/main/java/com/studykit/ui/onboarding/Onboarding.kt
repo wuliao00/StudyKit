@@ -1,5 +1,6 @@
 package com.studykit.ui.onboarding
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.studykit.R
 import com.studykit.data.Disclaimer
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.theme.AppTheme
@@ -144,8 +150,16 @@ private val onboardingPages = listOf(
         "读书与错题",
         listOf(
             "书架记录在读与进度，摘录可以导出。",
-            "错题拍照录入，按学科分组、设复习提醒。",
+            "错题拍照/相册录入，按学科分组、设复习提醒。",
             "题目答错会自动进错题本。",
+        ),
+    ),
+    TutorialPage(
+        "设计与题库（v3.4）",
+        listOf(
+            "底部「设计」：8 种学习/教学模板，填字段就生成方案，可保存、复制、分享。",
+            "题库练习 →「题库商店」：按小学/初中/高中/大学/考研/考公下载原创示例包，先预览再入库。",
+            "录入题目支持 txt/docx/pdf；拍照/相册识别不出竖线时进编辑页，不会自动切错题本。",
         ),
     ),
     TutorialPage(
@@ -223,6 +237,23 @@ fun OnboardingScreen(
     }
 }
 
+/** 教程插图：箭头与隐私遮挡已画进 PNG，应用内只负责等比铺满与圆角裁切。 */
+@Composable
+private fun TutorialFigure(resId: Int, caption: String) {
+    val texts = AppTheme.texts
+    Image(
+        painter = painterResource(resId),
+        contentDescription = caption,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppTheme.radius.md)),
+        contentScale = ContentScale.FillWidth,
+    )
+    Spacer(Modifier.height(AppTheme.space.xs))
+    Text(text = caption, style = texts.caption)
+    Spacer(Modifier.height(AppTheme.space.md))
+}
+
 /** 只读的教程页（设置入口用它，与首启引导同一份文案） */
 @Composable
 fun TutorialScreen(modifier: Modifier = Modifier) {
@@ -233,6 +264,28 @@ fun TutorialScreen(modifier: Modifier = Modifier) {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = AppTheme.space.pageH),
     ) {
+        Spacer(Modifier.height(AppTheme.space.md))
+        Text(
+            text = "v3.4 新功能图解（截图已隐藏个人信息）",
+            style = texts.cardTitle.copy(fontWeight = FontWeight.SemiBold),
+        )
+        Spacer(Modifier.height(AppTheme.space.sm))
+        TutorialFigure(
+            resId = R.drawable.tutorial_v34_design,
+            caption = "① 底部「设计」：8 种模板，点「新建」填字段。",
+        )
+        TutorialFigure(
+            resId = R.drawable.tutorial_v34_store,
+            caption = "② 题库练习 →「题库商店」：按阶段下载题包。",
+        )
+        TutorialFigure(
+            resId = R.drawable.tutorial_v34_preview,
+            caption = "③ 下载后先预览；确认「导入」才写进题库。",
+        )
+        TutorialFigure(
+            resId = R.drawable.tutorial_v34_photo,
+            caption = "④ 拍照或从相册选一页题；相册不需要存储权限。",
+        )
         Spacer(Modifier.height(AppTheme.space.md))
         onboardingPages.forEachIndexed { index, p ->
             Text(

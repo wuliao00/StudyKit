@@ -285,6 +285,16 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ![重做阶段：照片上的两块被盖住](docs/screenshots/v30b-29-redo-covered.png)
 
+### v3.4.1：使用教程图解
+
+> 只更新使用教程，不改数据与功能；版本 `3.4.1 / 26`，Room 仍 v12。
+
+- 「设置 → 使用教程」新增 4 张当前版本截图：设计 Tab、题库商店、下载预览、拍照/相册。
+- 每张截图都画了橙色箭头；考试倒计时等个人信息用色块遮住并标注「隐私信息已隐藏」。
+- 教程正文补「设计与题库（v3.4）」一页，覆盖 8 种模板、题库商店、txt/docx/pdf 导入与非选择题
+  不再自动切错题本。
+- 图解文档版见 [`docs/tutorial-v3.4.md`](docs/tutorial-v3.4.md)。
+
 ### v3.4.0：学习设计工作台 + 题库文件导入
 
 > 新增第五个 Tab「设计」，以及题库文件的 txt/docx/pdf 导入。Room v11 → v12（只加 `design_plans` 表）。
