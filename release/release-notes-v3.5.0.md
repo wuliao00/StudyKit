@@ -28,7 +28,7 @@
 
 ### 题包不再跟版本走：在线优先 + 缓存 + 内置兜底
 
-manifest 里每个题包多了一个 `url`（现在指向仓库的 Gitee raw）。点「下载并预览」时的顺序是：
+manifest 里每个题包多了一个 `url`（指向 jsDelivr 的 GitHub 镜像）。点「下载并预览」时的顺序是：
 
 1. **在线**：按 `url` 下载，校验 `sha256` 后入库，同时写一份到本机缓存（`filesDir/question_packs_cache/`）；
 2. **本机缓存**：在线不通时用上次那份，断网也能继续用；
@@ -44,8 +44,12 @@ manifest 里每个题包多了一个 `url`（现在指向仓库的 Gitee raw）�
 不要求对方提供 manifest 或商店页面。学校内网、个人站点、Gitee/GitHub 的 raw 链接都可以。
 仍然先预览再决定，格式不对会直接说明「这个链接里没有识别到题目」。
 
-> 注意：内置的六个包现在也走在线下载，地址是仓库 `main` 分支的 Gitee raw。如果这个仓库还没推到
-> Gitee（或网络到不了 Gitee），下载会自动落到内置副本，功能不受影响，只是每包会多一句回落说明。
+> 注意：内置的六个包现在也走在线下载，地址是 jsDelivr 的 GitHub 镜像（`fastly.jsdelivr.net`）。
+> 实测 Gitee raw 对「初中／考研／考公」三个包返回 451（内容审查），所以主地址换成了 jsDelivr；
+> 网络到不了 jsDelivr 时下载会自动落到内置副本，功能不受影响，只是每包会多一句回落说明。
+> **改了题包之后记得刷新 jsDelivr 缓存**（它对 @branch 有缓存）：浏览器打开
+> `https://purge.jsdelivr.net/gh/wuliao00/StudyKit@main/` 即可；不刷新的话，下一次下载会因
+> sha256 对不上而回落，用户看到的是「题包校验失败」，不是坏数据（但仍然不该让它出现）。
 
 ### 练习取数改成轮转（修掉一个"只有 10 道题"的错觉）
 
@@ -85,7 +89,7 @@ manifest 里每个题包多了一个 `url`（现在指向仓库的 Gitee raw）�
 ## 构建产物
 
 - `release/StudyKit-v3.5.0-debug.apk`　`121,898,859 B`
-- sha256 `33d3d914c3f710a23e0f023690035a68e05006f0a5b44be64a35750238730a13`
+- sha256 `21a28172a67a00fd8ec64c72bb2b789651955ec066af85aa629fae66ae770998`
 - `versionCode 27 / versionName 3.5.0`，minSdk 26 / targetSdk 35，包内六个题包题数已逐个核对（60/60/60/56/52/44）
 
 ## 机检
