@@ -21,18 +21,25 @@
 - **题库导入改为跨批去重**：`submitQuestions()` 原来只做批内去重，同一个题包导第二次会整包重复入库
   （题库商店新加的「再预览一次」很容易触发）。现在先取库内题目的判重键（题干 + 阶段 + 学科 + 题型 + 选项，
   见 `QuestionImportKey.kt`）再合并，重复的题干会在结果页的「跳过重复」里回显。单词那条路径一直是这样做的。
-- **配置**：manifest 升到 `version: 2`，逐包提供 `types` 题型分布与新的 `sha256`、`count`、
+- **题包改为「在线优先」**：manifest（`version: 3`）里每个包多了一个 `url`（指向 Gitee raw），
+  下载顺序固定为 **在线 → 本机缓存 → 内置副本**，三处都过同一道 `sha256` 校验；在线失败时
+  商店会写明「已改用本机缓存／内置副本」和失败原因，不假装联网成功。缓存落在
+  `filesDir/question_packs_cache/`，下过一次之后断网可用。
+- **从链接导入题包**：商店新增一个输入框，贴任意网站的题包文本地址（`https://…/包.txt`）就能下载、
+  预览、入库，不要求对方有 manifest。下载层只收文本（2 MB 上限）、自己跟重定向、
+  把「返回的是网页」「404」「超时」区分成不同的提示。
+- **配置**：manifest 升到 `version: 3`，逐包提供 `types` 题型分布、`url` 在线地址与新的 `sha256`、`count`、
   `subjects`、`description`；`QuestionPackCatalogParser` 解析 `types`（缺失/写坏只影响展示，不阻断下载）。
 - **练习入口文案**：题库练习页的说明改成「每轮最多 10 题，优先出最久没练过的」，
   轮次长度常量 `QUIZ_SIZE` 从 private 提到可被 UI 引用，避免两处各写一个 10。
-- **机检**：174 个测试类 / **1589 用例 / 0 失败**。新增 `QuestionPackCatalogTest` 的
+- **机检**：175 个测试类 / **1600 用例 / 0 失败**。新增 `QuestionPackCatalogTest` 的
   sha256 与题型分布两条契约、`QuestionRotationOrderTest`（7 例，真 SQL）、
   `QuestionImportDedupeTest`（键同构与跨批去重）。
   > 本机跑测试时必须从**不含中文的路径**执行：`E:\项目\studykit` 这类路径会让 Gradle 的
   > 测试 worker 报 `ClassNotFoundException`（编译产物都在，worker 的 classpath 却读不到），
   > 本次是在 `C:\sk_build` 的副本里跑的。
-- **APK**：`121,893,297 B`，sha256
-  `865eaaf04993581778fa42ce598045d40afd5e390abf54da7360b1d1a5cd7578`，版本 `3.5.0 / 27`；
+- **APK**：`121,898,859 B`，sha256
+  `33d3d914c3f710a23e0f023690035a68e05006f0a5b44be64a35750238730a13`，版本 `3.5.0 / 27`；
   包内六个题包的题数已逐个核对为 60/60/60/56/52/44。**尚未发布**到 GitHub/Gitee 与网盘。
 
 ## [3.4.1] - 2026-10-27（使用教程图解）

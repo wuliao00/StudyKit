@@ -23,8 +23,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +36,7 @@ import com.studykit.ui.bulkimport.ImportViewModel
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
+import com.studykit.ui.components.AppTextField
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.importer.QuestionPackInfo
@@ -142,6 +147,30 @@ fun QuestionStoreScreen(
                 }
             }
 
+            // v3.5+：这一包是从哪儿来的（在线 / 缓存 / 内置）。下载失败用兜底时会把原因也带出来，
+            // 不能让人把「能列出 60 题」当成「联网成功」。
+            state.notice?.takeIf { it.isNotBlank() }?.let { notice ->
+                item {
+                    Text(
+                        text = notice,
+                        style = texts.caption.copy(color = colors.accentInk),
+                    )
+                }
+            }
+
+            item {
+                LinkImportCard(
+                    busy = state.downloadingId == "url",
+                    enabled = state.downloadingId == null,
+                    onSubmit = { url ->
+                        viewModel.downloadFromUrl(url) { plan ->
+                            importViewModel.loadPlan(plan)
+                            onPreview()
+                        }
+                    },
+                )
+            }
+
             catalog?.packs?.let { packs ->
                 item {
                     // v3.5：一句总账。题包变多以后，先告诉用户“这里一共有多少题”，
@@ -168,7 +197,7 @@ fun QuestionStoreScreen(
                         AppPill(
                             container = colors.successSoft,
                             ink = colors.successInk,
-                            label = "全离线",
+                            label = "断网也能用",
                         )
                     }
                 }
@@ -249,7 +278,10 @@ private fun PackCard(
             Text(text = pack.description, style = texts.aux)
         }
         Spacer(Modifier.height(AppTheme.space.xs))
-        Text(text = "来源：${pack.source}", style = texts.caption)
+        Text(
+            text = "来源：${pack.source}" + if (pack.isRemote) "　·　可在线更新" else "",
+            style = texts.caption,
+        )
         Text(text = "许可：${pack.license}", style = texts.caption)
         Spacer(Modifier.height(AppTheme.space.sm))
         AppButton(
@@ -261,6 +293,47 @@ private fun PackCard(
             enabled = enabled,
             secondary = true,
             onClick = onDownload,
+        )
+    }
+}
+
+/**
+ * 从链接导入（v3.5+）：不经过目录，贴一个题包文本地址就能下。
+ *
+ * 这是"导入其他网站的题包"最直接的一条路：对方哪怕没有 manifest、没有商店页面，
+ * 只要把题包存成一行一题的纯文本放在网上（学校内网、个人站点、Gitee/GitHub 的 raw 链接都行），
+ * 贴进来就能走同一套预览与入库。地址不合法、返回网页、超过 2 MB，都由下载层给出人话提示。
+ */
+@Composable
+private fun LinkImportCard(
+    busy: Boolean,
+    enabled: Boolean,
+    onSubmit: (String) -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    var url by rememberSaveable { mutableStateOf("") }
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = "从链接导入题包", style = texts.cardTitle)
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(
+            text = "贴一个题包文本的地址（https://…/xxx.txt），别人或别的网站自己放的题包也行；" +
+                "下载后同样是先预览、再决定导入。",
+            style = texts.aux,
+        )
+        Spacer(Modifier.height(AppTheme.space.sm))
+        AppTextField(
+            value = url,
+            onValueChange = { url = it },
+            placeholder = "https://example.com/题包.txt",
+            keyboardType = KeyboardType.Uri,
+        )
+        Spacer(Modifier.height(AppTheme.space.sm))
+        AppButton(
+            text = if (busy) "读取中…" else "下载并预览",
+            enabled = enabled && url.isNotBlank(),
+            secondary = true,
+            onClick = { onSubmit(url.trim()) },
         )
     }
 }

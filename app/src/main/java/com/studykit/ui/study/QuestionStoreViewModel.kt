@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.util.importer.ImportPlan
+import com.studykit.util.importer.PackLoad
+import com.studykit.util.importer.PackOrigin
 import com.studykit.util.importer.QuestionPackCatalog
 import com.studykit.util.importer.QuestionPackInfo
 import com.studykit.util.importer.QuestionPackStore
@@ -27,6 +29,12 @@ data class QuestionStoreUiState(
      * 导入走的是批量导入那条路，写完库这里会自动跟着变，不需要手动刷新。
      */
     val importedByStage: Map<String, Int> = emptyMap(),
+    /**
+     * v3.5+：这一包是从哪儿来的（在线 / 本机缓存 / 内置副本）。
+     *
+     * 下载失败但用缓存或内置兜住时，这句话会带上前一次失败的原因 —— 不能让人以为联网成功了。
+     */
+    val notice: String? = null,
 )
 
 /**
@@ -79,12 +87,15 @@ class QuestionStoreViewModel(application: Application) : AndroidViewModel(applic
 
     fun download(pack: QuestionPackInfo, onReady: (ImportPlan) -> Unit) {
         if (_state.value.downloadingId != null) return
-        _state.value = _state.value.copy(downloadingId = pack.id, error = null)
+        _state.value = _state.value.copy(downloadingId = pack.id, error = null, notice = null)
         viewModelScope.launch {
             runCatching { store.loadPack(pack) }
-                .onSuccess { plan ->
-                    _state.value = _state.value.copy(downloadingId = null)
-                    onReady(plan)
+                .onSuccess { load ->
+                    _state.value = _state.value.copy(
+                        downloadingId = null,
+                        notice = noticeFor(load, pack.title),
+                    )
+                    onReady(load.plan)
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(
@@ -93,5 +104,42 @@ class QuestionStoreViewModel(application: Application) : AndroidViewModel(applic
                     )
                 }
         }
+    }
+
+    /**
+     * v3.5+：从任意链接导入（不查目录，也不校验 sha256 —— 没有目录就无从校验）。
+     * 与商店下载共用预览那条入库路。
+     */
+    fun downloadFromUrl(rawUrl: String, onReady: (ImportPlan) -> Unit) {
+        if (_state.value.downloadingId != null) return
+        _state.value = _state.value.copy(downloadingId = "url", error = null, notice = null)
+        viewModelScope.launch {
+            runCatching { store.loadPackFromUrl(rawUrl) }
+                .onSuccess { load ->
+                    _state.value = _state.value.copy(
+                        downloadingId = null,
+                        notice = "已从链接读取 ${load.plan.items.size} 题，先看预览再决定导入哪些",
+                    )
+                    onReady(load.plan)
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        downloadingId = null,
+                        error = "读取失败：${error.localizedMessage ?: "未知原因"}",
+                    )
+                }
+        }
+    }
+
+    /** 把「来源 + 若回落的失败原因」拼成一句给界面看的话 */
+    private fun noticeFor(load: PackLoad, title: String): String {
+        val head = when (load.origin) {
+            PackOrigin.REMOTE -> "已从在线地址下载《$title》"
+            PackOrigin.CACHE -> "在线不可用，已改用本机缓存《$title》"
+            PackOrigin.BUNDLED -> "在线不可用，已改用内置副本《$title》"
+            PackOrigin.LINK -> "已从链接读取《$title》"
+        }
+        val reason = load.warning?.takeIf { it.isNotBlank() } ?: return head
+        return "$head（$reason）"
     }
 }

@@ -26,9 +26,19 @@ data class QuestionPackInfo(
      * 空列表 = 老目录没写，商店卡片就只显示总题数，不留空位。
      */
     val typeCounts: List<PackTypeCount> = emptyList(),
+    /**
+     * v3.5+：在线地址（manifest 的 `url`），null = 只能读内置副本。
+     *
+     * 有它就先联网下最新的，失败再落到本机缓存与内置副本（见 [QuestionPackStore]）；
+     * 只允许 http(s)，`javascript:`、`file:` 这类地址在解析阶段就丢掉。
+     */
+    val remoteUrl: String? = null,
 ) {
-    /** 内置资产路径；未来接远程源时，网络地址也从 [path] 拼，不另存一份。 */
+    /** 内置资产路径；没有内置副本时这个路径打不开，由 [QuestionPackStore] 兜住 */
     val assetPath: String get() = "question_banks/$path"
+
+    /** 是否可以从网上下载（商店卡片据此标「在线」） */
+    val isRemote: Boolean get() = !remoteUrl.isNullOrBlank()
 }
 
 /** 一个题包里的题型分布，用于商店卡片的「单选 30 · 判断 9」那一行。 */
@@ -92,7 +102,21 @@ object QuestionPackCatalogParser {
             path = path,
             sha256 = item.optString("sha256", "").trim(),
             typeCounts = parseTypeCounts(item.optJSONObject("types")),
+            remoteUrl = parseRemoteUrl(item.optString("url", "")),
         )
+    }
+
+    /**
+     * v3.5+：题包在线地址。只收 http(s)，空串与其它协议一律当「没有在线地址」。
+     *
+     * 不在这里做可达性判断（离线目录也要能列出来），也不允许 `..`：地址是数据，
+     * 不能让它被当成路径去拼。真正的请求在 [QuestionPackRemote] 里。
+     */
+    private fun parseRemoteUrl(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || trimmed.contains("..")) return null
+        val lower = trimmed.lowercase()
+        return trimmed.takeIf { lower.startsWith("https://") || lower.startsWith("http://") }
     }
 
     /**

@@ -55,6 +55,38 @@ class QuestionPackCatalogTest {
     }
 
     @Test
+    fun everyPack_hasHttpsDownloadUrl() {
+        val catalog = QuestionPackCatalogParser.parse(read("question_banks/manifest.json"))
+
+        catalog.packs.forEach { pack ->
+            val url = pack.remoteUrl
+            assertTrue("${pack.id} 缺在线地址", url != null)
+            assertTrue("${pack.id} 的地址必须是 https", url!!.startsWith("https://"))
+            assertTrue("${pack.id} 的地址要以自身 path 结尾（换了仓库路径要一起改）", url.endsWith(pack.path))
+            assertTrue("${pack.id} 应被标成在线包", pack.isRemote)
+        }
+    }
+
+    @Test
+    fun unsafeOrEmptyUrl_isIgnored() {
+        val raw = """
+            {"version":3,"packs":[
+              {"id":"a","title":"甲","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":"javascript:alert(1)"},
+              {"id":"b","title":"乙","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":"https://x.test/../../etc/passwd"},
+              {"id":"c","title":"丙","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":""}
+            ]}
+        """.trimIndent()
+
+        val catalog = QuestionPackCatalogParser.parse(raw)
+
+        assertEquals(3, catalog.packs.size)
+        catalog.packs.forEach { pack ->
+            assertEquals("${pack.id} 的非法地址必须被丢掉", null, pack.remoteUrl)
+            assertTrue("${pack.id} 不该被当成在线包", !pack.isRemote)
+        }
+    }
+
+    @Test
     fun everyPack_typeCountsAddUpToTotal() {
         val catalog = QuestionPackCatalogParser.parse(read("question_banks/manifest.json"))
 

@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "updated": "2026-10-28",
   "notice": "题包为 StudyKit 原创示例，不含高考/考研/考公真题或教材原题；真题版权归各考试机构，导入他人题包前请确认授权。",
   "packs": [
@@ -14,6 +14,7 @@
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/primary-foundation.txt",
+      "url": "https://gitee.com/wuliao11541/studykit/raw/main/app/src/main/assets/question_banks/packs/primary-foundation.txt",
       "sha256": "1063ba5fc0121ce50c13fc52f01ccc48091851fc49642db0dd7ece3985a211f6"
     },
     {
@@ -27,6 +28,7 @@
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/junior-foundation.txt",
+      "url": "https://gitee.com/wuliao11541/studykit/raw/main/app/src/main/assets/question_banks/packs/junior-foundation.txt",
       "sha256": "d8c317d44b7dfcd3e8c52cf7c24a0825c867ec3a4f696a85a58b5741e838434c"
     },
     {
@@ -40,6 +42,7 @@
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/senior-foundation.txt",
+      "url": "https://gitee.com/wuliao11541/studykit/raw/main/app/src/main/assets/question_banks/packs/senior-foundation.txt",
       "sha256": "c4aa1066941870a6c861fb6fe38ed7f777623cce852759fe82cdd7e35a98336e"
     },
     {
@@ -53,6 +56,7 @@
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/college-foundation.txt",
+      "url": "https://gitee.com/wuliao11541/studykit/raw/main/app/src/main/assets/question_banks/packs/college-foundation.txt",
       "sha256": "e3369b0efa70822a636c1400ce6a47c5d6a50c346b133b9a16cca7cb10060eee"
     },
     {
@@ -66,6 +70,7 @@
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/postgrad-foundation.txt",
+      "url": "https://gitee.com/wuliao11541/studykit/raw/main/app/src/main/assets/question_banks/packs/postgrad-foundation.txt",
       "sha256": "d91c7bc5528bfcfe210858172f22704bf6dcdc4c8455034926003311cb06526d"
     },
     {
@@ -79,6 +84,7 @@
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/civil-foundation.txt",
+      "url": "https://gitee.com/wuliao11541/studykit/raw/main/app/src/main/assets/question_banks/packs/civil-foundation.txt",
       "sha256": "d9d0ef4022d4b43fe2b5da99d5831b11f375cadecffe6e55d956995de6cd86f4"
     }
   ]
