@@ -74,6 +74,15 @@ fun ImportPreviewScreen(
         }
         Spacer(Modifier.height(AppTheme.space.md))
         state.plan?.let { plan ->
+            // v3.5.1：文件里公式/图片取不到时，那句话要一直挂在预览页上。
+            // 只弹一次 Toast 的话，用户滚两屏后就没法解释"为什么题干缺半截"了。
+            state.sourceNote?.takeIf { it.isNotBlank() }?.let { note ->
+                Text(
+                    text = note,
+                    style = texts.caption.copy(color = colors.warningInk),
+                )
+                Spacer(Modifier.height(AppTheme.space.sm))
+            }
             // StatTile 自身 fillMaxHeight()，必须包在 height(IntrinsicSize.Max) 的 Row 里才等高（M1 真机结论）
             Row(
                 modifier = Modifier.height(IntrinsicSize.Max),

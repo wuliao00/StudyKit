@@ -71,6 +71,9 @@ fun BulkPasteScreen(
     var fileError by remember { mutableStateOf<String?>(null) }
     var pendingReplace by remember { mutableStateOf<String?>(null) }
     var pendingNote by remember { mutableStateOf<String?>(null) }
+    var pendingSourceNote by remember { mutableStateOf<String?>(null) }
+    // v3.5.1：文件来源的提示（公式取不到等），要一路带到预览页
+    var sourceNote by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -81,10 +84,12 @@ fun BulkPasteScreen(
         val normalized = TextCleaner.collapseBlankLines(text)
         if (raw.isBlank()) {
             viewModel.setDraft(kind, normalized)
+            sourceNote = note
             note?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
         } else {
             pendingReplace = normalized
             pendingNote = note
+            pendingSourceNote = note
         }
     }
 
@@ -184,7 +189,11 @@ fun BulkPasteScreen(
         Spacer(Modifier.height(AppTheme.space.md))
         AppMultilineTextField(
             value = raw,
-            onValueChange = { viewModel.setDraft(kind, it) },
+            onValueChange = {
+                // 手改了文本，来源提示就不再成立（比如用户自己把公式补上了）
+                sourceNote = null
+                viewModel.setDraft(kind, it)
+            },
             label = "一行一条",
             placeholder = kind.placeholder,
             minLines = 8,
@@ -249,7 +258,7 @@ fun BulkPasteScreen(
                     text = "下一步 · 预览 ${current.items.size} 条",
                     enabled = current.items.isNotEmpty(),
                     onClick = {
-                        viewModel.loadPlan(current)
+                        viewModel.loadPlan(current, sourceNote = sourceNote)
                         onPreview()
                     },
                 )
@@ -273,12 +282,15 @@ fun BulkPasteScreen(
             onConfirm = {
                 viewModel.setDraft(kind, replacement)
                 pendingReplace = null
+                sourceNote = pendingSourceNote
+                pendingSourceNote = null
                 pendingNote?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 pendingNote = null
             },
             onDismiss = {
                 pendingReplace = null
                 pendingNote = null
+                pendingSourceNote = null
             },
         )
     }

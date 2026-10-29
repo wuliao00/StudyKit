@@ -45,6 +45,8 @@ data class ImportUiState(
     val outcome: ImportOutcome? = null,
     val error: String? = null,
     val dictSource: DictSourceMeta? = null,
+    /** v3.5.1：文件来源的一句提示（例如「1248 处公式取不到」），预览页要一直看得见 */
+    val sourceNote: String? = null,
 ) {
     val visibleItems: List<ImportItem>
         get() = plan?.items?.filterNot { it.sourceLine in excluded } ?: emptyList()
@@ -88,8 +90,12 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
 
     private val committing = OneShotGate()
 
-    fun loadPlan(plan: ImportPlan, dictSource: DictSourceMeta? = null) {
-        _state.value = ImportUiState(plan = plan, dictSource = dictSource)
+    fun loadPlan(
+        plan: ImportPlan,
+        dictSource: DictSourceMeta? = null,
+        sourceNote: String? = null,
+    ) {
+        _state.value = ImportUiState(plan = plan, dictSource = dictSource, sourceNote = sourceNote)
     }
 
     fun toggleExcluded(sourceLine: Int) {

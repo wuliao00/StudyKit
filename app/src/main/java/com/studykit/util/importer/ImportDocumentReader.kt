@@ -152,27 +152,54 @@ object ImportDocumentReader {
     }
 
     private fun readDocx(context: Context, uri: Uri): DocumentReadResult {
-        val text = try {
+        val doc = try {
             declaredSize(context, uri)?.let { if (it > MAX_BYTES) throw DocumentTooLargeException() }
             val input = context.contentResolver.openInputStream(uri)
                 ?: throw IOException("无法打开文件")
             input.use { stream ->
                 // 即便 Provider 不报 SIZE，也在流上再设一道 40MB 闸；否则一个塞满图片的
                 // docx 会让界面一直停在“正在提取文件文字…”。
-                DocumentTextExtractor.extractDocx(CappedInputStream(stream))
+                DocumentTextExtractor.extractDocxText(CappedInputStream(stream))
             }
         } catch (e: DocumentTooLargeException) {
             return tooLarge()
         } catch (e: Exception) {
             return DocumentReadResult.Failed("Word 文件读不出来，可能已损坏：${e.localizedMessage ?: "未知原因"}")
         }
-        return if (text.isBlank()) {
+        return if (doc.text.isBlank()) {
             DocumentReadResult.Failed(
                 "这份 Word 里没提到文字。如果是扫描图片或旧版 .doc，请转成 PDF 或直接拍照录入。",
             )
         } else {
-            DocumentReadResult.Text(text)
+            DocumentReadResult.Text(doc.text, docxNote(doc))
         }
+    }
+
+    /**
+     * v3.5.1：把"取不到的东西"说清楚。
+     *
+     * 试卷/讲义里的公式经常是 **MathType / 公式 3.0 的 OLE 对象**，文字层里根本没有它们；
+     * 不说的话，用户看到的是"已知函数，则的最小值为"这种缺半截的题干，只会以为导入坏了。
+     */
+    private fun docxNote(doc: DocxText): String? {
+        val parts = ArrayList<String>(3)
+        if (doc.equations > 0) {
+            parts += "这份文档里有 ${doc.equations} 处公式是 Word 嵌入对象（MathType / 公式 3.0），" +
+                "文字取不到，已留「${DocumentTextExtractor.EQUATION_PLACEHOLDER}」占位"
+        }
+        if (doc.inlineImages > 0) {
+            parts += "${doc.inlineImages} 张图只留了「${DocumentTextExtractor.IMAGE_PLACEHOLDER}」占位"
+        }
+        if (doc.nativeFormulas > 0) {
+            parts += "${doc.nativeFormulas} 个 Word 原生公式已转成文本，但上下标会退化成普通字符（x² → x2）"
+        }
+        if (parts.isEmpty()) return null
+        val advice = if (doc.equations > 0) {
+            "要完整题干可以改用「拍照 / 相册录题」，或在 Word 里把公式转成线性文本后再导入。"
+        } else {
+            ""
+        }
+        return parts.joinToString("；") + "。" + advice
     }
 
     private suspend fun readPdf(context: Context, uri: Uri): DocumentReadResult {

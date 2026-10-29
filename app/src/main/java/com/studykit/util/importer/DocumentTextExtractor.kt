@@ -23,7 +23,29 @@ import java.util.zip.ZipInputStream
  * - **有上限**。导入是用户选的文件，不是可信输入：DOCX 解压后最多读 [MAX_DOCX_XML_CHARS]，
  *   纯文本最多 [MAX_PLAIN_TEXT_CHARS]，避免一个精心构造的压缩炸弹把内存吃光。
  */
+/**
+ * DOCX 提取结果：文字 + 三类"取不到的内容"的计数。
+ *
+ * 计数存在的意义不是统计，而是让导入页说人话：用户拿到一份公式全是 MathType 对象的卷子，
+ * 看到题干里一串「⟦公式⟧」和一个明确提示，比看到缺字少词的句子更容易理解发生了什么。
+ */
+data class DocxText(
+    val text: String,
+    /** `<w:object>`（MathType / 公式 3.0）的处数：这类公式的文字从 XML 里取不到 */
+    val equations: Int = 0,
+    /** 行内图片（几何图、示意图）的处数：只留占位 */
+    val inlineImages: Int = 0,
+    /** Word 原生公式（OMML）的个数：文字能取到，但上下标会退化成普通字符 */
+    val nativeFormulas: Int = 0,
+)
+
 object DocumentTextExtractor {
+
+    /** 嵌入公式的占位符。选 ⟦⟧ 是因为它在题干里几乎不会自然出现，用户一眼能认出是"这里缺东西" */
+    const val EQUATION_PLACEHOLDER: String = "⟦公式⟧"
+
+    /** 行内图片的占位符 */
+    const val IMAGE_PLACEHOLDER: String = "⟦图⟧"
 
     /** 纯文本上限（字符，不是字节）：约 2MB UTF-8 文本，远超任何一份手工题库 */
     const val MAX_PLAIN_TEXT_CHARS: Int = 2_000_000
@@ -62,7 +84,17 @@ object DocumentTextExtractor {
      * 从 .docx（本质是 zip）里取 `word/document.xml`，还原段落与换行。
      * 找不到该条目、zip 损坏、内容为空都返回空串，由调用方给用户一句人话。
      */
-    fun extractDocx(input: InputStream): String {
+    fun extractDocx(input: InputStream): String = extractDocxText(input).text
+
+    /**
+     * v3.5.1：除了文字，还把「取不到的内容」数出来。
+     *
+     * 现实里的试卷/讲义常用 **MathType / 公式 3.0 的嵌入对象** 存公式（`word/embeddings/oleObject*.bin`），
+     * 那是二进制，纯文本提取只能拿到它旁边的汉字；结果就是题干里出现"已知函数，则的最小值为"这种
+     * 少了半截的句子，用户以为导入坏了。这里给每处公式留一个 [EQUATION_PLACEHOLDER]，
+     * 并把数量和图片数量交给导入页提示 —— 丢内容可以，但不能悄悄丢。
+     */
+    fun extractDocxText(input: InputStream): DocxText {
         val xml = ZipInputStream(BufferedInputStream(input)).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
@@ -73,7 +105,8 @@ object DocumentTextExtractor {
             }
             ""
         }
-        return trimToLimit(docxXmlToText(xml))
+        val parsed = docxXmlToDocxText(xml)
+        return parsed.copy(text = trimToLimit(parsed.text))
     }
 
     /**
@@ -84,12 +117,32 @@ object DocumentTextExtractor {
      * 只是 Word 自己生成的、严格转义过的 XML；顺序扫描比拉一棵树更省内存，也不会被命名空间
      * 前缀差异绊住。`<w:delText>`（修订删除）、批注、域代码不在 `<w:t>` 里，自然被跳过。
      */
-    fun docxXmlToText(xml: String): String {
-        if (xml.isEmpty()) return ""
+    fun docxXmlToText(xml: String): String = docxXmlToDocxText(xml).text
+
+    /**
+     * WordprocessingML → 纯文本（带三类"取不到"的计数）。
+     *
+     * 认这些信号：`<w:t>` 文字、`<m:t>`（Word 原生公式里的文字）、段落结束 `</w:p>`、
+     * `<w:br/>`/`<w:cr/>`/`<w:tab/>`、表格单元格（还原成 `|` 分列）。
+     *
+     * 对**取不到内容的三种东西**的处理（v3.5.1）：
+     * - `<w:object>`（MathType / 公式 3.0 嵌入对象）→ 留 [EQUATION_PLACEHOLDER] 并计数；
+     * - `<w:drawing>`/`<w:pict>` 里的图片 → 行内图留 [IMAGE_PLACEHOLDER] 并计数；
+     *   `wp:anchor` 那种漂浮对象多半是水印/版式装饰，直接跳过不留痕；
+     * - 带文本框的图形 → 不跳过，让里面的 `<w:t>` 正常读出来（有些讲义把题干放在文本框里）。
+     *
+     * 不引 XML 解析器仍是刻意的：Word 生成的 XML 严格转义，顺序扫描省内存、也不吃命名空间前缀。
+     * `<w:delText>`（修订删除）、批注、域代码不在 `<w:t>` 里，自然被跳过。
+     */
+    fun docxXmlToDocxText(xml: String): DocxText {
+        if (xml.isEmpty()) return DocxText("")
         val out = StringBuilder(minOf(xml.length, MAX_DOCX_XML_CHARS))
         var cursor = 0
         var tableDepth = 0
         var cellsInRow = 0
+        var equations = 0
+        var inlineImages = 0
+        var nativeFormulas = 0
         while (cursor < xml.length) {
             val open = xml.indexOf('<', cursor)
             if (open < 0) break
@@ -98,7 +151,43 @@ object DocumentTextExtractor {
             val tag = xml.substring(open + 1, close)
             val inTable = tableDepth > 0
 
+            // 嵌入对象：整块跳过（里面是公式的预览图与 OLE 数据，没有可读文字），留一个占位
+            if (isTag(tag, "w:object") && !tag.endsWith("/")) {
+                equations++
+                out.append(EQUATION_PLACEHOLDER)
+                val end = xml.indexOf("</w:object>", close + 1)
+                cursor = if (end < 0) xml.length else end + "</w:object>".length
+                continue
+            }
+
+            // 图形：含文本框的不跳过（题干可能在文本框里），否则行内留占位、锚定的当装饰跳过
+            if ((isTag(tag, "w:drawing") || isTag(tag, "w:pict")) && !tag.endsWith("/")) {
+                val closeTag = if (tag.startsWith("w:drawing")) "</w:drawing>" else "</w:pict>"
+                val end = xml.indexOf(closeTag, close + 1)
+                val block = if (end < 0) "" else xml.substring(close + 1, end)
+                if (!block.contains("txbxContent", ignoreCase = true)) {
+                    if (!block.contains("<wp:anchor")) {
+                        inlineImages++
+                        out.append(IMAGE_PLACEHOLDER)
+                    }
+                    cursor = if (end < 0) xml.length else end + closeTag.length
+                    continue
+                }
+            }
+
+            if (isTag(tag, "m:oMath") && !tag.endsWith("/")) nativeFormulas++
+
             when {
+                // Word 原生公式（OMML）：文字在 <m:t> 里，先把它当普通文字取出来。
+                // 上下标结构会退化成顺序字符（x² 变 x2），所以只当"有字"用，不当格式用。
+                (tag == "m:t" || tag.startsWith("m:t ")) && !tag.endsWith("/") -> {
+                    val end = xml.indexOf("</m:t>", close + 1)
+                    if (end < 0) break
+                    out.append(decodeXmlEntities(xml.substring(close + 1, end)))
+                    cursor = end + "</m:t>".length
+                    continue
+                }
+
                 (tag == "w:t" || tag.startsWith("w:t ")) && !tag.endsWith("/") -> {
                     val end = xml.indexOf("</w:t>", close + 1)
                     if (end < 0) break
@@ -149,12 +238,19 @@ object DocumentTextExtractor {
             if (tag == "/w:p") out.append(if (inTable) ' ' else '\n')
             cursor = close + 1
         }
-        return out.toString()
-            .replace("\u0000", "")
-            .replace(Regex("[ \\t]+\\n"), "\n")
-            // 导入契约是“一行一题”：Word 表格/段落之间不保留空行，否则用户看到的是一串回车。
-            .replace(Regex("\\n{2,}"), "\n")
-            .trim()
+        return DocxText(
+            text = out.toString()
+                .replace("\u0000", "")
+                .replace(Regex("[ \\t]+\\n"), "\n")
+                // 同一段里连着两个占位（题目里两个公式挨着）留一个，少一点噪音
+                .replace(Regex("(⟦公式⟧)+"), EQUATION_PLACEHOLDER)
+                // 导入契约是“一行一题”：Word 表格/段落之间不保留空行，否则用户看到的是一串回车。
+                .replace(Regex("\\n{2,}"), "\n")
+                .trim(),
+            equations = equations,
+            inlineImages = inlineImages,
+            nativeFormulas = nativeFormulas,
+        )
     }
 
     private fun isTag(tag: String, name: String): Boolean =

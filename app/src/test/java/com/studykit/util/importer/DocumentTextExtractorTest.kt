@@ -152,4 +152,79 @@ class DocumentTextExtractorTest {
 
         assertEquals("", DocumentTextExtractor.extractDocx(ByteArrayInputStream(zipBytes)))
     }
+
+    // ── v3.5.1：公式与图片取不出来时，要留记号并计数，不能静默丢 ──────────────────
+
+    @Test
+    fun docx_嵌入公式对象_留占位并计数() {
+        val xml = """
+            <w:document xmlns:w="w">
+              <w:body><w:p>
+                <w:r><w:t>已知函数</w:t></w:r>
+                <w:r><w:object><v:shape><v:imagedata r:id="rId9"/></v:shape><o:OLEObject ProgID="Equation.3"/></w:object></w:r>
+                <w:r><w:t>的最小值为</w:t></w:r>
+              </w:p></w:body>
+            </w:document>
+        """.trimIndent()
+
+        val doc = DocumentTextExtractor.docxXmlToDocxText(xml)
+
+        assertEquals(1, doc.equations)
+        assertEquals("已知函数⟦公式⟧的最小值为", doc.text)
+    }
+
+    @Test
+    fun docx_原生公式OMML_文字能取到() {
+        val xml = """
+            <w:document xmlns:w="w" xmlns:m="m">
+              <w:body><w:p>
+                <w:r><w:t>当</w:t></w:r>
+                <m:oMath><m:r><m:t>x</m:t></m:r><m:r><m:t>+1</m:t></m:r></m:oMath>
+                <w:r><w:t>大于零时成立</w:t></w:r>
+              </w:p></w:body>
+            </w:document>
+        """.trimIndent()
+
+        val doc = DocumentTextExtractor.docxXmlToDocxText(xml)
+
+        assertEquals(1, doc.nativeFormulas)
+        assertEquals("当x+1大于零时成立", doc.text)
+    }
+
+    @Test
+    fun docx_行内图片留占位_水印与文本框跳过() {
+        val xml = """
+            <w:document xmlns:w="w">
+              <w:body>
+                <w:p><w:r><w:t>如图</w:t></w:r><w:r><w:drawing><wp:inline><a:graphic/></wp:inline></w:drawing></w:r><w:r><w:t>所示</w:t></w:r></w:p>
+                <w:p><w:r><w:drawing><wp:anchor><a:graphic/></wp:anchor></w:drawing></w:r><w:r><w:t>正文</w:t></w:r></w:p>
+                <w:p><w:r><w:drawing><wp:inline><wps:txbx><w:txbxContent><w:p><w:r><w:t>文本框里的题干</w:t></w:r></w:p></w:txbxContent></wps:txbx></wp:inline></w:drawing></w:r></w:p>
+              </w:body>
+            </w:document>
+        """.trimIndent()
+
+        val doc = DocumentTextExtractor.docxXmlToDocxText(xml)
+
+        assertEquals("行内图只数一次，锚定水印不算", 1, doc.inlineImages)
+        val lines = doc.text.split('\n')
+        assertEquals("如图⟦图⟧所示", lines[0])
+        assertEquals("锚定水印不能留占位", "正文", lines[1])
+        assertEquals("文本框里的文字要读出来，且不加占位", "文本框里的题干", lines[2])
+    }
+
+    @Test
+    fun docx_连续两个公式占位合并成一个() {
+        val xml = """
+            <w:document xmlns:w="w"><w:body><w:p>
+              <w:r><w:t>求</w:t></w:r>
+              <w:object><v:shape/></w:object><w:object><v:shape/></w:object>
+              <w:r><w:t>的值</w:t></w:r>
+            </w:p></w:body></w:document>
+        """.trimIndent()
+
+        val doc = DocumentTextExtractor.docxXmlToDocxText(xml)
+
+        assertEquals("计数按实际处数算", 2, doc.equations)
+        assertEquals("求⟦公式⟧的值", doc.text)
+    }
 }
