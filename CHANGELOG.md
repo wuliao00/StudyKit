@@ -48,7 +48,7 @@
   > 测试 worker 报 `ClassNotFoundException`（编译产物都在，worker 的 classpath 却读不到），
   > 本次是在 `C:\sk_build` 的副本里跑的。
 - **APK**：`121,898,842 B`，sha256
-  `30f2fe9c0f72421cccdf80e401e5259a80783ac2ecbd69c685fbab2933cbb8f7`，版本 `3.5.0 / 27`；
+  `5a76455ed85ecd86d1d20549f97ca50f7afea30f6b16ab29320af501fe28849a`，版本 `3.5.0 / 27`；
   包内六个题包的题数已逐个核对为 60/60/60/56/52/44。**尚未发布**到 GitHub/Gitee 与网盘。
 
 ## [3.4.1] - 2026-10-27（使用教程图解）

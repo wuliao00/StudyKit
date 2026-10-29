@@ -186,6 +186,13 @@ fun BulkPasteScreen(
                 Text(text = "选文件", style = texts.aux.copy(color = colors.accentInk))
             }
         }
+        // v3.5.1：文件的「取不到公式/图片」提示放在输入框上方。
+        // 这类文件往往 0 条可导入（正文没有竖线分列），用户会一直停在编辑器这一屏，
+        // 提示放在下面的按钮区就永远看不见了。
+        sourceNote?.takeIf { it.isNotBlank() }?.let { note ->
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(text = note, style = texts.caption.copy(color = colors.warningInk))
+        }
         Spacer(Modifier.height(AppTheme.space.md))
         AppMultilineTextField(
             value = raw,
@@ -235,6 +242,7 @@ fun BulkPasteScreen(
                 }
             }
         }
+        // v3.5.1：文件的"取不到公式/图片"提示常驻在输入框上方（见上面那块），这里不再重复。
         Spacer(Modifier.height(AppTheme.space.md))
         when {
             readingFile -> Row(verticalAlignment = Alignment.CenterVertically) {
