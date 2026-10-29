@@ -73,13 +73,14 @@ class QuestionPackCatalogTest {
             {"version":3,"packs":[
               {"id":"a","title":"甲","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":"javascript:alert(1)"},
               {"id":"b","title":"乙","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":"https://x.test/../../etc/passwd"},
-              {"id":"c","title":"丙","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":""}
+              {"id":"c","title":"丙","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":""},
+              {"id":"d","title":"丁","stage":"junior","subjects":["数学"],"count":1,"path":"packs/junior-foundation.txt","url":"http://x.test/a.txt"}
             ]}
         """.trimIndent()
 
         val catalog = QuestionPackCatalogParser.parse(raw)
 
-        assertEquals(3, catalog.packs.size)
+        assertEquals(4, catalog.packs.size)
         catalog.packs.forEach { pack ->
             assertEquals("${pack.id} 的非法地址必须被丢掉", null, pack.remoteUrl)
             assertTrue("${pack.id} 不该被当成在线包", !pack.isRemote)

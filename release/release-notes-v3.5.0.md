@@ -89,7 +89,7 @@ manifest 里每个题包多了一个 `url`（指向 jsDelivr 的 GitHub 镜像�
 ## 构建产物
 
 - `release/StudyKit-v3.5.0-debug.apk`　`121,898,842 B`
-- sha256 `5a76455ed85ecd86d1d20549f97ca50f7afea30f6b16ab29320af501fe28849a`
+- sha256 `dff27fac56115e787ff3dbb5d7cd6b696dcc8ad3c8843afc1caaf2b45f90ec85`
 - `versionCode 27 / versionName 3.5.0`，minSdk 26 / targetSdk 35，包内六个题包题数已逐个核对（60/60/60/56/52/44）
 
 ## 机检

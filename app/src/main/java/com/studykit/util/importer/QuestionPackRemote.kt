@@ -67,11 +67,13 @@ object QuestionPackRemote {
     /**
      * 下载并解码成文本。**必须在 IO 线程调用**。
      *
-     * 失败一律抛 [QuestionPackRemoteException]，消息直接能显示给用户。
+     * 只收 https：应用的 `network_security_config` 只给网易词库那一个域名开了明文口子，
+     * 其它 `http://` 请求会被系统直接拦下（真机上报 "Cleartext HTTP traffic … not permitted"）。
+     * 与其让用户看到那句系统错误，这里先给一句人话。
+     * `allowCleartext` 只给单测用（它跑在本机明文服务上），生产调用别传。
      */
-    fun fetchText(url: String, maxBytes: Int = MAX_BYTES): String {
-        val start = normalizeUrl(url)
-            ?: throw QuestionPackRemoteException("地址不完整，试试以 https:// 开头")
+    fun fetchText(url: String, maxBytes: Int = MAX_BYTES, allowCleartext: Boolean = false): String {
+        val start = requireHttps(url, allowCleartext)
         var current = start
         var redirects = 0
         while (true) {
@@ -109,6 +111,25 @@ object QuestionPackRemote {
                 conn.disconnect()
             }
         }
+    }
+
+    /**
+     * 归一 + 明文拦截。
+     *
+     * `http://` 在应用里必然失败：`network_security_config` 只为网易词库那一个域名开了明文，
+     * 其它明文请求会被系统拦在 socket 层，用户看到的是英文的 "Cleartext HTTP traffic … not permitted"。
+     * 这里提前给一句能照做的提示，而不是把系统错误原样抛给用户。
+     */
+    private fun requireHttps(raw: String, allowCleartext: Boolean): String {
+        val normalized = normalizeUrl(raw)
+            ?: throw QuestionPackRemoteException("地址不完整，试试以 https:// 开头")
+        if (!allowCleartext && normalized.startsWith("http://", ignoreCase = true)) {
+            throw QuestionPackRemoteException(
+                "只支持 https 地址：应用只给在线词库那一个域名放行了明文 http，其它 http 请求会被系统拦截。" +
+                    "换一个 https 链接，或把题包放到支持 https 的站点（Gitee / GitHub / 对象存储都行）。",
+            )
+        }
+        return normalized
     }
 
     /** 代理页/登录页/404 页都是 HTML；题包第一行必须是 `[阶段·学科·题型]` */

@@ -115,8 +115,9 @@ object QuestionPackCatalogParser {
     private fun parseRemoteUrl(raw: String): String? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed.contains("..")) return null
-        val lower = trimmed.lowercase()
-        return trimmed.takeIf { lower.startsWith("https://") || lower.startsWith("http://") }
+        // 只收 https：http 会被应用的 network_security_config 拦掉（`QuestionPackRemote` 里有同一道闸），
+        // 目录里留一条注定失败的地址，用户点了只会得到一句系统错误。
+        return trimmed.takeIf { it.startsWith("https://", ignoreCase = true) }
     }
 
     /**

@@ -101,8 +101,9 @@ class QuestionPackRemoteTest {
         else -> Reply(code = 404)
     }
 
+    // 单测跑在本机明文服务上：只有测试传 allowCleartext，生产路径（QuestionPackStore）不传，走 https-only。
     private fun fetch(url: String): String =
-        QuestionPackRemote.fetchText(url, maxBytes = QuestionPackRemote.MAX_BYTES)
+        QuestionPackRemote.fetchText(url, maxBytes = QuestionPackRemote.MAX_BYTES, allowCleartext = true)
 
     @Test
     fun 正常下载返回原文() {
@@ -174,5 +175,18 @@ class QuestionPackRemoteTest {
         } catch (e: QuestionPackRemoteException) {
             assertTrue(e.message.orEmpty().contains("地址"))
         }
+    }
+
+    /**
+     * 生产路径只收 https：应用只给网易词库那一个域名放行明文，其它 http 会被系统拦在 socket 层，
+     * 用户看到的是英文的系统错误。这里钉住"提前给一句能照做的提示"。
+     */
+    @Test
+    fun 明文http在默认路径上被提前拦下并说明原因() {
+        val error = runCatching { QuestionPackRemote.fetchText("http://example.com/pack.txt") }
+            .exceptionOrNull()
+        assertTrue(error is QuestionPackRemoteException)
+        assertTrue("提示里要说明只支持 https：${error?.message}", error?.message.orEmpty().contains("https"))
+        assertTrue("提示里要给出出路：${error?.message}", error?.message.orEmpty().contains("换一个 https"))
     }
 }

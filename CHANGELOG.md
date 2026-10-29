@@ -27,7 +27,8 @@
   `filesDir/question_packs_cache/`，下过一次之后断网可用。
 - **从链接导入题包**：商店新增一个输入框，贴任意网站的题包文本地址（`https://…/包.txt`）就能下载、
   预览、入库，不要求对方有 manifest。下载层只收文本（2 MB 上限）、自己跟重定向、
-  把「返回的是网页」「404」「超时」区分成不同的提示。
+  把「返回的是网页」「404」「超时」区分成不同的提示。**只收 https**：应用只为在线词库那一个域名放行了明文 http，
+  其它 `http://` 会被系统拦在 socket 层，所以这里提前给出「换一个 https 链接」的提示（真机实测过）。
 - **Word 导入不再静默丢公式**：这是一次真机反馈驱动的修复。MathType / 公式 3.0 的公式在 `.docx` 里是
   `word/embeddings/oleObject*.bin` 这种二进制对象，XML 里只有一句"这里有个对象"，纯文本提取拿不到内容——
   用户看到的是"已知函数，则的最小值为"这种缺半截的题干。现在：
@@ -41,14 +42,14 @@
   `subjects`、`description`；`QuestionPackCatalogParser` 解析 `types`（缺失/写坏只影响展示，不阻断下载）。
 - **练习入口文案**：题库练习页的说明改成「每轮最多 10 题，优先出最久没练过的」，
   轮次长度常量 `QUIZ_SIZE` 从 private 提到可被 UI 引用，避免两处各写一个 10。
-- **机检**：175 个测试类 / **1604 用例 / 0 失败**。新增 `QuestionPackCatalogTest` 的
+- **机检**：175 个测试类 / **1605 用例 / 0 失败**。新增 `QuestionPackCatalogTest` 的
   sha256 与题型分布两条契约、`QuestionRotationOrderTest`（7 例，真 SQL）、
   `QuestionImportDedupeTest`（键同构与跨批去重）。
   > 本机跑测试时必须从**不含中文的路径**执行：`E:\项目\studykit` 这类路径会让 Gradle 的
   > 测试 worker 报 `ClassNotFoundException`（编译产物都在，worker 的 classpath 却读不到），
   > 本次是在 `C:\sk_build` 的副本里跑的。
 - **APK**：`121,898,842 B`，sha256
-  `5a76455ed85ecd86d1d20549f97ca50f7afea30f6b16ab29320af501fe28849a`，版本 `3.5.0 / 27`；
+  `dff27fac56115e787ff3dbb5d7cd6b696dcc8ad3c8843afc1caaf2b45f90ec85`，版本 `3.5.0 / 27`；
   包内六个题包的题数已逐个核对为 60/60/60/56/52/44。**尚未发布**到 GitHub/Gitee 与网盘。
 
 ## [3.4.1] - 2026-10-27（使用教程图解）
