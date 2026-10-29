@@ -11,7 +11,10 @@ import com.studykit.data.question.GradeResult
 import com.studykit.data.question.QuestionGrader
 import com.studykit.data.question.QuestionType
 import com.studykit.data.question.QuizResponse
+import com.studykit.util.importer.importKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import java.util.UUID
 
@@ -86,6 +89,26 @@ class QuestionRepository(
     /** v3.3：学科 × 阶段 × 题型题量 */
     fun observeSubjectStageFormatCounts(): Flow<List<SubjectStageFormatCount>> =
         questionDao.observeSubjectStageFormatCounts()
+
+    /**
+     * v3.5：阶段 → 本机题量（题库商店的「已入库」徽标）。
+     *
+     * 直接给 `Map<String, Int>`，键是 [ExamStage.storageValue]；商店页不用再认识 DAO 的行类型。
+     */
+    fun observeStageCounts(): Flow<Map<String, Int>> =
+        questionDao.observeCountsByStage().map { rows ->
+            rows.associate { it.stage to it.count }
+        }
+
+    /**
+     * 题库导入跨批去重：库内已有题目的判重键集合。
+     *
+     * 键的构造与 `ImportViewModel.submitQuestions()` 共用 `util/importer/QuestionImportKey.kt`，
+     * 保证「题干 + 阶段 + 学科 + 题型 + 全部选项」两侧同构。用现成的 `observeAll()` 取一次全表，
+     * 不新增 DAO 查询、不动 Room schema；题量只有几千，一次 `first()` 足够。
+     */
+    suspend fun questionKeys(): Set<String> =
+        questionDao.observeAll().first().mapTo(HashSet<String>()) { it.importKey() }
 
     /**
      * 同考点候选池（v2.7 计划 B Task 15）。[conceptTag] 为空串（未标注）时直接给空列表：

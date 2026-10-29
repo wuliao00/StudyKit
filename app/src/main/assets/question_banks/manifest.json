@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated": "2026-10-26",
+  "version": 2,
+  "updated": "2026-10-28",
   "notice": "题包为 StudyKit 原创示例，不含高考/考研/考公真题或教材原题；真题版权归各考试机构，导入他人题包前请确认授权。",
   "packs": [
     {
@@ -8,72 +8,78 @@
       "title": "小学基础",
       "stage": "primary",
       "subjects": ["数学", "语文", "英语", "科学"],
-      "count": 10,
-      "description": "四则运算、质数、正方形周长、古诗与英语词汇，覆盖小学常见基础题型。",
+      "count": 60,
+      "types": {"单选": 30, "多选": 6, "判断": 9, "填空": 6, "计算": 4, "简答": 3, "主观": 2},
+      "description": "四则运算、分数小数、质数与公因数、古诗与英语基础语法，60 道覆盖小学常见题型。",
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/primary-foundation.txt",
-      "sha256": "59e32f2eaf048a98dc25ae5571ce62460d8b9035b5d153cc12028d78ccb96bbb"
+      "sha256": "1063ba5fc0121ce50c13fc52f01ccc48091851fc49642db0dd7ece3985a211f6"
     },
     {
       "id": "junior-foundation",
       "title": "初中核心",
       "stage": "junior",
-      "subjects": ["数学", "物理", "化学", "语文", "历史", "道德与法治"],
-      "count": 8,
-      "description": "有理数、勾股定理、匀速直线运动、化学式与公版古文阅读。",
+      "subjects": ["数学", "物理", "化学", "语文", "英语", "历史", "道德与法治"],
+      "count": 60,
+      "types": {"单选": 30, "多选": 6, "判断": 9, "填空": 6, "计算": 4, "简答": 3, "主观": 1, "材料": 1},
+      "description": "有理数、方程、勾股定理、力学与电学、化学式、古文与英语时态，60 道分层原创题。",
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/junior-foundation.txt",
-      "sha256": "05c736879161ef6675c15ab664b28b13a7db20df319efdbcb84b1b8a2ddf73f7"
+      "sha256": "d8c317d44b7dfcd3e8c52cf7c24a0825c867ec3a4f696a85a58b5741e838434c"
     },
     {
       "id": "senior-foundation",
       "title": "高中核心",
       "stage": "senior",
-      "subjects": ["数学", "物理", "化学", "英语", "语文", "历史"],
-      "count": 8,
-      "description": "二次函数、牛顿第三定律、阿伏加德罗定律、英语反意疑问与材料分析。",
+      "subjects": ["数学", "物理", "化学", "英语", "语文", "历史", "生物"],
+      "count": 60,
+      "types": {"单选": 30, "多选": 6, "判断": 8, "填空": 7, "计算": 4, "简答": 2, "主观": 2, "材料": 1},
+      "description": "函数与数列、力学电学、化学方程式、英语语法、文言与史实，60 道分层原创题。",
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/senior-foundation.txt",
-      "sha256": "5405b30eebc946bbcd61990b34c9d9c804010180649d2d58a47d7ec355ea4ae6"
+      "sha256": "c4aa1066941870a6c861fb6fe38ed7f777623cce852759fe82cdd7e35a98336e"
     },
     {
       "id": "college-foundation",
       "title": "大学基础",
       "stage": "college",
       "subjects": ["高等数学", "线性代数", "大学物理", "概率论", "数据结构", "马克思主义基本原理", "管理学", "英语"],
-      "count": 8,
-      "description": "极限、矩阵可逆、光速不变、概率、归并排序与课程论文写作。",
+      "count": 56,
+      "types": {"单选": 28, "多选": 5, "判断": 8, "填空": 7, "计算": 4, "简答": 2, "主观": 1, "材料": 1},
+      "description": "极限与积分、矩阵与特征值、概率与贝叶斯、复杂度分析、马原与管理学，56 道原创题。",
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/college-foundation.txt",
-      "sha256": "ec3c792f15a69d20e564501ecdf0651d84654ff98d8db74a8fa5255476c02c4a"
+      "sha256": "e3369b0efa70822a636c1400ce6a47c5d6a50c346b133b9a16cca7cb10060eee"
     },
     {
       "id": "postgrad-foundation",
       "title": "考研基础",
       "stage": "postgrad",
       "subjects": ["数学一", "英语一", "政治", "管理学"],
-      "count": 8,
-      "description": "极值、定积分、语法辨析、矛盾论与管理控制，覆盖考研公共课常见题型。",
+      "count": 52,
+      "types": {"单选": 26, "多选": 5, "判断": 8, "填空": 6, "计算": 3, "简答": 2, "主观": 1, "材料": 1},
+      "description": "数学一核心题型、英语语法辨析、政治高频概念与管理控制，52 道原创题。",
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/postgrad-foundation.txt",
-      "sha256": "04cf83d0e0ec6013440ab27424ea27815e3f42a8ecd087d3c83df8acb174dd01"
+      "sha256": "d91c7bc5528bfcfe210858172f22704bf6dcdc4c8455034926003311cb06526d"
     },
     {
       "id": "civil-foundation",
       "title": "考公基础",
       "stage": "civil",
       "subjects": ["行测", "申论"],
-      "count": 5,
-      "description": "数量关系、言语理解、资料分析、申论材料概括与议论文立意。",
+      "count": 44,
+      "types": {"单选": 26, "判断": 4, "填空": 3, "计算": 3, "简答": 3, "主观": 1, "材料": 4},
+      "description": "数量关系、言语理解、判断推理、资料分析与申论概括/大作文，44 道原创题。",
       "license": "CC BY 4.0 · StudyKit 原创",
       "source": "StudyKit 原创示例",
       "path": "packs/civil-foundation.txt",
-      "sha256": "ebc899211abdaf7e37f8aa1b7f0269cfe454124f74504feb902b9ab54d330543"
+      "sha256": "d9d0ef4022d4b43fe2b5da99d5831b11f375cadecffe6e55d956995de6cd86f4"
     }
   ]
 }

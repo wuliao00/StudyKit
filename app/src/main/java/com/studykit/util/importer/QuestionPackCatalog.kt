@@ -21,10 +21,18 @@ data class QuestionPackInfo(
     val source: String,
     val path: String,
     val sha256: String,
+    /**
+     * v3.5：题型分布（题型中文名 → 题量），manifest 里的 `types` 字段。
+     * 空列表 = 老目录没写，商店卡片就只显示总题数，不留空位。
+     */
+    val typeCounts: List<PackTypeCount> = emptyList(),
 ) {
     /** 内置资产路径；未来接远程源时，网络地址也从 [path] 拼，不另存一份。 */
     val assetPath: String get() = "question_banks/$path"
 }
+
+/** 一个题包里的题型分布，用于商店卡片的「单选 30 · 判断 9」那一行。 */
+data class PackTypeCount(val label: String, val count: Int)
 
 data class QuestionPackCatalog(
     val packs: List<QuestionPackInfo>,
@@ -83,6 +91,25 @@ object QuestionPackCatalogParser {
             source = item.optString("source", "未标注来源").trim(),
             path = path,
             sha256 = item.optString("sha256", "").trim(),
+            typeCounts = parseTypeCounts(item.optJSONObject("types")),
         )
+    }
+
+    /**
+     * v3.5：`"types": {"单选": 30, "判断": 9}` → 有序列表。
+     *
+     * 只做展示，缺失/写错不该让整包下不了：非正数直接跳过，键为空跳过，
+     * 总数与 `count` 对不对由单测兜（见 `QuestionPackCatalogTest`）。
+     */
+    private fun parseTypeCounts(obj: JSONObject?): List<PackTypeCount> {
+        if (obj == null) return emptyList()
+        val keys = obj.keys()
+        val out = ArrayList<PackTypeCount>(obj.length())
+        while (keys.hasNext()) {
+            val label = keys.next().trim()
+            val value = obj.optInt(label, 0)
+            if (label.isNotEmpty() && value > 0) out.add(PackTypeCount(label = label, count = value))
+        }
+        return out
     }
 }

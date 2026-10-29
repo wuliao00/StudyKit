@@ -7,6 +7,7 @@ import com.studykit.AppContainer
 import com.studykit.StudyKitApp
 import com.studykit.data.AppDatabase
 import com.studykit.data.dao.QuestionDao
+import com.studykit.data.dao.StageQuestionCount
 import com.studykit.data.dao.SubjectStageFormatCount
 import com.studykit.data.dao.SubjectTypeCount
 import com.studykit.data.entity.Question
@@ -106,6 +107,14 @@ private class RecordingQuestionDao : QuestionDao {
                 .map { (key, items) -> SubjectTypeCount(key.first, key.second, items.size) }
                 .sortedWith(compareBy({ it.subject }, { it.type })),
         )
+    }
+
+    /**
+     * v3.5：题库商店的「已入库 N 题」用。组轮入口不读它，这里按 `exam_stage` 分组照抄 SQL 语义即可 ——
+     * 真排序（最久没练优先）在 [com.studykit.data.dao.QuestionRotationOrderTest] 里对真 SQL 测。
+     */
+    override fun observeCountsByStage(): Flow<List<StageQuestionCount>> = flow {
+        emit(rows.groupBy { it.examStage }.map { (stage, items) -> StageQuestionCount(stage, items.size) })
     }
 
     override suspend fun countBySubjectAndType(subject: String, type: String): Int =

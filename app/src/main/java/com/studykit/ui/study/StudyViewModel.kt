@@ -235,7 +235,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private val ONE_DAY_MS = TimeUnit.DAYS.toMillis(1)
         private const val SESSION_SIZE = 10
-        private const val QUIZ_SIZE = 10
+
+        /** v3.5：一轮练习取多少道题；UI 说明文字也引用它，避免两处各写一个 10 */
+        const val QUIZ_SIZE = 10
 
         /** 模考整卷题量：比一轮练习更长一点，取数仍走现有 `getBySubject`（库里没有就有多少出多少） */
         private const val MOCK_EXAM_SIZE = 20
@@ -663,7 +665,12 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     val quiz: StateFlow<QuizUiState> = _quiz
 
     /**
-     * 选择学科，开始一轮练习（该学科前 [QUIZ_SIZE] 道题）。
+     * 选择学科，开始一轮练习（该学科**最久没练的** [QUIZ_SIZE] 道题）。
+     *
+     * v3.5：题包的题量从 8~10 道涨到 44~60 道，而取数原来按 id 排序取前 N 条 —— 每轮都是同 10 道题，
+     * 用户会以为包里只有 10 道。排序改成“没练过的优先、练过的按最近一次时间升序”，落点在
+     * [com.studykit.data.dao.QuestionDao.getBySubjectFiltered] 的 SQL 里，这一层仍然只是 `offset = 0`
+     * 取前 N 条：练完一轮，那 10 道的 `last_at` 变新，下一轮自然轮到后面的题，直到整个题包轮一遍。
      *
      * 两个设置各自交出去的**判定**只有一处（读点不止这一处，判定只有一处）：
      *  - [AppSettings.interleavingEnabled]（学科层）→ 传进 [planQuestionQueue] 的 `interleaving`，

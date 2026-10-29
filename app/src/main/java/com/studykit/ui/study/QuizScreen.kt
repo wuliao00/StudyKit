@@ -352,7 +352,10 @@ private fun SubjectPicker(
             }
             Spacer(Modifier.height(AppTheme.space.md))
         }
-        Text(text = "选择学科，开始一轮练习", style = texts.caption)
+        Text(
+            text = "选择学科，开始一轮练习 · 每轮最多 ${StudyViewModel.QUIZ_SIZE} 题，优先出最久没练过的",
+            style = texts.caption,
+        )
         Spacer(Modifier.height(AppTheme.space.md))
         if (subjects.isEmpty()) {
             Spacer(Modifier.height(AppTheme.space.xl * 2))
@@ -360,7 +363,8 @@ private fun SubjectPicker(
             EmptyState(
                 title = if (!filtered) "题库还是空的" else "这个筛选下还没有题",
                 caption = if (!filtered) {
-                    "回到学习首页，在「题库练习」卡片上点击 + 录入第一道题"
+                    // 上面那颗「题库商店」按钮就在同一屏，这里只负责把话说透，不再放第二个入口。
+                    "用上方的「题库商店」下现成的题包，也可以自己录入或导入文件"
                 } else {
                     "换一个阶段或题型，或回到学习首页用「录入」加一道题"
                 },

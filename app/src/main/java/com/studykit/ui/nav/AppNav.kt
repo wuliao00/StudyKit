@@ -237,7 +237,6 @@ fun AppNav(
     val globalCalendarViewModel: GlobalCalendarViewModel = viewModel()
     val bookViewModel: BookViewModel = viewModel()
     val studyViewModel: StudyViewModel = viewModel()
-    val questionStoreViewModel: QuestionStoreViewModel = viewModel()
     val designViewModel: DesignViewModel = viewModel()
     val mistakeViewModel: MistakeViewModel = viewModel()
     val importViewModel: ImportViewModel = viewModel()
@@ -599,8 +598,11 @@ fun AppNav(
                 )
             }
             composable(StudyRoutes.QUESTION_STORE) {
+                // v3.5：商店的 VM 收在路由内，而不是根部。它在 init 里订阅「本机题量」的 Flow，
+                // 挂在根部等于整个进程生命周期都在订阅、冷启动就打开一次库；收进路由后离开商店就随回退栈销毁。
+                val storeViewModel: QuestionStoreViewModel = viewModel()
                 QuestionStoreScreen(
-                    viewModel = questionStoreViewModel,
+                    viewModel = storeViewModel,
                     importViewModel = importViewModel,
                     onBack = { navController.popBackStack() },
                     onPreview = {

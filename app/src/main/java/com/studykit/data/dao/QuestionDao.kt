@@ -21,6 +21,17 @@ data class SubjectStageFormatCount(
     val count: Int,
 )
 
+/**
+ * v3.5：按阶段汇总的题量（题库商店用）。
+ *
+ * 商店卡片要显示「本机已有 60 道小学题」，只关心每个阶段的总数，
+ * 不需要把上千道题整表读进内存再 `groupBy`。
+ */
+data class StageQuestionCount(
+    val stage: String,
+    val count: Int,
+)
+
 @Dao
 interface QuestionDao {
 
@@ -42,12 +53,26 @@ interface QuestionDao {
 
     /**
      * v3.3：按学科 + 阶段 + 题型取题；[stage]/[type] 传 null = 不限（阶段空串是“未标注”，不是 null）。
+     *
+     * v3.5：排序从「按 id 前 N 条」改成「最久没练的排前面」。
+     *
+     * 题库从每包 8~10 题涨到 44~60 题之后，原来那句 `ORDER BY id LIMIT 10` 意味着**每一轮都是同 10 道题**，
+     * 用户会以为题包只有 10 道。改成按 `practice_records` 里该题最近一次作答时间升序、没练过的排最前：
+     * 每练完一轮，这一轮 10 道的 `last_at` 就变新，下一轮自然轮到后面的题，一轮一轮把题包走一遍；
+     * 全部练过之后按“最久没碰”继续轮转，不会卡在原地。
+     *
+     * 只动练习入口的这条查询：模考（[getBySubjectAndTypes]）要保持整卷稳定，不走这条排序。
+     * `question_id` 与 `at` 上都已有索引，子查询是走索引的分组聚合，不会因为题量变大而退化成全表扫。
      */
     @Query(
-        "SELECT * FROM questions WHERE subject = :subject " +
-            "AND (:stage IS NULL OR exam_stage = :stage) " +
-            "AND (:type IS NULL OR question_type = :type) " +
-            "ORDER BY id LIMIT :limit OFFSET :offset",
+        "SELECT q.* FROM questions q LEFT JOIN " +
+            "(SELECT question_id, MAX(at) AS last_at FROM practice_records GROUP BY question_id) p " +
+            "ON p.question_id = q.id " +
+            "WHERE q.subject = :subject " +
+            "AND (:stage IS NULL OR q.exam_stage = :stage) " +
+            "AND (:type IS NULL OR q.question_type = :type) " +
+            "ORDER BY CASE WHEN p.last_at IS NULL THEN 0 ELSE 1 END, p.last_at, q.id " +
+            "LIMIT :limit OFFSET :offset",
     )
     suspend fun getBySubjectFiltered(
         subject: String,
@@ -97,6 +122,15 @@ interface QuestionDao {
             "GROUP BY subject, exam_stage, question_type ORDER BY subject",
     )
     fun observeSubjectStageFormatCounts(): Flow<List<SubjectStageFormatCount>>
+
+    /**
+     * v3.5：按阶段汇总题量（题库商店显示「本机已有 N 题」）。
+     *
+     * 只回一行一阶段，不在内存里 groupBy；未标注阶段的题落 `stage = ''` 那一行，
+     * 商店按 [com.studykit.data.question.ExamStage.storageValue] 查表，查不到就是 0。
+     */
+    @Query("SELECT exam_stage AS stage, COUNT(*) AS count FROM questions GROUP BY exam_stage")
+    fun observeCountsByStage(): Flow<List<StageQuestionCount>>
 
     /**
      * 同考点候选池（v2.7 计划 B Task 15「换一道同考点的」）。

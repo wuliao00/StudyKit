@@ -3,6 +3,7 @@ package com.studykit.ui.study
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.studykit.StudyKitApp
 import com.studykit.util.importer.ImportPlan
 import com.studykit.util.importer.QuestionPackCatalog
 import com.studykit.util.importer.QuestionPackInfo
@@ -19,6 +20,13 @@ data class QuestionStoreUiState(
     val loading: Boolean = true,
     val downloadingId: String? = null,
     val error: String? = null,
+    /**
+     * v3.5：阶段存储值 → 本机已有题量。
+     *
+     * 商店卡片据此显示「已入库 60 题」，避免同一包重复导入之后用户还以为没下过。
+     * 导入走的是批量导入那条路，写完库这里会自动跟着变，不需要手动刷新。
+     */
+    val importedByStage: Map<String, Int> = emptyMap(),
 )
 
 /**
@@ -36,6 +44,17 @@ class QuestionStoreViewModel(application: Application) : AndroidViewModel(applic
 
     init {
         reload()
+        observeImported()
+    }
+
+    /** v3.5：订阅本机题量（按阶段聚合），页面销毁时随 viewModelScope 一起取消。 */
+    private fun observeImported() {
+        val container = (getApplication<Application>() as StudyKitApp).container
+        viewModelScope.launch {
+            container.questionRepository.observeStageCounts().collect { counts ->
+                _state.value = _state.value.copy(importedByStage = counts)
+            }
+        }
     }
 
     fun reload() {

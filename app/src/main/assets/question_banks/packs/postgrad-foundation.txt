@@ -6,3 +6,47 @@
 [考研·政治·简答] 简述矛盾普遍性与特殊性的辩证关系。|矛盾的普遍性即共性，特殊性即个性。二者相互联结：普遍性寓于特殊性之中，并通过特殊性表现出来；特殊性也离不开普遍性。二者在一定条件下相互转化。这一原理要求把一般原理与具体实际相结合。|答出共性个性；答出普遍性寓于特殊性；答出相互转化；答出方法论意义。
 [考研·英语一·主观] Write an essay of about 160 words on how to evaluate information online.|Online information is plentiful but uneven, so the first question is not whether a claim sounds right but where it comes from. I check the source: a named author, a date, and references count for more than confident wording. Second, I look for the same fact in an independent outlet, because errors spread when everyone copies one report. Third, I separate description from persuasion; emotional language is a signal to slow down. Fourth, I ask what evidence would change my mind. If nothing could, I am not evaluating the claim, only defending a position I already hold. A useful test is to imagine the same sentence applied to a subject I care about: would I still accept the evidence, or would I ask for more? That question exposes most weak claims, and it takes only a moment. These habits cost a few minutes, but they are far cheaper than acting on a rumor and correcting it later.|观点明确；有可操作的判断标准；论证有层次；语言准确；词数接近要求。
 [考研·管理学·材料] 材料：某企业把年度目标拆到季度与个人，每月复盘偏差并调整资源。问题：这体现了哪些管理控制思路？|目标分解与层级对齐；过程控制与定期复盘；偏差分析与纠正措施；资源配置随目标调整；结果与过程相结合。|答出目标分解；答出过程监控；答出偏差纠正；结合材料说明闭环。
+[考研·数学一·单选] 极限 lim(x→0) sin3x/(2x) 的值是？|3/2|2/3|0|1|A|x→0 时 sin3x 与 3x 是等价无穷小，故原式等于 3x/(2x)=3/2。
+[考研·数学一·单选] 曲线 y=x²lnx 在 x=e 处的切线斜率为？|2e|e|3e|2e+1|C|先求导得 y'=2xlnx+x，再代入 x=e，得 2e+e=3e，即切线斜率。
+[考研·数学一·单选] 三阶行列式 D 的第一行为 (2,0,1)，第二行为 (1,3,0)，第三行为 (0,1,2)，则 D 等于？|12|13|11|10|B|按第一行展开：2×(3×2-0×1)-0+1×(1×1-3×0)=12+1=13。
+[考研·数学一·单选] 设事件 A 与 B 相互独立，P(A)=0.5，P(B)=0.4，则 P(A∩B) 等于？|0.1|0.3|0.2|0.9|C|由独立性得 P(A∩B)=P(A)P(B)=0.5×0.4=0.2，也可用加法公式验证 P(A∪B)=0.7。
+[考研·数学一·单选] 定积分 ∫₀^(π/2) sinx dx 的值为？|π/2|0|2|1|D|sinx 的原函数是 -cosx，代入得 -cos(π/2)+cos0=0+1=1。
+[考研·数学一·单选] 下列级数中收敛的是？|∑1/n|∑1/n²|∑1/√n|∑1/n^(1/3)|B|p 级数 ∑1/n^p 当 p>1 时收敛，只有 p=2 满足；其余 p≤1 均发散。
+[考研·数学一·单选] 设向量 a=(1,2,-1)，b=(2,-1,1)，则 a·b 等于？|1|3|0|-1|D|数量积等于对应坐标乘积之和：1×2+2×(-1)+(-1)×1=-1。
+[考研·数学一·单选] 二阶矩阵 A 的第一行为 (2,1)，第二行为 (1,2)，则 A 的特征值为？|2 和 1|4 和 1|3 和 1|3 和 2|C|由特征方程 det(λE-A)=(λ-2)²-1=0 得 λ=3 或 λ=1，两特征值之和等于迹 4。
+[考研·数学一·单选] 设 z=e^(xy)，则 ∂z/∂x 在点 (1,1) 处的值为？|1|e|e²|0|B|对 x 求偏导时把 y 视为常数，得 y·e^(xy)，代入 (1,1) 得 e。
+[考研·数学一·填空] 极限 lim(x→∞)(1+1/x)^x 的值是？|e|这是第二个重要极限，底数趋于 1、指数趋于无穷，其极限值为自然常数 e。
+[考研·数学一·填空] 定积分 ∫₁^e (1/x) dx 的值是？|1|1/x 的原函数为 lnx，由牛顿-莱布尼茨公式得 lne-ln1=1。
+[考研·数学一·填空] 设三阶矩阵 A 的行列式 det(A)=2，则 det(2A) 等于？|16|n 阶矩阵数乘 k 后行列式为 k^n·det(A)，故 det(2A)=2³·det(A)=16。
+[考研·数学一·填空] 袋中有 3 个红球、2 个白球，任取 2 球，两球同色的概率是？|2/5;0.4|同色取法为 C(3,2)+C(2,2)=4，任取 2 球共 C(5,2)=10 种，故概率为 4/10=2/5。
+[考研·数学一·计算] 计算定积分 ∫₀¹ x·e^x dx。|1|分部积分得 ∫x·e^x dx=(x-1)e^x，代入上下限得 0-(-1)=1。
+[考研·数学一·计算] 求极限 lim(x→0)(e^x-1-x)/x²。|1/2;0.5|用泰勒展开 e^x=1+x+x²/2+o(x²)，分子为 x²/2 加高阶无穷小，故极限为 1/2。
+[考研·英语一·单选] Neither the teacher nor the students ___ aware of the sudden change in the schedule.|was|were|is|has been|B|neither...nor 连接主语时谓语遵循就近原则，靠近谓语的 students 为复数，故用 were。
+[考研·英语一·单选] By the time we arrived at the cinema, the film ___ for ten minutes.|had begun|had been on|has begun|began|B|by the time 从句用一般过去时，主句用过去完成时；for ten minutes 要求延续性动词，be on 可延续。
+[考研·英语一·单选] It is essential that every applicant ___ the form before Friday.|submits|submitted|submit|will submit|C|It is essential that 引导的主语从句用虚拟语气，谓语为 (should)+动词原形，故填 submit。
+[考研·英语一·单选] The new policy is intended to ___ the gap between urban and rural schools.|build|break|bridge|borrow|C|bridge the gap 是固定搭配，意为缩小差距；其余动词与 gap 搭配后不合句意。
+[考研·英语一·单选] Hardly ___ the room when the telephone rang.|he had entered|did he enter|he entered|had he entered|D|hardly...when 句型中 hardly 置于句首，主句部分倒装，且主句动作先发生，用过去完成时。
+[考研·英语一·单选] The scientist's findings were later ___ by two independent research teams.|conformed|confined|confirmed|confused|C|confirm 意为证实，与 findings 搭配；conform 意为符合，confine 意为限制，均不合句意。
+[考研·英语一·单选] The two explanations are not mutually ___, since both may hold at the same time.|excessive|exclusive|expensive|expressive|B|mutually exclusive 意为互相排斥的，not mutually exclusive 表示两者可以并存，符合后半句。
+[考研·英语一·多选] 下列各句中，没有语法错误的是哪几句？|If I were you, I would accept the offer.|He has finished his homework yesterday.|The book which I bought it yesterday is interesting.|Not until midnight did he finish the report.|AD|A 为与现在事实相反的虚拟语气；D 中 not until 置于句首引起部分倒装；B 中现在完成时不能与 yesterday 连用；C 中定语从句里 it 冗余。
+[考研·英语一·多选] 下列句子中，搭配与用法正确的是？|The results are consistent with our earlier hypothesis.|She is used to work late every night.|The accident resulted from careless driving.|Despite of the heavy rain, they set out.|AC|A 中 be consistent with 搭配正确；C 中 result from 表示由……引起；B 应为 used to working；D 中 despite 后不加 of。
+[考研·英语一·判断] 动词 lie（意为躺）的过去分词是 lain。|正确|lie 的变形为 lie-lay-lain，表示躺；而 lay 的变形为 lay-laid-laid，表示放置，二者不可混用。
+[考研·政治·单选] 马克思主义哲学认为，世界的真正统一性在于它的？|运动性|物质性|实践性|可知性|B|世界的本原是物质，世界的真正统一性在于它的物质性，这是唯物主义一元论的根本观点。
+[考研·政治·单选] 唯物辩证法的实质和核心是？|质量互变规律|否定之否定规律|对立统一规律|普遍联系的观点|C|对立统一规律揭示事物发展的源泉和动力，是理解其他规律和范畴的钥匙，故为实质和核心。
+[考研·政治·单选] 认识的本质是？|主观自生的内心体验|客观精神的外化|主体对客体的能动反映|感性材料的简单堆积|C|认识是主体在实践基础上对客体的能动反映，既坚持了反映论，又坚持了辩证法。
+[考研·政治·单选] 新民主主义革命时期，中国共产党战胜敌人的三大法宝是？|统一战线、武装斗争、党的建设|土地革命、根据地建设、游击战争|实事求是、群众路线、独立自主|理论联系实际、密切联系群众、批评与自我批评|A|毛泽东在《〈共产党人〉发刊词》中把统一战线、武装斗争、党的建设概括为战胜敌人的三大法宝。
+[考研·政治·单选] 新时代我国社会主要矛盾是？|人民日益增长的物质文化需要同落后的社会生产之间的矛盾|人民日益增长的美好生活需要和不平衡不充分的发展之间的矛盾|无产阶级同资产阶级之间的矛盾|经济建设同人口资源环境之间的矛盾|B|党的十九大指出，新时代我国社会主要矛盾已转化为人民日益增长的美好生活需要和不平衡不充分的发展之间的矛盾。
+[考研·政治·单选] 中国新民主主义革命的开端是？|辛亥革命|中国共产党成立|五四运动|北伐战争|C|1919 年五四运动中工人阶级登上政治舞台，标志着新民主主义革命的开端。
+[考研·政治·单选] 全面依法治国的总目标是？|建设中国特色社会主义法治体系、建设社会主义法治国家|实现司法独立、保障人权|建立完备的法律规范体系|提高全民法治素养|A|党的十八届四中全会提出，全面依法治国的总目标是建设中国特色社会主义法治体系、建设社会主义法治国家。
+[考研·政治·判断] 实践是检验真理的唯一标准。|正确|真理是主观与客观相符合，只有实践才能把主观认识与客观实际联结起来并加以检验，故实践是唯一标准。
+[考研·政治·判断] 剩余价值是在商品流通中产生的。|错误|剩余价值在生产领域由雇佣工人的剩余劳动创造，流通领域只是实现其价值；等价交换本身不产生剩余价值。
+[考研·政治·判断] 社会主义改造基本完成后，我国国内的主要矛盾是人民对于经济文化迅速发展的需要同当前经济文化不能满足人民需要的状况之间的矛盾。|正确|这是党的八大对当时主要矛盾的表述，其着眼点在于发展社会生产力，符合当时的国情。
+[考研·政治·判断] 在当代中国，爱国主义与爱社会主义在本质上是统一的。|正确|社会主义制度是我国的根本制度，祖国的前途命运与社会主义道路不可分割，故二者在本质上统一。
+[考研·政治·简答] 简述实践与认识的辩证关系。|实践决定认识：实践是认识的来源、发展动力、检验标准和最终目的。认识对实践具有反作用：正确认识指导实践取得成功，错误认识导致实践失败。二者在实践基础上相互作用、循环往复，推动认识不断深化。|答出实践决定作用的四个方面；答出认识对实践的反作用；指出二者在实践基础上的辩证统一与循环上升。
+[考研·管理学·单选] 泰勒科学管理理论的核心是？|提高劳动生产率|满足职工的社会需要|建立正式组织结构|强调企业文化建设|A|泰勒主张用标准化操作、工时定额和差别计件工资提高效率，其核心是提高劳动生产率。
+[考研·管理学·单选] 马斯洛需要层次理论中处于最高层次的需要是？|安全需要|社交需要|尊重需要|自我实现需要|D|马斯洛把需要由低到高分为生理、安全、社交、尊重和自我实现五层，自我实现居于最高层。
+[考研·管理学·多选] 下列属于管理基本职能的有？|计划|组织|领导|控制|宣传|ABCD|管理的基本职能通常包括计划、组织、领导、控制，有的教材另加创新；宣传不属于管理职能。
+[考研·管理学·多选] 组织设计应遵循的原则包括？|统一指挥|分工协作|权责对等|因人设岗|ABC|组织设计应因事设职、权责对等、统一指挥并分工协作；因人设岗违背因事设职原则。
+[考研·管理学·判断] 在组织规模一定的条件下，管理幅度与管理层次成反比。|正确|规模既定时可管理幅度越大，所需层次越少；幅度越小则层次越多，二者呈反比关系。
+[考研·管理学·判断] 赫茨伯格双因素理论中，工资和福利属于激励因素。|错误|工资、福利、工作条件等属于保健因素，只能防止不满；激励因素指成就、认可、责任和成长等。
+[考研·管理学·填空] 西蒙认为「管理就是___」，强调决策贯穿于管理的全过程。|决策|西蒙在《管理决策新科学》中提出管理就是决策，决策是管理的核心内容。

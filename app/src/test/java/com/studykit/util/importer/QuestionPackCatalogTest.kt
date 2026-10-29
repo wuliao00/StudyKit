@@ -2,6 +2,7 @@ package com.studykit.util.importer
 
 import com.studykit.data.question.ExamStage
 import java.io.File
+import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,6 +51,36 @@ class QuestionPackCatalogTest {
             assertEquals("${pack.id} 必须全是题目", plan.items.size, questions.size)
             assertTrue("${pack.id} 阶段不符", questions.all { it.stage == pack.stage })
             assertTrue("${pack.id} 有题没有解析/评分要点", questions.all { it.explanation.isNotBlank() })
+        }
+    }
+
+    @Test
+    fun everyPack_typeCountsAddUpToTotal() {
+        val catalog = QuestionPackCatalogParser.parse(read("question_banks/manifest.json"))
+
+        catalog.packs.forEach { pack ->
+            // manifest 里的 types 是手写的展示数据，写错不会崩，只会让商店卡片上的分布对不上总题数。
+            assertTrue("${pack.id} 缺题型分布", pack.typeCounts.isNotEmpty())
+            assertEquals(
+                "${pack.id} 题型分布之和与 count 不一致",
+                pack.count,
+                pack.typeCounts.sumOf { it.count },
+            )
+            assertTrue("${pack.id} 题型名重复", pack.typeCounts.map { it.label }.distinct().size == pack.typeCounts.size)
+        }
+    }
+
+    @Test
+    fun everyPack_sha256MatchesFileContent() {
+        val catalog = QuestionPackCatalogParser.parse(read("question_banks/manifest.json"))
+
+        catalog.packs.forEach { pack ->
+            // 与 QuestionPackStore.loadPack 同口径：按 UTF-8 文本重新编码后取摘要。
+            // 改了题包却忘了改 manifest，用户点“下载”会被校验拦下，所以在单测里先炸。
+            val actual = MessageDigest.getInstance("SHA-256")
+                .digest(read(pack.assetPath).toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            assertEquals("${pack.id} 的 sha256 与题包文件不一致", pack.sha256, actual)
         }
     }
 

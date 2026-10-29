@@ -11,8 +11,10 @@ import com.studykit.util.OneShotGate
 import com.studykit.util.importer.ImportItem
 import com.studykit.util.importer.ImportOutcome
 import com.studykit.util.importer.ImportPlan
+import com.studykit.util.importer.UNGROUPED_SUBJECT
 import com.studykit.util.importer.dedupeBy
 import com.studykit.util.importer.dedupeWords
+import com.studykit.util.importer.importKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -150,16 +152,19 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    /** 批量入题：题目没有天然唯一键，退化为「题干 + 全部选项 + 阶段 + 题型 + 学科」的内容判重 */
+    /**
+     * 批量入题：与库内已有题目跨批去重，再按批内内容去重。
+     * 题目没有天然唯一键，退化为「题干 + 全部选项 + 阶段 + 题型 + 学科」的内容判重；
+     * 键构造与 [com.studykit.data.repository.QuestionRepository.questionKeys] 共用同一个实现，
+     * 否则「再预览一次」会把同一题包整包再写一遍。
+     */
     fun submitQuestions(onDone: () -> Unit) = commit(onDone) {
         val items = _state.value.visibleItems.filterIsInstance<ImportItem.Question>()
         val deduped = dedupeBy(
             items = items,
-            keyOf = {
-                (listOf(it.stem, it.stage.storageValue, it.subject, it.type.name) + it.options)
-                    .joinToString(QUESTION_KEY_SEP)
-            },
+            keyOf = { it.importKey() },
             displayOf = { it.stem },
+            existingKeys = questionRepository.questionKeys(),
         )
         val entities = deduped.kept.map { item ->
             Question(
@@ -208,9 +213,3 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 }
-
-/** 与 QuestionCreateScreen 的默认学科一致，用户之后可在题目列表里改 */
-private const val UNGROUPED_SUBJECT = "未分类"
-
-/** 题干与每个选项用控制字符拼键：正文里不会出现，不会把两条不同题误判成同一条 */
-private const val QUESTION_KEY_SEP = "\u0000"
