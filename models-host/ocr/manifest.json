@@ -1,0 +1,30 @@
+{
+  "id": "ppocrv6_small",
+  "total_bytes": 21234383,
+  "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+  "parts": [
+    {
+      "name": "rec.part1",
+      "url": "https://fastly.jsdelivr.net/gh/wuliao00/StudyKit@main/models-host/ocr/rec.part1",
+      "bytes": 8388608,
+      "sha256": "09552cc476f5547366c54cfe9976907577d0cbe4a8bc4b5c9ce8ea0a094c8e37"
+    },
+    {
+      "name": "rec.part2",
+      "url": "https://fastly.jsdelivr.net/gh/wuliao00/StudyKit@main/models-host/ocr/rec.part2",
+      "bytes": 8388608,
+      "sha256": "3a246978906479451f1a6ba2ec7090295c5033bb130388164ec41eea622a612d"
+    },
+    {
+      "name": "rec.part3",
+      "url": "https://fastly.jsdelivr.net/gh/wuliao00/StudyKit@main/models-host/ocr/rec.part3",
+      "bytes": 4457167,
+      "sha256": "d6f55e81226a3791863a2f22d3ae64082a0b5b6d76f415f4597c6fd1d9ee82d3"
+    }
+  ],
+  "det": {
+    "url": "https://fastly.jsdelivr.net/gh/wuliao00/StudyKit@main/app/src/main/assets/models/det_ppocrv6_small.onnx",
+    "bytes": 9929594,
+    "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
+  }
+}
