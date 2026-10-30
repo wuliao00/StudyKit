@@ -188,7 +188,7 @@ class DocumentTextExtractorTest {
         val doc = DocumentTextExtractor.docxXmlToDocxText(xml)
 
         assertEquals(1, doc.nativeFormulas)
-        assertEquals("当x+1大于零时成立", doc.text)
+        assertEquals("当\$x+1\$大于零时成立", doc.text)
     }
 
     @Test

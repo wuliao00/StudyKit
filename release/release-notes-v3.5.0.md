@@ -89,7 +89,7 @@ manifest 里每个题包多了一个 `url`（指向 jsDelivr 的 GitHub 镜像�
 ## 构建产物
 
 - `release/StudyKit-v3.5.0-debug.apk`　`121,898,842 B`
-- sha256 `dff27fac56115e787ff3dbb5d7cd6b696dcc8ad3c8843afc1caaf2b45f90ec85`
+- sha256 `3d438ed5ccbfbb250c910e3231331c37f7390d1190cc2a658c3afb98aa45c70a`
 - `versionCode 27 / versionName 3.5.0`，minSdk 26 / targetSdk 35，包内六个题包题数已逐个核对（60/60/60/56/52/44）
 
 ## 机检
@@ -121,3 +121,27 @@ manifest 里每个题包多了一个 `url`（指向 jsDelivr 的 GitHub 镜像�
 想真正把这类卷子搬进题库，目前只有两条路：**拍照 / 相册录题**（保留原题面，靠 OCR 取文字），
 或在 Word 里把公式转成线性文本（选中公式 → 公式工具 → 转换 → 线性）再导入。
 要把 OLE 里的 MTEF 反解成文字，理论可行但工程量很大、还原质量没保证，这一版没做。
+
+## 附二：MathType 卷子怎么进题库（v3.5.1 新增）
+
+学科网那类导出的数学卷，公式是 **MathType / 公式 3.0 的 OLE 二进制**（`word/embeddings/oleObject*.bin`），
+docx 的文本层里一个字符都没有。应用这边现在做两件事：
+
+1. **有原生公式（OMML）就按结构还原**：`1/2` 不会再被拼成 `12`——`m:f` 转 `\frac{}{}`、
+   `m:sSup/m:sSub` 转 `^{}`/`_{}`、`m:rad` 转 `\sqrt{}`，外面用 `$…$` 包起来；
+2. **没有原生公式就老实留占位**：`⟦公式⟧` + 一句"210 处公式是嵌入对象"，不再假装导入成功。
+
+想拿到真公式，先在电脑上把 MathType 转成 Word 原生公式（需要电脑装了 Office，`MML2OMML.XSL` 随 Office 安装）：
+
+```bash
+pip install lxml olefile python-docx
+git clone https://github.com/a917470154/mathtypejx && pip install ./mathtypejx
+python -c "from mathtypejx.cli import main; main(['convert','卷子.docx','-o','卷子_omml.docx'])"
+```
+
+实测：解析卷 1248/1248、空白卷 210/210 全部转换成功。转换后的 docx 直接导入，真机上题干变成
+
+> 样本数据`$6,8,4,5,12$`的中位数为（　）
+> 已知平面向量`$\hat{a}$`，`$\hat{b}$`不共线，且`$2\hat{a}+y\hat{b}=x\hat{a}-3\hat{b}$`，则（　）
+
+——数据、向量、分式都在，不再是「⟦公式⟧」。

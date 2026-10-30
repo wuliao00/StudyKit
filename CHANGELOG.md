@@ -38,18 +38,25 @@
   - 导入预览页常驻一行"这份文档里有 N 处公式…只留了占位"的提示（不再只弹一次 Toast），手动改文本后自动消失。
   > 边界说清楚：这类公式**没法**从 docx 文本层恢复（它们是 OLE 二进制），提示里会给出替代路径
   > （拍照/相册录题，或在 Word 里把公式转成线性文本再导入）。
+- **公式导入：Word 原生公式按结构还原成 LaTeX**：`<m:oMath>` 不再只拼字符——`m:f` → `\frac{}{}`、
+  `m:sSup` / `m:sSub` / `m:sSubSup` → `^{}` / `_{}`、`m:rad` → `\sqrt{}`、`m:d` 按 begChr/endChr、
+  `m:nary` → `\sum_{}^{}{}`，`m:bar` / `m:acc` / `m:func` / `m:m` 一并处理；认不出的标签按子节点拼接，
+  绝不丢字。原来逐字拼接会把 `1/2` 变成 `12`、`x²` 变成 `x2` —— 那是把题算错，不只是不好看。
+- **MathType 卷子的转换路径**：docx 里的 MathType / 公式 3.0 是 OLE 二进制，应用只能留 `⟦公式⟧`；
+  README 补了用 [mathtypejx](https://github.com/a917470154/mathtypejx)（第三方开源）在电脑上转成 OMML 的
+  完整命令，实测一份 1248 处公式的卷子 **1248/1248** 转换成功。
 - **配置**：manifest 升到 `version: 3`，逐包提供 `types` 题型分布、`url` 在线地址与新的 `sha256`、`count`、
   `subjects`、`description`；`QuestionPackCatalogParser` 解析 `types`（缺失/写坏只影响展示，不阻断下载）。
 - **练习入口文案**：题库练习页的说明改成「每轮最多 10 题，优先出最久没练过的」，
   轮次长度常量 `QUIZ_SIZE` 从 private 提到可被 UI 引用，避免两处各写一个 10。
-- **机检**：175 个测试类 / **1605 用例 / 0 失败**。新增 `QuestionPackCatalogTest` 的
+- **机检**：176 个测试类 / **1616 用例 / 0 失败**。新增 `QuestionPackCatalogTest` 的
   sha256 与题型分布两条契约、`QuestionRotationOrderTest`（7 例，真 SQL）、
   `QuestionImportDedupeTest`（键同构与跨批去重）。
   > 本机跑测试时必须从**不含中文的路径**执行：`E:\项目\studykit` 这类路径会让 Gradle 的
   > 测试 worker 报 `ClassNotFoundException`（编译产物都在，worker 的 classpath 却读不到），
   > 本次是在 `C:\sk_build` 的副本里跑的。
 - **APK**：`121,898,842 B`，sha256
-  `dff27fac56115e787ff3dbb5d7cd6b696dcc8ad3c8843afc1caaf2b45f90ec85`，版本 `3.5.0 / 27`；
+  `3d438ed5ccbfbb250c910e3231331c37f7390d1190cc2a658c3afb98aa45c70a`，版本 `3.5.0 / 27`；
   包内六个题包的题数已逐个核对为 60/60/60/56/52/44。**尚未发布**到 GitHub/Gitee 与网盘。
 
 ## [3.4.1] - 2026-10-27（使用教程图解）

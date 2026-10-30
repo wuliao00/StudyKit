@@ -316,6 +316,17 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - **题库文件导入**：`.txt/.md/.csv` 自动识别 UTF-8/UTF-16/GB18030；`.docx` 还原段落；
   `.pdf` 先取文字层，扫描版回退到已有的 PP-OCRv6（最多 20 页，需核对）。`.doc/.wps` 会先看文件头：
   实际是 docx/zip 的直接读；真旧版二进制则提示另存。
+- **Word 里的公式是 MathType 对象？** 这类卷子（学科网导出很常见）的公式存成
+  `word/embeddings/oleObject*.bin` 二进制，文本层里一个字都没有。应用会把每处标成 `⟦公式⟧`
+  并在导入页说明；想拿到真公式，先在电脑上转成 Word 原生公式再导入（原生公式会被还原成
+  `$…$` 的 LaTeX，分数/根式/上下标都保留结构）：
+  ```bash
+  pip install lxml olefile python-docx
+  git clone https://github.com/a917470154/mathtypejx && pip install ./mathtypejx
+  python -c "from mathtypejx.cli import main; main(['convert','卷子.docx','-o','卷子_omml.docx'])"
+  ```
+  需要电脑上装了 Office（`MML2OMML.XSL` 随 Office 安装）。实测一份 1248 处公式的数学卷
+  1248/1248 全部转换成功；导入转换后的 docx，题干里就是 `$\frac{7\pi}{6}$` 这种可读形式。
 - **经典示例题库**：内置 38 道**原创**题，覆盖小学/初中/高中/大学/考研/考公与 8 种题型，点一下就能
   看到完整格式，再照着改。不内置任何真题；来源与授权边界见
   [`docs/question-bank-sources.md`](docs/question-bank-sources.md)，格式取舍见

@@ -175,11 +175,19 @@ object DocumentTextExtractor {
                 }
             }
 
-            if (isTag(tag, "m:oMath") && !tag.endsWith("/")) nativeFormulas++
+            // Word 原生公式（OMML）：整段交给 OmmlToLatex 按结构还原成 $…$，
+            // 否则 `<m:t>` 顺序拼接会把 1/2 拼成 12、x² 拼成 x2 —— 那是把题算错，不只是不好看。
+            if (isTag(tag, "m:oMath") && !tag.endsWith("/")) {
+                val end = findCloseTag(xml, close + 1, "m:oMath")
+                if (end < 0) break
+                nativeFormulas++
+                out.append(OmmlToLatex.renderMath(xml.substring(close + 1, end)))
+                cursor = end + "</m:oMath>".length
+                continue
+            }
 
             when {
-                // Word 原生公式（OMML）：文字在 <m:t> 里，先把它当普通文字取出来。
-                // 上下标结构会退化成顺序字符（x² 变 x2），所以只当"有字"用，不当格式用。
+                // 兜底：公式标签之外的零散 m:t（例如 OMML 被拆开写）仍按普通文字取
                 (tag == "m:t" || tag.startsWith("m:t ")) && !tag.endsWith("/") -> {
                     val end = xml.indexOf("</m:t>", close + 1)
                     if (end < 0) break
@@ -251,6 +259,29 @@ object DocumentTextExtractor {
             inlineImages = inlineImages,
             nativeFormulas = nativeFormulas,
         )
+    }
+
+    /** 找到与当前位置配对的结束标签；同名嵌套按深度配平，找不到返回 -1 */
+    private fun findCloseTag(xml: String, from: Int, name: String): Int {
+        var depth = 0
+        var i = from
+        while (i < xml.length) {
+            val lt = xml.indexOf('<', i)
+            if (lt < 0) return -1
+            val gt = xml.indexOf('>', lt + 1)
+            if (gt < 0) return -1
+            val tag = xml.substring(lt + 1, gt)
+            when {
+                tag == "$name/" -> Unit
+                tag == name || tag.startsWith("$name ") -> depth++
+                tag == "/$name" -> {
+                    if (depth == 0) return lt
+                    depth--
+                }
+            }
+            i = gt + 1
+        }
+        return -1
     }
 
     private fun isTag(tag: String, name: String): Boolean =

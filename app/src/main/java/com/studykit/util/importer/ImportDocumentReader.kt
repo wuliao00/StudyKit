@@ -191,7 +191,7 @@ object ImportDocumentReader {
             parts += "${doc.inlineImages} 张图只留了「${DocumentTextExtractor.IMAGE_PLACEHOLDER}」占位"
         }
         if (doc.nativeFormulas > 0) {
-            parts += "${doc.nativeFormulas} 个 Word 原生公式已转成文本，但上下标会退化成普通字符（x² → x2）"
+            parts += "${doc.nativeFormulas} 个 Word 原生公式已按结构转成 \$…\$ 的 LaTeX（分数/根式/上下标都保留）"
         }
         if (parts.isEmpty()) return null
         val advice = if (doc.equations > 0) {
