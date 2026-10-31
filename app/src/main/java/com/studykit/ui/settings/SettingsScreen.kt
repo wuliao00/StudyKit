@@ -848,6 +848,9 @@ fun SettingsScreen(
             }
         }
 
+        SectionHeader(title = "OCR 模型", modifier = Modifier.padding(top = AppTheme.space.lg))
+        OcrModelSection()
+
         if (BuildConfig.MODEL_PACK_UI) {
             SectionHeader(title = ModelPackCopy.sectionTitle(), modifier = Modifier.padding(top = AppTheme.space.lg))
             ModelPackSettingsEntry()

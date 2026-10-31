@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "3.5.0"
+        versionCode = 28
+        versionName = "3.6.0"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。

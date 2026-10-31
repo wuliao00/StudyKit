@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import com.studykit.data.ocr.OcrModels
 import java.nio.FloatBuffer
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -66,13 +67,23 @@ object PpOcrOnnxEngine {
             val e = OrtEnvironment.getEnvironment()
             env = e
             loadInfo.detMs = time {
-                val bytes = context.assets.open("models/det_ppocrv6_small.onnx").use { it.readBytes() }
+                val bytes = OcrModels.readBytes(
+                    context,
+                    OcrModels.detInstaller(context),
+                    assetName = "det_ppocrv6_small.onnx",
+                    label = "OCR 检测模型",
+                )
                 detSession = e.createSession(bytes, sessionOpts())
                 detInput = detSession!!.inputNames.first()
                 detOutput = detSession!!.outputNames.first()
             }
             loadInfo.recMs = time {
-                val bytes = context.assets.open("models/rec_ppocrv6_small.onnx").use { it.readBytes() }
+                val bytes = OcrModels.readBytes(
+                    context,
+                    OcrModels.recInstaller(context),
+                    assetName = "rec_ppocrv6_small.onnx",
+                    label = "OCR 识别模型",
+                )
                 recSession = e.createSession(bytes, sessionOpts())
                 recInput = recSession!!.inputNames.first()
                 recOutput = recSession!!.outputNames.first()

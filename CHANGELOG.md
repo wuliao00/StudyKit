@@ -2,6 +2,24 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.6.0] - 2026-10-30（OCR 模型改为可下载 + 精简包）
+
+> **版本号**：`3.6.0 / 28`。Room 仍 v12，无迁移。
+
+- **OCR 两个模型从 APK 里挪出来**：检测 9.9 MB、识别 21.2 MB 变成「按需下载」。
+  jsDelivr 单文件上限 20 MB，所以识别模型切成三段（`models-host/ocr/rec.part1..3`），
+  下载后顺序拼接、逐段与整体各验一次 sha256，再原子落盘（先写 `*.tmp`、校验通过才 rename）。
+- **设置页新增「OCR 模型（约 30 MB）」**：每个模型显示 已内置 / 已下载 / 未下载 / 失败，
+  下载时有字节级进度条，支持删除已下载（内置那份删不掉，也不该删）。
+- **引擎读取顺序**：已下载且校验通过的那份 → APK 内置那份 → 都没有就抛一句
+  「去设置 → OCR 模型下载」。识别过程仍然全程离线。
+- **精简包**：把两个 onnx 从 `app/src/main/assets/models/` 挪出去再 `assembleDebug`，得到不含模型的 APK
+  （实测 `94,262,870 B` vs 完整包 `121,228,530 B`，少 25.5 MB）；默认构建仍内置，断网即用。
+  > 试过 `androidResources.ignoreAssetsPattern` 与 `sourceSets.main.assets.exclude`：前者不进任务输入、
+  > 后者不改变 merge 结果，两条都不生效（实测包大小纹丝不动），所以用"挪文件"这条最笨但可靠的路线。
+- **机检**：`OcrModelInstallerTest` 8 例（拼接校验、分段失败、总校验失败、失败重试、进度累计、秒传、
+  内置回落、删除）。
+
 ## [3.5.0] - 2026-10-28（题库扩容到 332 道 + 练习轮转）
 
 > **版本号**：`3.5.0 / 27`。题库数据、商店卡片与练习取数顺序变化；Room 仍 v12，无迁移。
