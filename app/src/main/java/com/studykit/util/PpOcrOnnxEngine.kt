@@ -66,27 +66,37 @@ object PpOcrOnnxEngine {
             if (detSession != null && recSession != null && ::chars.isInitialized) return
             val e = OrtEnvironment.getEnvironment()
             env = e
-            loadInfo.detMs = time {
-                val bytes = OcrModels.readBytes(
-                    context,
-                    OcrModels.detInstaller(context),
-                    assetName = "det_ppocrv6_small.onnx",
-                    label = "OCR 检测模型",
-                )
-                detSession = e.createSession(bytes, sessionOpts())
-                detInput = detSession!!.inputNames.first()
-                detOutput = detSession!!.outputNames.first()
-            }
-            loadInfo.recMs = time {
-                val bytes = OcrModels.readBytes(
-                    context,
-                    OcrModels.recInstaller(context),
-                    assetName = "rec_ppocrv6_small.onnx",
-                    label = "OCR 识别模型",
-                )
-                recSession = e.createSession(bytes, sessionOpts())
-                recInput = recSession!!.inputNames.first()
-                recOutput = recSession!!.outputNames.first()
+            try {
+                loadInfo.detMs = time {
+                    val bytes = OcrModels.readBytes(
+                        context,
+                        OcrModels.detInstaller(context),
+                        assetName = "det_ppocrv6_small.onnx",
+                        label = "OCR 检测模型",
+                    )
+                    detSession = e.createSession(bytes, sessionOpts())
+                    detInput = detSession!!.inputNames.first()
+                    detOutput = detSession!!.outputNames.first()
+                }
+                loadInfo.recMs = time {
+                    val bytes = OcrModels.readBytes(
+                        context,
+                        OcrModels.recInstaller(context),
+                        assetName = "rec_ppocrv6_small.onnx",
+                        label = "OCR 识别模型",
+                    )
+                    recSession = e.createSession(bytes, sessionOpts())
+                    recInput = recSession!!.inputNames.first()
+                    recOutput = recSession!!.outputNames.first()
+                }
+            } catch (failed: Throwable) {
+                // 只建好一半就失败（常见：检测模型在、识别模型没下载）：已建的 session 必须关掉，
+                // 否则下次重试再开一个，native 内存越积越多，最终 OOM 而不是一句"模型未安装"。
+                runCatching { detSession?.close() }
+                runCatching { recSession?.close() }
+                detSession = null
+                recSession = null
+                throw failed
             }
             loadInfo.dictSize = timeDict {
                 val raw = context.assets.open("models/ppocr_keys_v6.txt")

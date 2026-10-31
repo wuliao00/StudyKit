@@ -686,6 +686,9 @@ fun AppNav(
                     kind = kind,
                     onBack = { navController.popBackStack() },
                     onPreview = { navController.navigate(ImportRoutes.PREVIEW) { launchSingleTop = true } },
+                    onOpenSettings = {
+                        navController.navigate(SettingsRoutes.SETTINGS) { launchSingleTop = true }
+                    },
                 )
             }
             composable(ImportRoutes.PREVIEW) {

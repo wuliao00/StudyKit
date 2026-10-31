@@ -142,9 +142,11 @@ class OcrModelInstaller(
 
     /** 删除已下载的模型（不影响内置的）。 */
     fun delete() {
-        targetFile().delete()
-        tempFile().delete()
+        // 整个删除都在同一把对象锁里：安装流程末尾会写 verifiedCache，两边交错会留下
+        // "缓存指向已删文件"的状态（下次 installedFile 返回一个不存在的 File）。
         synchronized(this) {
+            targetFile().delete()
+            tempFile().delete()
             verifiedCache = null
             // 置回 false 而不是"缓存 null"：删完后用户可能再次下载，下一次 installedFile 必须重新看盘。
             verifiedComputed = false
@@ -188,6 +190,8 @@ class OcrModelInstaller(
                     publish(OcrModelState.MISSING, completed)
 
                     val base = completed
+                    // 每次回调都推：StateFlow 会按帧合并，`collectAsState` 不会因此重组两千次；
+                    // 反过来做节流会让"回调后立刻读状态"的语义变模糊（进度测试就钉着这条契约）。
                     val bytes = fetch(part.url) { received ->
                         // fetch 约定回报的是"本段累计"；夹在 [0, part.bytes] 内，
                         // 防止实现方把块大小当累计值或超发时进度倒退/越过 100%。
@@ -225,13 +229,17 @@ class OcrModelInstaller(
                 throw IOException("保存模型文件失败")
             }
 
-            verifiedCache = target
-            verifiedComputed = true
+            synchronized(this) {
+                verifiedCache = target
+                verifiedComputed = true
+            }
             publish(OcrModelState.READY_DOWNLOADED, spec.totalBytes)
             return true
         } catch (cancelled: CancellationException) {
-            // 协程取消不是"下载失败"，不能写 FAILED；清掉半成品后原样上抛让调用方收尾。
+            // 协程取消不是"下载失败"，不能写 FAILED；清掉半成品、把进度归零（否则卡片上会留一个
+            // "下到一半"的进度条，看起来像还在跑），再原样上抛让调用方收尾。
             temp.delete()
+            publish(OcrModelState.MISSING, 0L)
             throw cancelled
         } catch (failure: VerificationFailure) {
             temp.delete()
@@ -245,19 +253,32 @@ class OcrModelInstaller(
         }
     }
 
+        /**
+     * 构造时的初始状态**只查磁盘存在性，不算哈希**：21MB 的 sha256 在设置页首帧的主线程上
+     * 走一遍会明显掉帧（真机反馈过）。已下载的判定交给 [refresh] / [install]，它们在 IO 线程。
+     */
     private fun initialStatus(): OcrModelStatus {
-        // 先看下载版（会惰性哈希一次），再看内置版。状态里 READY_DOWNLOADED 的含义必须是真的校验过。
-        val installed = installedFile()
         val state = when {
-            installed != null -> OcrModelState.READY_DOWNLOADED
+            targetFile().isFile -> OcrModelState.MISSING // 有文件但要等 refresh 校验过才算"已下载"
             bundledAvailable() -> OcrModelState.READY_BUNDLED
             else -> OcrModelState.MISSING
         }
-        return OcrModelStatus(
-            state = state,
-            downloadedBytes = if (state == OcrModelState.READY_DOWNLOADED) spec.totalBytes else 0L,
-            totalBytes = spec.totalBytes,
-        )
+        return OcrModelStatus(state = state, totalBytes = spec.totalBytes)
+    }
+
+    /**
+     * 在 IO 线程重算"是否已安装"，成功后把状态推到 READY_DOWNLOADED。
+     *
+     * 设置页进入时调一次即可；[install] 内部不需要它（它自己会先认已安装）。
+     */
+    suspend fun refresh(): OcrModelStatus = withContext(Dispatchers.IO) {
+        if (installedFile() != null) {
+            publish(OcrModelState.READY_DOWNLOADED, spec.totalBytes)
+        } else if (_status.value.state == OcrModelState.READY_DOWNLOADED) {
+            // 文件在构造后被删了（用户清理、系统回收）：退回内置/未下载，别留一个"已下载"的假象。
+            publish(if (bundledAvailable()) OcrModelState.READY_BUNDLED else OcrModelState.MISSING, 0L)
+        }
+        _status.value
     }
 
     private fun publish(
@@ -315,7 +336,8 @@ class OcrModelInstaller(
                 if (code !in 200..299) {
                     throw IOException("下载失败（HTTP $code）")
                 }
-                val sink = ByteArrayOutputStream()
+                // 预分配：分段是 8MB，默认 32B 起步的缓冲要扩十几次、峰值翻倍。
+                val sink = ByteArrayOutputStream(64 * 1024)
                 val buffer = ByteArray(8 * 1024)
                 var received = 0L
                 connection.inputStream.use { input ->

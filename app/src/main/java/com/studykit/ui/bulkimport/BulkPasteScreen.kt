@@ -61,6 +61,8 @@ fun BulkPasteScreen(
     kind: ImportKind,
     onBack: () -> Unit,
     onPreview: () -> Unit,
+    /** v3.6：OCR 模型没下载时的"去设置"出口；不传就只显示文字（老调用点不受影响） */
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -237,6 +239,18 @@ fun BulkPasteScreen(
                     style = texts.caption.copy(color = colors.warningInk),
                     modifier = Modifier.weight(1f),
                 )
+                // v3.6：精简包没下模型时，OCR 只会报一句"未安装"。这里给一个真能点的出口 ——
+                // 用户不可能自己猜到设置里还有一张 OCR 卡片。
+                if (onOpenSettings != null && message.contains("未安装")) {
+                    TextButton(
+                        onClick = {
+                            fileError = null
+                            onOpenSettings()
+                        },
+                    ) {
+                        Text(text = "去设置下载", style = texts.aux.copy(color = colors.accentInk))
+                    }
+                }
                 TextButton(onClick = { fileError = null }) {
                     Text(text = "知道了", style = texts.aux.copy(color = colors.accentInk))
                 }

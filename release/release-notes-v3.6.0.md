@@ -25,8 +25,8 @@
 
 | | 大小 | 说明 |
 | --- | --- | --- |
-| 完整包 | 121,228,530 B | 模型内置，装完即可离线识别 |
-| 精简包 | 94,262,870 B | 首次识别前需在设置里下载模型 |
+| 完整包 | 121,958,796 B | 模型内置，装完即可离线识别 |
+| 精简包 | 94,279,254 B | 首次识别前需在设置里下载模型 |
 
 （试过 `ignoreAssetsPattern` 与 `sourceSets.assets.exclude` 两条 Gradle 路线，都不改变产物大小，
 所以用"挪文件再构建"这条最笨但可靠的路线，已写进 README。）
@@ -44,16 +44,16 @@
 
 ## 机检
 
-- `OcrModelInstallerTest` 8 例：三段拼接 + 总校验、单段 sha 不符、总 sha 不符、失败后重试、
-  进度累计、秒传（已安装不再联网）、内置回落、删除。
-- 全量 177 个测试类 / **1624 用例 / 0 失败**。
+- `OcrModelInstallerTest` 9 例：三段拼接 + 总校验、单段 sha 不符、总 sha 不符、失败后重试、
+  进度累计、秒传（已安装不再联网）、内置回落、删除、坏旧文件被替换。
+- 全量 177 个测试类 / **1625 用例 / 0 失败**。
 
 ## 产物
 
 | 文件 | 字节 | sha256 |
 | --- | --- | --- |
-| `release/StudyKit-v3.6.0-debug.apk` | 121,228,530 | `9c6c9a3cbf20d29c4f56b148818b57bb6cdb321b20eaedfb1893927d09ed3e24` |
-| `release/StudyKit-v3.6.0-slim.apk` | 94,262,870 | `9312d667953fff9246855b50987b040ee2284e994f4f933783dad4ac07efbbdc` |
+| `release/StudyKit-v3.6.0-debug.apk` | 121,958,796 | `dfb26b7d14e16230b4c242e5ce64aa75caebc57f77eb3606d1d5fe20b99fb549` |
+| `release/StudyKit-v3.6.0-slim.apk` | 94,279,254 | `7888c141bc44ab22714279bcce657eadd2041222bfa8a5f11178393181d4bfb0` |
 
 ## 已知限制
 

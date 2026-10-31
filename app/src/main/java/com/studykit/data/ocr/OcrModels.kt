@@ -97,7 +97,9 @@ object OcrModels {
      * 用户看到的应该是"去设置里下载模型"，而不是 ORT 的模型解析失败。
      */
     fun readBytes(context: Context, installer: OcrModelInstaller, assetName: String, label: String): ByteArray {
-        installer.installedFile()?.let { return it.readBytes() }
+        // 读盘也可能失败（刚被 delete() 删掉、被系统清理）：绝不能因此抛一个 FileNotFoundException
+        // 而不是走内置回退 —— 那是把"这个文件没了"错报成"模型不可用"。
+        runCatching { installer.installedFile()?.readBytes() }.getOrNull()?.let { return it }
         runCatching { context.assets.open("models/$assetName").use { it.readBytes() } }
             .onSuccess { return it }
         throw IllegalStateException("${label}未安装。去「设置 → OCR 模型」下载后即可使用离线识别。")

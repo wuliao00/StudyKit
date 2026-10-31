@@ -177,7 +177,8 @@ class OcrModelInstallerTest {
         }
         val installer = installer(spec, forbiddenFetch)
 
-        // 构造时就已经惰性校验过，状态不应停在 MISSING。
+        // 构造只查磁盘存在性（21MB 的哈希不能放在首帧主线程上做）；进页面时 refresh 才校验。
+        installer.refresh()
         assertEquals(OcrModelState.READY_DOWNLOADED, installer.status.value.state)
         assertTrue(installer.install())
 
@@ -224,6 +225,21 @@ class OcrModelInstallerTest {
         assertNull(installer.installedFile())
         assertEquals(OcrModelState.MISSING, installer.status.value.state)
         assertEquals(0L, installer.status.value.downloadedBytes)
+    }
+
+    @Test
+    fun `目标位有长度不对的旧文件时会被替换而不是当作已安装`() = runBlocking {
+        // 模拟"上次写坏/被截断"的遗留文件：长度与 spec 不符，installedFile 必须判它不合格，
+        // 安装流程要把旧文件删掉再 rename，而不是因为目标已存在而失败。
+        modelsDir.mkdirs()
+        target.writeBytes(ByteArray(64) { 7 })
+        val payloads = listOf(payload(300, seed = 31), payload(200, seed = 32))
+        val installer = installer(specOf(payloads), fetchFrom(payloads))
+
+        assertTrue(installer.install())
+
+        assertEquals(OcrModelState.READY_DOWNLOADED, installer.status.value.state)
+        assertArrayEquals(concat(payloads), target.readBytes())
     }
 
     // ── 测试脚手架 ───────────────────────────────────────────────────────

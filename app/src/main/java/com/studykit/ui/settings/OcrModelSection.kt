@@ -11,6 +11,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,10 @@ fun OcrModelSection(modifier: Modifier = Modifier) {
     val texts = AppTheme.texts
     val installers = remember { OcrModels.installers(context) }
     val scope = rememberCoroutineScope()
+    // 进页面时在 IO 线程核一次"文件是否真在"（装过 21MB 的用户首帧不能再算一遍哈希）。
+    LaunchedEffect(installers) {
+        installers.forEach { it.refresh() }
+    }
     var running by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf<String?>(null) }
 
@@ -61,7 +66,7 @@ fun OcrModelSection(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(AppTheme.space.xs))
         Text(
             text = "拍照 / 相册录题用的两个离线模型：不预装，下载后留在本机、识别过程不上传。" +
-                "下载过一次就常驻，卸载应用才会清掉。",
+                "下载过一次就常驻，卸载应用才会清掉。整包约 30 MB，建议在 Wi-Fi 下下载。",
             style = texts.aux,
         )
         Spacer(Modifier.height(AppTheme.space.md))
@@ -97,17 +102,21 @@ fun OcrModelSection(modifier: Modifier = Modifier) {
                     lastError = null
                     running = true
                     scope.launch {
-                        // 顺序下载：两个模型都在前台跑，并发只会让进度条来回跳，
-                        // 而且总共 30MB，串行省不了一秒。
-                        for (installer in installers) {
-                            if (!needsDownload(installer)) continue
-                            val ok = installer.install()
-                            if (!ok) {
-                                lastError = installer.status.value.error ?: "下载失败"
-                                break
+                        try {
+                            // 顺序下载：两个模型都在前台跑，并发只会让进度条来回跳，
+                            // 而且总共 30MB，串行省不了一秒。
+                            for (installer in installers) {
+                                if (!needsDownload(installer)) continue
+                                val ok = installer.install()
+                                if (!ok) {
+                                    lastError = installer.status.value.error ?: "下载失败"
+                                    break
+                                }
                             }
+                        } finally {
+                            // 任何异常（含 OOM）都要把按钮从「下载中…」放出来，否则界面永久卡住。
+                            running = false
                         }
-                        running = false
                     }
                 },
             )
