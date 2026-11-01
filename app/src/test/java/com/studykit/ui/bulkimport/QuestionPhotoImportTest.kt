@@ -1,6 +1,11 @@
 package com.studykit.ui.bulkimport
 
+import com.studykit.util.ocr.OcrLine
+import com.studykit.util.ocr.OcrReport
+import com.studykit.util.ocr.PhotoIssue
+import com.studykit.util.ocr.PhotoQuality
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -91,4 +96,66 @@ class QuestionPhotoImportTest {
         assertTrue(outcome is PhotoImportOutcome.NeedsFormatting)
         assertEquals("a|b|c", (outcome as PhotoImportOutcome.NeedsFormatting).text)
     }
+    // ── v3.7 OCR 置信度路由 ──
+    @Test
+    fun 低置信度行默认剔除并写入提示() {
+        val text = "1/2 + 1/3 = ?|5/6|1/6|1|2/5|A\n2+2=?|4|3|5|6|A"
+        val report = OcrReport(
+            lines = listOf(OcrLine("第一行", 0.93f), OcrLine("第二行", 0.5f)),
+            quality = null,
+            deskewDegrees = 0f,
+            retriedLines = 1,
+        )
+        val routing = routePhotoOcr(text, report)
+        assertTrue(routing.outcome is PhotoImportOutcome.Preview)
+        assertEquals(setOf(2), routing.lowConfidenceLineNumbers)
+        assertEquals(1, routing.excludedCount)
+        val note = routing.note
+        assertTrue("note should explain auto exclusion: " + note, note != null && note.contains("已默认剔除 1 行"))
+    }
+
+    @Test
+    fun 没有报告时不剔除也不提示() {
+        val routing = routePhotoOcr("1/2 + 1/3 = ?|5/6|1/6|1|2/5|A", report = null)
+        assertTrue(routing.lowConfidenceLineNumbers.isEmpty())
+        assertEquals(0, routing.excludedCount)
+        assertNull(routing.note)
+    }
+
+    @Test
+    fun 质量有问题时即使分数高也提示校对() {
+        val quality = PhotoQuality(
+            sharpness = 12f,
+            brightness = 100f,
+            contrast = 60f,
+            glareRatio = 0f,
+            tiltDegrees = 0f,
+            issues = listOf(PhotoIssue.BLURRY),
+        )
+        val report = OcrReport(
+            lines = listOf(OcrLine("清晰但照片糊", 0.95f)),
+            quality = quality,
+            deskewDegrees = 0f,
+            retriedLines = 0,
+        )
+        val routing = routePhotoOcr("1/2 + 1/3 = ?|5/6|1/6|1|2/5|A", report)
+        assertEquals(0, routing.excludedCount)
+        val note = routing.note
+        assertTrue("note should mention blur: " + note, note != null && note.contains("图像偏模糊"))
+    }
+
+    @Test
+    fun 非分列文本保留低置信度信息但不剔除() {
+        val report = OcrReport(
+            lines = listOf(OcrLine("8. 求下列函数的导数：", 0.5f)),
+            quality = null,
+            deskewDegrees = 0f,
+            retriedLines = 0,
+        )
+        val routing = routePhotoOcr("8. 求下列函数的导数：", report)
+        assertTrue(routing.outcome is PhotoImportOutcome.NeedsFormatting)
+        assertEquals(setOf(1), routing.lowConfidenceLineNumbers)
+        assertEquals(0, routing.excludedCount)
+    }
+
 }

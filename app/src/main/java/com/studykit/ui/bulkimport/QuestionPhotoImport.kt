@@ -21,20 +21,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.MistakeImageStore
+import com.studykit.util.ocr.OcrReport
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
 import com.studykit.util.importer.ImportPlan
 import com.studykit.util.importer.TextCleaner
+import com.studykit.util.ocr.PhotoQuality
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 拍照录入题目的**状态**（`rememberQuestionPhotoImport` 的返回值）。
+ * 拍照录入题目的**状态**（rememberQuestionPhotoImport 的返回值）。
  *
- * 三个成员都是"读一次"的口径函数而不是值：菜单文案要随识别进度变（`识别中…`）、权限被拒要出指引，
- * 而这些变化本身就驱动重组 —— 返回持值的对象会把首帧的 `false` 冻结在 `remember` 里。
+ * 三个成员都是「读一次」的口径函数而不是值：菜单文案要随识别进度变（识别中…）、权限被拒要出指引，
+ * 而这些变化本身就驱动重组 —— 返回持值的对象会把首帧的 false 冻结在 remember 里。
  */
 class QuestionPhotoImport internal constructor(
     val start: () -> Unit,
@@ -52,7 +54,7 @@ internal sealed interface PhotoImportOutcome {
     /**
      * 文本非空，但没有识别出「题干 | 选项 | 答案」的分列。
      *
-     * **不再自动切错题本**：非选择题（填空/简答/主观/材料）本来就不该被“四选一”格式一票否决。
+     * 不再自动切错题本：非选择题（填空/简答/主观/材料）本来就不该被四选一格式一票否决。
      * 文字原样放进题库编辑页，由用户补竖线或改写题型，再决定导入。
      */
     data class NeedsFormatting(val text: String) : PhotoImportOutcome
@@ -63,9 +65,8 @@ internal sealed interface PhotoImportOutcome {
 
 /**
  * 拍照 OCR 之后的**纯决策**（不碰 Compose、不碰文件），单测直接调它：
- * 解析出条目（无论单选、填空还是简答）⇒ [PhotoImportOutcome.Preview]；
- * 条目为空但还有字 ⇒ [PhotoImportOutcome.NeedsFormatting]（放进题库编辑页补竖线）；
- * 连字都没有 ⇒ [PhotoImportOutcome.Empty]。判定只此一处，UI 只负责按结果分派。
+ * 解析出条目（无论单选、填空还是简答）⇒ Preview；条目为空但还有字 ⇒ NeedsFormatting；
+ * 连字都没有 ⇒ Empty。判定只此一处，UI 只负责按结果分派。
  */
 internal fun decidePhotoImport(ocrText: String): PhotoImportOutcome {
     val plan = ImportKind.QUESTION.parse(ocrText)
@@ -77,30 +78,64 @@ internal fun decidePhotoImport(ocrText: String): PhotoImportOutcome {
 }
 
 /**
- * 拍照录入题目：相机 → [OcrTextExtractor] → [ImportKind.QUESTION] 的解析器 → 既有的预览 / 结果两屏。
+ * v3.7：OCR 置信度路由的纯函数（单测直接钉，不依赖 Compose）。
  *
- * 刻意与单词库那条「截图取词」汇成同一条管线（都收口在 [ImportViewModel.loadPlan] + `onPreview`）：
- * 批量导入的解析、去重、待修正区、结果页账目全都复用，**不 fork 第二条入库路**。
- * 差别只有一处 —— 取图入口是相机而不是相册。
+ * - [lowConfidenceLineNumbers] 交给导入预览做「默认剔除、可勾回」；
+ * - [note] 是预览页顶部那句人话（照片质量/摆正/置信度）；
+ * - [excludedCount] 是这批条目里实际会被剔除的条数（只统计真正解析成题目的行）。
+ */
+internal data class PhotoOcrRouting(
+    val outcome: PhotoImportOutcome,
+    val lowConfidenceLineNumbers: Set<Int>,
+    val note: String?,
+    val excludedCount: Int,
+)
+
+internal fun routePhotoOcr(ocrText: String, report: OcrReport?): PhotoOcrRouting {
+    val outcome = decidePhotoImport(ocrText)
+    val low = report?.lowConfidenceLineNumbers.orEmpty()
+    val excluded = if (outcome is PhotoImportOutcome.Preview) {
+        outcome.plan.items.count { it.sourceLine in low }
+    } else {
+        0
+    }
+    val base = report?.previewNote()
+    val note = when {
+        excluded > 0 -> {
+            val tail = "已默认剔除 " + excluded + " 行低置信度内容，核对后可勾回"
+            if (base.isNullOrBlank()) tail else base + " · " + tail
+        }
+        else -> base
+    }
+    return PhotoOcrRouting(outcome, low, note, excluded)
+}
+
+/** v3.7：质量门控命中时暂存的一张小图（只用于弹窗与重拍，不进 OCR）。 */
+internal data class QualityGate(val file: File, val quality: PhotoQuality)
+
+/**
+ * 拍照录入题目：相机/相册 → 质量门控 → [OcrTextExtractor] → [ImportKind.QUESTION] 解析器 →
+ * 既有的预览 / 结果两屏（v3.7 在相机与 OCR 之间插了一道质量门控）。
  *
- * 相机那一段逐字沿用错题拍照已有的范式（`MistakeListScreen`）：
- *  - `RequestPermission(CAMERA)` → `TakePicture(uri)`，落点由 [MistakeImageStore.createCameraTarget] 造；
- *  - 暂存的是**绝对路径字符串**（`rememberSaveable`）而不是 `File`：相机是另一个进程，拍照期间本进程
- *    可能被回收，`remember` 里的 File 会随之消失，回投拿到 null 就静默丢图（终审 C3 同一件事）；
+ * 刻意与单词库那条「截图取词」汇成同一条管线（都收口在 ImportViewModel.loadPlan + onPreview）：
+ * 批量导入的解析、去重、待修正区、结果页账目全都复用，不 fork 第二条入库路。
+ * 差别只有两处 —— 取图入口是相机/相册，且拍照结果先过质量体检。
+ *
+ * 相机那一段逐字沿用错题拍照已有的范式：
+ *  - RequestPermission(CAMERA) → TakePicture(uri)，落点由 [MistakeImageStore.createCameraTarget] 造；
+ *  - 暂存的是**绝对路径字符串**（rememberSaveable）而不是 File：相机是另一个进程，拍照期间本进程
+ *    可能被回收，remember 里的 File 会随之消失，回投拿到 null 就静默丢图；
  *  - 权限被拒后展示指引（saveable：转屏不该把指引抹掉只剩一个没反应的按钮）。
  *
  * OCR 出来的照片是**一次性的**：进入预览、进入编辑页或空结果后都会删；文字已经带走，
- * 题库不需要把原图一起存。相机临时目录原本就有 `capture_*.jpg` 堆积问题，这里只在磁盘上多停留几秒。
- *
- * **解析不出分列不是死路，也不自动切错题本**：文字原样放进题库的批量编辑页
- * （`ImportViewModel` 的题目草稿），由用户补 `|` 或改成 `[阶段·学科·题型]` 前缀后再预览。
- * 非选择题（填空/计算/简答/主观/材料）同样走这条，不再被“四选一”格式误判成错题。
+ * 题库不需要把原图一起存。质量门控弹窗期间文件保留，用户选「仍然识别」才继续，选「重拍」就删。
  */
 @Composable
 fun rememberQuestionPhotoImport(
     importViewModel: ImportViewModel,
     onPreview: () -> Unit,
     onNeedsFormatting: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
 ): QuestionPhotoImport {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -108,34 +143,46 @@ fun rememberQuestionPhotoImport(
     var busy by remember { mutableStateOf(false) }
     var showRationale by rememberSaveable { mutableStateOf(false) }
     var showSourceChooser by remember { mutableStateOf(false) }
+    // 质量门控弹窗：命中才非空；File 不进 Bundle（转屏丢弹窗可接受，不会丢照片）
+    var qualityGate by remember { mutableStateOf<QualityGate?>(null) }
+    var showMissingModelDialog by remember { mutableStateOf(false) }
 
-    /** 拍照与相册两条路的**共同下游**：OCR → 判断能否解析 → 预览或题库编辑页。只此一份。 */
-    fun handlePickedPhoto(file: File) {
+    /** 走 OCR 并把结果路由到预览 / 题库编辑页。质量门控确认后也回到这里。 */
+    fun runOcr(file: File) {
         busy = true
         scope.launch {
             val result = withContext(Dispatchers.IO) { OcrTextExtractor.recognize(context, file) }
+            busy = false
             when (result) {
                 is OcrResult.Text -> {
-                    busy = false
-                    when (val outcome = decidePhotoImport(result.value)) {
+                    val routing = routePhotoOcr(result.value, result.report)
+                    when (val outcome = routing.outcome) {
                         is PhotoImportOutcome.Preview -> {
                             // 四选一：图进预览屏之后就没用了，删掉
                             file.delete()
-                            importViewModel.loadPlan(outcome.plan)
+                            importViewModel.loadPlan(
+                                plan = outcome.plan,
+                                ocrNote = routing.note,
+                                lowConfidenceLines = routing.lowConfidenceLineNumbers,
+                                autoExcludeLowConfidence = routing.excludedCount > 0,
+                            )
                             onPreview()
                         }
 
                         is PhotoImportOutcome.NeedsFormatting -> {
-                            // 不切错题本：把 OCR 原文放进题库编辑框（ViewModel 草稿，不进 Bundle）。
-                            // 用户补上 `题干|选项|答案` 或 `[阶段·学科·题型]` 前缀后即可预览。
                             file.delete()
                             importViewModel.setDraft(
                                 ImportKind.QUESTION,
                                 TextCleaner.collapseBlankLines(outcome.text),
                             )
+                            val qualityHint = result.report?.quality
+                                ?.takeIf { it.needsRetake }
+                                ?.let { "（照片" + it.issueText + "）" }
+                                .orEmpty()
                             Toast.makeText(
                                 context,
-                                "没识别出竖线分列，文字已放进题库编辑页；补上「题干|选项|答案」再预览",
+                                "没识别出竖线分列" + qualityHint +
+                                    "，文字已放进题库编辑页；补上「题干|选项|答案」再预览",
                                 Toast.LENGTH_LONG,
                             ).show()
                             onNeedsFormatting()
@@ -153,10 +200,27 @@ fun rememberQuestionPhotoImport(
                 }
 
                 is OcrResult.Failed -> {
-                    busy = false
                     file.delete()
-                    Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
+                    if (onOpenSettings != null && result.reason.contains("未安装")) {
+                        showMissingModelDialog = true
+                    } else {
+                        Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
+                    }
                 }
+            }
+        }
+    }
+
+    /** 先体检、再 OCR：有问题就先弹重拍提示，没问题直接进 [runOcr]。 */
+    fun inspectPhoto(file: File) {
+        busy = true
+        scope.launch {
+            val quality = withContext(Dispatchers.IO) { OcrTextExtractor.analyzeQuality(file) }
+            busy = false
+            if (quality != null && quality.needsRetake) {
+                qualityGate = QualityGate(file, quality)
+            } else {
+                runOcr(file)
             }
         }
     }
@@ -174,7 +238,7 @@ fun rememberQuestionPhotoImport(
             }
             return@rememberLauncherForActivityResult
         }
-        handlePickedPhoto(file)
+        inspectPhoto(file)
     }
 
     // 系统照片选择器：Android 13+ 是 Photo Picker，旧系统由 activity 库回退到 OPEN_DOCUMENT；
@@ -190,7 +254,7 @@ fun rememberQuestionPhotoImport(
                 busy = false
                 Toast.makeText(context, "这张图片读不出来，换一张试试", Toast.LENGTH_SHORT).show()
             } else {
-                handlePickedPhoto(file)
+                inspectPhoto(file)
             }
         }
     }
@@ -248,9 +312,73 @@ fun rememberQuestionPhotoImport(
         )
     }
 
+    qualityGate?.let { gate ->
+        AlertDialog(
+            onDismissRequest = { qualityGate = null },
+            title = { Text(text = "照片可能不够清楚", style = AppTheme.texts.cardTitle) },
+            text = {
+                Text(
+                    text = "检测到：" + gate.quality.issueText +
+                        "。识别结果可能需要逐行核对；也可以换一张更清楚的照片再试。",
+                    style = AppTheme.texts.aux,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        qualityGate = null
+                        runOcr(gate.file)
+                    },
+                ) {
+                    Text(text = "仍然识别")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        qualityGate = null
+                        gate.file.delete()
+                        if (!busy) showSourceChooser = true
+                    },
+                ) {
+                    Text(text = "重拍 / 换一张")
+                }
+            },
+        )
+    }
+
+    if (showMissingModelDialog) {
+        AlertDialog(
+            onDismissRequest = { showMissingModelDialog = false },
+            title = { Text(text = "OCR 模型还没下载", style = AppTheme.texts.cardTitle) },
+            text = {
+                Text(
+                    text = "拍照识别要先在「设置 → OCR 模型」下载两个离线模型（约 30 MB，建议 Wi-Fi）。" +
+                        "下载后全程本机识别，不上传图片。",
+                    style = AppTheme.texts.aux,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showMissingModelDialog = false
+                        onOpenSettings?.invoke()
+                    },
+                ) {
+                    Text(text = "去设置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMissingModelDialog = false }) {
+                    Text(text = "取消")
+                }
+            },
+        )
+    }
+
     return QuestionPhotoImport(
         start = {
-            // 不再直接拉相机：先让用户选“现拍”还是“相册里已有的题”。
+            // 不再直接拉相机：先让用户选「现拍」还是「相册里已有的题」。
             if (!busy) showSourceChooser = true
         },
         isBusy = { busy },

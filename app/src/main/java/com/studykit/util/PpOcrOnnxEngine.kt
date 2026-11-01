@@ -42,6 +42,11 @@ object PpOcrOnnxEngine {
     private const val REC_IMG_H = 48
     private const val REC_IMG_W_REF = 320 // rec_img_shape=[3,48,320]，imgW/imgH 是批次基准 wh_ratio
 
+    // v3.7 二次识别：只重试分数低于 0.72 的行，最多 8 行。
+    // 阈值取自 PP-OCRv6 rec 在清晰印刷体上的典型下限；0.72 以上还重跑，等于每页多花一倍 rec 时间。
+    private const val DEFAULT_RETRY_BELOW = 0.72f
+    private const val DEFAULT_MAX_RETRIES = 8
+
     // 内存闸门：A/B 在真机跑，长边超过它就等比降采样，避免大图 OOM（合成卡 1440 不触发）。
     private const val MAX_DET_SIDE = 1600
 
@@ -122,18 +127,107 @@ object PpOcrOnnxEngine {
      * bitmap（已按 EXIF 转正）→ List<PpLine>。det→rec，逐行返回识别文本。
      * 任一模型抛异常都向上抛（harness 记录为 engine_failure）。
      */
-    fun recognize(bitmap: Bitmap): List<PpLine> {
+    fun recognize(bitmap: Bitmap): List<PpLine> = recognizeWithRetry(bitmap).lines
+
+    /** 二次识别结果：最终行 + 实际重试行数（用于报告与耗时解释）。 */
+    data class RetryResult(val lines: List<PpLine>, val retried: Int)
+
+    /**
+     * 带低置信度二次识别的 det→rec（v3.7）。
+     *
+     * 第一遍按检测框识别；分数低于 [retryBelow] 的行把框四周扩 12% 再放大 1.6~2 倍重识别一次。
+     * 这一步针对的是小字、贴边、行高过大被 rec 压扁的框 —— 重识别用的是同一份 rec 模型，
+     * 不引入新模型，也没有联网。
+     *
+     * 代价与保护：只重试前 [maxRetries] 行；重试框最多放大 2 倍，不会把 100x48 的行拉到 400x192。
+     * 是否采用新读法由 [betterReading] 决定（纯函数，单测钉住四种择优规则）。
+     */
+    fun recognizeWithRetry(
+        bitmap: Bitmap,
+        retryBelow: Float = DEFAULT_RETRY_BELOW,
+        maxRetries: Int = DEFAULT_MAX_RETRIES,
+    ): RetryResult {
         ensureLoadedContextless()
         val boxes = detect(bitmap)
-        if (boxes.isEmpty()) return emptyList()
+        if (boxes.isEmpty()) return RetryResult(emptyList(), 0)
         val out = ArrayList<PpLine>(boxes.size)
+        var retried = 0
         for (b in boxes) {
             val crop = cropRect(bitmap, b) ?: continue
-            val (text, score) = recognizeLine(crop)
-            crop.recycle()
+            var text: String
+            var score: Float
+            try {
+                val reading = recognizeLine(crop)
+                text = reading.first
+                score = reading.second
+            } finally {
+                crop.recycle()
+            }
+            if (score < retryBelow && retried < maxRetries) {
+                val retry = retryRecognition(bitmap, b)
+                if (retry != null) {
+                    retried++
+                    val better = betterReading(text, score, retry.first, retry.second, retryBelow)
+                    text = better.first
+                    score = better.second
+                }
+            }
             if (text.isNotEmpty() && score >= TEXT_SCORE) out.add(PpLine(text, score))
         }
-        return out
+        return RetryResult(out, retried)
+    }
+
+    /**
+     * 扩边 + 放大后重识别一行；取不到就返回 null（调用方保留第一遍结果）。
+     * 扩边是因为 det 的 unclip 只按短边比例外扩，小字号行容易把上下标裁掉；
+     * 放大是因为 rec 的输入固定 H=48，原框高不足 40px 时字高不够，放大等于给 rec 更多有效像素。
+     */
+    private fun retryRecognition(bitmap: Bitmap, box: DetBox): Pair<String, Float>? {
+        val boxW = (box.x1 - box.x0).coerceAtLeast(1)
+        val boxH = (box.y1 - box.y0).coerceAtLeast(1)
+        val pad = max(4, (min(boxW, boxH) * 0.12f).roundToInt())
+        val x0 = (box.x0 - pad).coerceIn(0, bitmap.width - 1)
+        val y0 = (box.y0 - pad).coerceIn(0, bitmap.height - 1)
+        val x1 = (box.x1 + pad).coerceIn(x0 + 1, bitmap.width)
+        val y1 = (box.y1 + pad).coerceIn(y0 + 1, bitmap.height)
+        val crop = runCatching {
+            Bitmap.createBitmap(bitmap, x0, y0, x1 - x0, y1 - y0)
+        }.getOrNull() ?: return null
+        var scaled: Bitmap? = null
+        return try {
+            val scale = if (crop.height < 40) 2f else 1.6f
+            val sw = (crop.width * scale).toInt().coerceAtLeast(2)
+            val sh = (crop.height * scale).toInt().coerceAtLeast(2)
+            scaled = Bitmap.createScaledBitmap(crop, sw, sh, true)
+            recognizeLine(scaled!!)
+        } catch (_: Throwable) {
+            null
+        } finally {
+            crop.recycle()
+            scaled?.recycle()
+        }
+    }
+
+    /**
+     * 二次识别择优（纯函数，单测直接钉规则）：
+     * 1. 新读法空白 → 保留旧的；
+     * 2. 文本相同且分数更高 → 用新分数（文本没变，但更可信的分数应该留下）；
+     * 3. 新分数显著更高（+0.02）→ 用新读法；
+     * 4. 旧分数本来就不及格且新分数更高 → 用新读法（宁可信一次局部放大）。
+     * 其余情况保留第一遍：二次识别偶尔会因放大过采样把字读错，不能无条件覆盖。
+     */
+    internal fun betterReading(
+        oldText: String,
+        oldScore: Float,
+        newText: String,
+        newScore: Float,
+        retryBelow: Float,
+    ): Pair<String, Float> {
+        if (newText.isBlank()) return oldText to oldScore
+        if (oldText == newText && newScore > oldScore) return oldText to newScore
+        if (newScore > oldScore + 0.02f) return newText to newScore
+        if (oldScore < retryBelow && newScore > oldScore) return newText to newScore
+        return oldText to oldScore
     }
 
     private fun ensureLoadedContextless() {

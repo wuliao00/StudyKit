@@ -285,7 +285,13 @@ class MistakeViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch {
             when (val result = OcrTextExtractor.recognize(getApplication(), captured)) {
-                is OcrResult.Text -> onResult(result.value)
+                is OcrResult.Text -> {
+                    // v3.7：照片质量有问题时只提醒、不拦 —— 错题拍照往往只有这一张。
+                    result.report?.quality?.takeIf { it.needsRetake }?.let {
+                        toast("照片" + it.issueText + "，识别结果请核对")
+                    }
+                    onResult(result.value)
+                }
                 is OcrResult.Failed -> {
                     toast(result.reason)
                     onResult(null)

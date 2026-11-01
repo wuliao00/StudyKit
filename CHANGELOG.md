@@ -2,6 +2,33 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.7.0] - 2026-11-01（OCR 质量门控 / 自动摆正 / 低置信度人工确认）
+
+> **版本号**：3.7.0 / 29。Room 仍 v12，无迁移；只改 OCR 拍照与相册录题链路。
+
+- **拍照质量门控**：跑模型前用 640 长边灰度统计体检「模糊 / 偏暗 / 过曝 / 反光 / 明显倾斜」，
+  命中先弹重拍提示，给「仍然识别」与「重拍 / 换一张」；深色/浅色截图与黑底白字均有反例，
+  不把正常输入误判成质量不合格。
+- **自动摆正**：投影法估计文字行倾斜角（±12°，粗搜 2° + 细搜 0.5°），|角| ≥ 1° 才反向旋转，
+  估计不可信时返回 0；摆正角度写进 OCR 报告与预览提示。
+- **低置信度二次识别**：rec 分数 < 0.72 的行扩边 12%、放大 1.6~2x 重识别（最多 8 行），
+  择优规则抽成纯函数 betterReading（空白不覆盖 / 同文本提分 / 显著更高才换 / 弱行稍高就换）。
+- **置信度路由**：OcrReport 携带逐行分数、质量、摆正角、重试行数；导入预览顶部常驻提示，
+  低置信度行默认剔除、可逐行勾回，并在预览卡片上标「低置信度 · 建议核对」。
+- **缺模型引导**：拍照识别遇到 OCR 模型未安装时，弹窗给「去设置」按钮，不再只 toast 一句错误
+  （学习页与题库页两个入口都接上）。
+- **文档**：新增 docs/ocr-quality-pipeline.md（链路、阈值、没做的事）与 release/release-notes-v3.7.0.md。
+- **机检**：全量单测 **1659 用例 / 181 测试类 / 0 失败**（2026-11-01 本机 JVM 全跑）。
+  新增 DeskewTest / PhotoQualityAnalyzerTest / PhotoQualityRealImageTest / OcrReportTest，
+  扩展 PpOcrEngineSanityTest（二次识别择优）、QuestionPhotoImportTest（置信度路由）、
+  OcrTextExtractorContractTest（质量体检坏输入）、ReleaseVersionTest（3.7.0 / 29）。
+- **真机**：vivo V2156A / Android 11 上从 3.6.0/28 覆盖安装 3.7.0/29 成功，数据仍在；
+  OcrPipelineDeviceTest 四条用例逐条执行 4/4 通过（清晰识别 4.10s、6 度摆正 3.81s、
+  模糊/暗图质量门控各 0.18s）；一次跑整类会被 vivo fast_freezer 冻结，已按方法验收，
+  证据见 docs/evidence/v370-ocr-device.md。
+- **已知限制**：不做透视/弯曲展平；仍是「一行一题」无版面切题；图片公式按普通文本处理；
+  低置信度只做入库前剔除，尚无持久化 needsReview；无 300 张真实评测集与纠错日志。
+
 ## [3.6.0] - 2026-10-30（OCR 模型改为可下载 + 精简包）
 
 > **版本号**：`3.6.0 / 28`。Room 仍 v12，无迁移。

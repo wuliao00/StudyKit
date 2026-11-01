@@ -108,4 +108,41 @@ class PpOcrEngineSanityTest {
         assertTrue("long side should be capped near 1600: $rw x $rh", maxOf(rw, rh) <= 1600 + 31)
         assertEquals(0, maxOf(rw, rh) % 32)
     }
+    // ── 二次识别择优（v3.7）──
+    @Test
+    fun betterReading_keepsOldWhenRetryIsBlank() {
+        val out = PpOcrOnnxEngine.betterReading("已知", 0.4f, "", 0.9f, 0.72f)
+        assertEquals("已知", out.first)
+        assertEquals(0.4f, out.second, 1e-6f)
+    }
+
+    @Test
+    fun betterReading_updatesScoreWhenTextIsSame() {
+        val out = PpOcrOnnxEngine.betterReading("已知", 0.5f, "已知", 0.66f, 0.72f)
+        assertEquals("已知", out.first)
+        assertEquals(0.66f, out.second, 1e-6f)
+    }
+
+    @Test
+    fun betterReading_takesClearlyHigherScore() {
+        val out = PpOcrOnnxEngine.betterReading("已矢", 0.81f, "已知", 0.9f, 0.72f)
+        assertEquals("已知", out.first)
+        assertEquals(0.9f, out.second, 1e-6f)
+    }
+
+    @Test
+    fun betterReading_keepsOldWhenOldWasConfident() {
+        // 旧分 0.9 已经很高；新分只高 0.01，不够显著，不能被二次识别覆盖
+        val out = PpOcrOnnxEngine.betterReading("已知", 0.9f, "已矢", 0.91f, 0.72f)
+        assertEquals("已知", out.first)
+        assertEquals(0.9f, out.second, 1e-6f)
+    }
+
+    @Test
+    fun betterReading_takesSlightlyHigherWhenOldWasWeak() {
+        val out = PpOcrOnnxEngine.betterReading("已矢", 0.4f, "已知", 0.45f, 0.72f)
+        assertEquals("已知", out.first)
+        assertEquals(0.45f, out.second, 1e-6f)
+    }
+
 }

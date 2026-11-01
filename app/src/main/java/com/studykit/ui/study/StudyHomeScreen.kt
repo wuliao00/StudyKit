@@ -102,6 +102,7 @@ fun StudyHomeScreen(
         importViewModel,
         onPreviewImport,
         onPhotoNeedsFormatting,
+        onOpenSettings,
     )
 
     // ── SIXTY_SIX 贴士（计划 B Task 17 Step 2b / spec §8）：火焰徽章天数恰好走到 21 那天，

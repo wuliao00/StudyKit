@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "3.6.0"
+        versionCode = 29
+        versionName = "3.7.0"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。
@@ -82,6 +82,17 @@ android {
         // x86 系只有模拟器用得到，砍掉能省一大截而不影响任何真机用户。
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    // v3.6：OCR 两个模型（约 30 MB）改成可按需下载后，用 -PnoOcrModels 出精简包：
+    // 模型不进 APK，改由「设置 → OCR 模型」从 jsDelivr 下载（拼回原文件后 sha256 校验）。
+    // 用 sourceSets 的 exclude 而不是 aapt 的 ignoreAssetsPattern：后者是文件名过滤器、
+    // 对相对路径不稳，而且不进任务输入，改参数不重跑 merge，包大小纹丝不动（实测踩过）。
+    sourceSets.getByName("main").assets.apply {
+        if (project.hasProperty("noOcrModels")) {
+            exclude("models/det_ppocrv6_small.onnx")
+            exclude("models/rec_ppocrv6_small.onnx")
         }
     }
 

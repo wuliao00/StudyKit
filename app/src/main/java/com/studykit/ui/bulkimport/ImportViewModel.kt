@@ -47,6 +47,10 @@ data class ImportUiState(
     val dictSource: DictSourceMeta? = null,
     /** v3.5.1：文件来源的一句提示（例如「1248 处公式取不到」），预览页要一直看得见 */
     val sourceNote: String? = null,
+    /** v3.7：OCR 质量/置信度提示（照片质量、摆正角度、低置信度行数），预览页顶部常驻 */
+    val ocrNote: String? = null,
+    /** v3.7：低置信度行号（1 基）。默认剔除，用户核对后可勾回 */
+    val lowConfidenceLines: Set<Int> = emptySet(),
 ) {
     val visibleItems: List<ImportItem>
         get() = plan?.items?.filterNot { it.sourceLine in excluded } ?: emptyList()
@@ -94,8 +98,19 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
         plan: ImportPlan,
         dictSource: DictSourceMeta? = null,
         sourceNote: String? = null,
+        ocrNote: String? = null,
+        lowConfidenceLines: Set<Int> = emptySet(),
+        autoExcludeLowConfidence: Boolean = false,
     ) {
-        _state.value = ImportUiState(plan = plan, dictSource = dictSource, sourceNote = sourceNote)
+        _state.value = ImportUiState(
+            plan = plan,
+            dictSource = dictSource,
+            sourceNote = sourceNote,
+            ocrNote = ocrNote,
+            lowConfidenceLines = lowConfidenceLines,
+            // v3.7：低置信度行默认不导入（人工确认队列的第一道闸），用户可在预览页逐行勾回
+            excluded = if (autoExcludeLowConfidence) lowConfidenceLines else emptySet(),
+        )
     }
 
     fun toggleExcluded(sourceLine: Int) {
@@ -108,6 +123,18 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
 
     fun reset() {
         _state.value = ImportUiState()
+    }
+
+    /**
+     * v3.7：把「因低置信度被默认剔除」的行一次勾回。
+     *
+     * 糊照片经常整页分数都低，逐行点一遍太累；但也不能因此默认放行 —— 默认剔除 + 一键勾回，
+     * 比默认全选 + 逐行剔除更符合「不要让错误内容静默进复习」的目标。
+     */
+    fun includeLowConfidenceLines() {
+        val current = _state.value
+        if (current.phase != ImportPhase.PREVIEW) return
+        _state.value = current.copy(excluded = current.excluded - current.lowConfidenceLines)
     }
 
     /**

@@ -79,6 +79,7 @@ import com.studykit.ui.components.QuizOptionState
 import com.studykit.ui.components.QuizOptionTile
 import com.studykit.ui.components.RingGauge
 import com.studykit.ui.components.TipCard
+import com.studykit.ui.nav.SettingsRoutes
 import com.studykit.ui.theme.AppTheme
 
 /** 会话内「隔开放是故意的」提示的 testTag */
@@ -127,6 +128,9 @@ fun QuizScreen(
         importViewModel,
         onPreviewImport,
         onPhotoNeedsFormatting,
+        // 缺模型时「去设置」：题库页没有直接的设置回调，但 onNavigate 收的就是 AppNav 的路径表，
+        // 走同一条路由而不是在页面内再挂一个设置入口。
+        onOpenSettings = { onNavigate(SettingsRoutes.SETTINGS) },
     )
     // 与 CardStudyScreen 读 recallBeforeGrade 同一姿势：组合期读一枚布尔，喂给展示与开关
     val interleaving = AppTheme.settings.interleavingEnabled

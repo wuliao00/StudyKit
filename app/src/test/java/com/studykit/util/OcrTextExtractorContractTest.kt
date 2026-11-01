@@ -9,6 +9,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,4 +73,12 @@ class OcrTextExtractorContractTest {
         )
         assertTrue("门面协程应能被取消", deferred.isCancelled)
     }
+    /** v3.7：质量门控拿不到图时返回 null（绝不因为体检失败把拍照页卡死）。 */
+    @Test
+    fun 体检对不存在或坏文件返回null() = runBlocking {
+        val stamp = System.nanoTime()
+        assertNull(OcrTextExtractor.analyzeQuality(File(app().cacheDir, "nope_" + stamp + ".jpg")))
+        assertNull(OcrTextExtractor.analyzeQuality(File("definitely/absent_" + stamp + ".png")))
+    }
+
 }

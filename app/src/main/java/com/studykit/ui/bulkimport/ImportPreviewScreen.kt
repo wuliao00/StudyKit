@@ -21,6 +21,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -83,6 +84,15 @@ fun ImportPreviewScreen(
                 )
                 Spacer(Modifier.height(AppTheme.space.sm))
             }
+            // v3.7：OCR 质量/置信度提示。与文件来源提示分开两条，避免「公式取不到」和
+            // 「照片偏糊」混成一句、用户不知道哪句该找谁。
+            state.ocrNote?.takeIf { it.isNotBlank() }?.let { note ->
+                Text(
+                    text = note,
+                    style = texts.caption.copy(color = colors.warningInk),
+                )
+                Spacer(Modifier.height(AppTheme.space.sm))
+            }
             // StatTile 自身 fillMaxHeight()，必须包在 height(IntrinsicSize.Max) 的 Row 里才等高（M1 真机结论）
             Row(
                 modifier = Modifier.height(IntrinsicSize.Max),
@@ -102,10 +112,29 @@ fun ImportPreviewScreen(
                 verticalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
             ) {
                 item(key = "confirm_header") { SectionHeader(title = "逐行确认") }
+                if (state.lowConfidenceLines.isNotEmpty()) {
+                    item(key = "low_confidence_actions") {
+                        val excludedLow = state.excluded.intersect(state.lowConfidenceLines).size
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "低置信度 " + state.lowConfidenceLines.size + " 行" +
+                                    if (excludedLow > 0) "，已默认剔除 " + excludedLow + " 行" else "，已全部勾回",
+                                style = texts.caption.copy(color = colors.warningInk),
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (excludedLow > 0) {
+                                TextButton(onClick = { viewModel.includeLowConfidenceLines() }) {
+                                    Text(text = "全部勾回", style = texts.caption.copy(color = colors.accentInk))
+                                }
+                            }
+                        }
+                    }
+                }
                 items(plan.items, key = { "row_${it.sourceLine}" }) { item ->
                     PreviewRow(
                         item = item,
                         excluded = item.sourceLine in state.excluded,
+                        lowConfidence = item.sourceLine in state.lowConfidenceLines,
                         onToggle = { viewModel.toggleExcluded(item.sourceLine) },
                     )
                 }
@@ -152,7 +181,12 @@ fun ImportPreviewScreen(
 }
 
 @Composable
-private fun PreviewRow(item: ImportItem, excluded: Boolean, onToggle: () -> Unit) {
+private fun PreviewRow(
+    item: ImportItem,
+    excluded: Boolean,
+    lowConfidence: Boolean,
+    onToggle: () -> Unit,
+) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -168,6 +202,14 @@ private fun PreviewRow(item: ImportItem, excluded: Boolean, onToggle: () -> Unit
                 colors = CheckboxDefaults.colors(checkedColor = colors.accentInk),
             )
             Column(Modifier.weight(1f)) {
+                if (lowConfidence) {
+                    // 与「已剔除」的删除线分开表达：这是「内容可能不准，建议逐字核对」，
+                    // 不是「这行不要了」。行被剔除时两件事同时成立，所以都显示。
+                    Text(
+                        text = "低置信度 · 建议核对",
+                        style = texts.caption.copy(color = colors.warningInk),
+                    )
+                }
                 Text(
                     text = item.summary(),
                     // 被剔除的行用删除线表达，而不是变灰：灰字在深色主题下与禁用态撞车
