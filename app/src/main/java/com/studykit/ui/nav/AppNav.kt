@@ -89,6 +89,8 @@ import com.studykit.ui.study.DictStoreScreen
 import com.studykit.ui.study.DictStoreViewModel
 import com.studykit.ui.study.ExamResultScreen
 import com.studykit.ui.study.MockExamScreen
+import com.studykit.ui.study.OcrReviewScreen
+import com.studykit.ui.study.OcrReviewViewModel
 import com.studykit.ui.study.QuestionCreateScreen
 import com.studykit.ui.study.QuestionStoreScreen
 import com.studykit.ui.study.QuestionStoreViewModel
@@ -142,6 +144,9 @@ object StudyRoutes {
     const val QUIZ = "study/quiz"
     const val WORD_CREATE = "study/word/create"
     const val QUESTION_CREATE = "study/question/create"
+
+    /** v3.8：OCR 待校对题目（低置信度/公式占位/结构化切题） */
+    const val OCR_REVIEW = "study/ocr/review"
 
     /** 模考（v2.7 计划 B Task 13）：组卷作答 + 交卷后的成绩页两条路由 */
     const val MOCK_EXAM = "study/exam"
@@ -399,6 +404,9 @@ fun AppNav(
                     onOpenSettings = {
                         navController.navigate(SettingsRoutes.SETTINGS) { launchSingleTop = true }
                     },
+                    onOpenOcrReview = {
+                        navController.navigate(StudyRoutes.OCR_REVIEW) { launchSingleTop = true }
+                    },
                     // 录入菜单：路由项都由决策表给出既有目的地（`BulkEntryTest` 钉着），这里只负责 navigate
                     onNavigate = { path ->
                         navController.navigate(path) { launchSingleTop = true }
@@ -645,6 +653,13 @@ fun AppNav(
             composable(StudyRoutes.QUESTION_CREATE) {
                 QuestionCreateScreen(
                     viewModel = studyViewModel,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(StudyRoutes.OCR_REVIEW) {
+                val reviewViewModel: OcrReviewViewModel = viewModel()
+                OcrReviewScreen(
+                    viewModel = reviewViewModel,
                     onBack = { navController.popBackStack() },
                 )
             }

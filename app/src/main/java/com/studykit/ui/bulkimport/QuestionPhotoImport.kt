@@ -19,14 +19,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.studykit.data.question.ExamStage
+import com.studykit.data.question.QuestionType
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.MistakeImageStore
+import com.studykit.util.ocr.OcrLayoutJson
+import com.studykit.util.ocr.OcrPageStore
 import com.studykit.util.ocr.OcrReport
 import com.studykit.util.OcrResult
 import com.studykit.util.OcrTextExtractor
+import com.studykit.util.importer.ImportItem
 import com.studykit.util.importer.ImportPlan
 import com.studykit.util.importer.TextCleaner
 import com.studykit.util.ocr.PhotoQuality
+import com.studykit.util.ocr.layout.QuestionLayoutParser
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -110,6 +116,183 @@ internal fun routePhotoOcr(ocrText: String, report: OcrReport?): PhotoOcrRouting
     return PhotoOcrRouting(outcome, low, note, excluded)
 }
 
+/** v3.8：规则切题的纯转换结果（可单测，不依赖 Compose/Android）。 */
+internal data class LayoutPlanResult(
+    val plan: ImportPlan,
+    val lowConfidenceLines: Set<Int>,
+    val notes: List<String>,
+)
+
+/**
+ * 把 [QuestionLayoutParser] 的结构化题目转成批量导入用的 [ImportItem.Question]。
+ *
+ * 答案解析规则（宁可少收，不许错收）：
+ * - 有 >=2 个选项：答案必须是 A-H 里落在选项范围内的字母；1 个字母 = 单选，多个 = 多选；
+ * - 无选项：答案像 正确/错误/对/错/√/× 就是判断题；短答案（<=24 字、无句末标点）= 填空；
+ *   长答案 = 简答/主观，作为参考答案；
+ * - 以上都不成立（缺答案/答案格式不认识）返回 null，由调用方计数并提示去编辑页补。
+ */
+internal fun buildLayoutPlan(
+    layout: QuestionLayoutParser.LayoutResult,
+    pagePath: String,
+    pageWidth: Int,
+    pageHeight: Int,
+): LayoutPlanResult {
+    val items = ArrayList<ImportItem>(layout.questions.size)
+    val low = LinkedHashSet<Int>()
+    for (question in layout.questions) {
+        val item = question.toImportItem(pagePath, pageWidth, pageHeight) ?: continue
+        items.add(item)
+        if (item.ocrConfidence >= 0f && item.ocrConfidence < OcrReport.LOW_LINE_SCORE) {
+            low.add(item.sourceLine)
+        }
+    }
+    return LayoutPlanResult(ImportPlan(items, emptyList(), 0), low, layout.notes)
+}
+
+private fun QuestionLayoutParser.LayoutQuestion.toImportItem(
+    pagePath: String,
+    pageWidth: Int,
+    pageHeight: Int,
+): ImportItem.Question? {
+    val answer = answerText.trim()
+    var type = QuestionType.SINGLE
+    var resolvedOptions = options
+    var answerIndices = emptyList<Int>()
+    var answerIndex = 0
+    var acceptedAnswers = emptyList<String>()
+
+    if (options.size >= 2) {
+        val indices = answer.uppercase()
+            .filter { it in 'A'..'H' }
+            .map { it - 'A' }
+            .distinct()
+            .filter { it in options.indices }
+        if (indices.isEmpty()) return null
+        answerIndices = indices
+        answerIndex = indices.first()
+        type = if (indices.size == 1) QuestionType.SINGLE else QuestionType.MULTIPLE
+    } else {
+        when (answer.lowercase()) {
+            "正确", "对", "是", "√", "true", "t" -> {
+                type = QuestionType.TRUE_FALSE
+                resolvedOptions = listOf("正确", "错误")
+                answerIndex = 0
+                answerIndices = listOf(0)
+            }
+            "错误", "错", "否", "×", "false", "f" -> {
+                type = QuestionType.TRUE_FALSE
+                resolvedOptions = listOf("正确", "错误")
+                answerIndex = 1
+                answerIndices = listOf(1)
+            }
+            else -> {
+                val parts = answer.split(';', '；', ',', '，', '、')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+                if (parts.isEmpty()) return null
+                val looksLong = answer.length > 24 || answer.contains('。') || answer.contains('，')
+                if (looksLong) {
+                    type = QuestionType.SHORT_ANSWER
+                    acceptedAnswers = listOf(answer)
+                } else {
+                    type = QuestionType.FILL
+                    acceptedAnswers = parts
+                }
+            }
+        }
+    }
+
+    val layoutJson = OcrLayoutJson.encode(
+        OcrLayoutJson.LayoutMeta(
+            pagePath = pagePath,
+            pageWidth = pageWidth,
+            pageHeight = pageHeight,
+            formulaHints = formulaHints,
+            warnings = warnings,
+            sourceLines = listOf(sourceLine),
+        ),
+    )
+    val lowConfidence = confidence < OcrReport.BATCH_SCORE
+    return ImportItem.Question(
+        sourceLine = sourceLine,
+        raw = stem,
+        stem = stem,
+        options = resolvedOptions,
+        answerIndex = answerIndex,
+        explanation = analysis,
+        type = type,
+        answerIndices = answerIndices,
+        acceptedAnswers = acceptedAnswers,
+        stage = ExamStage.UNSPECIFIED,
+        subject = "",
+        needsReview = lowConfidence || formulaHints.isNotEmpty(),
+        ocrConfidence = confidence,
+        ocrPagePath = pagePath,
+        ocrLayoutJson = layoutJson,
+    )
+}
+
+/** 预览页顶部那句提示：照片质量 + 切题结果 + 缺答案/公式提醒。 */
+/**
+ * 给「一行一题竖线格式」的 OCR 导入补 v3.8 元数据：逐行置信度映射到题、低置信度/照片质量问题
+ * 落 needsReview；有原图时把页路径写进 ocrLayoutJson，校对页可回看。
+ *
+ * 行号映射：OCR 文本按行 join，解析器的 sourceLine 就是第几行（TextCleaner.splitLines 保行号）；
+ * report.lines 的下标 +1 即同一行。找不到该行就退回整页均值，不丢置信度。
+ */
+internal fun annotatePipePlan(
+    plan: ImportPlan,
+    report: OcrReport?,
+    pagePath: String,
+): ImportPlan {
+    if (report == null) return plan
+    val scores = report.lines.map { it.score }
+    val qualityBad = report.quality?.needsRetake == true
+    val items = plan.items.map { item ->
+        if (item !is ImportItem.Question) {
+            item
+        } else {
+            val lineScore = scores.getOrNull(item.sourceLine - 1) ?: report.meanScore
+            val lineText = report.lines.getOrNull(item.sourceLine - 1)?.text.orEmpty()
+            val formula = com.studykit.util.ocr.layout.FormulaDetector.looksLikeFormula(lineText)
+            val needsReview = lineScore < OcrReport.BATCH_SCORE || qualityBad || formula
+            val warnings = buildList {
+                report.quality?.takeIf { it.needsRetake }?.let { add("照片" + it.issueText) }
+                if (formula) add("疑似公式/符号行，建议对照原图")
+            }
+            item.copy(
+                needsReview = needsReview,
+                ocrConfidence = lineScore,
+                ocrPagePath = pagePath,
+                ocrLayoutJson = OcrLayoutJson.encode(
+                    OcrLayoutJson.LayoutMeta(
+                        pagePath = pagePath,
+                        pageWidth = report.pageWidth,
+                        pageHeight = report.pageHeight,
+                        formulaHints = if (formula) listOf(lineText) else emptyList(),
+                        warnings = warnings,
+                        sourceLines = listOf(item.sourceLine),
+                    ),
+                ),
+            )
+        }
+    }
+    return plan.copy(items = items)
+}
+
+internal fun buildLayoutNote(report: OcrReport?, result: LayoutPlanResult): String? {
+    val parts = ArrayList<String>(4)
+    report?.previewNote()?.takeIf { it.isNotBlank() }?.let { parts.add(it) }
+    if (result.plan.items.isNotEmpty()) parts.add("智能切题 " + result.plan.items.size + " 道")
+    result.notes.forEach { note -> parts.add(note) }
+    if (result.lowConfidenceLines.isNotEmpty()) {
+        parts.add("已默认剔除 " + result.lowConfidenceLines.size + " 道低置信度题，核对后可勾回")
+    }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
 /** v3.7：质量门控命中时暂存的一张小图（只用于弹窗与重拍，不进 OCR）。 */
 internal data class QualityGate(val file: File, val quality: PhotoQuality)
 
@@ -156,12 +339,50 @@ fun rememberQuestionPhotoImport(
             when (result) {
                 is OcrResult.Text -> {
                     val routing = routePhotoOcr(result.value, result.report)
+                    if (routing.outcome is PhotoImportOutcome.NeedsFormatting && result.report != null) {
+                        val layout = QuestionLayoutParser.parse(
+                            lines = result.report.lines,
+                            pageWidth = result.report.pageWidth,
+                            pageHeight = result.report.pageHeight,
+                        )
+                        if (layout.questions.isNotEmpty()) {
+                            val pagePath = OcrPageStore.save(context, file).orEmpty()
+                            val built = buildLayoutPlan(
+                                layout = layout,
+                                pagePath = pagePath,
+                                pageWidth = result.report.pageWidth,
+                                pageHeight = result.report.pageHeight,
+                            )
+                            if (built.plan.items.isNotEmpty()) {
+                                file.delete()
+                                importViewModel.loadPlan(
+                                    plan = built.plan,
+                                    ocrNote = buildLayoutNote(result.report, built),
+                                    lowConfidenceLines = built.lowConfidenceLines,
+                                    autoExcludeLowConfidence = built.lowConfidenceLines.isNotEmpty(),
+                                )
+                                onPreview()
+                                return@launch
+                            }
+                        }
+                    }
                     when (val outcome = routing.outcome) {
                         is PhotoImportOutcome.Preview -> {
-                            // 四选一：图进预览屏之后就没用了，删掉
+                            // v3.8：先按置信度/照片质量给条目打标；有需要校对的才留原图，
+                            // 其余仍按一次性图删掉，别让 cache 里堆满分不清的题页。
+                            val annotated = annotatePipePlan(outcome.plan, result.report, pagePath = "")
+                            val needsPage = annotated.items.any {
+                                it is ImportItem.Question && it.needsReview
+                            }
+                            val pagePath = if (needsPage) OcrPageStore.save(context, file).orEmpty() else ""
+                            val planToImport = if (needsPage) {
+                                annotatePipePlan(outcome.plan, result.report, pagePath)
+                            } else {
+                                annotated
+                            }
                             file.delete()
                             importViewModel.loadPlan(
-                                plan = outcome.plan,
+                                plan = planToImport,
                                 ocrNote = routing.note,
                                 lowConfidenceLines = routing.lowConfidenceLineNumbers,
                                 autoExcludeLowConfidence = routing.excludedCount > 0,

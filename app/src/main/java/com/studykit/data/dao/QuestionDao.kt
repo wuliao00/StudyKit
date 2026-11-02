@@ -3,6 +3,7 @@ package com.studykit.data.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.studykit.data.entity.Question
 import kotlinx.coroutines.flow.Flow
 
@@ -143,6 +144,26 @@ interface QuestionDao {
      */
     @Query("SELECT * FROM questions WHERE concept_tag = :tag ORDER BY id")
     suspend fun getByConceptTag(tag: String): List<Question>
+
+    // ── v3.8：OCR 待校对队列 ──────────────────────────────────────────────
+
+    /** 待校对数量（学习页入口徽标）。Room 的 Flow 在任意 UPDATE 后自动重发。 */
+    @Query("SELECT COUNT(*) FROM questions WHERE needs_review = 1")
+    fun observePendingReviewCount(): Flow<Int>
+
+    /** 待校对题目：新入库的排前面，用户先看刚拍的。 */
+    @Query("SELECT * FROM questions WHERE needs_review = 1 ORDER BY id DESC")
+    fun observePendingReview(): Flow<List<Question>>
+
+    /** 校对页「确认无误」：只清标记，不动其它列。 */
+    @Query("UPDATE questions SET needs_review = 0 WHERE id = :id")
+    suspend fun markReviewed(id: Long): Int
+
+    @Update
+    suspend fun update(question: Question): Int
+
+    @Query("DELETE FROM questions WHERE id = :id")
+    suspend fun deleteById(id: Long): Int
 
     @Insert
     suspend fun insert(question: Question): Long

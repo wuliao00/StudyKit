@@ -89,6 +89,7 @@ fun StudyHomeScreen(
     onBulkImportQuestions: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenOcrReview: () -> Unit,
     onNavigate: (String) -> Unit,
     onPreviewImport: () -> Unit,
     onPhotoNeedsFormatting: () -> Unit,
@@ -96,6 +97,7 @@ fun StudyHomeScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
+    val pendingReview by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
     // 拍照录题就地完成（相机 → OCR → 预览屏），不另开一屏；菜单里其余项走路由。
     // 解析不出分列时，文字放进题库编辑页（不自动切错题本）。
     val photoImport = rememberQuestionPhotoImport(
@@ -252,6 +254,20 @@ fun StudyHomeScreen(
             )
         }
         Spacer(Modifier.height(AppTheme.space.md))
+
+        if (pendingReview > 0) {
+            Spacer(Modifier.height(AppTheme.space.md))
+            StaggeredIn(index = 2) {
+                EntryCard(
+                    icon = Icons.Outlined.CheckCircle,
+                    iconColor = colors.warning,
+                    iconContainerColor = colors.warningSoft,
+                    title = "待校对题目",
+                    caption = pendingReview.toString() + " 道 · 先核对再进复习",
+                    onClick = onOpenOcrReview,
+                )
+            }
+        }
         StaggeredIn(index = 2) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,

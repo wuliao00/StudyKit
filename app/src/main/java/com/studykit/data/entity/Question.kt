@@ -44,6 +44,22 @@ data class Question(
      */
     @ColumnInfo(name = "exam_stage", defaultValue = "''")
     val examStage: String = ExamStage.UNSPECIFIED.storageValue,
+
+    /** v3.8：OCR 入库后仍需人工确认（低置信度、公式/图形占位、缺答案等）。 */
+    @ColumnInfo(name = "needs_review", defaultValue = "0")
+    val needsReview: Boolean = false,
+
+    /** v3.8：OCR 加权平均置信度；-1 = 非 OCR 来源/未知 */
+    @ColumnInfo(name = "ocr_confidence", defaultValue = "-1")
+    val ocrConfidence: Float = -1f,
+
+    /** v3.8：OCR 来源页相对路径（filesDir/ocr_pages/...）；空串 = 没有留原图 */
+    @ColumnInfo(name = "ocr_page_path", defaultValue = "''")
+    val ocrPagePath: String = "",
+
+    /** v3.8：OCR 结构化信息 JSON（公式提示、原始行/框、页尺寸等）；"{}" = 无 */
+    @ColumnInfo(name = "ocr_layout_json", defaultValue = "'{}'")
+    val ocrLayoutJson: String = "{}",
 ) {
 
     /** 列值 → 枚举。脏值/空串退回 [QuestionType.SINGLE]，与数据库 DEFAULT 一致 */

@@ -50,7 +50,7 @@ object PpOcrOnnxEngine {
     // 内存闸门：A/B 在真机跑，长边超过它就等比降采样，避免大图 OOM（合成卡 1440 不触发）。
     private const val MAX_DET_SIDE = 1600
 
-    data class PpLine(val text: String, val score: Float)
+    data class PpLine(val text: String, val score: Float, val box: DetBox? = null)
 
     class LoadInfo(var detMs: Long = 0, var recMs: Long = 0, var dictSize: Int = 0)
 
@@ -172,7 +172,7 @@ object PpOcrOnnxEngine {
                     score = better.second
                 }
             }
-            if (text.isNotEmpty() && score >= TEXT_SCORE) out.add(PpLine(text, score))
+            if (text.isNotEmpty() && score >= TEXT_SCORE) out.add(PpLine(text, score, b))
         }
         return RetryResult(out, retried)
     }

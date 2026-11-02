@@ -210,6 +210,13 @@ private fun PreviewRow(
                         style = texts.caption.copy(color = colors.warningInk),
                     )
                 }
+                val reviewHint = reviewHintOf(item)
+                if (reviewHint != null) {
+                    Text(
+                        text = reviewHint,
+                        style = texts.caption.copy(color = colors.warningInk),
+                    )
+                }
                 Text(
                     text = item.summary(),
                     // 被剔除的行用删除线表达，而不是变灰：灰字在深色主题下与禁用态撞车
@@ -222,6 +229,19 @@ private fun PreviewRow(
                 Text(text = "第 ${item.sourceLine} 行", style = texts.caption)
             }
         }
+    }
+}
+
+/** v3.8：OCR 结构化切题带出的「待校对/置信度」提示；普通粘贴/文件导入返回 null。 */
+private fun reviewHintOf(item: ImportItem): String? {
+    val question = item as? ImportItem.Question ?: return null
+    val confidence = question.ocrConfidence
+    val percent = if (confidence >= 0f) (confidence * 100).toInt().coerceIn(0, 100) else -1
+    return when {
+        question.needsReview && percent >= 0 -> "待校对 · 识别置信度 " + percent + "%"
+        question.needsReview -> "待校对"
+        percent in 0..84 -> "识别置信度偏低 " + percent + "%"
+        else -> null
     }
 }
 

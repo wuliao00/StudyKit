@@ -177,6 +177,12 @@ class QuestionImportDedupeTest {
         override suspend fun insert(question: Question): Long = notNeeded()
         override suspend fun insertAll(questions: List<Question>): List<Long> = notNeeded()
         override suspend fun deleteAll() { notNeeded<Unit>() }
+
+        override fun observePendingReviewCount(): Flow<Int> = notNeeded()
+        override fun observePendingReview(): Flow<List<Question>> = notNeeded()
+        override suspend fun markReviewed(id: Long): Int = notNeeded()
+        override suspend fun update(question: Question): Int = notNeeded()
+        override suspend fun deleteById(id: Long): Int = notNeeded()
     }
 
     private class FakePracticeDao : PracticeDao {

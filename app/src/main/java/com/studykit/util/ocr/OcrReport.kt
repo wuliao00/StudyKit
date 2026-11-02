@@ -3,8 +3,16 @@ package com.studykit.util.ocr
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/** 文本框（原图像素坐标）。v3.8 起随 OCR 行一起带出来，供版面切题/公式定位使用。 */
+data class OcrBox(val x0: Int, val y0: Int, val x1: Int, val y1: Int) {
+    val width: Int get() = (x1 - x0).coerceAtLeast(0)
+    val height: Int get() = (y1 - y0).coerceAtLeast(0)
+    val centerX: Float get() = (x0 + x1) / 2f
+    val centerY: Float get() = (y0 + y1) / 2f
+}
+
 /** 一行 OCR 结果 + 该行的识别置信度（CTC 贪心帧的 max 概率均值，口径见 PpOcrOnnxEngine）。 */
-data class OcrLine(val text: String, val score: Float)
+data class OcrLine(val text: String, val score: Float, val box: OcrBox? = null)
 
 /**
  * 一次 OCR 的完整体检报告（v3.7）。
@@ -24,6 +32,9 @@ data class OcrReport(
     val quality: PhotoQuality?,
     val deskewDegrees: Float,
     val retriedLines: Int,
+    /** v3.8：送入识别的工作图尺寸（摆正后），版面切题用；0 = 调用方没填 */
+    val pageWidth: Int = 0,
+    val pageHeight: Int = 0,
 ) {
     /** 按字符数加权的平均置信度：长行更能代表整页质量，短行（题号/选项字母）不拉偏均值。 */
     val meanScore: Float

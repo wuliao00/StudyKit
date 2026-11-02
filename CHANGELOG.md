@@ -2,6 +2,32 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.8.0] - 2026-11-02（版面切题 / 待校对队列 / 公式与图形占位 / 300 张评测集）
+
+> **版本号**：3.8.0 / 30。**Room v12 -> v13**：questions 新增 OCR 校对四列，纯 ADD COLUMN、带默认值，
+> 老题目行为不变。本版继续沿《优化 studykit》文档推进第二、三阶段。
+
+- **规则版面切题（不依赖新模型）**：新增 util/ocr/layout/QuestionLayoutParser。先按 OCR 框做双栏/行聚类
+  阅读顺序恢复，再用题号/选项/答案/解析正则状态机切题；支持单行内联选项（A. 4 B. 5 ...）、逐行选项、
+  多行题干、英文续行；答案按 A-H 字母 / 正确错误 / 短答案 / 长参考答案转成单选/多选/判断/填空/简答。
+  **缺答案的题不自动收**，计入提示让用户去编辑页补；切不出的页仍走「题库编辑页」兜底。
+- **待校对队列（持久化）**：questions 新列 needs_review / ocr_confidence / ocr_page_path / ocr_layout_json。
+  拍照/相册录题的低置信度、公式/图形风险、缺答案题目入库即带 needs_review；学习页新增「待校对题目 N 道」
+  入口，题库练习前先过一遍。
+- **校对页**：列待校对题目（置信度、来源页缩略图、公式提示），支持确认无误（清标记）、编辑（题干/选项/
+  答案/解析，保存后清标记）、删除（连来源页一起清）；有原图的题可点开看整页照片，公式/图形以原图兜底。
+- **公式与图形占位**：FormulaDetector 启发式挑出疑似公式/符号行，导入时写进 ocr_layout_json 并在校对页
+  提示「对照原图核对」；来源页整页保存到 filesDir/ocr_pages（可回看），不做假 LaTeX 转换。
+- **300 张 OCR 评测集 + CER 回归**：tools/ocr_eval/ 提供可复现生成器（8 类 × ~37 张，固定种子）、
+  ground_truth.json 与评估脚本；app 新增 OcrJvmEvalTest，用宿主 JVM 桌面版 onnxruntime 跑真模型，
+  输出 OCR JSON 交给 evaluate.py 算 CER/WER。300 张合成评测集实测：平均 CER 0.83%（语料级 0.65%）、P50 0%、P90 2.73%、WER 6.47%、空文本 0/300；分类见 docs/evidence/ocr-eval-v3.8.md。
+- **机检**：187 测试类 / 1684 用例 / 0 失败（1 条真模型评测在未传 -PocrEvalDir 时跳过）。
+  新增 Migration12To13Test、OcrReviewEditTest、LayoutImportConversionTest、OcrLayoutJsonTest、
+  QuestionLayoutParserTest、OcrJvmEvalTest；300 张合成评测集实测见 docs/evidence/ocr-eval-v3.8.md。
+- **真机**：3.7.0/29 -> 3.8.0/30 覆盖安装成功，Room v12->v13 迁移成功（user_version=13），数据仍在；注入 needs_review 测试题后首页入口/待校对页/编辑保存清标记全链路通过（验证后已恢复原库）；OcrPipelineDeviceTest 4/4 复跑通过，证据见 docs/evidence/v380-ocr-device.md。
+- **已知限制**：不做透视校正/弯曲展平、不用 YOLO 版面模型、不识别公式 LaTeX；缺答案题目需人工补；
+  评测集为合成页面，不能替代真实拍照评测；切题规则对极端排版仍可能漏切。
+
 ## [3.7.0] - 2026-11-01（OCR 质量门控 / 自动摆正 / 低置信度人工确认）
 
 > **版本号**：3.7.0 / 29。Room 仍 v12，无迁移；只改 OCR 拍照与相册录题链路。

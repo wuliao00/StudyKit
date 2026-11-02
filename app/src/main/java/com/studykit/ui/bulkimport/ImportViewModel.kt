@@ -211,6 +211,10 @@ class ImportViewModel(application: Application) : AndroidViewModel(application) 
                 answerIndicesJson = JSONArray(item.answerIndices.sorted().distinct()).toString(),
                 answerTextJson = JSONArray(item.acceptedAnswers).toString(),
                 examStage = item.stage.storageValue,
+                needsReview = item.needsReview,
+                ocrConfidence = item.ocrConfidence,
+                ocrPagePath = item.ocrPagePath,
+                ocrLayoutJson = item.ocrLayoutJson,
             )
         }
         ImportOutcome(

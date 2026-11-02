@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
 import com.studykit.util.ocr.Deskew
+import com.studykit.util.ocr.OcrBox
 import com.studykit.util.ocr.OcrLine
 import com.studykit.util.ocr.OcrReport
 import com.studykit.util.ocr.PhotoQuality
@@ -74,12 +75,28 @@ object OcrTextExtractor {
             ensureActive()
             PpOcrOnnxEngine.ensureLoaded(context)
             val result = PpOcrOnnxEngine.recognizeWithRetry(working)
-            val lines = result.lines.map { OcrLine(it.text, it.score) }
+            val lines = result.lines.map { line ->
+                OcrLine(
+                    text = line.text,
+                    score = line.score,
+                    box = line.box?.let { OcrBox(it.x0, it.y0, it.x1, it.y1) },
+                )
+            }
             val text = lines.joinToString("\n") { it.text }
             if (text.isBlank()) {
                 OcrResult.Failed("没识别出文字，可手动输入")
             } else {
-                OcrResult.Text(text, OcrReport(lines, quality, deskew, result.retried))
+                OcrResult.Text(
+                    text,
+                    OcrReport(
+                        lines = lines,
+                        quality = quality,
+                        deskewDegrees = deskew,
+                        retriedLines = result.retried,
+                        pageWidth = working.width,
+                        pageHeight = working.height,
+                    ),
+                )
             }
         } catch (ce: CancellationException) {
             throw ce // 取消不是失败，交给结构化并发向上抛

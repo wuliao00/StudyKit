@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "3.7.0"
+        versionCode = 30
+        versionName = "3.8.0"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。
@@ -283,4 +283,15 @@ tasks.withType<Test>().configureEach {
     val testTmpDir = layout.buildDirectory.dir("tmp/unit-test").get().asFile
     doFirst { testTmpDir.mkdirs() }
     systemProperty("java.io.tmpdir", testTmpDir.absolutePath)
+}
+
+// v3.8 OCR JVM 评测：只有显式传 -PocrEvalDir 才把数据集/输出路径喂给测试 JVM；
+// 常规单测完全不受影响（OcrJvmEvalTest 用 assume 跳过）。
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (project.hasProperty("ocrEvalDir")) {
+        systemProperty("ocr.eval.dir", project.property("ocrEvalDir").toString())
+    }
+    if (project.hasProperty("ocrEvalOut")) {
+        systemProperty("ocr.eval.out", project.property("ocrEvalOut").toString())
+    }
 }

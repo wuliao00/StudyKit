@@ -40,3 +40,8 @@ _*.bin
 
 # 宣传片素材与合成产物（真机录屏、中间片段、字体副本，约 330MB，不入版本库）
 promo/
+
+
+# OCR eval run artifacts (reproducible, not tracked)
+tools/ocr_eval/out/
+__pycache__/

@@ -100,6 +100,19 @@ class QuestionRepository(
             rows.associate { it.stage to it.count }
         }
 
+    // ── v3.8：OCR 待校对队列 ──────────────────────────────────────────────
+
+    fun observePendingReviewCount(): Flow<Int> = questionDao.observePendingReviewCount()
+
+    fun observePendingReview(): Flow<List<Question>> = questionDao.observePendingReview()
+
+    suspend fun markReviewed(id: Long): Boolean = questionDao.markReviewed(id) > 0
+
+    /** 校对页改完题干/选项/答案后原地更新；调用方负责把 needsReview 置 false。 */
+    suspend fun update(question: Question): Boolean = questionDao.update(question) > 0
+
+    suspend fun delete(id: Long): Boolean = questionDao.deleteById(id) > 0
+
     /**
      * 题库导入跨批去重：库内已有题目的判重键集合。
      *

@@ -352,6 +352,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     val subjects: StateFlow<List<String>> = questionRepository.observeSubjects()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** v3.8：OCR 待校对数量；首页入口与题库页提示共用 */
+    val pendingReviewCount: StateFlow<Int> = questionRepository.observePendingReviewCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     /** 学科 × 阶段 × 题型题量（双行筛选条与「该组合下还有没有题」共用） */
     val subjectStageFormatCounts: StateFlow<List<SubjectStageFormatCount>> =
         questionRepository.observeSubjectStageFormatCounts()

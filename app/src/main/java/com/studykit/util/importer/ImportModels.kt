@@ -37,6 +37,16 @@ sealed interface ImportItem {
         /** v3.3 阶段/学科；旧格式为空，入库时由调用方补“未分类” */
         val stage: ExamStage = ExamStage.UNSPECIFIED,
         val subject: String = "",
+
+        // ── v3.8：OCR 结构化/置信度元数据（解析器默认不填，拍照切题时由导入层带上）──
+        /** 入库后仍需人工确认（低置信度、公式占位、缺答案等） */
+        val needsReview: Boolean = false,
+        /** OCR 加权平均置信度；-1 = 非 OCR/未知 */
+        val ocrConfidence: Float = -1f,
+        /** 来源页相对路径（filesDir/ocr_pages/...）；空 = 没留原图 */
+        val ocrPagePath: String = "",
+        /** OCR 结构化 JSON（公式提示/页尺寸/警告） */
+        val ocrLayoutJson: String = "{}",
     ) : ImportItem
 
     data class Excerpt(

@@ -62,13 +62,14 @@ import com.studykit.optimize.ParamSnapshot
         MockSession::class,
         DesignPlan::class,
     ],
+    // v13：v3.8——questions 加 OCR 校对四列（needs_review / ocr_confidence / ocr_page_path / ocr_layout_json）
     // v12：学习设计——新增 design_plans（8 种模板共用，纯加表 + updated_at 索引）
     // v11：v3.3——阶段列 exam_stage + (exam_stage, question_type, subject) 复合索引
     // v10：题型扩展——questions 加 question_type / answer_indices_json / answer_text_json 三列
     // v9：v3.0-B——套卷会话持久化（mock_sessions）+ 错题遮挡两列（kind/extra）
     // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -530,6 +531,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v12 -> v13：questions 增四列 OCR 校对元数据。纯 ADD COLUMN，全部带默认值，
+         * 老题目落 needs_review=0 / ocr_confidence=-1 / 空路径 / 空 JSON，行为与 v12 一致。
+         */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE questions ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE questions ADD COLUMN ocr_confidence REAL NOT NULL DEFAULT -1",
+                )
+                db.execSQL(
+                    "ALTER TABLE questions ADD COLUMN ocr_page_path TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL(
+                    "ALTER TABLE questions ADD COLUMN ocr_layout_json TEXT NOT NULL DEFAULT '{}'",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -544,7 +566,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                         MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
-                        MIGRATION_10_11, MIGRATION_11_12,
+                        MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     )
                     .addCallback(SeedCallback)
                     .build()

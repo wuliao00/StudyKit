@@ -14,6 +14,7 @@ import com.studykit.data.entity.Question
 import com.studykit.data.repository.QuestionRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
@@ -132,6 +133,13 @@ private class RecordingQuestionDao : QuestionDao {
     override suspend fun insert(question: Question): Long = unused("insert")
     override suspend fun insertAll(questions: List<Question>): List<Long> = unused("insertAll")
     override suspend fun deleteAll(): Unit = unused("deleteAll")
+    // v3.8：StudyViewModel 初始化会挂待校对计数，组轮入口只用它的值（本测试不关心），
+    // 给空 Flow 而不是 unused —— 它属于首页/入口接线，不影响组轮参数。
+    override fun observePendingReviewCount(): Flow<Int> = flowOf(0)
+    override fun observePendingReview(): Flow<List<Question>> = flowOf(emptyList())
+    override suspend fun markReviewed(id: Long): Int = unused("markReviewed")
+    override suspend fun update(question: Question): Int = unused("update")
+    override suspend fun deleteById(id: Long): Int = unused("deleteById")
 
     private fun unused(name: String): Nothing =
         error("组轮入口不该走 QuestionDao.$name —— 走到了就是接线变了，先看这条再改期望值")
