@@ -181,6 +181,7 @@ class QuestionImportDedupeTest {
         override fun observePendingReviewCount(): Flow<Int> = notNeeded()
         override fun observePendingReview(): Flow<List<Question>> = notNeeded()
         override suspend fun markReviewed(id: Long): Int = notNeeded()
+        override suspend fun markAllReviewed(): Int = notNeeded()
         override suspend fun update(question: Question): Int = notNeeded()
         override suspend fun deleteById(id: Long): Int = notNeeded()
     }

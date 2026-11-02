@@ -138,6 +138,7 @@ private class RecordingQuestionDao : QuestionDao {
     override fun observePendingReviewCount(): Flow<Int> = flowOf(0)
     override fun observePendingReview(): Flow<List<Question>> = flowOf(emptyList())
     override suspend fun markReviewed(id: Long): Int = unused("markReviewed")
+    override suspend fun markAllReviewed(): Int = unused("markAllReviewed")
     override suspend fun update(question: Question): Int = unused("update")
     override suspend fun deleteById(id: Long): Int = unused("deleteById")
 

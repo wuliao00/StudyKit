@@ -12,5 +12,7 @@ class OcrCorrectionRepository(private val dao: OcrCorrectionDao) {
 
     suspend fun recent(limit: Int = 200): List<OcrCorrection> = dao.recent(limit)
 
+    fun observeRecent(limit: Int = 20) = dao.observeRecent(limit)
+
     suspend fun clearAll() = dao.deleteAll()
 }

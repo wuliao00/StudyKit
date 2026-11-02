@@ -159,6 +159,10 @@ interface QuestionDao {
     @Query("UPDATE questions SET needs_review = 0 WHERE id = :id")
     suspend fun markReviewed(id: Long): Int
 
+    /** v3.10：一键确认全部待校对题；返回实际清掉的条数。 */
+    @Query("UPDATE questions SET needs_review = 0 WHERE needs_review = 1")
+    suspend fun markAllReviewed(): Int
+
     @Update
     suspend fun update(question: Question): Int
 

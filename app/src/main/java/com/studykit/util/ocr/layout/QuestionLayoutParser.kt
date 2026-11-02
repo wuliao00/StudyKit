@@ -38,6 +38,8 @@ object QuestionLayoutParser {
         val formulaHints: List<String>,
         /** v3.9：疑似公式行的框（工作图像素坐标），用于裁片保留原图 */
         val formulaBoxes: List<OcrBox> = emptyList(),
+        /** v3.10：页面上的题号（用于答案区按题号回填答案，可为空） */
+        val questionNumber: Int? = null,
         val warnings: List<String>,
     )
 
@@ -56,6 +58,14 @@ object QuestionLayoutParser {
     private val PAGE_NUMBER = Regex("^\\s*(?:第\\s*\\d+\\s*页|\\d{1,3})\\s*$")
     private val INLINE_OPTION = Regex("(?:^|\\s)([A-H])\\s*[.、．:：)）]\\s*")
 
+    /** v3.10：答案区「1-5 ABCDA」区间；要求字母数与区间长度一致，防止把普通连字符误判 */
+    private val ANSWER_KEY_RANGE = Regex("(\\d{1,3})\\s*[-~—至]\\s*(\\d{1,3})\\s*[:：.、]?\\s*([A-H]{2,15})")
+
+    /** v3.10：答案区「题号+答案」；支持 A-H/正确/错误/对/错/√/× */
+    private val ANSWER_KEY_PAIR = Regex(
+        "(\\d{1,3})\\s*[.、:：)]\\s*([A-H]{1,4}|正确|错误|对|错|√|×|true|false)",
+    )
+
     fun parse(lines: List<OcrLine>, pageWidth: Int, pageHeight: Int): LayoutResult {
         val usable = lines.filter { it.text.isNotBlank() }
         if (usable.isEmpty()) return LayoutResult(emptyList(), 0, listOf("没有可用的文本行"))
@@ -66,16 +76,19 @@ object QuestionLayoutParser {
                 (line.box.centerY < pageHeight * 0.06f || line.box.centerY > pageHeight * 0.94f)
         }
         val ordered = readingOrder(filtered, pageWidth)
+        val (answerKey, answerKeyIndexes) = extractAnswerKey(ordered)
         val questions = ArrayList<LayoutQuestion>()
+        val missing = ArrayList<MutableQuestion>()
         var skippedMissing = 0
+        var answeredFromKey = 0
         var current: MutableQuestion? = null
 
         fun flush() {
             val q = current ?: return
             val result = finish(q)
             if (result == null) {
-                // 有选项却没答案：这是「题切出来了但缺答案」，单独计数提示用户去编辑页补
-                if (q.options.size >= 2 && q.answerText.isBlank()) skippedMissing++
+                // 有选项却没答案：先留着，等整页答案区解析后再回填；仍没有才算缺答案
+                if (q.options.size >= 2 && q.answerText.isBlank()) missing.add(q)
             } else {
                 questions.add(result)
             }
@@ -83,6 +96,7 @@ object QuestionLayoutParser {
         }
 
         for ((index, line) in ordered.withIndex()) {
+            if (index in answerKeyIndexes) continue
             val text = line.text.trim()
             if (text.isEmpty()) continue
             val start = QUESTION_START.matchEntire(text) ?: QUESTION_CN.matchEntire(text)
@@ -91,6 +105,7 @@ object QuestionLayoutParser {
                 val stemText = start.groupValues[2].trim()
                 val inline = splitInlineOptions(stemText)
                 current = MutableQuestion(lineNo = index + 1, lineScore = line.score, box = line.box)
+                    .also { it.number = start.groupValues[1].toIntOrNull() }
                 if (inline != null) {
                     current!!.stemParts.add(inline.first)
                     current!!.options.addAll(inline.second)
@@ -156,10 +171,86 @@ object QuestionLayoutParser {
         }
         flush()
 
+        // v3.10：答案区按题号回填——真实试卷常把答案集中在页尾/页脚
+        for (q in missing) {
+            val answer = q.number?.let { answerKey[it] }
+            if (answer.isNullOrBlank()) {
+                skippedMissing++
+                continue
+            }
+            q.answerText = answer
+            val result = finish(q)
+            if (result != null) {
+                questions.add(result)
+                answeredFromKey++
+            } else {
+                skippedMissing++
+            }
+        }
+        questions.sortBy { it.sourceLine }
+
         val notes = mutableListOf<String>()
         if (questions.isEmpty()) notes.add("没有切出带答案的题目")
+        if (answeredFromKey > 0) notes.add("从答案区补全 " + answeredFromKey + " 道题的答案")
         if (skippedMissing > 0) notes.add("有 " + skippedMissing + " 道题没找到答案，未自动导入")
         return LayoutResult(questions, skippedMissing, notes)
+    }
+
+    /**
+     * 找页尾答案区：一行里有 >=3 组「题号+答案」，或带「答案/参考答案」标题且 >=2 组。
+     * 命中后从该行到页尾都算答案区，不再参与题干/选项状态机。
+     *
+     * 返回 (题号 -> 答案文本, 答案区行下标集合)。题号重复时保留第一次出现的答案。
+     */
+    private fun extractAnswerKey(lines: List<OcrLine>): Pair<Map<Int, String>, Set<Int>> {
+        var start = -1
+        for ((index, line) in lines.withIndex()) {
+            val text = line.text.trim()
+            if (text.isEmpty()) continue
+            val pairs = countAnswerPairs(text)
+            val header = text.contains("答案") || text.contains("参考答案")
+            if (pairs >= 3 || (header && pairs >= 2)) {
+                start = index
+                break
+            }
+        }
+        if (start < 0) return emptyMap<Int, String>() to emptySet()
+        val result = LinkedHashMap<Int, String>()
+        val indexes = HashSet<Int>()
+        for (i in start until lines.size) {
+            indexes.add(i)
+            parseAnswerPairs(lines[i].text, result)
+        }
+        return result to indexes
+    }
+
+    private fun countAnswerPairs(text: String): Int {
+        var count = 0
+        ANSWER_KEY_RANGE.findAll(text).forEach { count += (it.groupValues[2].toIntOrNull() ?: 0) - (it.groupValues[1].toIntOrNull() ?: 0) + 1 }
+        val rest = ANSWER_KEY_RANGE.replace(text, " ")
+        count += ANSWER_KEY_PAIR.findAll(rest).count()
+        return count
+    }
+
+    private fun parseAnswerPairs(text: String, out: MutableMap<Int, String>) {
+        var rest = text
+        ANSWER_KEY_RANGE.findAll(text).forEach { m ->
+            val startNo = m.groupValues[1].toIntOrNull() ?: return@forEach
+            val endNo = m.groupValues[2].toIntOrNull() ?: return@forEach
+            val letters = m.groupValues[3]
+            if (endNo < startNo || endNo - startNo + 1 != letters.length) return@forEach
+            for (i in letters.indices) {
+                out.putIfAbsent(startNo + i, letters[i].toString())
+            }
+        }
+        if (ANSWER_KEY_RANGE.containsMatchIn(text)) {
+            rest = ANSWER_KEY_RANGE.replace(text, " ")
+        }
+        ANSWER_KEY_PAIR.findAll(rest).forEach { m ->
+            val no = m.groupValues[1].toIntOrNull() ?: return@forEach
+            val answer = m.groupValues[2].trim()
+            if (answer.isNotEmpty()) out.putIfAbsent(no, answer)
+        }
     }
 
     private fun finish(q: MutableQuestion): LayoutQuestion? {
@@ -184,6 +275,7 @@ object QuestionLayoutParser {
             confidence = stemScore,
             formulaHints = hints,
             formulaBoxes = q.formulaBoxes.distinct(),
+            questionNumber = q.number,
             warnings = warnings,
         )
     }
@@ -314,6 +406,7 @@ object QuestionLayoutParser {
         var answerText = ""
         var analysis = ""
         var endLine = lineNo
+        var number: Int? = null
     }
 }
 

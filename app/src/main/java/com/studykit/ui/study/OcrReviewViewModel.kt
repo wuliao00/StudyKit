@@ -33,6 +33,16 @@ class OcrReviewViewModel(application: Application) : AndroidViewModel(applicatio
     val pendingCount: StateFlow<Int> = repository.observePendingReviewCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /** v3.10：最近纠错记录（本地，只读展示）。 */
+    val recentCorrections: StateFlow<List<OcrCorrection>> = container.ocrCorrectionRepository
+        .observeRecent(20)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** v3.10：一键确认全部待校对题。 */
+    fun confirmAll() {
+        viewModelScope.launch { repository.markAllReviewed() }
+    }
+
     fun pageFile(question: Question): File? =
         OcrPageStore.resolve(getApplication(), question.ocrPagePath)
 

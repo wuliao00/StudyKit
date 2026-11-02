@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.studykit.data.entity.OcrCorrection
 import com.studykit.data.entity.Question
 import com.studykit.data.question.QuestionType
 import com.studykit.ui.components.AppCard
@@ -46,6 +47,9 @@ import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.ocr.OcrLayoutJson
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import org.json.JSONArray
 
 /**
@@ -65,7 +69,10 @@ fun OcrReviewScreen(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val pending by viewModel.pending.collectAsStateWithLifecycle()
+    val corrections by viewModel.recentCorrections.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Question?>(null) }
+    var confirmingAll by remember { mutableStateOf(false) }
+    var showCorrections by remember { mutableStateOf(false) }
     var previewPage by remember { mutableStateOf<File?>(null) }
     var deleting by remember { mutableStateOf<Question?>(null) }
 
@@ -86,13 +93,26 @@ fun OcrReviewScreen(
             Spacer(Modifier.width(AppTheme.space.xs))
             Text(text = "待校对题目", style = texts.pageTitle)
             Spacer(Modifier.weight(1f))
+            TextButton(onClick = { showCorrections = true }) {
+                Text(text = "记录", style = texts.caption, color = colors.secondaryText)
+            }
             Text(
                 text = pending.size.toString() + " 道",
                 style = texts.caption,
                 color = colors.secondaryText,
             )
         }
-        Spacer(Modifier.height(AppTheme.space.md))
+        if (pending.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = { confirmingAll = true }) {
+                    Text(text = "全部确认", style = texts.caption, color = colors.accentInk)
+                }
+            }
+        }
+        Spacer(Modifier.height(AppTheme.space.sm))
         if (pending.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -120,6 +140,55 @@ fun OcrReviewScreen(
                 item(key = "tail") { Spacer(Modifier.height(AppTheme.space.xl)) }
             }
         }
+    }
+
+    if (confirmingAll) {
+        AlertDialog(
+            onDismissRequest = { confirmingAll = false },
+            title = { Text(text = "确认全部 " + pending.size + " 道？") },
+            text = {
+                Text(
+                    text = "只清待校对标记，不改题目内容；之后可在题库里正常复习。",
+                    style = texts.body,
+                    color = colors.secondaryText,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.confirmAll()
+                    confirmingAll = false
+                }) {
+                    Text(text = "全部确认", color = colors.accentInk)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingAll = false }) { Text(text = "取消") }
+            },
+        )
+    }
+
+    if (showCorrections) {
+        AlertDialog(
+            onDismissRequest = { showCorrections = false },
+            title = { Text(text = "最近纠错记录") },
+            text = {
+                if (corrections.isEmpty()) {
+                    Text(text = "还没有纠错记录。校对页保存改过的内容时会自动记一条。", style = texts.body)
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(AppTheme.space.xs),
+                    ) {
+                        corrections.forEach { item -> CorrectionRow(item) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCorrections = false }) { Text(text = "关闭") }
+            },
+        )
     }
 
     editing?.let { question ->
@@ -398,3 +467,25 @@ private fun checkboxLetter(index: Int): String {
     if (index < 0 || index > 25) return ""
     return ('A' + index).toString()
 }
+
+@Composable
+private fun CorrectionRow(item: OcrCorrection) {
+    val texts = AppTheme.texts
+    val colors = AppTheme.colors
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = SimpleDateFormat("M-d HH:mm", Locale.getDefault()).format(Date(item.createdAt)) +
+                "    " + item.beforeAnswer.ifBlank { "-" } + " -> " + item.afterAnswer.ifBlank { "-" },
+            style = texts.caption,
+            color = colors.secondaryText,
+        )
+        Text(
+            text = item.beforeStem,
+            style = texts.aux,
+            color = colors.primaryText,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+

@@ -19,6 +19,9 @@ interface OcrCorrectionDao {
     @Query("SELECT * FROM ocr_corrections ORDER BY id DESC LIMIT :limit")
     suspend fun recent(limit: Int): List<OcrCorrection>
 
+    @Query("SELECT * FROM ocr_corrections ORDER BY id DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<OcrCorrection>>
+
     @Query("DELETE FROM ocr_corrections")
     suspend fun deleteAll()
 }

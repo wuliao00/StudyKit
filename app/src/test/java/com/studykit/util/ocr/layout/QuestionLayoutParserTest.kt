@@ -3,6 +3,7 @@ package com.studykit.util.ocr.layout
 import com.studykit.util.ocr.OcrBox
 import com.studykit.util.ocr.OcrLine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -163,6 +164,62 @@ class QuestionLayoutParserTest {
         assertTrue("formula hint missing: " + q.formulaHints, q.formulaHints.isNotEmpty())
         assertTrue("formula box missing", q.formulaBoxes.isNotEmpty())
         assertEquals(40, q.formulaBoxes.single().x0)
+    }
+
+    @Test
+    fun answerKeyAtBottomFillsMissingAnswers() {
+        val lines = listOf(
+            line("1. 下列词语中，没有错别字的是（ ）", 20),
+            line("A. 再接再厉", 60),
+            line("B. 走头无路", 96),
+            line("C. 迫不急待", 132),
+            line("2. 计算 1+1 的值（ ）", 180),
+            line("A. 1", 220),
+            line("B. 2", 256),
+            line("答案：1.A 2.B", 320),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertEquals("A", result.questions[0].answerText)
+        assertEquals("B", result.questions[1].answerText)
+        assertEquals(1, result.questions[0].questionNumber)
+        assertTrue(result.notes.any { it.contains("答案区补全 2") })
+        assertFalse("答案行不能续进题干", result.questions[1].stem.contains("答案"))
+    }
+
+    @Test
+    fun answerKeyRangeIsExpanded() {
+        val lines = listOf(
+            line("1. 第一题（ ）", 20),
+            line("A. 甲", 60),
+            line("B. 乙", 96),
+            line("2. 第二题（ ）", 140),
+            line("A. 甲", 180),
+            line("B. 乙", 216),
+            line("3. 第三题（ ）", 260),
+            line("A. 甲", 300),
+            line("B. 乙", 336),
+            line("参考答案 1-3 ABC", 400),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(3, result.questions.size)
+        assertEquals(listOf("A", "B", "C"), result.questions.map { it.answerText })
+    }
+
+    @Test
+    fun answerKeyDoesNotStealInlineOptions() {
+        // 内联选项行含数字，不能被误判成答案区
+        val lines = listOf(
+            line("1. 已知 f(2)（ ）", 20),
+            line("A. 4    B. 5    C. 6    D. 9", 60),
+            line("2. 已知 g(3)（ ）", 110),
+            line("A. 1    B. 2    C. 3    D. 4", 150),
+            line("答案：1.B 2.C", 220),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertEquals(listOf("4", "5", "6", "9"), result.questions[0].options)
+        assertEquals("B", result.questions[0].answerText)
     }
 
 }

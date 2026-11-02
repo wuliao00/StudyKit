@@ -108,6 +108,9 @@ class QuestionRepository(
 
     suspend fun markReviewed(id: Long): Boolean = questionDao.markReviewed(id) > 0
 
+    /** v3.10：全部确认，返回清掉的条数（0 表示本来就没有待校对题）。 */
+    suspend fun markAllReviewed(): Int = questionDao.markAllReviewed()
+
     /** 校对页改完题干/选项/答案后原地更新；调用方负责把 needsReview 置 false。 */
     suspend fun update(question: Question): Boolean = questionDao.update(question) > 0
 
