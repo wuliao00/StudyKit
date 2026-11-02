@@ -85,6 +85,9 @@ OCR 自 v2.8.0 起用 **PP-OCRv6**（经 ONNX Runtime Android 推理，模型 Ap
 > 低置信度/公式风险/缺答案题目落 needs_review，学习页「待校对题目」里确认或编辑后才回复习池；
 > 来源页整页保留可回看，公式/图形以原图兜底。300 张合成评测集与 CER 回归脚本见 tools/ocr_eval/，
 > 细则见 docs/ocr-layout-and-review.md。
+>
+> v3.9 加透视校正（纸张四角 -> 矩形重采样）、公式/图形裁片（校对页可看局部原图）、
+> 本地纠错日志（Room v14）与 100 张拍照仿真评测集；细则见 docs/ocr-perspective-and-crops.md。
 
 词表数据来自开源仓库 [kajweb/dict](https://github.com/kajweb/dict)，仅用于个人学习；导入后完全离线，本应用不上传任何数据。
 

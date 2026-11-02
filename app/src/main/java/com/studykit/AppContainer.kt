@@ -8,6 +8,7 @@ import com.studykit.data.repository.DesignPlanRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
 import com.studykit.data.repository.MockSessionRepository
+import com.studykit.data.repository.OcrCorrectionRepository
 import com.studykit.data.repository.QuestionRepository
 import com.studykit.data.repository.ReviewLogRepository
 import com.studykit.data.repository.SettingsRepository
@@ -73,6 +74,9 @@ class AppContainer(
 
     /** 套卷会话持久化（v3.0-B）：薄包装，逻辑全在 ViewModel/机器侧，这层只挡 Room */
     val mockSessionRepository: MockSessionRepository = MockSessionRepository(database.mockSessionDao())
+
+    /** v3.9：校对纠错记录；只在本机，不进导出/备份。 */
+    val ocrCorrectionRepository: OcrCorrectionRepository = OcrCorrectionRepository(database.ocrCorrectionDao())
 
     /**
      * 学习设计方案（v12）：8 种模板共用一张 `design_plans`。拼 Markdown 的是纯函数

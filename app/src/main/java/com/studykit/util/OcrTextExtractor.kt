@@ -11,6 +11,8 @@ import com.studykit.util.ocr.OcrLine
 import com.studykit.util.ocr.OcrReport
 import com.studykit.util.ocr.PhotoQuality
 import com.studykit.util.ocr.PhotoQualityAnalyzer
+import com.studykit.util.ocr.geometry.PageDetector
+import com.studykit.util.ocr.geometry.PerspectiveCorrector
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
@@ -58,17 +60,31 @@ object OcrTextExtractor {
             return@withContext OcrResult.Failed("图片不存在或已损坏")
         }
         // 先解码（纯本地开销，也能就地挡掉坏文件），再加载 30MB 模型 —— 坏输入不该触发模型加载。
-        val bitmap = decodeUpright(file)
+        val decoded = decodeUpright(file)
             ?: return@withContext OcrResult.Failed("无法读取这张图片")
-        var working: Bitmap = bitmap
+        var working: Bitmap = decoded
+        var perspectiveCorrected = false
         try {
-            val quality = runCatching { PhotoQualityAnalyzer.analyze(bitmap) }.getOrNull()
+            // v3.9：先找纸张四角做透视校正；截图/白底图检测返回 null，不裁不转
+            val pageQuad = runCatching { PageDetector.detect(decoded) }.getOrNull()
+            if (pageQuad != null) {
+                val corrected = runCatching {
+                    PerspectiveCorrector.correct(decoded, pageQuad)
+                }.getOrNull()
+                if (corrected != null) {
+                    decoded.recycle()
+                    working = corrected
+                    perspectiveCorrected = true
+                }
+            }
             ensureActive()
-            val deskew = runCatching { Deskew.estimateDegrees(bitmap) }.getOrDefault(0f)
+            val quality = runCatching { PhotoQualityAnalyzer.analyze(working) }.getOrNull()
+            ensureActive()
+            val deskew = runCatching { Deskew.estimateDegrees(working) }.getOrDefault(0f)
             if (abs(deskew) >= Deskew.MIN_APPLY_DEGREES && abs(deskew) <= Deskew.MAX_APPLY_DEGREES) {
-                val rotated = Deskew.rotate(bitmap, -deskew)
-                if (rotated !== bitmap) {
-                    bitmap.recycle()
+                val rotated = Deskew.rotate(working, -deskew)
+                if (rotated !== working) {
+                    working.recycle()
                     working = rotated
                 }
             }
@@ -95,6 +111,7 @@ object OcrTextExtractor {
                         retriedLines = result.retried,
                         pageWidth = working.width,
                         pageHeight = working.height,
+                        perspectiveCorrected = perspectiveCorrected,
                     ),
                 )
             }
@@ -104,6 +121,39 @@ object OcrTextExtractor {
             OcrResult.Failed("识别失败：" + (t.message ?: "未知原因"))
         } finally {
             if (!working.isRecycled) working.recycle()
+        }
+    }
+
+    /**
+     * v3.9：按与 recognize 完全相同的管线（EXIF 转正 -> 透视校正 -> 摆正）产出一张工作图，
+     * 只给裁公式/图形用；调用方负责 recycle。识别本身不返回 bitmap，避免大图跨层传递。
+     * 任何一步失败都返回 null，裁片失败不影响主流程。
+     */
+    suspend fun prepareWorkingBitmap(file: File): Bitmap? = withContext(Dispatchers.IO) {
+        if (!file.exists() || file.length() == 0L) return@withContext null
+        val decoded = decodeUpright(file) ?: return@withContext null
+        var working: Bitmap = decoded
+        try {
+            val quad = runCatching { PageDetector.detect(decoded) }.getOrNull()
+            if (quad != null) {
+                val corrected = runCatching { PerspectiveCorrector.correct(decoded, quad) }.getOrNull()
+                if (corrected != null) {
+                    decoded.recycle()
+                    working = corrected
+                }
+            }
+            val deskew = runCatching { Deskew.estimateDegrees(working) }.getOrDefault(0f)
+            if (abs(deskew) >= Deskew.MIN_APPLY_DEGREES && abs(deskew) <= Deskew.MAX_APPLY_DEGREES) {
+                val rotated = Deskew.rotate(working, -deskew)
+                if (rotated !== working) {
+                    working.recycle()
+                    working = rotated
+                }
+            }
+            working
+        } catch (_: Throwable) {
+            if (!working.isRecycled) working.recycle()
+            null
         }
     }
 

@@ -2,6 +2,31 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.9.0] - 2026-11-03（透视校正 / 公式图形裁片 / 纠错日志 / 拍照仿真评测）
+
+> **版本号**：3.9.0 / 31。**Room v13 -> v14**：新增 ocr_corrections（纠错记录，纯加表）。
+> 继续对齐《优化 studykit》文档里 v3.8 之后剩下的工程项。
+
+- **透视校正（纯 Kotlin，无 OpenCV/模型）**：新增 util/ocr/geometry/PageGeometry。Otsu 二分桌面/纸面，
+  取最大亮区、四个极值角点做凸性/边长/面积校验，用 Matrix.setPolyToPoly 一次重采样成矩形；
+  截图/白底图（边框全亮）直接跳过。识别前先校正，再做质量体检/摆正；OcrReport 新增
+  perspectiveCorrected 标记，设备测试可用它断言。
+- **公式/图形裁片**：LayoutQuestion 带 formulaBoxes；OcrPageStore.saveCrop 把公式行裁成小图，
+  OcrLayoutJson 新增 formulaCrops/figureCrops；FigureDetector 用网格边缘密度 + 文本框排除找
+  图形/表格区域并裁片；校对页直接展示这些裁片，点开可看原图。公式仍不转 LaTeX，图形只做占位提示。
+- **纠错日志（Room v14）**：新增 ocr_corrections（question_id/created_at/before/after/置信度/来源页，
+  本地 append-only）；校对页保存时只有内容真变了才记一条，确认无误不产生噪音；不导出、不联网。
+- **100 张拍照仿真评测集**：tools/ocr_eval/generate_photo_like.py，五类（透视/阴影/折痕/低光/失焦）
+  各 20 张，深色桌布 + 透视 + 光照/阴影 + 纹理 + JPEG；走真模型跑 CER。100 张拍照仿真集（真模型、含透视校正）实测：平均 CER 0.36%（语料级 0.38%），P50 0%、P90 1.85%，
+  CER<=0.05 占比 100%，平均 WER 13.07%；分类见 docs/evidence/ocr-eval-photo-like-v3.9.md。
+- **机检**：192 测试类 / 1699 用例 / 0 失败（1 条真模型评测在未传 -PocrEvalDir 时跳过）。
+  新增 PageGeometryTest、PerspectiveBitmapTest、FigureDetectorTest、Migration13To14Test、
+  OcrCorrectionLogTest，并补 OcrLayoutJson crop、QuestionLayoutParser formulaBoxes 断言；
+  100 张拍照仿真集 CER 报告见 docs/evidence/ocr-eval-photo-like-v3.9.md。
+- **真机**：3.8.0/30 -> 3.9.0/31 覆盖安装成功，Room v13->v14 迁移成功（user_version=14），数据仍在；带公式/图形裁片的待校对题可展示裁片，编辑答案 C->B 保存后 needs_review 归 0、ocr_corrections 落 1 行；OcrPipelineDeviceTest 5/5（含透视 4.18s）通过，证据见 docs/evidence/v390-ocr-device.md。
+- **已知限制**：仍不做弯曲书页展平；不接 YOLO 版面模型/公式识别模型；拍照仿真集不是真实用户拍照集；
+  纠错日志暂无查看/导出界面（只在库内，供后续分析）。
+
 ## [3.8.0] - 2026-11-02（版面切题 / 待校对队列 / 公式与图形占位 / 300 张评测集）
 
 > **版本号**：3.8.0 / 30。**Room v12 -> v13**：questions 新增 OCR 校对四列，纯 ADD COLUMN、带默认值，

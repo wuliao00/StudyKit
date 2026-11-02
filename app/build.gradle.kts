@@ -70,8 +70,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "3.8.0"
+        versionCode = 31
+        versionName = "3.9.0"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。
@@ -290,6 +290,10 @@ tasks.withType<Test>().configureEach {
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     if (project.hasProperty("ocrEvalDir")) {
         systemProperty("ocr.eval.dir", project.property("ocrEvalDir").toString())
+        // 评测数据/输出路径不是 Gradle 声明的输入：不加这两行，增量构建会直接复用旧测试结果，
+        // 换了数据集还是旧 JSON。显式禁用 up-to-date 与 build cache，保证每次 -PocrEvalDir 都真跑。
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
     }
     if (project.hasProperty("ocrEvalOut")) {
         systemProperty("ocr.eval.out", project.property("ocrEvalOut").toString())

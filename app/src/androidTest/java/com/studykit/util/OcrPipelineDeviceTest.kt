@@ -89,4 +89,16 @@ class OcrPipelineDeviceTest {
             quality.issues.contains(PhotoIssue.TOO_DARK),
         )
     }
+    /** v3.9：深色桌面上的透视纸页，真机应检测到四角、校正后仍能读出 StudyKit。 */
+    @Test
+    fun perspectivePageIsCorrectedBeforeOcr() = runBlocking {
+        val result = OcrTextExtractor.recognize(context, assetFile("perspective_page.png"))
+        assertTrue("expected Text, got " + result, result is OcrResult.Text)
+        val text = result as OcrResult.Text
+        val report = text.report
+        assertNotNull("report must be present", report)
+        assertTrue("perspective should be corrected", report!!.perspectiveCorrected)
+        assertTrue("should contain StudyKit after correction: " + text.value, text.value.contains("StudyKit", ignoreCase = true))
+    }
+
 }

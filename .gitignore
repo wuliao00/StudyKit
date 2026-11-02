@@ -45,3 +45,6 @@ promo/
 # OCR eval run artifacts (reproducible, not tracked)
 tools/ocr_eval/out/
 __pycache__/
+
+# OCR photo-like eval images/outputs (23MB, reproducible)
+tools/ocr_eval/photo_like/

@@ -35,6 +35,8 @@ data class OcrReport(
     /** v3.8：送入识别的工作图尺寸（摆正后），版面切题用；0 = 调用方没填 */
     val pageWidth: Int = 0,
     val pageHeight: Int = 0,
+    /** v3.9：检测到纸张四角并做了透视校正（截图/白底图通常为 false） */
+    val perspectiveCorrected: Boolean = false,
 ) {
     /** 按字符数加权的平均置信度：长行更能代表整页质量，短行（题号/选项字母）不拉偏均值。 */
     val meanScore: Float

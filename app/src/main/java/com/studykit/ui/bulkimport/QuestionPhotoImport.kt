@@ -32,8 +32,11 @@ import com.studykit.util.importer.ImportItem
 import com.studykit.util.importer.ImportPlan
 import com.studykit.util.importer.TextCleaner
 import com.studykit.util.ocr.PhotoQuality
+import com.studykit.util.ocr.geometry.FigureDetector
+import com.studykit.util.ocr.layout.FormulaDetector
 import com.studykit.util.ocr.layout.QuestionLayoutParser
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -137,11 +140,19 @@ internal fun buildLayoutPlan(
     pagePath: String,
     pageWidth: Int,
     pageHeight: Int,
+    formulaCrops: Map<Int, List<String>> = emptyMap(),
+    figureCrops: List<String> = emptyList(),
 ): LayoutPlanResult {
     val items = ArrayList<ImportItem>(layout.questions.size)
     val low = LinkedHashSet<Int>()
     for (question in layout.questions) {
-        val item = question.toImportItem(pagePath, pageWidth, pageHeight) ?: continue
+        val item = question.toImportItem(
+            pagePath = pagePath,
+            pageWidth = pageWidth,
+            pageHeight = pageHeight,
+            formulaCrops = formulaCrops[question.sourceLine].orEmpty(),
+            figureCrops = figureCrops,
+        ) ?: continue
         items.add(item)
         if (item.ocrConfidence >= 0f && item.ocrConfidence < OcrReport.LOW_LINE_SCORE) {
             low.add(item.sourceLine)
@@ -154,6 +165,8 @@ private fun QuestionLayoutParser.LayoutQuestion.toImportItem(
     pagePath: String,
     pageWidth: Int,
     pageHeight: Int,
+    formulaCrops: List<String>,
+    figureCrops: List<String>,
 ): ImportItem.Question? {
     val answer = answerText.trim()
     var type = QuestionType.SINGLE
@@ -212,6 +225,8 @@ private fun QuestionLayoutParser.LayoutQuestion.toImportItem(
             formulaHints = formulaHints,
             warnings = warnings,
             sourceLines = listOf(sourceLine),
+            formulaCrops = formulaCrops,
+            figureCrops = figureCrops,
         ),
     )
     val lowConfidence = confidence < OcrReport.BATCH_SCORE
@@ -246,6 +261,8 @@ internal fun annotatePipePlan(
     plan: ImportPlan,
     report: OcrReport?,
     pagePath: String,
+    formulaCrops: Map<Int, List<String>> = emptyMap(),
+    figureCrops: List<String> = emptyList(),
 ): ImportPlan {
     if (report == null) return plan
     val scores = report.lines.map { it.score }
@@ -274,6 +291,8 @@ internal fun annotatePipePlan(
                         formulaHints = if (formula) listOf(lineText) else emptyList(),
                         warnings = warnings,
                         sourceLines = listOf(item.sourceLine),
+                        formulaCrops = formulaCrops[item.sourceLine].orEmpty(),
+                        figureCrops = figureCrops,
                     ),
                 ),
             )
@@ -347,11 +366,41 @@ fun rememberQuestionPhotoImport(
                         )
                         if (layout.questions.isNotEmpty()) {
                             val pagePath = OcrPageStore.save(context, file).orEmpty()
+                            val pageKey = UUID.randomUUID().toString()
+                            val formulaCropMap = LinkedHashMap<Int, List<String>>()
+                            var figureCropList: List<String> = emptyList()
+                            val pageBitmap = OcrTextExtractor.prepareWorkingBitmap(file)
+                            if (pageBitmap != null) {
+                                try {
+                                    for (question in layout.questions) {
+                                        if (question.formulaBoxes.isEmpty()) continue
+                                        val crops = question.formulaBoxes.take(3).mapIndexedNotNull { i, box ->
+                                            OcrPageStore.saveCrop(
+                                                context, pageBitmap, box, pageKey, "formula" + i,
+                                            )
+                                        }
+                                        if (crops.isNotEmpty()) formulaCropMap[question.sourceLine] = crops
+                                    }
+                                    figureCropList = OcrPageStore.saveRegionCrops(
+                                        context,
+                                        pageBitmap,
+                                        FigureDetector.detect(
+                                            pageBitmap,
+                                            result.report.lines.mapNotNull { it.box },
+                                        ),
+                                        pageKey,
+                                    )
+                                } finally {
+                                    pageBitmap.recycle()
+                                }
+                            }
                             val built = buildLayoutPlan(
                                 layout = layout,
                                 pagePath = pagePath,
                                 pageWidth = result.report.pageWidth,
                                 pageHeight = result.report.pageHeight,
+                                formulaCrops = formulaCropMap,
+                                figureCrops = figureCropList,
                             )
                             if (built.plan.items.isNotEmpty()) {
                                 file.delete()
@@ -375,8 +424,45 @@ fun rememberQuestionPhotoImport(
                                 it is ImportItem.Question && it.needsReview
                             }
                             val pagePath = if (needsPage) OcrPageStore.save(context, file).orEmpty() else ""
+                            var formulaCropMap: Map<Int, List<String>> = emptyMap()
+                            var figureCropList: List<String> = emptyList()
+                            if (needsPage) {
+                                val pageKey = UUID.randomUUID().toString()
+                                val pageBitmap = OcrTextExtractor.prepareWorkingBitmap(file)
+                                if (pageBitmap != null) {
+                                    try {
+                                        val crops = LinkedHashMap<Int, List<String>>()
+                                        result.report?.lines?.forEachIndexed { index, line ->
+                                            val box = line.box
+                                            if (box != null && FormulaDetector.looksLikeFormula(line.text)) {
+                                                OcrPageStore.saveCrop(
+                                                    context, pageBitmap, box, pageKey, "formula" + (index + 1),
+                                                )?.let { crops[index + 1] = listOf(it) }
+                                            }
+                                        }
+                                        formulaCropMap = crops
+                                        figureCropList = OcrPageStore.saveRegionCrops(
+                                            context,
+                                            pageBitmap,
+                                            FigureDetector.detect(
+                                                pageBitmap,
+                                                result.report?.lines?.mapNotNull { it.box }.orEmpty(),
+                                            ),
+                                            pageKey,
+                                        )
+                                    } finally {
+                                        pageBitmap.recycle()
+                                    }
+                                }
+                            }
                             val planToImport = if (needsPage) {
-                                annotatePipePlan(outcome.plan, result.report, pagePath)
+                                annotatePipePlan(
+                                    outcome.plan,
+                                    result.report,
+                                    pagePath,
+                                    formulaCropMap,
+                                    figureCropList,
+                                )
                             } else {
                                 annotated
                             }

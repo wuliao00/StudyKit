@@ -14,6 +14,7 @@ import com.studykit.data.dao.DesignPlanDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
 import com.studykit.data.dao.MockSessionDao
+import com.studykit.data.dao.OcrCorrectionDao
 import com.studykit.data.dao.ParamSnapshotDao
 import com.studykit.data.dao.PracticeDao
 import com.studykit.data.dao.QuestionDao
@@ -32,6 +33,7 @@ import com.studykit.data.entity.Habit
 import com.studykit.data.entity.Mistake
 import com.studykit.data.entity.MistakeRedo
 import com.studykit.data.entity.MockSession
+import com.studykit.data.entity.OcrCorrection
 import com.studykit.data.entity.PracticeRecord
 import com.studykit.data.entity.Question
 import com.studykit.data.entity.ReviewLog
@@ -61,7 +63,9 @@ import com.studykit.optimize.ParamSnapshot
         ParamSnapshot::class,
         MockSession::class,
         DesignPlan::class,
+        OcrCorrection::class,
     ],
+    // v14：v3.9——新增 ocr_corrections（校对纠错记录，本地 append-only 纯加表）
     // v13：v3.8——questions 加 OCR 校对四列（needs_review / ocr_confidence / ocr_page_path / ocr_layout_json）
     // v12：学习设计——新增 design_plans（8 种模板共用，纯加表 + updated_at 索引）
     // v11：v3.3——阶段列 exam_stage + (exam_stage, question_type, subject) 复合索引
@@ -69,7 +73,7 @@ import com.studykit.optimize.ParamSnapshot
     // v9：v3.0-B——套卷会话持久化（mock_sessions）+ 错题遮挡两列（kind/extra）
     // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -87,6 +91,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun paramSnapshotDao(): ParamSnapshotDao
     abstract fun mockSessionDao(): MockSessionDao
     abstract fun designPlanDao(): DesignPlanDao
+    abstract fun ocrCorrectionDao(): OcrCorrectionDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -552,6 +557,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v13 -> v14：新增 ocr_corrections。纯加表 + 两个索引，老表一行不动。
+         * 表结构与 Room 由 OcrCorrection 实体生成的 schema 一致（MigrationTestHelper 校验）。
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS ocr_corrections (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "question_id INTEGER NOT NULL, " +
+                        "created_at INTEGER NOT NULL, " +
+                        "before_stem TEXT NOT NULL, " +
+                        "after_stem TEXT NOT NULL, " +
+                        "before_answer TEXT NOT NULL, " +
+                        "after_answer TEXT NOT NULL, " +
+                        "ocr_confidence REAL NOT NULL, " +
+                        "source_page TEXT NOT NULL" +
+                        ")",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ocr_corrections_question_id " +
+                        "ON ocr_corrections (question_id)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_ocr_corrections_created_at " +
+                        "ON ocr_corrections (created_at)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -566,7 +601,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                         MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
-                        MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                        MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                     )
                     .addCallback(SeedCallback)
                     .build()

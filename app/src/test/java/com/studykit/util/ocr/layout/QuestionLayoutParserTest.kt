@@ -145,4 +145,24 @@ class QuestionLayoutParserTest {
         assertTrue(!FormulaDetector.looksLikeFormula("这是一段普通的语文句子，没有公式。"))
         assertTrue(!FormulaDetector.looksLikeFormula("Read the passage and answer the question."))
     }
+    @Test
+    fun formulaLinesCarryTheirBoxesForCrops() {
+        val lines = listOf(
+            OcrLine(
+                text = "1. 已知函数 f(x)=x^2+1，求 f(2) 的值。",
+                score = 0.9f,
+                box = OcrBox(40, 30, 700, 80),
+            ),
+            OcrLine(text = "A. 4", score = 0.9f, box = OcrBox(60, 90, 120, 120)),
+            OcrLine(text = "B. 5", score = 0.9f, box = OcrBox(140, 90, 200, 120)),
+            OcrLine(text = "答案：B", score = 0.9f, box = OcrBox(60, 130, 220, 160)),
+        )
+        val result = QuestionLayoutParser.parse(lines, pageWidth = 800, pageHeight = 1000)
+        assertEquals(1, result.questions.size)
+        val q = result.questions.single()
+        assertTrue("formula hint missing: " + q.formulaHints, q.formulaHints.isNotEmpty())
+        assertTrue("formula box missing", q.formulaBoxes.isNotEmpty())
+        assertEquals(40, q.formulaBoxes.single().x0)
+    }
+
 }

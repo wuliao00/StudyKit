@@ -21,6 +21,10 @@ object OcrLayoutJson {
         val formulaHints: List<String> = emptyList(),
         val warnings: List<String> = emptyList(),
         val sourceLines: List<Int> = emptyList(),
+        /** v3.9：疑似公式行的裁片相对路径（filesDir 下），校对页可直接看图核对 */
+        val formulaCrops: List<String> = emptyList(),
+        /** v3.9：页面级图形/表格区域裁片 */
+        val figureCrops: List<String> = emptyList(),
     )
 
     fun encode(meta: LayoutMeta): String {
@@ -32,6 +36,8 @@ object OcrLayoutJson {
         json.put("formulaHints", JSONArray(meta.formulaHints))
         json.put("warnings", JSONArray(meta.warnings))
         json.put("sourceLines", JSONArray(meta.sourceLines))
+        json.put("formulaCrops", JSONArray(meta.formulaCrops))
+        json.put("figureCrops", JSONArray(meta.figureCrops))
         return json.toString()
     }
 
@@ -47,6 +53,8 @@ object OcrLayoutJson {
                 formulaHints = json.optJSONArray("formulaHints").toStringList(),
                 warnings = json.optJSONArray("warnings").toStringList(),
                 sourceLines = json.optJSONArray("sourceLines").toIntList(),
+                formulaCrops = json.optJSONArray("formulaCrops").toStringList(),
+                figureCrops = json.optJSONArray("figureCrops").toStringList(),
             )
         }.getOrDefault(LayoutMeta())
     }

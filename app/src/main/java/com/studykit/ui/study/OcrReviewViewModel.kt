@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
+import com.studykit.data.entity.OcrCorrection
 import com.studykit.data.entity.Question
 import com.studykit.data.question.QuestionType
+import com.studykit.util.ocr.OcrLayoutJson
 import com.studykit.util.ocr.OcrPageStore
 import java.io.File
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +35,13 @@ class OcrReviewViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun pageFile(question: Question): File? =
         OcrPageStore.resolve(getApplication(), question.ocrPagePath)
+
+    /** v3.9：公式/图形裁片文件（按 ocr_layout_json 里的相对路径解析），无效项自动跳过。 */
+    fun cropFiles(question: Question): List<File> {
+        val meta = OcrLayoutJson.parse(question.ocrLayoutJson)
+        return (meta.formulaCrops + meta.figureCrops)
+            .mapNotNull { OcrPageStore.resolve(getApplication(), it) }
+    }
 
     fun confirmReviewed(id: Long) {
         viewModelScope.launch { repository.markReviewed(id) }
@@ -64,6 +73,13 @@ class OcrReviewViewModel(application: Application) : AndroidViewModel(applicatio
         }
         viewModelScope.launch {
             val ok = repository.update(updated)
+            if (ok) {
+                // v3.9：只记「真的改了内容」的编辑，确认无误/原样保存不产生噪音
+                runCatching {
+                    buildCorrection(question, updated, System.currentTimeMillis())
+                        ?.let { container.ocrCorrectionRepository.record(it) }
+                }
+            }
             onResult(ok)
         }
     }
@@ -139,3 +155,40 @@ internal fun applyReviewEdit(
         needsReview = false,
     )
 }
+
+/** 答案摘要：只用于纠错日志对比，不参与评分。 */
+internal fun answerSummary(question: Question): String {
+    val indices = question.correctIndices().sorted()
+    if (indices.isNotEmpty()) {
+        return indices.joinToString("") { ('A' + it).toString() }
+    }
+    val accepted = question.acceptedAnswers()
+    if (accepted.isNotEmpty()) return accepted.joinToString(";")
+    return question.referenceAnswer()
+}
+
+/**
+ * v3.9 纠错记录：before/after 内容完全一致返回 null（用户只是确认，不算纠错）。
+ * 纯函数，单测直接钉住「哪些字段变了才记」。
+ */
+internal fun buildCorrection(before: Question, after: Question, now: Long): OcrCorrection? {
+    val changed = before.stem != after.stem ||
+        before.optionsJson != after.optionsJson ||
+        before.answerIndex != after.answerIndex ||
+        before.answerIndicesJson != after.answerIndicesJson ||
+        before.answerTextJson != after.answerTextJson ||
+        before.explanation != after.explanation ||
+        before.questionType != after.questionType
+    if (!changed) return null
+    return OcrCorrection(
+        questionId = before.id,
+        createdAt = now,
+        beforeStem = before.stem,
+        afterStem = after.stem,
+        beforeAnswer = answerSummary(before),
+        afterAnswer = answerSummary(after),
+        ocrConfidence = before.ocrConfidence,
+        sourcePage = before.ocrPagePath,
+    )
+}
+

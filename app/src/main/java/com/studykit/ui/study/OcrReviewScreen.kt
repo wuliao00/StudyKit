@@ -1,6 +1,7 @@
 package com.studykit.ui.study
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,6 +110,7 @@ fun OcrReviewScreen(
                     ReviewCard(
                         question = question,
                         pageFile = viewModel.pageFile(question),
+                        cropFiles = viewModel.cropFiles(question),
                         onConfirm = { viewModel.confirmReviewed(question.id) },
                         onEdit = { editing = question },
                         onDelete = { deleting = question },
@@ -185,6 +187,7 @@ fun OcrReviewScreen(
 private fun ReviewCard(
     question: Question,
     pageFile: File?,
+    cropFiles: List<File>,
     onConfirm: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -219,10 +222,33 @@ private fun ReviewCard(
         if (meta.formulaHints.isNotEmpty()) {
             Spacer(Modifier.height(AppTheme.space.xs))
             Text(
-                text = "含疑似公式/符号 " + meta.formulaHints.size + " 处，建议对照原图核对",
+                text = "含疑似公式/符号 " + meta.formulaHints.size + " 处" +
+                    if (meta.formulaCrops.isNotEmpty()) "，已留 " + meta.formulaCrops.size + " 张裁片" else "",
                 style = texts.caption,
                 color = colors.warningInk,
             )
+        }
+        if (cropFiles.isNotEmpty()) {
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.xs),
+            ) {
+                cropFiles.forEach { file ->
+                    AsyncImage(
+                        model = file,
+                        contentDescription = "公式/图形裁片",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .height(88.dp)
+                            .width(132.dp)
+                            .clip(RoundedCornerShape(AppTheme.radius.sm))
+                            .clickable { onOpenPage(file) },
+                    )
+                }
+            }
         }
         pageFile?.let { file ->
             Spacer(Modifier.height(AppTheme.space.sm))

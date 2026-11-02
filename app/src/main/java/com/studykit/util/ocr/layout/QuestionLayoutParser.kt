@@ -36,6 +36,8 @@ object QuestionLayoutParser {
         val confidence: Float,
         /** 本题目区域内被判定为「疑似公式」的原始行，导入时写进 OCR 元数据 */
         val formulaHints: List<String>,
+        /** v3.9：疑似公式行的框（工作图像素坐标），用于裁片保留原图 */
+        val formulaBoxes: List<OcrBox> = emptyList(),
         val warnings: List<String>,
     )
 
@@ -93,11 +95,15 @@ object QuestionLayoutParser {
                     current!!.stemParts.add(inline.first)
                     current!!.options.addAll(inline.second)
                     current!!.lineScores.add(line.score)
-                    current!!.formulaHints.addAll(formulaHintsFor(listOf(inline.first) + inline.second))
+                    val hints = formulaHintsFor(listOf(inline.first) + inline.second)
+                    current!!.formulaHints.addAll(hints)
+                    if (hints.isNotEmpty() && line.box != null) current!!.formulaBoxes.add(line.box)
                 } else {
                     if (stemText.isNotEmpty()) current!!.stemParts.add(stemText)
                     current!!.lineScores.add(line.score)
-                    current!!.formulaHints.addAll(formulaHintsFor(listOf(stemText)))
+                    val hints = formulaHintsFor(listOf(stemText))
+                    current!!.formulaHints.addAll(hints)
+                    if (hints.isNotEmpty() && line.box != null) current!!.formulaBoxes.add(line.box)
                 }
                 continue
             }
@@ -123,10 +129,14 @@ object QuestionLayoutParser {
                     if (inline != null) {
                         q.options.add(inline.first)
                         q.options.addAll(inline.second)
-                        q.formulaHints.addAll(formulaHintsFor(listOf(inline.first) + inline.second))
+                        val hints = formulaHintsFor(listOf(inline.first) + inline.second)
+                        q.formulaHints.addAll(hints)
+                        if (hints.isNotEmpty() && line.box != null) q.formulaBoxes.add(line.box)
                     } else {
                         q.options.add(rest)
-                        q.formulaHints.addAll(formulaHintsFor(listOf(rest)))
+                        val hints = formulaHintsFor(listOf(rest))
+                        q.formulaHints.addAll(hints)
+                        if (hints.isNotEmpty() && line.box != null) q.formulaBoxes.add(line.box)
                     }
                 }
                 else -> {
@@ -137,7 +147,9 @@ object QuestionLayoutParser {
                     } else {
                         val last = q.stemParts.removeAt(q.stemParts.lastIndex)
                         q.stemParts.add(smartJoin(last, text))
-                        q.formulaHints.addAll(formulaHintsFor(listOf(text)))
+                        val hints = formulaHintsFor(listOf(text))
+                        q.formulaHints.addAll(hints)
+                        if (hints.isNotEmpty() && line.box != null) q.formulaBoxes.add(line.box)
                     }
                 }
             }
@@ -171,6 +183,7 @@ object QuestionLayoutParser {
             endLine = max(q.lineNo, q.endLine),
             confidence = stemScore,
             formulaHints = hints,
+            formulaBoxes = q.formulaBoxes.distinct(),
             warnings = warnings,
         )
     }
@@ -297,6 +310,7 @@ object QuestionLayoutParser {
         val options = ArrayList<String>()
         val lineScores = ArrayList<Float>()
         val formulaHints = ArrayList<String>()
+        val formulaBoxes = ArrayList<OcrBox>()
         var answerText = ""
         var analysis = ""
         var endLine = lineNo

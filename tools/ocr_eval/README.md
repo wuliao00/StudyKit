@@ -301,3 +301,30 @@ del _smoke_empty.json
   （两者必须来自同一次运行），否则评估结果无意义。
 - 评估脚本只依赖 Python 标准库 + numpy；CER 的 Levenshtein 为纯 Python 实现，不需要新增三方库。
 - 可复现性已验证：同 SEED 连续两次运行、以及 Python 3.12 / 3.13 两套解释器（Pillow 12.3.0）生成的图片与 ground_truth.json 逐字节一致；若升级 Pillow/字体版本导致像素级差异，请同时更新 ground_truth.json。
+
+---
+
+## 十三、拍照仿真集（v3.9）
+
+generate_photo_like.py 额外生成 100 张更接近真实拍照的页面（**独立目录，不影响 v3.8 的 300 张合成集**）：
+
+- 目录：photo_like/，图片直接放该目录、ground_truth.json 同目录，GT 的 image 是文件名；
+- 五类，每类 20 张：photo_perspective（透视/桌面）、photo_shadow（手影/方向阴影）、
+  photo_fold（折痕）、photo_lowlight（低光+噪声）、photo_blur（轻微失焦）；
+- 页面仍是渲染文本，但加上了深色桌布、透视四边形、纸面纹理、阴影/高光/折痕、JPEG 压缩；
+- 与真实手机拍照仍有差距（无摩尔纹、无真实纸张/折痕、无相机 ISP/对焦差异），只作透视与低质页面的回归参考。
+
+生成与评测：
+
+~~~powershell
+cd tools/ocr_eval
+py -3 generate_photo_like.py
+# 在仓库根目录跑真模型（产物写到 photo_like/out_ocr.json）
+gradlew.bat :app:testDebugUnitTest --tests "com.studykit.ocr.eval.OcrJvmEvalTest" ^
+  -PocrEvalDir=<repo>/tools/ocr_eval/photo_like ^
+  -PocrEvalOut=<repo>/tools/ocr_eval/photo_like/out_ocr.json
+py -3 evaluate.py photo_like/out_ocr.json --gt photo_like/ground_truth.json --out docs/evidence/ocr-eval-photo-like-v3.9.md
+~~~
+
+photo_like/ 与其中的图片/输出默认不进版本库；生成脚本与说明提交，便于换机器重建。
+

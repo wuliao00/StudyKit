@@ -1,6 +1,8 @@
 package com.studykit.util.ocr
 
 import android.content.Context
+import android.graphics.Bitmap
+import com.studykit.util.ocr.OcrBox
 import java.io.File
 import java.util.UUID
 
@@ -44,4 +46,47 @@ object OcrPageStore {
     fun delete(context: Context, relative: String) {
         resolve(context, relative)?.delete()
     }
+
+    /**
+     * 从已校正/摆正的工作图裁一小块并存进仓库（v3.9 公式/图形占位）。
+     * [box] 是工作图像素坐标；裁失败返回 null。输出 PNG，最长边 1200，避免大图。
+     */
+    fun saveCrop(
+        context: Context,
+        page: Bitmap,
+        box: OcrBox,
+        pageKey: String,
+        suffix: String,
+    ): String? {
+        val x0 = box.x0.coerceIn(0, page.width - 1)
+        val y0 = box.y0.coerceIn(0, page.height - 1)
+        val x1 = box.x1.coerceIn(x0 + 1, page.width)
+        val y1 = box.y1.coerceIn(y0 + 1, page.height)
+        if (x1 - x0 < 8 || y1 - y0 < 8) return null
+        return runCatching {
+            val dir = File(context.filesDir, DIR).apply { mkdirs() }
+            val base = if (pageKey.isNotBlank()) pageKey else UUID.randomUUID().toString()
+            val target = File(dir, base + "_" + suffix + ".png")
+            val crop = Bitmap.createBitmap(page, x0, y0, x1 - x0, y1 - y0)
+            try {
+                target.outputStream().use { out ->
+                    crop.compress(Bitmap.CompressFormat.PNG, 90, out)
+                }
+            } finally {
+                crop.recycle()
+            }
+            DIR + "/" + target.name
+        }.getOrNull()
+    }
+
+    /** 页面级图形区域裁片：按区域列表截取，最多 4 块。 */
+    fun saveRegionCrops(
+        context: Context,
+        page: Bitmap,
+        regions: List<OcrBox>,
+        pageKey: String,
+    ): List<String> = regions.take(4).mapIndexedNotNull { index, box ->
+        saveCrop(context, page, box, pageKey, "figure" + index)
+    }
+
 }

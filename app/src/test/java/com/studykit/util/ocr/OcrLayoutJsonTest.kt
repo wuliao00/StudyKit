@@ -15,6 +15,8 @@ class OcrLayoutJsonTest {
             formulaHints = listOf("f(x)=x^2+1"),
             warnings = listOf("含疑似公式"),
             sourceLines = listOf(3, 4),
+            formulaCrops = listOf("ocr_pages/a_formula0.png"),
+            figureCrops = listOf("ocr_pages/a_figure0.png"),
         )
         val parsed = OcrLayoutJson.parse(OcrLayoutJson.encode(meta))
         assertEquals("ocr_pages/a.jpg", parsed.pagePath)
@@ -23,6 +25,8 @@ class OcrLayoutJsonTest {
         assertEquals(listOf("f(x)=x^2+1"), parsed.formulaHints)
         assertEquals(listOf("含疑似公式"), parsed.warnings)
         assertEquals(listOf(3, 4), parsed.sourceLines)
+        assertEquals(listOf("ocr_pages/a_formula0.png"), parsed.formulaCrops)
+        assertEquals(listOf("ocr_pages/a_figure0.png"), parsed.figureCrops)
     }
 
     @Test
