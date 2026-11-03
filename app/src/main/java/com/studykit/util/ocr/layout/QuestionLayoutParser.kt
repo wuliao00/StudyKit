@@ -58,6 +58,19 @@ object QuestionLayoutParser {
     private val PAGE_NUMBER = Regex("^\\s*(?:第\\s*\\d+\\s*页|\\d{1,3})\\s*$")
     private val INLINE_OPTION = Regex("(?:^|\\s)([A-H])\\s*[.、．:：)）]\\s*")
 
+    /** v3.13：节标题（一、选择题 / 第 X 部分 / 选择题（每题 3 分）/ 注意事项）不参与题干 */
+    private val SECTION_HEADER = Regex(
+        "^\\s*(?:[一二三四五六七八九十]+\\s*[、.．]|第\\s*[一二三四五六七八九十\\d]+\\s*(?:部分|大题|卷)|" +
+            "(?:选择题|填空题|判断题|解答题|计算题|简答题|材料分析题|综合题)\\s*[（(]|" +
+            "注意事项|考试说明|考生须知).*$",
+    )
+
+    /** v3.13：分值行（本题 5 分 / （共 10 分）/ 分值：12 分）不续进题干 */
+    private val SCORE_LINE = Regex(
+        "^\\s*[（(]?\\s*(?:本题|每题|共|满分)?\\s*\\d+(?:\\.\\d+)?\\s*分\\s*[）)]?\\s*$|" +
+            "^\\s*分值\\s*[:：].*$",
+    )
+
     /** v3.10：答案区「1-5 ABCDA」区间；要求字母数与区间长度一致，防止把普通连字符误判 */
     private val ANSWER_KEY_RANGE = Regex("(\\d{1,3})\\s*[-~—至]\\s*(\\d{1,3})\\s*[:：.、]?\\s*([A-H]{2,15})")
 
@@ -99,6 +112,15 @@ object QuestionLayoutParser {
             if (index in answerKeyIndexes) continue
             val text = line.text.trim()
             if (text.isEmpty()) continue
+            // v3.13：节标题直接结束上一题并跳过；分值行也不许续进题干/选项
+            if (SECTION_HEADER.matches(text)) {
+                flush()
+                continue
+            }
+            if (SCORE_LINE.matches(text)) {
+                current?.lineScores?.add(line.score)
+                continue
+            }
             val start = QUESTION_START.matchEntire(text) ?: QUESTION_CN.matchEntire(text)
             if (start != null) {
                 flush()

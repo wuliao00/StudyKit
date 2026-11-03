@@ -222,4 +222,60 @@ class QuestionLayoutParserTest {
         assertEquals("B", result.questions[0].answerText)
     }
 
+    @Test
+    fun sectionHeadersEndPreviousQuestionAndAreNotStem() {
+        val lines = listOf(
+            line("一、选择题（每题 3 分，共 30 分）", 20),
+            line("1. 第一题（ ）", 60),
+            line("A. 甲", 100),
+            line("B. 乙", 136),
+            line("答案：A", 172),
+            line("二、填空题（每题 3 分）", 220),
+            line("2. 第二题（ ）", 260),
+            line("A. 甲", 300),
+            line("B. 乙", 336),
+            line("答案：B", 372),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertFalse("节标题不能进题干: " + result.questions[0].stem, result.questions[0].stem.contains("一、"))
+        assertFalse("节标题不能进题干: " + result.questions[1].stem, result.questions[1].stem.contains("二、"))
+        assertEquals("A", result.questions[0].answerText)
+        assertEquals("B", result.questions[1].answerText)
+    }
+
+    @Test
+    fun scoreLinesAreNotAppendedToStem() {
+        val lines = listOf(
+            line("1. 已知函数 f(2) 的值（ ）", 20),
+            line("（本题 5 分）", 60),
+            line("A. 4", 100),
+            line("B. 5", 136),
+            line("答案：B", 172),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        val q = result.questions.single()
+        assertFalse("分值行不能进题干: " + q.stem, q.stem.contains("分"))
+        assertEquals("B", q.answerText)
+    }
+
+    @Test
+    fun ordinarySentenceStartingWithNumberedWordsIsNotSectionHeader() {
+        val lines = listOf(
+            line("1. 下列说法正确的是（ ）", 20),
+            line("A. 甲", 60),
+            line("B. 乙", 96),
+            line("答案：A", 132),
+            line("考生须知：请在答题卡上作答。", 180),
+            line("2. 第二题（ ）", 220),
+            line("A. 甲", 260),
+            line("B. 乙", 296),
+            line("答案：B", 332),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertEquals("下列说法正确的是（ ）", result.questions[0].stem)
+        assertFalse(result.questions[0].stem.contains("考生须知"))
+    }
+
 }
