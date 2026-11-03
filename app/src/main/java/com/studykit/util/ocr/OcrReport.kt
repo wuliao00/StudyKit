@@ -37,6 +37,10 @@ data class OcrReport(
     val pageHeight: Int = 0,
     /** v3.9：检测到纸张四角并做了透视校正（截图/白底图通常为 false） */
     val perspectiveCorrected: Boolean = false,
+    /** v3.11：检测到纸张上下边界弯曲并做了纵向去弯曲 */
+    val dewarped: Boolean = false,
+    /** v3.11：检测到的弯曲量（最大边界残差 / 页高），未去弯曲时为 0 */
+    val curvatureRatio: Float = 0f,
 ) {
     /** 按字符数加权的平均置信度：长行更能代表整页质量，短行（题号/选项字母）不拉偏均值。 */
     val meanScore: Float

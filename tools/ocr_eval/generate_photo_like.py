@@ -47,7 +47,7 @@ OPTION_SETS = [
     ["A. 11", "B. 14", "C. 17", "D. 20"],
     ["A. 正确", "B. 错误"],
 ]
-CATEGORIES = ["photo_perspective", "photo_shadow", "photo_fold", "photo_lowlight", "photo_blur"]
+CATEGORIES = ["photo_perspective", "photo_shadow", "photo_fold", "photo_lowlight", "photo_blur", "photo_curved"]
 PER_CATEGORY = 20
 
 
@@ -108,6 +108,18 @@ def render_page(rng):
 def make_photo(rng, np_rng, category):
     page, lines = render_page(rng)
     ph, pw = page.shape[:2]
+    page_mask = np.full((ph, pw), 255, np.uint8)
+    # v3.11：模拟厚书摊开时纸面向书脊方向拱起的纵向弯曲（上下边界呈正弦）。
+    # 注意 mask 也要一起 remap，否则只是文字弯、纸张边界仍是直的。
+    if category == "photo_curved":
+        amplitude = rng.randint(24, 52)
+        mx = np.tile(np.arange(pw, dtype=np.float32), (ph, 1))
+        my = np.tile(np.arange(ph, dtype=np.float32), (pw, 1)).T
+        curve = amplitude * np.sin(np.pi * np.arange(pw, dtype=np.float32) / pw)
+        page = cv2.remap(page, mx, my + curve[None, :], cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+        page_mask = cv2.remap(page_mask, mx, my + curve[None, :], cv2.INTER_LINEAR,
+                              borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     W, H = 1000, 1300
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     base = 48 + 20 * (yy / H) + 14 * (xx / W)
@@ -133,7 +145,7 @@ def make_photo(rng, np_rng, category):
     m = cv2.getPerspectiveTransform(src, dst)
     warped = cv2.warpPerspective(page, m, (W, H), flags=cv2.INTER_LINEAR,
                                  borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
-    mask = cv2.warpPerspective(np.full((ph, pw), 255, np.uint8), m, (W, H), flags=cv2.INTER_LINEAR)
+    mask = cv2.warpPerspective(page_mask, m, (W, H), flags=cv2.INTER_LINEAR)
     mask_f = (mask.astype(np.float32) / 255.0)[..., None]
     canvas = (warped.astype(np.float32) * mask_f + canvas.astype(np.float32) * (1 - mask_f)).astype(np.uint8)
 

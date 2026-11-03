@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.studykit.StudyKitApp
 import com.studykit.data.entity.OcrCorrection
+import com.studykit.data.repository.CorrectionExport
 import com.studykit.data.entity.Question
 import com.studykit.data.question.QuestionType
 import com.studykit.util.ocr.OcrLayoutJson
@@ -42,6 +43,18 @@ class OcrReviewViewModel(application: Application) : AndroidViewModel(applicatio
     fun confirmAll() {
         viewModelScope.launch { repository.markAllReviewed() }
     }
+
+    /**
+     * v3.11：把最近纠错记录写成 cache 里的 JSON，返回文件给界面走系统分享。
+     * 写失败返回 null；不主动上传。
+     */
+    fun exportCorrections(): File? = runCatching {
+        val rows = recentCorrections.value
+        val file = File(getApplication<android.app.Application>().cacheDir,
+            "ocr_corrections_" + System.currentTimeMillis() + ".json")
+        file.writeText(CorrectionExport.toJson(rows), Charsets.UTF_8)
+        file
+    }.getOrNull()
 
     fun pageFile(question: Question): File? =
         OcrPageStore.resolve(getApplication(), question.ocrPagePath)

@@ -34,8 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.studykit.data.entity.OcrCorrection
@@ -46,6 +48,7 @@ import com.studykit.ui.components.AppMultilineTextField
 import com.studykit.ui.components.AppTextField
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.ocr.OcrLayoutJson
+import android.content.Intent
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -186,7 +189,27 @@ fun OcrReviewScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showCorrections = false }) { Text(text = "关闭") }
+                Row {
+                    if (corrections.isNotEmpty()) {
+                        val context = LocalContext.current
+                        TextButton(onClick = {
+                            viewModel.exportCorrections()?.let { file ->
+                                val uri = FileProvider.getUriForFile(
+                                    context, "com.studykit.fileprovider", file,
+                                )
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(intent, "导出纠错记录"),
+                                )
+                            }
+                        }) { Text(text = "导出 JSON") }
+                    }
+                    TextButton(onClick = { showCorrections = false }) { Text(text = "关闭") }
+                }
             },
         )
     }

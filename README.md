@@ -90,6 +90,8 @@ OCR 自 v2.8.0 起用 **PP-OCRv6**（经 ONNX Runtime Android 推理，模型 Ap
 > 本地纠错日志（Room v14）与 100 张拍照仿真评测集；细则见 docs/ocr-perspective-and-crops.md。
 >
 > v3.10 补页尾答案区回填（答案：1.A 2.B / 1-5 ABCDA）、校对页「全部确认」与纠错记录查看。
+>
+> v3.11 补纠错记录导出 JSON 与 120 张拍照仿真集；弯曲书页去展平完成几何原型（默认未启用，见发布说明）。
 
 词表数据来自开源仓库 [kajweb/dict](https://github.com/kajweb/dict)，仅用于个人学习；导入后完全离线，本应用不上传任何数据。
 

@@ -95,6 +95,26 @@ py -3 evaluate.py photo_like/out_ocr.json --gt photo_like/ground_truth.json ^
   --out ../../docs/evidence/ocr-eval-photo-like-v3.9.md
 ~~~
 
+## 6. 弯曲书页去展平（v3.11 原型，默认未启用）
+
+- 检测：480 长边灰度 -> Otsu -> 最大亮区 -> 逐列上下边界；
+- 宽窗中值滤（半径 9、2 遍）+ 滑动平均，压掉阴影/手指造成的边界平台；
+- 曲率 = max(上边界残差, 下边界残差) / 页高中位数；
+  - < 1.2%：平面页，交给四边形透视校正；
+  - 1.2%..12%：纵向去弯曲；
+  - > 12%：异常，放弃校正；
+- 去弯曲：按列把上边界映射到 0、下边界映射到 H-1，双线性重采样，长边封顶 2400；
+- 当前**未接入识别管线**：几何拉直通过，但重采样后 OCR 对长题干不稳（photo_curved CER 约 0.52）；
+  原型保留用于下一步改进；
+- 只做纵向边界曲线，不做左右弯曲/透视联合；白桌白纸边缘可能检不到。
+
+## 7. 纠错记录导出（v3.11）
+
+- 校对页「记录」弹窗 -> 「导出 JSON」；
+- JSON 字段：questionId / createdAt / beforeStem / afterStem / beforeAnswer / afterAnswer /
+  ocrConfidence / sourcePage；
+- 写 cache 后通过 FileProvider 走系统分享，不自动上传；不含图片。
+
 ## 6. 已知限制
 
 - 透视为平面四边形，不做弯曲书页展平；

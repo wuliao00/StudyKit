@@ -65,7 +65,7 @@ object OcrTextExtractor {
         var working: Bitmap = decoded
         var perspectiveCorrected = false
         try {
-            // v3.9：先找纸张四角做透视校正；截图/白底图检测返回 null，不裁不转
+            // v3.9：平面斜拍找纸张四角做透视校正；截图/白底图检测返回 null，不裁不转
             val pageQuad = runCatching { PageDetector.detect(decoded) }.getOrNull()
             if (pageQuad != null) {
                 val corrected = runCatching {
