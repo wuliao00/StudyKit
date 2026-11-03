@@ -42,13 +42,14 @@ interface QuestionDao {
     @Query("SELECT * FROM questions WHERE id = :id")
     suspend fun getById(id: Long): Question?
 
-    @Query("SELECT * FROM questions WHERE subject = :subject ORDER BY id LIMIT :limit OFFSET :offset")
+    // v3.12：待校对题不进题库练习；确认后才参与取题与计数
+    @Query("SELECT * FROM questions WHERE subject = :subject AND needs_review = 0 ORDER BY id LIMIT :limit OFFSET :offset")
     suspend fun getBySubject(subject: String, limit: Int, offset: Int): List<Question>
 
     /** 按学科 + 题型取题；[type] 用 [com.studykit.data.question.QuestionType.storageValue] 的小写值 */
     @Query(
         "SELECT * FROM questions WHERE subject = :subject AND question_type = :type " +
-            "ORDER BY id LIMIT :limit OFFSET :offset",
+            "AND needs_review = 0 ORDER BY id LIMIT :limit OFFSET :offset",
     )
     suspend fun getBySubjectAndType(subject: String, type: String, limit: Int, offset: Int): List<Question>
 
@@ -69,7 +70,7 @@ interface QuestionDao {
         "SELECT q.* FROM questions q LEFT JOIN " +
             "(SELECT question_id, MAX(at) AS last_at FROM practice_records GROUP BY question_id) p " +
             "ON p.question_id = q.id " +
-            "WHERE q.subject = :subject " +
+            "WHERE q.subject = :subject AND q.needs_review = 0 " +
             "AND (:stage IS NULL OR q.exam_stage = :stage) " +
             "AND (:type IS NULL OR q.question_type = :type) " +
             "ORDER BY CASE WHEN p.last_at IS NULL THEN 0 ELSE 1 END, p.last_at, q.id " +
@@ -85,7 +86,7 @@ interface QuestionDao {
 
     /** 模考只收单值可编码的客观题（SINGLE/TRUE_FALSE），阶段可选 */
     @Query(
-        "SELECT * FROM questions WHERE subject = :subject " +
+        "SELECT * FROM questions WHERE subject = :subject AND needs_review = 0 " +
             "AND (:stage IS NULL OR exam_stage = :stage) " +
             "AND question_type IN (:types) " +
             "ORDER BY id LIMIT :limit OFFSET :offset",
@@ -98,13 +99,13 @@ interface QuestionDao {
         offset: Int,
     ): List<Question>
 
-    @Query("SELECT DISTINCT subject FROM questions ORDER BY subject")
+    @Query("SELECT DISTINCT subject FROM questions WHERE needs_review = 0 ORDER BY subject")
     fun observeSubjects(): Flow<List<String>>
 
-    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject")
+    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject AND needs_review = 0")
     suspend fun countBySubject(subject: String): Int
 
-    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject AND question_type = :type")
+    @Query("SELECT COUNT(*) FROM questions WHERE subject = :subject AND question_type = :type AND needs_review = 0")
     suspend fun countBySubjectAndType(subject: String, type: String): Int
 
     /**
@@ -113,14 +114,14 @@ interface QuestionDao {
      */
     @Query(
         "SELECT subject, question_type AS type, COUNT(*) AS count FROM questions " +
-            "GROUP BY subject, question_type ORDER BY subject",
+            "WHERE needs_review = 0 GROUP BY subject, question_type ORDER BY subject",
     )
     fun observeSubjectTypeCounts(): Flow<List<SubjectTypeCount>>
 
     /** v3.3：学科 × 阶段 × 题型，双行筛选的计数来源 */
     @Query(
         "SELECT subject, exam_stage AS stage, question_type AS type, COUNT(*) AS count FROM questions " +
-            "GROUP BY subject, exam_stage, question_type ORDER BY subject",
+            "WHERE needs_review = 0 GROUP BY subject, exam_stage, question_type ORDER BY subject",
     )
     fun observeSubjectStageFormatCounts(): Flow<List<SubjectStageFormatCount>>
 
@@ -130,7 +131,7 @@ interface QuestionDao {
      * 只回一行一阶段，不在内存里 groupBy；未标注阶段的题落 `stage = ''` 那一行，
      * 商店按 [com.studykit.data.question.ExamStage.storageValue] 查表，查不到就是 0。
      */
-    @Query("SELECT exam_stage AS stage, COUNT(*) AS count FROM questions GROUP BY exam_stage")
+    @Query("SELECT exam_stage AS stage, COUNT(*) AS count FROM questions WHERE needs_review = 0 GROUP BY exam_stage")
     fun observeCountsByStage(): Flow<List<StageQuestionCount>>
 
     /**
@@ -142,7 +143,7 @@ interface QuestionDao {
      * `concept_tag` 列自 v7 就在，这里只加一条只读查询，没动过表结构（整库现在是 v9，
      * 抬上去的是 v3.0-B 的 `mock_sessions` 与 `mistakes` 两列，与本题无关）。
      */
-    @Query("SELECT * FROM questions WHERE concept_tag = :tag ORDER BY id")
+    @Query("SELECT * FROM questions WHERE concept_tag = :tag AND needs_review = 0 ORDER BY id")
     suspend fun getByConceptTag(tag: String): List<Question>
 
     // ── v3.8：OCR 待校对队列 ──────────────────────────────────────────────
