@@ -2,6 +2,22 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.14.0] - 2026-11-04（英文 Section / 第Ⅰ卷 等节标题）
+
+> **版本号**：3.14.0 / 36。Room 仍 v14（无 schema 变更）。
+> v3.13 的节标题规则只覆盖中文；本版补英文 Section A / Part B 与「第Ⅰ卷/卷Ⅱ」等试卷卷头。
+
+- **节标题扩展**：Section A / Part B（大小写不敏感）、第Ⅰ卷 / 第 I 卷 / 第 1 卷、Ⅰ卷 / 卷Ⅱ、
+  「第一卷（选择题）」等，结束上一题并跳过；
+- **边界收紧**：第X卷/卷X 必须后接空白、括号、冒号或行尾，避免把「第一卷之后的第一题」这类
+  正常题干误判成卷头；
+- 新增 2 条单测：英文/卷头混排、卷头前缀不误伤正常题干。
+- **机检**：195 测试类 / 1716 用例 / 0 失败（1 条真模型评测在未传 -PocrEvalDir 时跳过）。
+  v3.14 新增 2 条英文 Section / 第Ⅰ卷 / 卷Ⅱ 解析单测。
+- **真机**：- **真机**：3.13.0/35 -> 3.14.0/36 覆盖安装成功；OCR 抽查 clearPage 3.47s、perspective 3.52s，2/2 通过；节标题规则由 2 条 JVM 单测覆盖，证据见 docs/evidence/v314-ocr-device.md。
+- **已知限制**：只覆盖 Section/Part + 字母数字；「Reading Comprehension」这类无 Section 前缀的标题
+  仍可能续进题干；其它 OCR 限制同 v3.13。
+
 ## [3.13.0] - 2026-11-03（节标题/分值行不污染题干）
 
 > **版本号**：3.13.0 / 35。Room 仍 v14（无 schema 变更）。

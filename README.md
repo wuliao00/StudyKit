@@ -96,6 +96,8 @@ OCR 自 v2.8.0 起用 **PP-OCRv6**（经 ONNX Runtime Android 推理，模型 Ap
 > v3.12 修练习门禁：缺 needs_review 过滤的旧查询已全部补上，待校对题不再被题库练习/模考抽到。
 >
 > v3.13 修切题脏数据：节标题（一、选择题）与分值行（本题 5 分）不再续进题干/选项。
+>
+> v3.14 补英文 Section A / Part B 与第Ⅰ卷/卷Ⅱ 等卷头，避免英文卷与分卷试卷污染题干。
 
 词表数据来自开源仓库 [kajweb/dict](https://github.com/kajweb/dict)，仅用于个人学习；导入后完全离线，本应用不上传任何数据。
 

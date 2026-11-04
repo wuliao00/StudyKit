@@ -278,4 +278,39 @@ class QuestionLayoutParserTest {
         assertFalse(result.questions[0].stem.contains("考生须知"))
     }
 
+    @Test
+    fun englishSectionsAndPaperVolumesAreSkipped() {
+        val lines = listOf(
+            line("Section A Reading Comprehension", 20),
+            line("1. Read the passage and choose the best answer.", 60),
+            line("A. 甲", 100),
+            line("B. 乙", 136),
+            line("答案：A", 172),
+            line("第Ⅰ卷（选择题，共 60 分）", 220),
+            line("2. 第二卷第一题（ ）", 260),
+            line("A. 甲", 300),
+            line("B. 乙", 336),
+            line("答案：B", 372),
+            line("Part B Writing", 420),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertFalse("节标题不能进题干: " + result.questions[0].stem, result.questions[0].stem.contains("Section"))
+        assertFalse("卷标题不能进题干: " + result.questions[1].stem, result.questions[1].stem.contains("第Ⅰ卷"))
+    }
+
+    @Test
+    fun volumePrefixLineIsSkippedButOrdinarySentenceIsNot() {
+        val lines = listOf(
+            line("卷Ⅱ 非选择题", 20),
+            line("1. 第一卷之后的第一题（ ）", 60),
+            line("A. 甲", 100),
+            line("B. 乙", 136),
+            line("答案：A", 172),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(1, result.questions.size)
+        assertEquals("第一卷之后的第一题（ ）", result.questions[0].stem)
+    }
+
 }
