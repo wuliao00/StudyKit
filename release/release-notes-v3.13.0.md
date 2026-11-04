@@ -22,12 +22,11 @@
 
 ## 真机验证（vivo V2156A / Android 11）
 
-- **覆盖升级**：3.12.0/34 -> 3.13.0/35 直接覆盖安装成功，versionCode=35、versionName=3.13.0
-  （安装前后已用 dumpsys package 校验）。
-- 本版只改规则切题解析（节标题/分值行），不涉及 OCR 管线与 UI；JVM 全量 195 类 / 1714 用例通过。
-- **说明**：验证过程为清理测试数据重启了设备；重启后 USB 调试需要重新授权，adb 暂时不可见，
-  因此本版未再复跑设备 instrument。上一版 v3.12 的门禁与 v3.11 的 OCR 设备证据仍有效
-  （docs/evidence/v312-ocr-device.md、v311-ocr-device.md）。
+- **覆盖升级**：3.12.0/34 -> 3.13.0/35 直接覆盖安装成功，versionCode=35、versionName=3.13.0；
+  Room 仍 v14，数据在。
+- **OCR 设备用例**：重启并重新授权 USB 调试后逐条补验，OcrPipelineDeviceTest 5/5 通过：
+  清晰 4.17s、6 度摆正 4.35s、模糊门控 0.16s、暗图 0.17s、透视 4.37s。
+- 本版只改切题解析，没有新 UI；解析由 3 条 JVM 单测覆盖。证据见 docs/evidence/v313-ocr-device.md。
 
 ## 产物
 
