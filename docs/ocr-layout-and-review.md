@@ -121,3 +121,6 @@ questions 新增四列（纯 ADD COLUMN、默认值，老题目不变）：
 
 > v3.14：节标题规则补英文 Section A / Part B 与「第Ⅰ卷/卷Ⅱ」等卷头，并要求卷头后接空白/
 > 括号/冒号/行尾，避免误伤正常题干。
+
+> v3.15：独立英文板块标题（Reading Comprehension / Vocabulary Review 等）与「本大题共 X 小题」
+> 说明行整行跳过；题干里出现 Writing 等单词不误伤。

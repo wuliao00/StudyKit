@@ -2,6 +2,23 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.15.0] - 2026-11-04（英文板块标题 / 大题说明行）
+
+> **版本号**：3.15.0 / 37。Room 仍 v14（无 schema 变更）。
+> 继续补切题脏数据：Reading Comprehension / Vocabulary Review 等独立英文标题、
+> 「本大题共 X 小题，每小题 Y 分」这类大题说明会污染题干，本版统一跳过。
+
+- **独立英文板块标题**：Reading Comprehension / Vocabulary (Review) / Grammar / Writing /
+  Listening / Translation / Cloze (Test) / Unit N (Review)，整行匹配才跳过；
+- **大题说明行**：本大题/本部分/本卷/本组 共 X 小题/题，共 X 小题，... 结束上一题并跳过；
+- 题干里出现 Writing 等单词不会被误伤（只有整行等于标题才跳过）；
+- 新增 2 条单测（英文标题+大题说明、题干含标题单词不误伤）。
+- **机检**：195 测试类 / 1718 用例 / 0 失败（1 条真模型评测在未传 -PocrEvalDir 时跳过）。
+  v3.15 新增 2 条独立英文标题 / 大题说明解析单测。
+- **真机**：- **真机**：3.14.0/36 -> 3.15.0/37 覆盖安装成功；OCR 抽查 clearPage 3.55s 通过；英文标题/大题说明规则由 2 条 JVM 单测覆盖，证据见 docs/evidence/v315-ocr-device.md。
+- **已知限制**：英文标题采用白名单，未列出的标题（如 Reading Passage）仍可能续进题干；
+  大题说明只覆盖「本大题/本部分/本卷/本组 共…」格式。
+
 ## [3.14.0] - 2026-11-04（英文 Section / 第Ⅰ卷 等节标题）
 
 > **版本号**：3.14.0 / 36。Room 仍 v14（无 schema 变更）。

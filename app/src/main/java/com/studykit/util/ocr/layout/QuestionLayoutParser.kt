@@ -70,6 +70,18 @@ object QuestionLayoutParser {
             "注意事项|考试说明|考生须知).*$",
     )
 
+    /** v3.15：独立成行的英文板块标题（Reading Comprehension / Vocabulary Review 等）整行跳过 */
+    private val SECTION_HEADER_EN = Regex(
+        "(?i)^\\s*(?:reading comprehension|vocabulary(?:\\s+review)?|grammar|writing|listening|" +
+            "translation|cloze(?:\\s+test)?|unit\\s+\\d+(?:\\s+review)?)\\s*$",
+    )
+
+    /** v3.15：本大题共 X 小题 / 本部分共 X 题 这类大题说明，结束上一题并跳过 */
+    private val INSTRUCTION_LINE = Regex(
+        "^\\s*(?:本大题|本部分|本卷|本组)\\s*共\\s*\\d+\\s*(?:小题|题).*$|" +
+            "^\\s*共\\s*\\d+\\s*小题[，,].*$",
+    )
+
     /** v3.13：分值行（本题 5 分 / （共 10 分）/ 分值：12 分）不续进题干 */
     private val SCORE_LINE = Regex(
         "^\\s*[（(]?\\s*(?:本题|每题|共|满分)?\\s*\\d+(?:\\.\\d+)?\\s*分\\s*[）)]?\\s*$|" +
@@ -118,7 +130,11 @@ object QuestionLayoutParser {
             val text = line.text.trim()
             if (text.isEmpty()) continue
             // v3.13：节标题直接结束上一题并跳过；分值行也不许续进题干/选项
-            if (SECTION_HEADER.matches(text)) {
+            if (SECTION_HEADER.matches(text) || SECTION_HEADER_EN.matches(text)) {
+                flush()
+                continue
+            }
+            if (INSTRUCTION_LINE.matches(text)) {
                 flush()
                 continue
             }

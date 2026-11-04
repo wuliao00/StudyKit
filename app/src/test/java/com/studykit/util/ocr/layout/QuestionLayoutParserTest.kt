@@ -313,4 +313,40 @@ class QuestionLayoutParserTest {
         assertEquals("第一卷之后的第一题（ ）", result.questions[0].stem)
     }
 
+    @Test
+    fun standaloneEnglishTitlesAndInstructionLinesAreSkipped() {
+        val lines = listOf(
+            line("Reading Comprehension", 20),
+            line("本大题共 2 小题，每小题 3 分", 60),
+            line("1. Read the passage and choose the best answer.", 100),
+            line("A. 甲", 140),
+            line("B. 乙", 176),
+            line("答案：A", 212),
+            line("Vocabulary Review", 260),
+            line("2. Choose the correct word.", 300),
+            line("A. 甲", 340),
+            line("B. 乙", 376),
+            line("答案：B", 412),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertFalse(result.questions[0].stem.contains("本大题"))
+        assertFalse(result.questions[1].stem.contains("Vocabulary"))
+        assertEquals("A", result.questions[0].answerText)
+        assertEquals("B", result.questions[1].answerText)
+    }
+
+    @Test
+    fun englishTitleWordsInsideStemAreNotSkipped() {
+        val lines = listOf(
+            line("1. Writing 是什么意思（ ）", 20),
+            line("A. 写作", 60),
+            line("B. 阅读", 96),
+            line("答案：A", 132),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(1, result.questions.size)
+        assertEquals("Writing 是什么意思（ ）", result.questions[0].stem)
+    }
+
 }
