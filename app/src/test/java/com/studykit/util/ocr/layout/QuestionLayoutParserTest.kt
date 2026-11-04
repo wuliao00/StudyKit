@@ -349,4 +349,48 @@ class QuestionLayoutParserTest {
         assertEquals("Writing 是什么意思（ ）", result.questions[0].stem)
     }
 
+    @Test
+    fun answerKeyInMiddleDoesNotSwallowFollowingQuestions() {
+        val lines = listOf(
+            line("1. 第一题（ ）", 20),
+            line("A. 甲", 60),
+            line("B. 乙", 96),
+            line("2. 第二题（ ）", 140),
+            line("A. 甲", 180),
+            line("B. 乙", 216),
+            line("答案：1.A 2.B", 260),
+            line("3. 答案区后面的第三题（ ）", 300),
+            line("A. 甲", 340),
+            line("B. 乙", 376),
+            line("答案：B", 412),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(3, result.questions.size)
+        assertEquals("答案区后面的第三题（ ）", result.questions[2].stem)
+        assertEquals("A", result.questions[0].answerText)
+        assertEquals("B", result.questions[1].answerText)
+        assertEquals("B", result.questions[2].answerText)
+    }
+
+    @Test
+    fun englishPassageHeadingsAndQuestionGroupsAreSkipped() {
+        val lines = listOf(
+            line("Reading Passage 1", 20),
+            line("Questions 1-2 are based on the following passage.", 60),
+            line("1. What is the main idea?", 100),
+            line("A. 甲", 140),
+            line("B. 乙", 176),
+            line("答案：A", 212),
+            line("Passage 2", 260),
+            line("2. Choose the best answer.", 300),
+            line("A. 甲", 340),
+            line("B. 乙", 376),
+            line("答案：B", 412),
+        )
+        val result = QuestionLayoutParser.parse(lines, 800, 1000)
+        assertEquals(2, result.questions.size)
+        assertEquals("What is the main idea?", result.questions[0].stem)
+        assertEquals("Choose the best answer.", result.questions[1].stem)
+    }
+
 }

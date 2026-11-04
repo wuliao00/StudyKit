@@ -100,6 +100,8 @@ OCR 自 v2.8.0 起用 **PP-OCRv6**（经 ONNX Runtime Android 推理，模型 Ap
 > v3.14 补英文 Section A / Part B 与第Ⅰ卷/卷Ⅱ 等卷头，避免英文卷与分卷试卷污染题干。
 >
 > v3.15 补独立英文板块标题（Reading Comprehension 等）与「本大题共 X 小题」说明行，整行跳过。
+>
+> v3.16 修页中答案区（后面还有题不再被整段吞掉），补 Reading Passage / Passage N 与 Questions 题组说明。
 
 词表数据来自开源仓库 [kajweb/dict](https://github.com/kajweb/dict)，仅用于个人学习；导入后完全离线，本应用不上传任何数据。
 

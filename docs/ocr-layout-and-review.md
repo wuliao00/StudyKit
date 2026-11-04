@@ -124,3 +124,6 @@ questions 新增四列（纯 ADD COLUMN、默认值，老题目不变）：
 
 > v3.15：独立英文板块标题（Reading Comprehension / Vocabulary Review 等）与「本大题共 X 小题」
 > 说明行整行跳过；题干里出现 Writing 等单词不误伤。
+
+> v3.16：答案区不再默认吞到页尾（后面出现完整题干/新节标题即结束）；补 Reading Passage /
+> Passage N 标题与 Questions 1-5 题组说明。

@@ -73,8 +73,13 @@ object QuestionLayoutParser {
     /** v3.15：独立成行的英文板块标题（Reading Comprehension / Vocabulary Review 等）整行跳过 */
     private val SECTION_HEADER_EN = Regex(
         "(?i)^\\s*(?:reading comprehension|vocabulary(?:\\s+review)?|grammar|writing|listening|" +
-            "translation|cloze(?:\\s+test)?|unit\\s+\\d+(?:\\s+review)?)\\s*$",
+            "translation|cloze(?:\\s+test)?|unit\\s+\\d+(?:\\s+review)?|" +
+            "reading\\s+passage(?:\\s+\\d+)?|reading\\s+text(?:\\s+\\d+)?|" +
+            "passage\\s+\\d+|text\\s+\\d+)\\s*$",
     )
+
+    /** v3.16：Questions 1-5 are based on... 这类题组说明，结束上一题并跳过 */
+    private val QUESTION_GROUP_LINE = Regex("(?i)^\\s*questions?\\s+\\d+\\s*[-–—]\\s*\\d+.*$")
 
     /** v3.15：本大题共 X 小题 / 本部分共 X 题 这类大题说明，结束上一题并跳过 */
     private val INSTRUCTION_LINE = Regex(
@@ -134,7 +139,7 @@ object QuestionLayoutParser {
                 flush()
                 continue
             }
-            if (INSTRUCTION_LINE.matches(text)) {
+            if (INSTRUCTION_LINE.matches(text) || QUESTION_GROUP_LINE.matches(text)) {
                 flush()
                 continue
             }
@@ -261,10 +266,27 @@ object QuestionLayoutParser {
         val result = LinkedHashMap<Int, String>()
         val indexes = HashSet<Int>()
         for (i in start until lines.size) {
+            // v3.16：答案区不一定在页尾。后面重新出现「6. 完整题干」或新节标题时结束答案区，
+            // 这样「每题答案集中 + 后面还有题」的排版不会被整段吞掉。
+            if (i > start && looksLikeQuestionAfterAnswerKey(lines[i].text)) break
             indexes.add(i)
             parseAnswerPairs(lines[i].text, result)
         }
         return result to indexes
+    }
+
+    /** 答案区后是否已经回到正常题目/新节：题号后跟的是完整题干，而不是「1.A」这种答案项。 */
+    private fun looksLikeQuestionAfterAnswerKey(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        if (SECTION_HEADER.matches(trimmed) || SECTION_HEADER_EN.matches(trimmed) ||
+            INSTRUCTION_LINE.matches(trimmed) || QUESTION_GROUP_LINE.matches(trimmed)
+        ) {
+            return true
+        }
+        val start = QUESTION_START.matchEntire(trimmed) ?: QUESTION_CN.matchEntire(trimmed) ?: return false
+        val rest = start.groupValues[2].trim()
+        return rest.length >= 6 && countAnswerPairs(trimmed) <= 1
     }
 
     private fun countAnswerPairs(text: String): Int {
