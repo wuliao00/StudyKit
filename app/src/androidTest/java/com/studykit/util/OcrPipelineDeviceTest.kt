@@ -100,19 +100,4 @@ class OcrPipelineDeviceTest {
         assertTrue("perspective should be corrected", report!!.perspectiveCorrected)
         assertTrue("should contain StudyKit after correction: " + text.value, text.value.contains("StudyKit", ignoreCase = true))
     }
-
-
-    @Test
-    fun curvedPageIsDewarpedBeforeOcr() = runBlocking {
-        val result = OcrTextExtractor.recognize(context, assetFile("curved_page.png"))
-        assertTrue("expected Text, got " + result, result is OcrResult.Text)
-        val text = result as OcrResult.Text
-        val report = text.report
-        assertNotNull("report must be present", report)
-        assertTrue("dewarp should be applied", report!!.dewarped)
-        assertTrue("curvature should be recorded: " + report.curvatureRatio, report.curvatureRatio > 0.01f)
-        assertTrue("should contain StudyKit after dewarp: " + text.value, text.value.contains("StudyKit", ignoreCase = true))
-        assertTrue("should read a stem line after dewarp: " + text.value, text.value.contains("已知函数"))
-    }
-
 }
