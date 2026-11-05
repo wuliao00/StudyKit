@@ -102,6 +102,8 @@ OCR 自 v2.8.0 起用 **PP-OCRv6**（经 ONNX Runtime Android 推理，模型 Ap
 > v3.15 补独立英文板块标题（Reading Comprehension 等）与「本大题共 X 小题」说明行，整行跳过。
 >
 > v3.16 修页中答案区（后面还有题不再被整段吞掉），补 Reading Passage / Passage N 与 Questions 题组说明。
+>
+> v3.17 加每日签到（连续/累计 + 14 天日历），并统一首页按钮回弹、签到彩带与底栏选中动效。
 
 词表数据来自开源仓库 [kajweb/dict](https://github.com/kajweb/dict)，仅用于个人学习；导入后完全离线，本应用不上传任何数据。
 

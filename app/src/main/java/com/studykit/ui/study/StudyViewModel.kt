@@ -30,16 +30,20 @@ import com.studykit.data.question.QuestionType
 import com.studykit.data.question.QuizResponse
 import com.studykit.ui.mistake.MistakeIntake
 import com.studykit.util.OneShotGate
+import com.studykit.util.signin.SignInStats
+import com.studykit.util.signin.SignInSummary
 import com.studykit.util.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.zip
@@ -219,6 +223,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val wordRepository = container.wordRepository
     private val questionRepository = container.questionRepository
     private val mistakeRepository = container.mistakeRepository
+    private val signInRepository = container.dailySignInRepository
     private val settingsRepository = container.settingsRepository
     private val reviewLogRepository = container.reviewLogRepository
 
@@ -343,6 +348,22 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         // stateIn 的收集线程（Main.immediate），显式切到 Default 避免大列表在主线程重建
         .flowOn(context = Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudyHomeUiState())
+
+    /** v3.17：每日签到读数；日期在每次取数时现算，跨零点后重新订阅/刷新会更新。 */
+    val signInSummary: StateFlow<SignInSummary> = signInRepository.observeDays()
+        .map { days -> SignInStats.summary(days, LocalDate.now(ZoneId.systemDefault())) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SignInSummary())
+
+    /** 每次成功签到递增的事件号；首页只在事件发生后挂 ConfettiBurst。 */
+    private val _signInEvent = MutableStateFlow(0L)
+    val signInEvent: StateFlow<Long> = _signInEvent.asStateFlow()
+
+    fun signInToday() {
+        viewModelScope.launch {
+            val added = signInRepository.signIn(LocalDate.now(ZoneId.systemDefault()))
+            if (added) _signInEvent.value = System.currentTimeMillis()
+        }
+    }
 
     /** 单词列表（单词列表页使用） */
     val words: StateFlow<List<Word>> = wordRepository.observeAll()

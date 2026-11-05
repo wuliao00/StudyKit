@@ -1,6 +1,11 @@
 package com.studykit.ui.study
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -60,6 +65,8 @@ import com.studykit.ui.bulkimport.dispatchEntryAction
 import com.studykit.ui.bulkimport.rememberQuestionPhotoImport
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
+import com.studykit.ui.components.BouncyIconButton
+import com.studykit.ui.components.ConfettiBurst
 import com.studykit.ui.components.EntryMenuButton
 import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.components.RingGauge
@@ -98,6 +105,9 @@ fun StudyHomeScreen(
     val texts = AppTheme.texts
     val state by viewModel.homeState.collectAsStateWithLifecycle()
     val pendingReview by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
+    val signInSummary by viewModel.signInSummary.collectAsStateWithLifecycle()
+    val signInEvent by viewModel.signInEvent.collectAsStateWithLifecycle()
+    var showSignInCalendar by rememberSaveable { mutableStateOf(false) }
     // 拍照录题就地完成（相机 → OCR → 预览屏），不另开一屏；菜单里其余项走路由。
     // 解析不出分列时，文字放进题库编辑页（不自动切错题本）。
     val photoImport = rememberQuestionPhotoImport(
@@ -122,12 +132,13 @@ fun StudyHomeScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = AppTheme.space.pageH),
-    ) {
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = AppTheme.space.pageH),
+        ) {
         Spacer(Modifier.height(AppTheme.space.sm))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -151,13 +162,12 @@ fun StudyHomeScreen(
             // 设置入口。这枚图标旁边**没有**等价文字（与底栏"图标 + label 同一语义节点"那种相反），
             // 所以必须给 contentDescription，否则读屏只会念出一个 unnamed 按钮。
             // 触摸目标由 IconButton 自身保证 48dp，不再叠 minimumInteractiveComponentSize。
-            IconButton(onClick = onOpenSettings) {
-                Icon(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = "设置",
-                    tint = colors.secondaryText,
-                )
-            }
+            BouncyIconButton(
+                icon = Icons.Outlined.Settings,
+                contentDescription = "设置",
+                onClick = onOpenSettings,
+                tint = colors.secondaryText,
+            )
         }
 
         if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
@@ -222,10 +232,21 @@ fun StudyHomeScreen(
 
         Spacer(Modifier.height(AppTheme.space.lg))
 
+        // v3.17：每日签到卡。放在 hero/统计读数之后、入口卡之前 —— 先看见今天学了什么，
+        // 再决定"今天来不来"；签到本身是低门槛动作，不抢占主行动的位置。
+        StaggeredIn(index = 1) {
+            DailySignInCard(
+                summary = signInSummary,
+                onSignIn = { viewModel.signInToday() },
+                onOpenCalendar = { showSignInCalendar = true },
+            )
+        }
+        Spacer(Modifier.height(AppTheme.space.md))
+
         // 「背单词」那张入口卡已删：它的职责被上面 hero 里的实心主行动接手了。
         // 留着的代价是同一屏出现两条通往同一个地方的路，而且那条路和「题库练习」「错题本」
         // 长得一模一样 —— 这屏就不再有一个"该往哪走"的答案。
-        StaggeredIn(index = 1) {
+        StaggeredIn(index = 2) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,
                 iconColor = colors.success,
@@ -234,41 +255,45 @@ fun StudyHomeScreen(
                 caption = "按学科刷题 · 答错自动入错题本",
                 onClick = onStartQuiz,
                 trailing = {
-                    IconButton(onClick = onAddQuestion) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = "录入题目",
-                            tint = colors.accentInk,
-                        )
-                    }
+                    BouncyIconButton(
+                        icon = Icons.Filled.Add,
+                        contentDescription = "录入题目",
+                        onClick = onAddQuestion,
+                        tint = colors.accentInk,
+                    )
                     // 批量入口与单条录入并排：图标刻意用本题卡自己的 CheckCircle（core 图标集里
                     // 没有「多行/导入」形状，硬凑一个反而看不出区别），区别由 contentDescription 承担。
-                    IconButton(onClick = onBulkImportQuestions) {
-                        Icon(
-                            imageVector = Icons.Outlined.CheckCircle,
-                            contentDescription = "批量录入题目",
-                            tint = colors.accentInk,
-                        )
-                    }
+                    BouncyIconButton(
+                        icon = Icons.Outlined.CheckCircle,
+                        contentDescription = "批量录入题目",
+                        onClick = onBulkImportQuestions,
+                        tint = colors.accentInk,
+                    )
                 },
             )
         }
         Spacer(Modifier.height(AppTheme.space.md))
 
-        if (pendingReview > 0) {
-            Spacer(Modifier.height(AppTheme.space.md))
-            StaggeredIn(index = 2) {
-                EntryCard(
-                    icon = Icons.Outlined.CheckCircle,
-                    iconColor = colors.warning,
-                    iconContainerColor = colors.warningSoft,
-                    title = "待校对题目",
-                    caption = pendingReview.toString() + " 道 · 先核对再进复习",
-                    onClick = onOpenOcrReview,
-                )
+        AnimatedVisibility(
+            visible = pendingReview > 0,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Column {
+                Spacer(Modifier.height(AppTheme.space.md))
+                StaggeredIn(index = 3) {
+                    EntryCard(
+                        icon = Icons.Outlined.CheckCircle,
+                        iconColor = colors.warning,
+                        iconContainerColor = colors.warningSoft,
+                        title = "待校对题目",
+                        caption = pendingReview.toString() + " 道 · 先核对再进复习",
+                        onClick = onOpenOcrReview,
+                    )
+                }
             }
         }
-        StaggeredIn(index = 2) {
+        StaggeredIn(index = 3) {
             EntryCard(
                 icon = Icons.Outlined.CheckCircle,
                 iconColor = colors.accent,
@@ -279,7 +304,7 @@ fun StudyHomeScreen(
             )
         }
         Spacer(Modifier.height(AppTheme.space.md))
-        StaggeredIn(index = 3) {
+        StaggeredIn(index = 4) {
             EntryCard(
                 icon = Icons.Outlined.Close,
                 iconColor = colors.warning,
@@ -289,7 +314,23 @@ fun StudyHomeScreen(
                 onClick = onOpenMistakes,
             )
         }
-        Spacer(Modifier.height(AppTheme.space.lg))
+            Spacer(Modifier.height(AppTheme.space.lg))
+        }
+        if (signInEvent > 0L) {
+            ConfettiBurst(trigger = signInEvent, modifier = Modifier.matchParentSize())
+        }
+    }
+
+    if (showSignInCalendar) {
+        SignInCalendarSheet(
+            summary = signInSummary,
+            onDismiss = { showSignInCalendar = false },
+            onSignIn = {
+                viewModel.signInToday()
+                // 从日历里签到时收起弹层，让首页的彩带能被看见；卡片上的签到则保持当前页。
+                showSignInCalendar = false
+            },
+        )
     }
 }
 

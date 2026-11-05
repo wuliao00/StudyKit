@@ -2,6 +2,21 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.17.0] - 2026-11-05（每日签到 + 首页按钮/动效优化）
+
+> **版本号**：3.17.0 / 39。Room v15（新增 daily_sign_ins，纯加表）。
+
+- **每日签到**：首页签到卡（连续/累计天数 + 最近 7 天圆点 + 签到按钮），点击卡片打开 14 天签到日历；
+  一天一行、INSERT OR IGNORE 幂等；今天未签但昨天签过时保留连击（显示“今天签到续上”）；
+- **动效与交互**：签到成功轻触觉 + 全屏 ConfettiBurst；按钮“签到/已签到”淡入缩放切换；
+  首页三枚图标按钮换 BouncyIconButton；待校对入口 AnimatedVisibility；底栏选中 Tab 图标 1.08 倍 spring；
+- **数据迁移**：MIGRATION_14_15，旧题/旧复习数据一列不动；
+- **测试**：SignInStatsTest、DailySignInDaoTest、Migration14To15Test；
+- **机检**：198 测试类 / 1727 用例 / 0 失败（1 条真模型评测在未传 -PocrEvalDir 时跳过）。
+  新增 SignInStatsTest（5 条）、DailySignInDaoTest（1 条）、Migration14To15Test（1 条）。
+- **真机**：- **真机**：3.16.0/38 -> 3.17.0/39 覆盖安装成功；Room v14->v15 自动迁移，71 题/pending 0 保留；未签卡 -> 签到 -> 彩带 -> 已签到，点卡片打开 14 天日历；DB daily_sign_ins 落 2026-11-05；首轮按钮文案灰色已修并复验；OCR clearPage 3.76s。证据见 docs/evidence/v317-device.md。
+- **已知边界**：日期按设备本地时区，跨零点需重新进入首页刷新；日历只展示最近 14 天，无积分/奖励。
+
 ## [3.16.0] - 2026-11-04（页中答案区 / 英文 Passage / 题组说明）
 
 > **版本号**：3.16.0 / 38。Room 仍 v14（无 schema 变更）。

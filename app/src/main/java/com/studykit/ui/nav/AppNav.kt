@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -920,6 +921,12 @@ private fun AppBottomBar(
             val interaction = remember(tab) { MutableInteractionSource() }
             // pressScale 是 @Composable，只能在 item 组合层取值；graphicsLayer 块非组合，故在里面只读 State
             val scale by rememberPressScale(interaction)
+            // v3.17：选中 Tab 的图标轻微放大，和按下回弹叠乘；未选中保持原尺寸。
+            val selectedScale by animateFloatAsState(
+                targetValue = if (selected) 1.08f else 1f,
+                animationSpec = MotionSpec.flip,
+                label = "tabSelectedScale",
+            )
             NavigationBarItem(
                 selected = selected,
                 onClick = { onTabSelected(tab) },
@@ -932,8 +939,8 @@ private fun AppBottomBar(
                         // （终审 I9；T5 起就挂着这条 carry，本波落地）。图标纯装饰，文字那份即等价朗读。
                         contentDescription = null,
                         modifier = Modifier.graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
+                            scaleX = scale * selectedScale
+                            scaleY = scale * selectedScale
                         },
                     )
                 },

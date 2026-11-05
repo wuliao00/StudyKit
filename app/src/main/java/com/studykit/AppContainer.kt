@@ -4,6 +4,7 @@ import android.content.Context
 import com.studykit.data.AppDatabase
 import com.studykit.data.repository.BookRepository
 import com.studykit.data.repository.ContractRepository
+import com.studykit.data.repository.DailySignInRepository
 import com.studykit.data.repository.DesignPlanRepository
 import com.studykit.data.repository.HabitRepository
 import com.studykit.data.repository.MistakeRepository
@@ -77,6 +78,9 @@ class AppContainer(
 
     /** v3.9：校对纠错记录；只在本机，不进导出/备份。 */
     val ocrCorrectionRepository: OcrCorrectionRepository = OcrCorrectionRepository(database.ocrCorrectionDao())
+
+    /** v3.17：每日签到（本地表，一天一行；连击/日历在纯函数里现算）。 */
+    val dailySignInRepository: DailySignInRepository = DailySignInRepository(database.dailySignInDao())
 
     /**
      * 学习设计方案（v12）：8 种模板共用一张 `design_plans`。拼 Markdown 的是纯函数

@@ -10,6 +10,7 @@ import com.studykit.BuildConfig
 import com.studykit.data.dao.AppSettingDao
 import com.studykit.data.dao.BookDao
 import com.studykit.data.dao.ContractDao
+import com.studykit.data.dao.DailySignInDao
 import com.studykit.data.dao.DesignPlanDao
 import com.studykit.data.dao.HabitDao
 import com.studykit.data.dao.MistakeDao
@@ -27,6 +28,7 @@ import com.studykit.data.entity.BookReview
 import com.studykit.data.entity.ChapterTest
 import com.studykit.data.entity.CheckIn
 import com.studykit.data.entity.Contract
+import com.studykit.data.entity.DailySignIn
 import com.studykit.data.entity.DesignPlan
 import com.studykit.data.entity.Excerpt
 import com.studykit.data.entity.Habit
@@ -64,7 +66,9 @@ import com.studykit.optimize.ParamSnapshot
         MockSession::class,
         DesignPlan::class,
         OcrCorrection::class,
+        DailySignIn::class,
     ],
+    // v15：v3.17——新增 daily_sign_ins（每日签到，一天一行，纯加表）
     // v14：v3.9——新增 ocr_corrections（校对纠错记录，本地 append-only 纯加表）
     // v13：v3.8——questions 加 OCR 校对四列（needs_review / ocr_confidence / ocr_page_path / ocr_layout_json）
     // v12：学习设计——新增 design_plans（8 种模板共用，纯加表 + updated_at 索引）
@@ -73,7 +77,7 @@ import com.studykit.optimize.ParamSnapshot
     // v9：v3.0-B——套卷会话持久化（mock_sessions）+ 错题遮挡两列（kind/extra）
     // v8：v2.9 计划 Task 4+5——新增 append-only 复习事件流 review_log（Task 4）与参数快照表 param_snapshots（Task 5），均纯加表，不动既有表
     // v7：v2.7 spec §3.2——7 实体加列 + mistake_redos/chapter_tests 新表（迁移与接线见 A7）
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -92,6 +96,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun mockSessionDao(): MockSessionDao
     abstract fun designPlanDao(): DesignPlanDao
     abstract fun ocrCorrectionDao(): OcrCorrectionDao
+
+    abstract fun dailySignInDao(): DailySignInDao
 
     companion object {
         private const val DB_NAME = "studykit.db"
@@ -587,6 +593,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v14 -> v15：每日签到表；纯加表，不动既有数据。 */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS daily_sign_ins (" +
+                        "day TEXT NOT NULL, " +
+                        "created_at INTEGER NOT NULL, " +
+                        "PRIMARY KEY(day)" +
+                        ")",
+                )
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -601,7 +620,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                         MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
-                        MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
+                        MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
                     )
                     .addCallback(SeedCallback)
                     .build()
