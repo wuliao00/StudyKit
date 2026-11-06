@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
@@ -76,6 +77,7 @@ import com.studykit.ui.motion.StaggeredIn
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.theme.AppTheme
 import java.time.LocalDate
+import kotlinx.coroutines.delay
 
 /**
  * 学习首页（学习 Tab）：页标题 + 今日任务 hero 卡（进度环 + 火焰徽章）、统计磁贴、三张入口卡片。
@@ -107,7 +109,14 @@ fun StudyHomeScreen(
     val pendingReview by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
     val signInSummary by viewModel.signInSummary.collectAsStateWithLifecycle()
     val signInEvent by viewModel.signInEvent.collectAsStateWithLifecycle()
+    val signInMilestone by viewModel.signInMilestone.collectAsStateWithLifecycle()
     var showSignInCalendar by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(signInMilestone) {
+        if (signInMilestone != null) {
+            delay(2_600)
+            viewModel.clearSignInMilestone()
+        }
+    }
     // 拍照录题就地完成（相机 → OCR → 预览屏），不另开一屏；菜单里其余项走路由。
     // 解析不出分列时，文字放进题库编辑页（不自动切错题本）。
     val photoImport = rememberQuestionPhotoImport(
@@ -318,6 +327,27 @@ fun StudyHomeScreen(
         }
         if (signInEvent > 0L) {
             ConfettiBurst(trigger = signInEvent, modifier = Modifier.matchParentSize())
+        }
+        AnimatedVisibility(
+            visible = signInMilestone != null,
+            enter = fadeIn() + scaleIn(initialScale = 0.88f),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = AppTheme.space.sm),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = colors.goldSoft,
+                contentColor = colors.goldInk,
+                shadowElevation = AppTheme.elevation.hairline,
+            ) {
+                Text(
+                    text = "连续签到 " + (signInMilestone ?: 0) + " 天，保持住！",
+                    style = texts.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                    modifier = Modifier.padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
+                )
+            }
         }
     }
 

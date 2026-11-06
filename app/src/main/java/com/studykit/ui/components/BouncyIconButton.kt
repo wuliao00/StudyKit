@@ -25,11 +25,13 @@ fun BouncyIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = Color.Unspecified,
+    enabled: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val scale by rememberPressScale(interaction)
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         interactionSource = interaction,
         modifier = modifier.graphicsLayer {
             scaleX = scale

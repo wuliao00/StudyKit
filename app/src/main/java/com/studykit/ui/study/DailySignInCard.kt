@@ -1,11 +1,11 @@
 package com.studykit.ui.study
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -29,17 +29,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,18 +57,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.BouncyIconButton
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.signin.SignInDay
+import com.studykit.util.signin.SignInMonthCell
+import com.studykit.util.signin.SignInStats
 import com.studykit.util.signin.SignInSummary
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
- * 首页“每日签到”卡：签到按钮 + 连续/累计天数 + 最近 7 天的小圆点。
+ * 首页“每日签到”卡：签到按钮 + 连续天数 + 本周 7 天的圆点。
  *
  * 交互约定：
- * - 点卡片主体（含 7 天圆点）打开 14 天签到日历；
+ * - 点卡片主体（含本周圆点）打开整月签到日历；
  * - 点右侧按钮只签到，成功后由首页外层触发一次 ConfettiBurst；
  * - 已签到时按钮变成 successSoft 的“已签到”，不可重复写库；
  * - 按下时按钮/卡片沿用全局 press 回弹，且签到按钮会发一次轻触觉反馈。
@@ -87,9 +94,9 @@ fun DailySignInCard(
         else -> "每天来一下，积少成多"
     }
     val cardDescription = if (signed) {
-        "每日签到，今天已签到，连续 " + summary.currentStreak + " 天"
+        "每日签到，今天已签到，连续 " + summary.currentStreak + " 天，点按查看签到日历"
     } else {
-        "每日签到，今天还没签到"
+        "每日签到，今天还没签到，点按查看签到日历"
     }
 
     AppCard(
@@ -106,7 +113,17 @@ fun DailySignInCard(
                 Spacer(Modifier.height(2.dp))
                 Text(text = caption, style = texts.caption, color = colors.secondaryText)
                 Spacer(Modifier.height(AppTheme.space.sm))
-                WeekDots(days = summary.last14.takeLast(7))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "本周", style = texts.caption, color = colors.secondaryText)
+                    Spacer(Modifier.width(6.dp))
+                    WeekDots(days = summary.weekDays)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = summary.weekSignedCount.toString() + "/7",
+                        style = texts.caption,
+                        color = colors.secondaryText,
+                    )
+                }
             }
             Spacer(Modifier.width(AppTheme.space.sm))
             SignInPill(
@@ -158,10 +175,16 @@ private fun SignInBadge(signed: Boolean) {
 @Composable
 private fun WeekDots(days: List<SignInDay>) {
     val colors = AppTheme.colors
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        days.forEach { day ->
+    val shown = if (days.size == 7) days else SignInStats.weekDays(LocalDate.now(), emptySet())
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        shown.forEach { day ->
+            val isToday = day.date == LocalDate.now()
             val dotColor by animateColorAsState(
-                targetValue = if (day.signed) colors.accent else colors.divider,
+                targetValue = when {
+                    day.signed -> colors.accent
+                    isToday -> colors.accent.copy(alpha = 0.35f)
+                    else -> colors.divider
+                },
                 animationSpec = tween(MotionSpec.FadeMs),
                 label = "signInDotColor",
             )
@@ -243,8 +266,8 @@ private fun SignInPill(signed: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * 14 天签到日历（底部弹层）。只展示最近 14 天，不做整月翻页 —— 首页要的是“最近有没有断”，
- * 不是历史账本；老数据仍在库里，统计由 [SignInSummary] 现算。
+ * 整月签到日历（底部弹层）：周一开始、月初补空、固定 6 行；可向前翻历史月份，
+ * 不能翻到未来。今天的格子描边，已签到格子 soft 底 + 小圆点。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -257,6 +280,11 @@ fun SignInCalendarSheet(
     val texts = AppTheme.texts
     val sheetState = rememberModalBottomSheetState()
     val shape = RoundedCornerShape(AppTheme.radius.lg)
+    val today = LocalDate.now()
+    val currentMonth = YearMonth.from(today)
+    var visibleMonth by remember { mutableStateOf(currentMonth) }
+    val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -288,16 +316,55 @@ fun SignInCalendarSheet(
                 }
             }
             Spacer(Modifier.height(AppTheme.space.md))
-            summary.last14.chunked(7).forEach { week ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    week.forEach { day ->
-                        SignInDayCell(day = day, modifier = Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BouncyIconButton(
+                    icon = Icons.Outlined.KeyboardArrowLeft,
+                    contentDescription = "上一个月",
+                    onClick = { visibleMonth = visibleMonth.minusMonths(1) },
+                    tint = colors.accentInk,
+                )
+                Text(
+                    text = visibleMonth.year.toString() + " 年 " + visibleMonth.monthValue + " 月",
+                    style = texts.cardTitle,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                BouncyIconButton(
+                    icon = Icons.Outlined.KeyboardArrowRight,
+                    contentDescription = "下一个月",
+                    onClick = { visibleMonth = visibleMonth.plusMonths(1) },
+                    enabled = visibleMonth < currentMonth,
+                    tint = if (visibleMonth < currentMonth) colors.accentInk else colors.divider,
+                )
+            }
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                weekLabels.forEach { label ->
+                    Text(
+                        text = label,
+                        style = texts.caption,
+                        color = colors.secondaryText,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(AppTheme.space.xs))
+            AnimatedContent(
+                targetState = visibleMonth,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "signInMonth",
+            ) { month ->
+                val grid = SignInStats.monthGrid(month, summary.signedDays, today)
+                Column {
+                    grid.cells.chunked(7).forEach { week ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            week.forEach { cell ->
+                                MonthCell(cell = cell, modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
             }
             Spacer(Modifier.height(AppTheme.space.md))
             if (!summary.signedToday) {
@@ -314,14 +381,16 @@ fun SignInCalendarSheet(
 }
 
 @Composable
-private fun SignInDayCell(day: SignInDay, modifier: Modifier = Modifier) {
+private fun MonthCell(cell: SignInMonthCell, modifier: Modifier = Modifier) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
-    val today = day.date == LocalDate.now()
-    val background = when {
-        day.signed -> colors.accentSoft
-        else -> Color.Transparent
+    val date = cell.date
+    if (date == null) {
+        Box(modifier = modifier.padding(2.dp).aspectRatio(1f))
+        return
     }
+    val future = date.isAfter(LocalDate.now())
+    val background = if (cell.signed) colors.accentSoft else Color.Transparent
     Column(
         modifier = modifier
             .padding(2.dp)
@@ -329,24 +398,32 @@ private fun SignInDayCell(day: SignInDay, modifier: Modifier = Modifier) {
             .clip(CircleShape)
             .background(background)
             .then(
-                if (today) {
+                if (cell.today) {
                     Modifier.border(width = 1.5.dp, color = colors.accent, shape = CircleShape)
                 } else {
                     Modifier
                 },
             )
             .semantics {
-                contentDescription = day.date.toString() + if (day.signed) " 已签到" else " 未签到"
+                contentDescription = date.toString() + when {
+                    cell.signed -> " 已签到"
+                    future -> " 未到"
+                    else -> " 未签到"
+                }
             },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = day.date.dayOfMonth.toString(),
+            text = date.dayOfMonth.toString(),
             style = texts.caption,
-            color = if (day.signed) colors.accentInk else colors.secondaryText,
+            color = when {
+                cell.signed -> colors.accentInk
+                future -> colors.secondaryText.copy(alpha = 0.45f)
+                else -> colors.primaryText
+            },
         )
-        if (day.signed) {
+        if (cell.signed) {
             Spacer(Modifier.height(2.dp))
             Box(
                 modifier = Modifier

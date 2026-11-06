@@ -1,10 +1,17 @@
 package com.studykit.util.signin
 
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 /** 签到日历里的一格：日期 + 当天是否已签到。 */
 data class SignInDay(val date: LocalDate, val signed: Boolean)
+
+/** 整月日历的一格；[date] 为 null 表示月初/月末的占位格。 */
+data class SignInMonthCell(val date: LocalDate?, val signed: Boolean, val today: Boolean)
+
+/** 一个月的签到网格：固定 6 行 x 7 列，行序从周一开始，便于底部弹层高度稳定。 */
+data class SignInMonth(val yearMonth: YearMonth, val cells: List<SignInMonthCell>)
 
 /**
  * 首页签到卡的一屏读数。
@@ -12,7 +19,10 @@ data class SignInDay(val date: LocalDate, val signed: Boolean)
  * - [signedToday]：今天是否已经签到；
  * - [currentStreak]：截至今天/昨天的连续签到天数（今天还没签到时保留昨天的连数，避免一觉醒来归零）；
  * - [longestStreak]：历史最长连续签到；
- * - [last14]：最近 14 天，按时间从旧到新，最后一项是今天。
+ * - [last14]：最近 14 天，按时间从旧到新，最后一项是今天；
+ * - [signedDays]：全量签到日期（供整月日历翻页）；
+ * - [weekDays]：本周周一到周日（未来日期 signed=false）；
+ * - [weekSignedCount]：本周已签到的天数（只数到今天）。
  */
 data class SignInSummary(
     val signedToday: Boolean = false,
@@ -20,6 +30,9 @@ data class SignInSummary(
     val longestStreak: Int = 0,
     val totalDays: Int = 0,
     val last14: List<SignInDay> = emptyList(),
+    val signedDays: Set<LocalDate> = emptySet(),
+    val weekDays: List<SignInDay> = emptyList(),
+    val weekSignedCount: Int = 0,
 )
 
 /**
@@ -35,6 +48,9 @@ object SignInStats {
 
     const val WINDOW_DAYS = 14
 
+    /** 连续签到里程碑；到点当天由 ViewModel 发一次事件，首页弹金色提示。 */
+    val MILESTONES = listOf(3, 7, 14, 30, 66)
+
     private val ISO = DateTimeFormatter.ISO_LOCAL_DATE
 
     fun summary(days: Collection<String>, today: LocalDate): SignInSummary {
@@ -42,6 +58,7 @@ object SignInStats {
             .mapNotNull { parse(it) }
             .filter { !it.isAfter(today) }
             .toSet()
+        val weekDays = weekDays(today, signedDays)
         return SignInSummary(
             signedToday = signedDays.contains(today),
             currentStreak = currentStreak(signedDays, today),
@@ -51,6 +68,9 @@ object SignInStats {
                 val date = today.minusDays(offset.toLong())
                 SignInDay(date = date, signed = signedDays.contains(date))
             },
+            signedDays = signedDays,
+            weekDays = weekDays,
+            weekSignedCount = weekDays.count { it.signed && !it.date.isAfter(today) },
         )
     }
 
@@ -76,6 +96,41 @@ object SignInStats {
         }
         return best
     }
+
+    /** 本周（周一为第一天）7 天；未来日期的 signed 永远为 false。 */
+    fun weekDays(today: LocalDate, signedDays: Set<LocalDate>): List<SignInDay> {
+        val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+        return (0..6).map { offset ->
+            val date = monday.plusDays(offset.toLong())
+            SignInDay(date = date, signed = !date.isAfter(today) && signedDays.contains(date))
+        }
+    }
+
+    /**
+     * 整月网格：周一开始，月初补空、月末补到 42 格（6 行），保证底部弹层翻月时高度不跳。
+     * 未来日期不涂签到色（历史库理论上不会出现，防御脏数据）。
+     */
+    fun monthGrid(month: YearMonth, signedDays: Set<LocalDate>, today: LocalDate): SignInMonth {
+        val first = month.atDay(1)
+        val leading = first.dayOfWeek.value - 1
+        val cells = ArrayList<SignInMonthCell>(42)
+        repeat(leading) { cells.add(SignInMonthCell(date = null, signed = false, today = false)) }
+        for (day in 1..month.lengthOfMonth()) {
+            val date = month.atDay(day)
+            cells.add(
+                SignInMonthCell(
+                    date = date,
+                    signed = signedDays.contains(date),
+                    today = date == today,
+                ),
+            )
+        }
+        while (cells.size < 42) cells.add(SignInMonthCell(date = null, signed = false, today = false))
+        return SignInMonth(yearMonth = month, cells = cells)
+    }
+
+    /** 连续天数恰好命中里程碑时返回该天数，否则 null。 */
+    fun milestoneFor(streak: Int): Int? = if (MILESTONES.contains(streak)) streak else null
 
     private fun parse(raw: String): LocalDate? = try {
         LocalDate.parse(raw, ISO)

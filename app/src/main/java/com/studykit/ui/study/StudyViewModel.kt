@@ -352,16 +352,34 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     /** v3.17：每日签到读数；日期在每次取数时现算，跨零点后重新订阅/刷新会更新。 */
     val signInSummary: StateFlow<SignInSummary> = signInRepository.observeDays()
         .map { days -> SignInStats.summary(days, LocalDate.now(ZoneId.systemDefault())) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SignInSummary())
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            SignInStats.summary(emptyList(), LocalDate.now(ZoneId.systemDefault())),
+        )
 
     /** 每次成功签到递增的事件号；首页只在事件发生后挂 ConfettiBurst。 */
     private val _signInEvent = MutableStateFlow(0L)
     val signInEvent: StateFlow<Long> = _signInEvent.asStateFlow()
 
+    /** 连续天数恰好命中 3/7/14/30/66 时置一次，首页弹金色提示后清空。 */
+    private val _signInMilestone = MutableStateFlow<Int?>(null)
+    val signInMilestone: StateFlow<Int?> = _signInMilestone.asStateFlow()
+
+    fun clearSignInMilestone() {
+        _signInMilestone.value = null
+    }
+
     fun signInToday() {
         viewModelScope.launch {
-            val added = signInRepository.signIn(LocalDate.now(ZoneId.systemDefault()))
-            if (added) _signInEvent.value = System.currentTimeMillis()
+            val today = LocalDate.now(ZoneId.systemDefault())
+            val added = signInRepository.signIn(today)
+            if (!added) return@launch
+            _signInEvent.value = System.currentTimeMillis()
+            val summary = SignInStats.summary(signInRepository.days(), today)
+            SignInStats.milestoneFor(summary.currentStreak)?.let { milestone ->
+                _signInMilestone.value = milestone
+            }
         }
     }
 
