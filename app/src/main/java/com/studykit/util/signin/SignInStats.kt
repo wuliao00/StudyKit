@@ -13,6 +13,11 @@ data class SignInMonthCell(val date: LocalDate?, val signed: Boolean, val today:
 /** 一个月的签到网格：固定 6 行 x 7 列，行序从周一开始，便于底部弹层高度稳定。 */
 data class SignInMonth(val yearMonth: YearMonth, val cells: List<SignInMonthCell>)
 
+/** 某个月的签到进度：当前月按“已过天数”做分母，历史月按整月天数。 */
+data class SignInMonthStats(val signedCount: Int, val dayCount: Int) {
+    val percent: Int get() = if (dayCount <= 0) 0 else (signedCount * 100 / dayCount)
+}
+
 /**
  * 首页签到卡的一屏读数。
  *
@@ -128,6 +133,16 @@ object SignInStats {
         while (cells.size < 42) cells.add(SignInMonthCell(date = null, signed = false, today = false))
         return SignInMonth(yearMonth = month, cells = cells)
     }
+
+    /** 某个月已签到天数 / 分母（当前月只算到今天，历史月按整月）。 */
+    fun monthStats(month: YearMonth, signedDays: Set<LocalDate>, today: LocalDate): SignInMonthStats {
+        val dayCount = if (month == YearMonth.from(today)) today.dayOfMonth else month.lengthOfMonth()
+        val signedCount = (1..month.lengthOfMonth()).count { signedDays.contains(month.atDay(it)) }
+        return SignInMonthStats(signedCount = signedCount, dayCount = dayCount)
+    }
+
+    /** 已达到的里程碑（由长到短/由小到大按 [MILESTONES] 顺序返回）。 */
+    fun reachedMilestones(longestStreak: Int): List<Int> = MILESTONES.filter { longestStreak >= it }
 
     /** 连续天数恰好命中里程碑时返回该天数，否则 null。 */
     fun milestoneFor(streak: Int): Int? = if (MILESTONES.contains(streak)) streak else null

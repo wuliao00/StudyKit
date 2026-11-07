@@ -119,4 +119,31 @@ class SignInStatsTest {
         assertEquals(null, SignInStats.milestoneFor(0))
     }
 
+    @Test
+    fun monthStatsUseElapsedDaysForCurrentMonth() {
+        val signed = setOf(
+            java.time.LocalDate.of(2026, 11, 1),
+            java.time.LocalDate.of(2026, 11, 3),
+            java.time.LocalDate.of(2026, 11, 7),
+        )
+        val laterToday = java.time.LocalDate.of(2026, 11, 7)
+        val current = SignInStats.monthStats(java.time.YearMonth.of(2026, 11), signed, laterToday)
+        assertEquals(3, current.signedCount)
+        assertEquals(7, current.dayCount)
+        assertEquals(42, current.percent)
+
+        val past = SignInStats.monthStats(java.time.YearMonth.of(2026, 10), signed, laterToday)
+        assertEquals(0, past.signedCount)
+        assertEquals(31, past.dayCount)
+    }
+
+    @Test
+    fun reachedMilestonesAreCumulative() {
+        assertEquals(emptyList<Int>(), SignInStats.reachedMilestones(2))
+        assertEquals(listOf(3), SignInStats.reachedMilestones(5))
+        assertEquals(listOf(3, 7), SignInStats.reachedMilestones(7))
+        assertEquals(listOf(3, 7, 14), SignInStats.reachedMilestones(20))
+        assertEquals(listOf(3, 7, 14, 30, 66), SignInStats.reachedMilestones(100))
+    }
+
 }

@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.BouncyIconButton
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.motion.rememberPressScale
@@ -109,7 +112,18 @@ fun DailySignInCard(
             SignInBadge(signed = signed)
             Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
-                Text(text = "每日签到", style = texts.cardTitle)
+                val milestoneBadge = SignInStats.reachedMilestones(summary.longestStreak).lastOrNull()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "每日签到", style = texts.cardTitle)
+                    if (milestoneBadge != null) {
+                        Spacer(Modifier.width(6.dp))
+                        AppPill(
+                            container = colors.goldSoft,
+                            ink = colors.goldInk,
+                            label = milestoneBadge.toString() + " 天",
+                        )
+                    }
+                }
                 Spacer(Modifier.height(2.dp))
                 Text(text = caption, style = texts.caption, color = colors.secondaryText)
                 Spacer(Modifier.height(AppTheme.space.sm))
@@ -293,6 +307,9 @@ fun SignInCalendarSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // 整月 6 行 + 里程碑徽章后内容会超出半屏，必须让弹层自己可滚，
+                // 否则最后 1~2 周会被屏幕底裁掉（v3.19 真机首轮）。
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = AppTheme.space.pageH)
                 .padding(bottom = AppTheme.space.xl),
         ) {
@@ -311,6 +328,20 @@ fun SignInCalendarSheet(
                         text = "连续 " + summary.currentStreak + " 天",
                         style = texts.cardTitle,
                         color = colors.goldInk,
+                    )
+                }
+            }
+            Spacer(Modifier.height(AppTheme.space.xs))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "里程碑", style = texts.caption, color = colors.secondaryText)
+                Spacer(Modifier.width(6.dp))
+                SignInStats.MILESTONES.forEach { milestone ->
+                    val achieved = summary.longestStreak >= milestone
+                    AppPill(
+                        container = if (achieved) colors.goldSoft else colors.divider.copy(alpha = 0.25f),
+                        ink = if (achieved) colors.goldInk else colors.secondaryText,
+                        label = milestone.toString() + "天",
+                        modifier = Modifier.padding(end = 4.dp),
                     )
                 }
             }
@@ -336,6 +367,12 @@ fun SignInCalendarSheet(
                     tint = if (visibleMonth < currentMonth) colors.accentInk else colors.divider,
                 )
             }
+            val monthStats = SignInStats.monthStats(visibleMonth, summary.signedDays, today)
+            Text(
+                text = "本月签到 " + monthStats.signedCount + "/" + monthStats.dayCount + " 天（" + monthStats.percent + "%）",
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
             Spacer(Modifier.height(AppTheme.space.xs))
             Row(modifier = Modifier.fillMaxWidth()) {
                 weekLabels.forEach { label ->
