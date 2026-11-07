@@ -1,0 +1,13 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "studykit_harmony",
+  "version": "1.0.0",
+  "description": "StudyKit HarmonyOS native MVP",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

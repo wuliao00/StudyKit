@@ -1,0 +1,12 @@
+# DevEco Studio / hvigor
+/node_modules/
+/oh_modules/
+/.hvigor/
+/build/
+/entry/build/
+/local.properties
+/.idea/
+*.hap
+*.hsp
+
+/hvigor-install.log

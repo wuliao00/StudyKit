@@ -187,6 +187,14 @@ StudyKit/
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## 🟣 HarmonyOS 原生版（开发中）
+
+- 源码：[harmony/](harmony/)（ArkTS / ArkUI Stage 模型，API 15）；
+- 一期 MVP：首页、整月签到日历、补签/撤销/配额、里程碑、本地词表复习、记忆看板签到卡；
+- 已用 OpenHarmony SDK 5.0.3 + hvigor 6.26.9 成功编译并签出 HAP；
+- 尚未在 MatePad 安装：HDC 设备未授权，且 HarmonyOS 5 正式安装需要华为开发者签名；
+- 构建与证据见 [harmony/docs/BUILD-EVIDENCE.md](harmony/docs/BUILD-EVIDENCE.md)。
+
 ## ⬇️ 下载
 
 > 不想自行构建？可直接下载已打包的安装包（APK），安装到安卓手机即可使用。

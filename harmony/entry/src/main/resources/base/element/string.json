@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "StudyKit HarmonyOS native MVP" },
+    { "name": "ability_desc", "value": "StudyKit learning assistant" },
+    { "name": "app_name", "value": "StudyKit" }
+  ]
+}

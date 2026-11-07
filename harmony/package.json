@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@ohos/hvigor": "^6.26.9",
+    "@ohos/hvigor-ohos-plugin": "^6.26.9"
+  }
+}
