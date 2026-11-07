@@ -181,6 +181,33 @@ fun StudyHomeScreen(
 
         if (photoImport.isRationaleVisible()) QuestionPhotoRationale()
 
+        // 里程碑提示走正常流内横幅，不悬浮盖住 Hero；2.6 秒后自动收起，内容只是轻推一下。
+        AnimatedVisibility(
+            visible = signInMilestone != null,
+            enter = fadeIn() + scaleIn(initialScale = 0.94f),
+            exit = fadeOut(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = AppTheme.space.sm),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = colors.goldSoft,
+                    contentColor = colors.goldInk,
+                    shadowElevation = AppTheme.elevation.hairline,
+                ) {
+                    Text(
+                        text = "连续签到 " + (signInMilestone ?: 0) + " 天，保持住！",
+                        style = texts.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                        modifier = Modifier.padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
+                    )
+                }
+            }
+        }
+
         Spacer(Modifier.height(AppTheme.space.md))
         // v3.2：hero 也加入同一支入场序列（原来是"整块瞬间出现"），
         // 下面三张入口卡顺延 1/2/3 级；每级 40ms，展开时像光先把主卡点亮。
@@ -327,27 +354,6 @@ fun StudyHomeScreen(
         }
         if (signInEvent > 0L) {
             ConfettiBurst(trigger = signInEvent, modifier = Modifier.matchParentSize())
-        }
-        AnimatedVisibility(
-            visible = signInMilestone != null,
-            enter = fadeIn() + scaleIn(initialScale = 0.88f),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = AppTheme.space.sm),
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = colors.goldSoft,
-                contentColor = colors.goldInk,
-                shadowElevation = AppTheme.elevation.hairline,
-            ) {
-                Text(
-                    text = "连续签到 " + (signInMilestone ?: 0) + " 天，保持住！",
-                    style = texts.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
-                    modifier = Modifier.padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
-                )
-            }
         }
     }
 

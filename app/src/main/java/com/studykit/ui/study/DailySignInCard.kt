@@ -114,15 +114,14 @@ fun DailySignInCard(
                 Text(text = caption, style = texts.caption, color = colors.secondaryText)
                 Spacer(Modifier.height(AppTheme.space.sm))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "本周", style = texts.caption, color = colors.secondaryText)
-                    Spacer(Modifier.width(6.dp))
-                    WeekDots(days = summary.weekDays)
-                    Spacer(Modifier.width(6.dp))
                     Text(
-                        text = summary.weekSignedCount.toString() + "/7",
+                        text = "本周 " + summary.weekSignedCount + "/7",
                         style = texts.caption,
                         color = colors.secondaryText,
+                        maxLines = 1,
                     )
+                    Spacer(Modifier.width(6.dp))
+                    WeekDots(days = summary.weekDays)
                 }
             }
             Spacer(Modifier.width(AppTheme.space.sm))
@@ -176,7 +175,7 @@ private fun SignInBadge(signed: Boolean) {
 private fun WeekDots(days: List<SignInDay>) {
     val colors = AppTheme.colors
     val shown = if (days.size == 7) days else SignInStats.weekDays(LocalDate.now(), emptySet())
-    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         shown.forEach { day ->
             val isToday = day.date == LocalDate.now()
             val dotColor by animateColorAsState(
@@ -195,7 +194,7 @@ private fun WeekDots(days: List<SignInDay>) {
             )
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(6.dp)
                     .graphicsLayer {
                         scaleX = dotScale
                         scaleY = dotScale
