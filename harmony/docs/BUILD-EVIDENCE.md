@@ -11,8 +11,9 @@
 ## 产物
 
 - 未签名：entry/build/default/outputs/default/entry-default-unsigned.hap（223,250 B）
-- 签名：release/StudyKit-Harmony-v1.0.0-debug.hap（247,720 B）
-  - sha256：a43c5dc9e0b48062be245918c536ab76f3cdf45cc45a216d870a0c4e2b8cfc20
+- 签名：release/StudyKit-Harmony-v1.0.0-debug.hap（247653 B）
+  - sha256：fb666f91eed09a9a3445c9ec0b773cfdcd555451a8ae4fc3005f4e5a848e5f69
+  - profile 已加入 MatePad UDID A3B9958BC64F7AD33CDDF9B11646FE98D20A502A94560EC240E9ADC1961A16D3
 - 签名方式：OpenHarmony SDK 自带 hap-sign-tool；
   - 生成 app 密钥/证书链（CA = OpenHarmony Application CA）；
   - 用 OpenHarmonyProfileDebug.pem 签出 debug profile；
@@ -23,10 +24,25 @@
 - assembleHap BUILD SUCCESSFUL，33 tasks，ArkTS CompileArkTS 通过；
 - HAP 生成并可被 hap-sign-tool sign-app 签名成功。
 
+## 真机安装结果（2026-11-08 07:50）
+
+HDC 已恢复授权（删除主机 .hdc 旧密钥后重新生成；设备 udid 已读取）。
+
+执行：
+
+    hdc -t 8ZQUN26602G03715 install -r entry-default-signed-udid.hap
+
+返回：
+
+    error: failed to install bundle. code:9568257 error: fail to verify pkcs7 file.
+
+说明：设备为 HarmonyOS 7.0.0.111（型号 SLG-W60），不信任 OpenHarmony 本地调试证书。
+这不是 HDC 授权问题，而是华为签名信任链问题。
+
 ## 未完成（阻塞）
 
-1. HDC 设备 Unauthorized：MatePad 需要点「允许」调试授权；
-2. HarmonyOS 5 通常只信任华为开发者签名；当前 OpenHarmony 本地证书可能被拒绝安装；
+1. HarmonyOS 7 真机安装要求华为开发者签名；当前 OpenHarmony 本地证书被拒绝；
+2. 需要登录华为账号，在 DevEco Studio 5/6 中配置自动签名后重新签 HAP；
 3. 因此尚未安装、未截图、未做真机交互验证。
 
 ## 下一步
