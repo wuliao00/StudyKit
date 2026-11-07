@@ -45,11 +45,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.memory.DayBand
 import com.studykit.data.memory.SprintSurge
 import com.studykit.ui.components.AppCard
+import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.EmptyState
 import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.theme.AppColors
 import com.studykit.ui.theme.AppTheme
+import com.studykit.util.signin.SignInStats
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -77,6 +79,7 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val signIn by viewModel.signInSummary.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -105,6 +108,46 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
             StatTile(value = "${state.totalWords}", label = "单词总数", modifier = Modifier.weight(1f))
             StatTile(value = "${state.plannedCount}", label = "有排期的词", modifier = Modifier.weight(1f))
             StatTile(value = "${state.sampleCount}", label = "复习记录", modifier = Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(AppTheme.space.lg))
+        SectionHeader(title = "签到")
+        Spacer(Modifier.height(AppTheme.space.md))
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm),
+            ) {
+                val monthStats = SignInStats.monthStats(
+                    java.time.YearMonth.from(java.time.LocalDate.now()),
+                    signIn.signedDays,
+                    java.time.LocalDate.now(),
+                )
+                SignInStat(value = signIn.currentStreak.toString(), label = "连续签到", modifier = Modifier.weight(1f))
+                SignInStat(value = signIn.longestStreak.toString(), label = "最长连续", modifier = Modifier.weight(1f))
+                SignInStat(
+                    value = monthStats.signedCount.toString() + "/" + monthStats.dayCount,
+                    label = "本月签到",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Text(
+                text = "累计签到 " + signIn.totalDays + " 天 · 本周 " + signIn.weekSignedCount + "/7",
+                style = texts.caption,
+                color = colors.secondaryText,
+            )
+            Spacer(Modifier.height(AppTheme.space.sm))
+            Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.xs)) {
+                SignInStats.MILESTONES.forEach { milestone ->
+                    val achieved = signIn.longestStreak >= milestone
+                    AppPill(
+                        container = if (achieved) colors.goldSoft else colors.divider.copy(alpha = 0.25f),
+                        ink = if (achieved) colors.goldInk else colors.secondaryText,
+                        label = milestone.toString() + "天",
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(AppTheme.space.lg))
@@ -716,5 +759,20 @@ private fun LegendDot(color: Color, label: String) {
         Spacer(Modifier.width(AppTheme.space.xs))
         // 文字用同族 Ink 而不是填充色本身：warning 直接当文字色在浅色主题下只有 1.6:1
         Text(text = label, style = texts.caption, color = AppTheme.colors.secondaryText)
+    }
+}
+
+/** 看板签到卡里的单列读数；比三张独立 StatTile 轻，不会被窄列挤成两行标签。 */
+@Composable
+private fun SignInStat(value: String, label: String, modifier: Modifier = Modifier) {
+    val texts = AppTheme.texts
+    val colors = AppTheme.colors
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = value, style = texts.statValue, maxLines = 1)
+        Spacer(Modifier.height(AppTheme.space.xs))
+        Text(text = label, style = texts.caption, color = colors.secondaryText, maxLines = 1)
     }
 }

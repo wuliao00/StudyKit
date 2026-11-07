@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,6 +94,7 @@ fun DailySignInCard(
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val haptic = LocalHapticFeedback.current
+    val reduceMotion = AppTheme.settings.reduceMotion
     val signed = summary.signedToday
     val caption = when {
         signed -> "已连续签到 " + summary.currentStreak + " 天"
@@ -115,6 +118,13 @@ fun DailySignInCard(
             Spacer(Modifier.width(AppTheme.space.md))
             Column(Modifier.weight(1f)) {
                 val milestoneBadge = SignInStats.reachedMilestones(summary.longestStreak).lastOrNull()
+                val badgeScale = remember { Animatable(1f) }
+                LaunchedEffect(milestoneBadge) {
+                    if (milestoneBadge != null && !reduceMotion) {
+                        badgeScale.snapTo(1.18f)
+                        badgeScale.animateTo(1f, MotionSpec.snap)
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "每日签到", style = texts.cardTitle)
                     if (milestoneBadge != null) {
@@ -123,6 +133,10 @@ fun DailySignInCard(
                             container = colors.goldSoft,
                             ink = colors.goldInk,
                             label = milestoneBadge.toString() + " 天",
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = badgeScale.value
+                                scaleY = badgeScale.value
+                            },
                         )
                     }
                 }
@@ -292,6 +306,7 @@ fun SignInCalendarSheet(
     onDismiss: () -> Unit,
     onSignIn: () -> Unit,
     onMakeUp: (LocalDate) -> Unit,
+    onUndoMakeUp: (LocalDate) -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -301,6 +316,7 @@ fun SignInCalendarSheet(
     val currentMonth = YearMonth.from(today)
     var visibleMonth by remember { mutableStateOf(currentMonth) }
     var pendingMakeUp by remember { mutableStateOf<LocalDate?>(null) }
+    var pendingUndo by remember { mutableStateOf<LocalDate?>(null) }
     val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
 
     ModalBottomSheet(
@@ -324,6 +340,15 @@ fun SignInCalendarSheet(
                     Spacer(Modifier.height(AppTheme.space.xs))
                     Text(
                         text = "累计 " + summary.totalDays + " 天 · 最长连续 " + summary.longestStreak + " 天",
+                        style = texts.caption,
+                        color = colors.secondaryText,
+                    )
+                    val usedMakeUp = SignInStats.makeupUsedInMonth(
+                        summary.makeupDays,
+                        YearMonth.from(today),
+                    )
+                    Text(
+                        text = "本月补签 " + usedMakeUp + "/" + SignInStats.MAX_MAKEUP_PER_MONTH + " 次",
                         style = texts.caption,
                         color = colors.secondaryText,
                     )
@@ -396,22 +421,26 @@ fun SignInCalendarSheet(
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
                 label = "signInMonth",
             ) { month ->
-                val grid = SignInStats.monthGrid(month, summary.signedDays, today)
+                val grid = SignInStats.monthGrid(month, summary.signedDays, today, summary.makeupDays)
                 Column {
                     grid.cells.chunked(7).forEach { week ->
                         Row(modifier = Modifier.fillMaxWidth()) {
                             week.forEach { cell ->
                                 val date = cell.date
-                                val canUp = date != null && !cell.signed && SignInStats.canMakeUp(date, today)
+                                val canUp = date != null && !cell.signed &&
+                                    SignInStats.canMakeUp(date, today, summary.makeupDays)
+                                val canUndo = date != null && cell.makeup &&
+                                    SignInStats.canUndoMakeUp(date, today, summary.makeupDays)
+                                var action: (() -> Unit)? = null
+                                if (date != null) {
+                                    if (canUndo) action = { pendingUndo = date }
+                                    else if (canUp) action = { pendingMakeUp = date }
+                                }
                                 MonthCell(
                                     cell = cell,
                                     modifier = Modifier.weight(1f),
                                     canMakeUp = canUp,
-                                    onClick = if (date != null && canUp) {
-                                        { pendingMakeUp = date }
-                                    } else {
-                                        null
-                                    },
+                                    onClick = action,
                                 )
                             }
                         }
@@ -459,6 +488,36 @@ fun SignInCalendarSheet(
             },
         )
     }
+
+    pendingUndo?.let { date ->
+        AlertDialog(
+            onDismissRequest = { pendingUndo = null },
+            title = { Text(text = "撤销补签", style = texts.cardTitle) },
+            text = {
+                Text(
+                    text = "撤销 " + date.monthValue + " 月 " + date.dayOfMonth + " 日的补签？" +
+                        "连续签到和本月统计会相应减少。",
+                    style = texts.body,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onUndoMakeUp(date)
+                        pendingUndo = null
+                    },
+                ) {
+                    Text(text = "撤销", color = colors.warningInk)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUndo = null }) {
+                    Text(text = "取消", color = colors.secondaryText)
+                }
+            },
+        )
+    }
+
 }
 
 @Composable

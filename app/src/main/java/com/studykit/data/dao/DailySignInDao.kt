@@ -26,6 +26,9 @@ interface DailySignInDao {
     @Query("SELECT day FROM daily_sign_ins WHERE makeup = 1")
     suspend fun allMakeupDays(): List<String>
 
+    @Query("DELETE FROM daily_sign_ins WHERE day = :day AND makeup = 1")
+    suspend fun deleteMakeup(day: String): Int
+
     @Query("DELETE FROM daily_sign_ins")
     suspend fun deleteAll()
 }

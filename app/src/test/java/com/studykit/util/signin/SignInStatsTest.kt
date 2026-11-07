@@ -179,4 +179,35 @@ class SignInStatsTest {
         assertTrue(grid.cells.first { it.date == java.time.LocalDate.of(2026, 11, 4) }.makeup)
     }
 
+    @Test
+    fun makeupQuotaIsThreePerMonth() {
+        val today = java.time.LocalDate.of(2026, 11, 7)
+        val used = setOf(
+            java.time.LocalDate.of(2026, 11, 1),
+            java.time.LocalDate.of(2026, 11, 2),
+            java.time.LocalDate.of(2026, 11, 3),
+        )
+        assertEquals(3, SignInStats.makeupUsedInMonth(used, java.time.YearMonth.of(2026, 11)))
+        assertFalse(
+            "本月配额用完不能再补",
+            SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 4), today, used),
+        )
+        assertTrue(
+            "上月补签不占本月配额",
+            SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 4), today, emptySet()),
+        )
+    }
+
+    @Test
+    fun undoOnlyAllowsRecentMakeupDays() {
+        val today = java.time.LocalDate.of(2026, 11, 7)
+        val makeup = setOf(
+            java.time.LocalDate.of(2026, 11, 6),
+            java.time.LocalDate.of(2026, 11, 1),
+        )
+        assertTrue(SignInStats.canUndoMakeUp(java.time.LocalDate.of(2026, 11, 6), today, makeup))
+        assertFalse("超出窗口不能撤销", SignInStats.canUndoMakeUp(java.time.LocalDate.of(2026, 11, 1), today, makeup))
+        assertFalse("不是补签不能撤销", SignInStats.canUndoMakeUp(java.time.LocalDate.of(2026, 11, 5), today, makeup))
+    }
+
 }

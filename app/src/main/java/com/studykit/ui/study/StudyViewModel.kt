@@ -394,6 +394,13 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 撤销最近 3 天内的补签；不触发彩带/里程碑，只刷新 summary。 */
+    fun undoMakeUpSignIn(date: LocalDate) {
+        viewModelScope.launch {
+            signInRepository.undoMakeUp(date, LocalDate.now(ZoneId.systemDefault()))
+        }
+    }
+
     private suspend fun publishMilestoneIfNeeded(today: LocalDate) {
         val summary = SignInStats.summary(
             signInRepository.days(),

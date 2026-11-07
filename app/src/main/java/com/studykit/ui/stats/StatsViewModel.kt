@@ -10,6 +10,8 @@ import com.studykit.data.memory.DueForecast
 import com.studykit.data.memory.ForecastCfg
 import com.studykit.data.memory.FsrsModel
 import com.studykit.ui.study.schedulingForSubject
+import com.studykit.util.signin.SignInStats
+import com.studykit.util.signin.SignInSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -115,6 +117,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val container = (application as StudyKitApp).container
     private val wordRepository = container.wordRepository
+    private val signInRepository = container.dailySignInRepository
     private val mistakeRepository = container.mistakeRepository
     private val bookRepository = container.bookRepository
     private val questionRepository = container.questionRepository
@@ -279,6 +282,18 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             retention = RetentionBuckets.of(retentionRows),
         )
     }.flowOn(Dispatchers.Default)
+
+    /** v3.21：签到数据接入记忆看板（连续/最长/本月/本周 + 里程碑）。 */
+    val signInSummary: StateFlow<SignInSummary> = combine(
+        signInRepository.observeDays(),
+        signInRepository.observeMakeupDays(),
+    ) { days, makeup ->
+        SignInStats.summary(days, LocalDate.now(ZoneId.systemDefault()), makeup)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        SignInStats.summary(emptyList(), LocalDate.now(ZoneId.systemDefault())),
+    )
 
     val state: StateFlow<StatsUiState> = combine(baseState, loadVizFlow, heatmapFlow) { base, viz, cells ->
         base.copy(

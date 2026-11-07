@@ -62,6 +62,9 @@ object SignInStats {
     /** 连续签到里程碑；到点当天由 ViewModel 发一次事件，首页弹金色提示。 */
     val MILESTONES = listOf(3, 7, 14, 30, 66)
 
+    /** 每个自然月最多补签天数；用完以后可补格子回到普通描边/不可点。 */
+    const val MAX_MAKEUP_PER_MONTH = 3
+
     private val ISO = DateTimeFormatter.ISO_LOCAL_DATE
 
     fun summary(
@@ -177,11 +180,32 @@ object SignInStats {
     /** 已达到的里程碑（由长到短/由小到大按 [MILESTONES] 顺序返回）。 */
     fun reachedMilestones(longestStreak: Int): List<Int> = MILESTONES.filter { longestStreak >= it }
 
-    /** 补签窗口：最近 [windowDays] 天内的过去日期；今天/未来不可补签。 */
-    fun canMakeUp(date: LocalDate, today: LocalDate, windowDays: Int = 3): Boolean {
+    /** 补签时间窗：最近 [windowDays] 天内的过去日期；今天/未来不可补签。 */
+    fun withinMakeUpWindow(date: LocalDate, today: LocalDate, windowDays: Int = 3): Boolean {
         if (!date.isBefore(today)) return false
         return !date.isBefore(today.minusDays(windowDays.toLong()))
     }
+
+    /** 补签窗口 + 当月配额；[makeupDays] 传全量补签日期，用于算当月已用次数。 */
+    fun canMakeUp(
+        date: LocalDate,
+        today: LocalDate,
+        makeupDays: Set<LocalDate> = emptySet(),
+        limit: Int = MAX_MAKEUP_PER_MONTH,
+    ): Boolean {
+        if (!withinMakeUpWindow(date, today)) return false
+        val month = YearMonth.from(date)
+        val used = makeupDays.count { YearMonth.from(it) == month }
+        return used < limit
+    }
+
+    /** 当月已补签次数。 */
+    fun makeupUsedInMonth(makeupDays: Set<LocalDate>, month: YearMonth): Int =
+        makeupDays.count { YearMonth.from(it) == month }
+
+    /** 补签可以撤销：只允许在同样 3 天窗口内的补签记录（今天/未来/更早都不能动）。 */
+    fun canUndoMakeUp(date: LocalDate, today: LocalDate, makeupDays: Set<LocalDate>): Boolean =
+        makeupDays.contains(date) && withinMakeUpWindow(date, today)
 
     /** 连续天数恰好命中里程碑时返回该天数，否则 null。 */
     fun milestoneFor(streak: Int): Int? = if (MILESTONES.contains(streak)) streak else null

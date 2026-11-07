@@ -32,6 +32,12 @@ class DailySignInRepository(private val dao: DailySignInDao) {
         ) > 0L
     }
 
+    /** 撤销最近 3 天窗口内的补签；返回是否真的删掉一行。 */
+    suspend fun undoMakeUp(date: LocalDate, today: LocalDate = LocalDate.now()): Boolean {
+        if (!SignInStats.withinMakeUpWindow(date, today)) return false
+        return dao.deleteMakeup(date.toString()) > 0
+    }
+
     suspend fun days(): List<String> = dao.allDays()
 
     suspend fun makeupDays(): List<String> = dao.allMakeupDays()
