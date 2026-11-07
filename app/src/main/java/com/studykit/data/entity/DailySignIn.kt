@@ -13,4 +13,6 @@ import androidx.room.PrimaryKey
 data class DailySignIn(
     @PrimaryKey @ColumnInfo(name = "day") val day: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    /** true = 补签（只用于展示标记；连击/累计与正常签到同等计入）。 */
+    @ColumnInfo(name = "makeup") val makeup: Boolean = false,
 )

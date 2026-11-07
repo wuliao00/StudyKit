@@ -2,8 +2,10 @@
 
 ## 1. 数据模型
 
-- 表：daily_sign_ins，一天一行，主键 day（本地日期 ISO 字符串 yyyy-MM-dd），created_at 毫秒时间戳。
-- Room：v14 -> v15 纯加表迁移（MIGRATION_14_15），旧表一列不动。
+- 表：daily_sign_ins，一天一行，主键 day（本地日期 ISO 字符串 yyyy-MM-dd），created_at 毫秒时间戳，
+  makeup 标记补签（0 正常 / 1 补签）。
+- Room：v14 -> v15 建表（MIGRATION_14_15）；v15 -> v16 加 makeup 列（MIGRATION_15_16），
+  旧数据默认 0。
 - DAO：INSERT OR IGNORE（重复签到幂等，返回 -1）；observeDays / allDays / deleteAll。
 - 仓储：DailySignInRepository.signIn(today) 只负责落库；连击与日历全部由纯函数现算。
 
@@ -41,8 +43,17 @@
 - DailySignInDaoTest：重复签到幂等 + Flow 能读到日期。
 - Migration14To15Test：v14 旧库升 v15，题目不丢，签到表可写可读。
 
-## 5. 已知边界
+## 5. 补签
+
+- 窗口：最近 3 天（不含今天/未来），由 SignInStats.canMakeUp 判定；
+- 入口：整月日历里可补的未签格子有浅 accent 描边，点击弹确认框；
+- 落库：makeup=true；重复/已签日期被主键忽略；
+- 展示：日历 goldSoft 底 + 金色圆点，签到卡本周圆点金色；读屏报「已补签」；
+- 口径：计入连续、累计、本月签到率；不改变今天是否已签；可触发补签后达到的里程碑提示。
+
+## 6. 已知边界
 
 - 日期口径跟随设备本地时区；跨零点时已组合的首页不会自动重算，重新进入首页/重新订阅后刷新（与既有 StudyStreak 一致）。
-- 日历只翻历史月、不翻未来；没有补签功能；历史数据仍在库中，累计/最长按全量计算。
+- 日历只翻历史月、不翻未来；补签仅最近 3 天且没有撤销/次数限制；历史数据仍在库中，
+  累计/最长按全量计算。
 - 没有积分/奖励体系，签到只记录行为与连击。

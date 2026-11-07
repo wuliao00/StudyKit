@@ -361,6 +361,7 @@ fun StudyHomeScreen(
         SignInCalendarSheet(
             summary = signInSummary,
             onDismiss = { showSignInCalendar = false },
+            onMakeUp = { date -> viewModel.makeUpSignIn(date) },
             onSignIn = {
                 viewModel.signInToday()
                 // 从日历里签到时收起弹层，让首页的彩带能被看见；卡片上的签到则保持当前页。

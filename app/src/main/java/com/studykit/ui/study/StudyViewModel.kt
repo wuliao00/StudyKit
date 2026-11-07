@@ -350,9 +350,12 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StudyHomeUiState())
 
     /** v3.17：每日签到读数；日期在每次取数时现算，跨零点后重新订阅/刷新会更新。 */
-    val signInSummary: StateFlow<SignInSummary> = signInRepository.observeDays()
-        .map { days -> SignInStats.summary(days, LocalDate.now(ZoneId.systemDefault())) }
-        .stateIn(
+    val signInSummary: StateFlow<SignInSummary> = combine(
+        signInRepository.observeDays(),
+        signInRepository.observeMakeupDays(),
+    ) { days, makeup ->
+        SignInStats.summary(days, LocalDate.now(ZoneId.systemDefault()), makeup)
+    }.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
             SignInStats.summary(emptyList(), LocalDate.now(ZoneId.systemDefault())),
@@ -376,10 +379,29 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             val added = signInRepository.signIn(today)
             if (!added) return@launch
             _signInEvent.value = System.currentTimeMillis()
-            val summary = SignInStats.summary(signInRepository.days(), today)
-            SignInStats.milestoneFor(summary.currentStreak)?.let { milestone ->
-                _signInMilestone.value = milestone
-            }
+            publishMilestoneIfNeeded(today)
+        }
+    }
+
+    /** 补签最近 3 天（由日历里的可补签格子触发）；成功同样计入连击与里程碑。 */
+    fun makeUpSignIn(date: LocalDate) {
+        viewModelScope.launch {
+            val today = LocalDate.now(ZoneId.systemDefault())
+            val added = signInRepository.makeUp(date, today)
+            if (!added) return@launch
+            _signInEvent.value = System.currentTimeMillis()
+            publishMilestoneIfNeeded(today)
+        }
+    }
+
+    private suspend fun publishMilestoneIfNeeded(today: LocalDate) {
+        val summary = SignInStats.summary(
+            signInRepository.days(),
+            today,
+            signInRepository.makeupDays(),
+        )
+        SignInStats.milestoneFor(summary.currentStreak)?.let { milestone ->
+            _signInMilestone.value = milestone
         }
     }
 

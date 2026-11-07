@@ -41,5 +41,9 @@ class DailySignInDaoTest {
         assertEquals(-1L, dao.insert(DailySignIn("2026-11-05", 2000L)))
         assertEquals(listOf("2026-11-05"), dao.observeDays().first())
         assertEquals(1, dao.allDays().size)
+
+        assertTrue(dao.insert(DailySignIn("2026-11-04", 3000L, makeup = true)) > 0L)
+        assertEquals(listOf("2026-11-04"), dao.observeMakeupDays().first())
+        assertEquals(listOf("2026-11-04", "2026-11-05"), dao.allDays().sorted())
     }
 }

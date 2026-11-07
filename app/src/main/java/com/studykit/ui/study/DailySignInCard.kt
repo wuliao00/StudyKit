@@ -33,12 +33,14 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -194,6 +196,7 @@ private fun WeekDots(days: List<SignInDay>) {
             val isToday = day.date == LocalDate.now()
             val dotColor by animateColorAsState(
                 targetValue = when {
+                    day.makeup -> colors.gold
                     day.signed -> colors.accent
                     isToday -> colors.accent.copy(alpha = 0.35f)
                     else -> colors.divider
@@ -288,6 +291,7 @@ fun SignInCalendarSheet(
     summary: SignInSummary,
     onDismiss: () -> Unit,
     onSignIn: () -> Unit,
+    onMakeUp: (LocalDate) -> Unit,
 ) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
@@ -296,6 +300,7 @@ fun SignInCalendarSheet(
     val today = LocalDate.now()
     val currentMonth = YearMonth.from(today)
     var visibleMonth by remember { mutableStateOf(currentMonth) }
+    var pendingMakeUp by remember { mutableStateOf<LocalDate?>(null) }
     val weekLabels = listOf("一", "二", "三", "四", "五", "六", "日")
 
     ModalBottomSheet(
@@ -396,7 +401,18 @@ fun SignInCalendarSheet(
                     grid.cells.chunked(7).forEach { week ->
                         Row(modifier = Modifier.fillMaxWidth()) {
                             week.forEach { cell ->
-                                MonthCell(cell = cell, modifier = Modifier.weight(1f))
+                                val date = cell.date
+                                val canUp = date != null && !cell.signed && SignInStats.canMakeUp(date, today)
+                                MonthCell(
+                                    cell = cell,
+                                    modifier = Modifier.weight(1f),
+                                    canMakeUp = canUp,
+                                    onClick = if (date != null && canUp) {
+                                        { pendingMakeUp = date }
+                                    } else {
+                                        null
+                                    },
+                                )
                             }
                         }
                     }
@@ -414,10 +430,44 @@ fun SignInCalendarSheet(
             }
         }
     }
+
+    pendingMakeUp?.let { date ->
+        AlertDialog(
+            onDismissRequest = { pendingMakeUp = null },
+            title = { Text(text = "补签", style = texts.cardTitle) },
+            text = {
+                Text(
+                    text = "补签 " + date.monthValue + " 月 " + date.dayOfMonth + " 日？" +
+                        "补签会计入连续签到和本月统计，并在日历里标出。",
+                    style = texts.body,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onMakeUp(date)
+                        pendingMakeUp = null
+                    },
+                ) {
+                    Text(text = "补签", color = colors.accentInk)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMakeUp = null }) {
+                    Text(text = "取消", color = colors.secondaryText)
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun MonthCell(cell: SignInMonthCell, modifier: Modifier = Modifier) {
+private fun MonthCell(
+    cell: SignInMonthCell,
+    modifier: Modifier = Modifier,
+    canMakeUp: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
     val colors = AppTheme.colors
     val texts = AppTheme.texts
     val date = cell.date
@@ -426,23 +476,29 @@ private fun MonthCell(cell: SignInMonthCell, modifier: Modifier = Modifier) {
         return
     }
     val future = date.isAfter(LocalDate.now())
-    val background = if (cell.signed) colors.accentSoft else Color.Transparent
+    val background = when {
+        cell.makeup -> colors.goldSoft
+        cell.signed -> colors.accentSoft
+        else -> Color.Transparent
+    }
+    val stroke = when {
+        cell.today -> Modifier.border(width = 1.5.dp, color = colors.accent, shape = CircleShape)
+        canMakeUp -> Modifier.border(width = 1.dp, color = colors.accent.copy(alpha = 0.35f), shape = CircleShape)
+        else -> Modifier
+    }
     Column(
         modifier = modifier
             .padding(2.dp)
             .aspectRatio(1f)
             .clip(CircleShape)
             .background(background)
-            .then(
-                if (cell.today) {
-                    Modifier.border(width = 1.5.dp, color = colors.accent, shape = CircleShape)
-                } else {
-                    Modifier
-                },
-            )
+            .then(stroke)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .semantics {
                 contentDescription = date.toString() + when {
+                    cell.makeup -> " 已补签"
                     cell.signed -> " 已签到"
+                    canMakeUp -> " 可补签"
                     future -> " 未到"
                     else -> " 未签到"
                 }
@@ -454,7 +510,9 @@ private fun MonthCell(cell: SignInMonthCell, modifier: Modifier = Modifier) {
             text = date.dayOfMonth.toString(),
             style = texts.caption,
             color = when {
+                cell.makeup -> colors.goldInk
                 cell.signed -> colors.accentInk
+                canMakeUp -> colors.accentInk
                 future -> colors.secondaryText.copy(alpha = 0.45f)
                 else -> colors.primaryText
             },
@@ -465,7 +523,7 @@ private fun MonthCell(cell: SignInMonthCell, modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .size(4.dp)
                     .clip(CircleShape)
-                    .background(colors.accent),
+                    .background(if (cell.makeup) colors.gold else colors.accent),
             )
         }
     }

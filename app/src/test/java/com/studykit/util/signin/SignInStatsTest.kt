@@ -146,4 +146,37 @@ class SignInStatsTest {
         assertEquals(listOf(3, 7, 14, 30, 66), SignInStats.reachedMilestones(100))
     }
 
+    @Test
+    fun makeupWindowIsLastThreeDaysOnly() {
+        val today = java.time.LocalDate.of(2026, 11, 7)
+        assertTrue(SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 6), today))
+        assertTrue(SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 5), today))
+        assertTrue(SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 4), today))
+        assertFalse("超过 3 天不可补", SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 3), today))
+        assertFalse("今天不能补", SignInStats.canMakeUp(today, today))
+        assertFalse("未来不能补", SignInStats.canMakeUp(java.time.LocalDate.of(2026, 11, 8), today))
+    }
+
+    @Test
+    fun makeupDaysAreMarkedButCountAsSigned() {
+        val summary = SignInStats.summary(
+            listOf("2026-11-03", "2026-11-04", "2026-11-05"),
+            today,
+            listOf("2026-11-04"),
+        )
+        assertEquals(1, summary.makeupDays.size)
+        assertTrue(summary.makeupDays.contains(java.time.LocalDate.of(2026, 11, 4)))
+        assertTrue(summary.last14.first { it.date == java.time.LocalDate.of(2026, 11, 4) }.makeup)
+        assertTrue(summary.signedToday)
+        assertEquals(3, summary.currentStreak)
+        assertEquals(3, summary.totalDays)
+        val grid = SignInStats.monthGrid(
+            java.time.YearMonth.of(2026, 11),
+            summary.signedDays,
+            today,
+            summary.makeupDays,
+        )
+        assertTrue(grid.cells.first { it.date == java.time.LocalDate.of(2026, 11, 4) }.makeup)
+    }
+
 }

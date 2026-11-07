@@ -5,10 +5,15 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 /** 签到日历里的一格：日期 + 当天是否已签到。 */
-data class SignInDay(val date: LocalDate, val signed: Boolean)
+data class SignInDay(val date: LocalDate, val signed: Boolean, val makeup: Boolean = false)
 
 /** 整月日历的一格；[date] 为 null 表示月初/月末的占位格。 */
-data class SignInMonthCell(val date: LocalDate?, val signed: Boolean, val today: Boolean)
+data class SignInMonthCell(
+    val date: LocalDate?,
+    val signed: Boolean,
+    val today: Boolean,
+    val makeup: Boolean = false,
+)
 
 /** 一个月的签到网格：固定 6 行 x 7 列，行序从周一开始，便于底部弹层高度稳定。 */
 data class SignInMonth(val yearMonth: YearMonth, val cells: List<SignInMonthCell>)
@@ -36,6 +41,7 @@ data class SignInSummary(
     val totalDays: Int = 0,
     val last14: List<SignInDay> = emptyList(),
     val signedDays: Set<LocalDate> = emptySet(),
+    val makeupDays: Set<LocalDate> = emptySet(),
     val weekDays: List<SignInDay> = emptyList(),
     val weekSignedCount: Int = 0,
 )
@@ -58,12 +64,20 @@ object SignInStats {
 
     private val ISO = DateTimeFormatter.ISO_LOCAL_DATE
 
-    fun summary(days: Collection<String>, today: LocalDate): SignInSummary {
+    fun summary(
+        days: Collection<String>,
+        today: LocalDate,
+        makeupDays: Collection<String> = emptyList(),
+    ): SignInSummary {
         val signedDays = days
             .mapNotNull { parse(it) }
             .filter { !it.isAfter(today) }
             .toSet()
-        val weekDays = weekDays(today, signedDays)
+        val makeupSet = makeupDays
+            .mapNotNull { parse(it) }
+            .filter { !it.isAfter(today) }
+            .toSet()
+        val weekDays = weekDays(today, signedDays, makeupSet)
         return SignInSummary(
             signedToday = signedDays.contains(today),
             currentStreak = currentStreak(signedDays, today),
@@ -71,9 +85,14 @@ object SignInStats {
             totalDays = signedDays.size,
             last14 = (WINDOW_DAYS - 1 downTo 0).map { offset ->
                 val date = today.minusDays(offset.toLong())
-                SignInDay(date = date, signed = signedDays.contains(date))
+                SignInDay(
+                    date = date,
+                    signed = signedDays.contains(date),
+                    makeup = makeupSet.contains(date),
+                )
             },
             signedDays = signedDays,
+            makeupDays = makeupSet,
             weekDays = weekDays,
             weekSignedCount = weekDays.count { it.signed && !it.date.isAfter(today) },
         )
@@ -103,11 +122,19 @@ object SignInStats {
     }
 
     /** 本周（周一为第一天）7 天；未来日期的 signed 永远为 false。 */
-    fun weekDays(today: LocalDate, signedDays: Set<LocalDate>): List<SignInDay> {
+    fun weekDays(
+        today: LocalDate,
+        signedDays: Set<LocalDate>,
+        makeupDays: Set<LocalDate> = emptySet(),
+    ): List<SignInDay> {
         val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
         return (0..6).map { offset ->
             val date = monday.plusDays(offset.toLong())
-            SignInDay(date = date, signed = !date.isAfter(today) && signedDays.contains(date))
+            SignInDay(
+                date = date,
+                signed = !date.isAfter(today) && signedDays.contains(date),
+                makeup = !date.isAfter(today) && makeupDays.contains(date),
+            )
         }
     }
 
@@ -115,7 +142,12 @@ object SignInStats {
      * 整月网格：周一开始，月初补空、月末补到 42 格（6 行），保证底部弹层翻月时高度不跳。
      * 未来日期不涂签到色（历史库理论上不会出现，防御脏数据）。
      */
-    fun monthGrid(month: YearMonth, signedDays: Set<LocalDate>, today: LocalDate): SignInMonth {
+    fun monthGrid(
+        month: YearMonth,
+        signedDays: Set<LocalDate>,
+        today: LocalDate,
+        makeupDays: Set<LocalDate> = emptySet(),
+    ): SignInMonth {
         val first = month.atDay(1)
         val leading = first.dayOfWeek.value - 1
         val cells = ArrayList<SignInMonthCell>(42)
@@ -127,6 +159,7 @@ object SignInStats {
                     date = date,
                     signed = signedDays.contains(date),
                     today = date == today,
+                    makeup = makeupDays.contains(date),
                 ),
             )
         }
@@ -143,6 +176,12 @@ object SignInStats {
 
     /** 已达到的里程碑（由长到短/由小到大按 [MILESTONES] 顺序返回）。 */
     fun reachedMilestones(longestStreak: Int): List<Int> = MILESTONES.filter { longestStreak >= it }
+
+    /** 补签窗口：最近 [windowDays] 天内的过去日期；今天/未来不可补签。 */
+    fun canMakeUp(date: LocalDate, today: LocalDate, windowDays: Int = 3): Boolean {
+        if (!date.isBefore(today)) return false
+        return !date.isBefore(today.minusDays(windowDays.toLong()))
+    }
 
     /** 连续天数恰好命中里程碑时返回该天数，否则 null。 */
     fun milestoneFor(streak: Int): Int? = if (MILESTONES.contains(streak)) streak else null

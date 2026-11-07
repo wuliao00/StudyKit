@@ -2,6 +2,20 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [3.20.0] - 2026-11-07（补签：最近 3 天）
+
+> **版本号**：3.20.0 / 42。Room v16（daily_sign_ins 加 makeup 列）。
+
+- **补签**：整月日历里最近 3 天（不含今天/未来）的未签格子可点，确认后写一条 makeup=true 的签到；
+- **展示**：补签格子用 goldSoft 底 + 金色圆点，读屏报「已补签」；签到卡的 7 天圆点把补签标成金色；
+- **口径**：补签计入连续/累计/本月签到率，但不改变「今天是否已签」；重复补签/已签日期由主键忽略；
+- **数据迁移**：MIGRATION_15_16 加 makeup INTEGER NOT NULL DEFAULT 0，旧签到全部按正常签到；
+- 新增 SignInStatsTest 2 条（补签窗口、补签标记/计入统计）+ Migration15To16Test；
+- **机检**：199 测试类 / 1735 用例 / 0 失败（1 条真模型评测在未传 -PocrEvalDir 时跳过）。
+  新增 Migration15To16Test、2 条补签窗口/补签标记 SignInStatsTest。
+- **真机**：- **真机**：3.19.0/41 -> 3.20.0/42 覆盖安装，Room v15->v16 自动迁移（makeup 列，旧数据 0）；日历 11-04~11-06 可补签，点 11-06 确认后 goldSoft 底+金点，连续 2 天/本月 2/7（28%），首页本周圆点金色；DB makeup=1，验证后清理仅留 11-07。证据见 docs/evidence/v320-device.md。
+- **已知边界**：只允许最近 3 天，不能补今天/未来；没有补签次数限制或积分成本。
+
 ## [3.19.0] - 2026-11-07（里程碑徽章 / 月度签到率）
 
 > **版本号**：3.19.0 / 41。Room 仍 v15（无 schema 变更）。

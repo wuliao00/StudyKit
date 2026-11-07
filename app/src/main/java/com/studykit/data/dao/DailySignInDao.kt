@@ -17,8 +17,14 @@ interface DailySignInDao {
     @Query("SELECT day FROM daily_sign_ins ORDER BY day DESC")
     fun observeDays(): Flow<List<String>>
 
+    @Query("SELECT day FROM daily_sign_ins WHERE makeup = 1 ORDER BY day DESC")
+    fun observeMakeupDays(): Flow<List<String>>
+
     @Query("SELECT day FROM daily_sign_ins")
     suspend fun allDays(): List<String>
+
+    @Query("SELECT day FROM daily_sign_ins WHERE makeup = 1")
+    suspend fun allMakeupDays(): List<String>
 
     @Query("DELETE FROM daily_sign_ins")
     suspend fun deleteAll()
