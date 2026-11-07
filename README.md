@@ -193,14 +193,15 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 | 渠道 | 链接 / 口令 | 说明 |
 | --- | --- | --- |
-| 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 `z4Yk`；**文件夹**分享，v3.4.1 的 `StudyKit-v3.4.1-debug.apk`（116 MB）与 `StudyKit-v3.4.1-debug.7z`（76.3 MB）已放进同一目录 |
-| 蓝奏云 | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | v3.4.1 的 **`.7z` 压缩包**（79,990,219 B），永久有效、无提取码；下完要先解压才能装 |
-| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | 每次发版的原始 APK 与 `.7z`。国内直连不稳，优先用上面两个渠道 |
-| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | v3.4.1 与 v3.4.0 都已建发行版，附件是 **`.7z`**（Gitee 单附件上限 100 MB）；更新检查读的也是 Gitee tags |
-| 123 云盘 | [https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW](https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW) | 提取码 `WiAW`；`StudyKit` 目录分享，3.4.1 的 APK 与 `.7z` 都在里面 |
-| 百度网盘 | [https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu](https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu) | 提取码 `b6pu`；`StudyKit` 目录分享，同上 |
+| 夸克网盘 | [https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk](https://pan.quark.cn/s/b1029385f1b5?pwd=z4Yk) | 提取码 z4Yk；文件夹分享，目前仍是 **v3.4.1 历史包**（StudyKit-v3.4.1-debug.apk 116 MB / .7z 76.3 MB）；v3.21.0 最新包请先看 GitHub Releases |
+| 蓝奏云 | [https://www.ilanzou.com/s/2HryJxHd](https://www.ilanzou.com/s/2HryJxHd) | **v3.4.1 历史 .7z**（79,990,219 B），永久有效、无提取码；下完要先解压才能装 |
+| GitHub Releases | [https://github.com/wuliao00/StudyKit/releases](https://github.com/wuliao00/StudyKit/releases) | **v3.21.0 最新 APK** 与历次发版的原始包；国内直连不稳，可优先用国内渠道的历史包或自行构建 |
+| Gitee Releases | [https://gitee.com/wuliao11541/StudyKit/releases](https://gitee.com/wuliao11541/StudyKit/releases) | 历史 v3.4.1 / v3.4.0 发行版（附件为 .7z，Gitee 单附件上限 100 MB）；**更新检查读的是 Gitee tags**，v3.21.0 的 Gitee tag 待账号授权后同步 |
+| 123 云盘 | [https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW](https://1828156079.share.123pan.cn/123pan/w5lUjv-jGd3h?pwd=WiAW) | 提取码 WiAW；StudyKit 目录分享，仍是 3.4.1 历史 APK 与 .7z |
+| 百度网盘 | [https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu](https://pan.baidu.com/s/1zgokGo5eyFTX-_QavLu7cQ?pwd=b6pu) | 提取码 b6pu；StudyKit 目录分享，仍是 3.4.1 历史包 |
 
 > **更新检查只走 Gitee**：App 启动时读 Gitee 仓库的 tags 判断版本；夸克、蓝奏云、GitHub Releases 只是下载渠道，不参与版本判断。
+> v3.21.0 的 GitHub Release 已发布；Gitee tag 与夸克目录需要账号授权后补同步，未同步前旧版本不会收到升级提示。
 
 ## 🚦 首次启动会看到什么
 
