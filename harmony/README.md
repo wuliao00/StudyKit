@@ -3,11 +3,10 @@
 这是 StudyKit 的 HarmonyOS 5 / ArkTS + ArkUI 原生实现，不是 Android APK 的套壳。
 当前是一期 MVP：首页 + 每日签到 + 补签/撤销 + 里程碑 + 本地词表复习。
 
-> **构建状态（2026-11-08）**：源码已用 OpenHarmony SDK 5.0.3（API 15）+ hvigor 6.26.9
-> 成功编译并签出 HAP；HDC 已授权，能读取 MatePad UDID。真机安装返回
-> 9568257 fail to verify pkcs7 file：设备是 HarmonyOS 7.0.0.111（SLG-W60），不信任
-> OpenHarmony 本地调试证书。要完成安装，需要华为账号在 DevEco Studio 5/6 中自动签名；
-> 本机没有该账号/IDE，所以**尚未完成真机安装与截图**。
+> **构建状态（2026-11-08）**：已完成 OpenHarmony SDK 编译；并且已在华为 HarmonyOS 开发者中心
+> 创建 APP ID（StudyKit / com.studykit.study）、调试证书、调试设备、调试 Profile、发布证书、发布 Profile，
+> 用 AGC 调试/发布证书分别签出 HAP。但 11:45 后平板 HDC 断开，**尚未完成真机安装与截图**；
+> 应用市场信息只填写了草稿，**尚未提交审核**。详见 docs/AGC-SUBMISSION.md。
 
 ## 已实现
 
