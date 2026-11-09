@@ -52,3 +52,19 @@
 2. hdc install -r release/StudyKit-Harmony-v1.0.0-debug-agc.hap
 3. 启动应用截图（首页/签到/补签/单词/我的），补 AGC 应用信息；
 4. 上传发布 HAP，填写隐私政策/客服信息后提交审核。
+
+
+## 应用市场资料（2026-11-09 更新）
+
+- 客服邮箱：kino114514@hotmail.com
+- 隐私政策：https://wuliao00.github.io/StudyKit/privacy-policy.html
+- 应用图标：harmony/store/app_icon_1024.png（已上传）
+- 应用分类：教育 / 应用
+- 应用标签：学习、语言学习、备考（主标签：学习）
+- 截图：docs/evidence/harmony/01-home.jpeg 至 06-profile.jpeg
+
+## 最终提交阻塞
+
+华为开发者中心登录会话在 2026-11-09 13:20 左右过期，页面跳转
+id1.cloud.huawei.com 登录页，无法完成“保存应用信息 / 下一步 / 提交审核”。
+需要重新登录华为账号后继续；应用本身已安装并在 MatePad 上验证。
