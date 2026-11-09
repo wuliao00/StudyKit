@@ -54,6 +54,11 @@ export class StudyStore {
 
   async makeUp(date: string, todayIso: string): Promise<boolean> {
     const records: SignInRecord[] = await this.loadSignIns();
+    for (let i = 0; i < records.length; i++) {
+      if (records[i].day === date) {
+        return false;
+      }
+    }
     const summary = SignInStats.summary(records, todayIso);
     if (!SignInStats.canMakeUp(date, todayIso, summary.makeupDays)) {
       return false;

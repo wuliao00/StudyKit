@@ -11,9 +11,11 @@ struct Index {
   @State currentTab: number = 0;
   @State summary: SignInSummary = SignInStats.emptySummary();
   @State mastered: string[] = [];
+  @State masteredCount: number = 0;
   @State wordIndex: number = 0;
   @State wordRevealed: boolean = false;
   @State monthOffset: number = 0;
+  @State viewVersion: number = 0;
   @State loading: boolean = true;
 
   private store: StudyStore = StudyStore.get();
@@ -29,7 +31,9 @@ struct Index {
     const records = await this.store.loadSignIns();
     this.summary = SignInStats.summary(records, SignInStats.today());
     this.mastered = await this.store.loadMastered();
+    this.masteredCount = this.mastered.length;
     this.loading = false;
+    this.viewVersion = this.viewVersion + 1;
   }
 
   async signInToday(): Promise<void> {
@@ -168,11 +172,12 @@ struct Index {
         .linearGradient({ angle: 135, colors: [[Theme.accentSoft, 0.0], [Theme.card, 0.72]] })
 
         Row() {
-          this.metric('今日待复习', '0')
-          Divider().vertical(true).height(34).color(Theme.divider)
-          this.metric('已掌握', this.mastered.length.toString())
-          Divider().vertical(true).height(34).color(Theme.divider)
-          this.metric('签到天数', this.summary.totalDays.toString())
+          ForEach(this.homeStats(), (item: string, index: number) => {
+            this.metric(item.split('|')[0], item.split('|')[1])
+            if (index < 2) {
+              Divider().vertical(true).height(34).color(Theme.divider)
+            }
+          }, (item: string, index: number) => index.toString() + '-' + item + '-' + this.viewVersion.toString())
         }
         .width('100%').padding({ top: 16, bottom: 16 }).margin({ top: 12 })
         .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
@@ -186,6 +191,7 @@ struct Index {
       .width('100%').padding({ left: Theme.pagePadding, right: Theme.pagePadding })
     }
     .backgroundColor(Theme.bg).width('100%').height('100%')
+    .id('home-' + this.viewVersion.toString())
   }
 
   @Builder
@@ -194,6 +200,14 @@ struct Index {
       Text(label).fontSize(12).fontColor(Theme.secondaryText)
       Text(value).fontSize(24).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText).margin({ top: 4 })
     }.layoutWeight(1)
+  }
+
+  private homeStats(): string[] {
+    return [
+      '今日待复习|0',
+      '已掌握|' + this.masteredCount.toString(),
+      '签到天数|' + this.summary.totalDays.toString()
+    ];
   }
 
   @Builder
@@ -272,9 +286,9 @@ struct Index {
         }.width('100%').padding({ top: 6, bottom: 12 })
 
         Row() {
-          this.statBox('连续', this.summary.currentStreak.toString())
-          this.statBox('最长', this.summary.longestStreak.toString())
-          this.statBox('本月', this.monthSignedCount().toString() + '/' + this.monthDays().toString())
+          ForEach(this.statItems(), (item: string, index: number) => {
+            this.statBox(item.split('|')[0], item.split('|')[1])
+          }, (item: string, index: number) => index.toString() + '-' + item + '-' + this.viewVersion.toString())
         }.width('100%').padding(10).backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
 
         Row() {
@@ -311,7 +325,7 @@ struct Index {
             GridItem() {
               this.dayCell(cell)
             }
-          }, (cell: SignInCell, index: number) => index.toString())
+          }, (cell: SignInCell, index: number) => index.toString() + '-' + this.viewVersion.toString())
         }
         .columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr')
         .rowsGap(6).columnsGap(6).height(300).width('100%')
@@ -322,6 +336,7 @@ struct Index {
           .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 4, bottom: 24 })
       }.width('100%').padding({ left: Theme.pagePadding, right: Theme.pagePadding })
     }.backgroundColor(Theme.bg).width('100%').height('100%')
+    .id('signin-' + this.viewVersion.toString())
   }
 
   private currentMonthKey(): string {
@@ -329,6 +344,14 @@ struct Index {
     const target = new Date(now.getFullYear(), now.getMonth() + this.monthOffset, 1);
     const month = target.getMonth() + 1;
     return target.getFullYear().toString() + '-' + (month < 10 ? '0' : '') + month.toString();
+  }
+
+  private statItems(): string[] {
+    return [
+      '连续|' + this.summary.currentStreak.toString(),
+      '最长|' + this.summary.longestStreak.toString(),
+      '本月|' + this.monthSignedCount().toString() + '/' + this.monthDays().toString()
+    ];
   }
 
   @Builder
@@ -362,6 +385,9 @@ struct Index {
 
   private isMakeUpEligible(cell: SignInCell): boolean {
     if (cell.blank || cell.signed || !cell.date) {
+      return false;
+    }
+    if (this.summary.makeupDays.indexOf(cell.date) >= 0) {
       return false;
     }
     return SignInStats.canMakeUp(cell.date, SignInStats.today(), this.summary.makeupDays);

@@ -3,10 +3,10 @@
 这是 StudyKit 的 HarmonyOS 5 / ArkTS + ArkUI 原生实现，不是 Android APK 的套壳。
 当前是一期 MVP：首页 + 每日签到 + 补签/撤销 + 里程碑 + 本地词表复习。
 
-> **构建状态（2026-11-08）**：已完成 OpenHarmony SDK 编译；并且已在华为 HarmonyOS 开发者中心
-> 创建 APP ID（StudyKit / com.studykit.study）、调试证书、调试设备、调试 Profile、发布证书、发布 Profile，
-> 用 AGC 调试/发布证书分别签出 HAP。但 11:45 后平板 HDC 断开，**尚未完成真机安装与截图**；
-> 应用市场信息只填写了草稿，**尚未提交审核**。详见 docs/AGC-SUBMISSION.md。
+> **构建状态（2026-11-09）**：已用 AGC 调试证书签名并安装在 MatePad 11.5 S（HarmonyOS 7），
+> 真机验证首页/签到/整月日历/补签/撤销/单词/我的，截图在 docs/evidence/harmony。
+> 应用市场（AGC）已创建 StudyKit APP ID、调试证书/设备/Profile、发布证书/Profile，并签出发布 HAP；
+> 商店应用信息仍是草稿，尚未提交审核。细节见 docs/AGC-SUBMISSION.md。
 
 ## 已实现
 

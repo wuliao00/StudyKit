@@ -27,16 +27,23 @@
 ## 已签出的 HAP
 
 - 调试：release/StudyKit-Harmony-v1.0.0-debug-agc.hap
-  - 大小 248808 B
-  - sha256 a16c99efe1f2235a82ab9300803c31a86885421c580647ab6aa784f8e399abe1
+  - 大小 256190 B
+  - sha256 40110f25f27e7ec1077d9815e47f3cedac2f5dcbe6691abdfb7b22c36844b5bd
 - 发布：release/StudyKit-Harmony-v1.0.0-release.hap
-  - 大小 248726 B
-  - sha256 f92b4b92c12f2abb6b5befa36ae4bfd83a1538f17a14572ddbcf657823ef1c52
+  - 大小 256103 B
+  - sha256 3f68fb09215338df55fa60dac2cd3433652fb333bcc49e651498302fd5ff38e1
+
+## 真机验证（2026-11-09）
+
+- 平板重新连接后 HDC 正常，调试 HAP 安装成功并启动；
+- 已验证：首页、整月签到日历、补签确认、撤销补签、单词翻卡/记住、我的页；
+- 修复了补签重复入口、撤销后统计/日历不刷新、首页已掌握计数不刷新等 ArkUI 状态缓存问题；
+- 证据截图：docs/evidence/harmony/01-home.jpeg 至 06-profile.jpeg。
 
 ## 当前阻塞
 
-- 2026-11-08 11:45 起 HDC list targets 为空（平板断开/未授权），无法安装调试 HAP；
-- 应用市场提交还需要：应用图标、截图、隐私政策 URL、客服联系方式、分类标签等资料；
+- 应用市场提交还需要：应用图标已准备（harmony/store/app_icon_1024.png）、
+  截图已准备、隐私政策 URL、客服联系方式、分类标签等资料；
 - 当前 AGC 页面停留在应用信息填写，尚未点“保存/下一步/提交”。
 
 ## 下一步
