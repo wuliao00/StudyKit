@@ -24,6 +24,12 @@
 
 ## 验证
 
-- Harmony HAP：release 构建成功，CompileArkTS 0 ERROR；hap-sign-tool verify-app 通过；
-- Android：compileDebugKotlin 通过；assembleDebug 资源压缩任务待修复后出 APK；
+- Harmony HAP：release 构建成功，CompileArkTS 0 ERROR；hap-sign-tool verify-app 通过；`release/StudyKit-Harmony-v1.0.0-active-user.hap`（268,867 B，sha256 50056954…4D04BDA6）；
+- Android：assembleDebug BUILD SUCCESSFUL（8m13s）；APK `release/StudyKit-v3.21.0-active-user-debug.apk`（121,517,050 B，sha256 4bd8b8b4…37ed6ac）；
 - 真机：MatePad 当前未连接（USB 仅 WPD/MTP），恢复后补安装走查与截图。
+
+## 交付物
+
+- [Android APK](../release/StudyKit-v3.21.0-active-user-debug.apk)
+- [HarmonyOS HAP](../release/StudyKit-Harmony-v1.0.0-active-user.hap)
+- [视觉稿首页](../design/active-user/home.png)、[完成态](../design/active-user/done.png)、[小测](../design/active-user/quiz.png)
