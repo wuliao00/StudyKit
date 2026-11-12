@@ -198,6 +198,7 @@ struct Index {
             this.metric('正确率', this.accuracyText())
           }
           .width('100%').padding({ top: 14, bottom: 14 }).margin({ top: 12 })
+          .id('home-metrics-' + this.viewVersion.toString() + '-' + this.dueCount.toString() + '-' + this.masteredCount.toString() + '-' + this.accuracy.toString())
           .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
 
           this.signQuickCard()
@@ -269,6 +270,7 @@ struct Index {
     .width('100%').alignItems(HorizontalAlign.Start)
     .padding(18).borderRadius(Theme.cardRadius)
     .linearGradient({ angle: 135, colors: [[Theme.accentSoft, 0.0], [Theme.card, 0.78]] })
+    .id('start-card-' + this.viewVersion.toString() + '-' + this.tasksDone().toString() + '-' + this.todayReviewed.toString() + '-' + this.todayQuiz.toString())
   }
 
   @Builder
@@ -298,6 +300,7 @@ struct Index {
     }
     .width('100%').padding({ top: 12, bottom: 12 })
     .border({ width: { top: 1 }, color: Theme.divider })
+    .id('task-row-' + step.toString() + '-' + (done ? '1' : '0') + '-' + this.viewVersion.toString())
     .onClick(() => { this.goTab(tab); })
   }
 

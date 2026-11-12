@@ -24,7 +24,7 @@
 
 ## 验证
 
-- Harmony HAP：release 构建成功，CompileArkTS 0 ERROR；hap-sign-tool verify-app 通过；`release/StudyKit-Harmony-v1.0.0-active-user.hap`（268,867 B，sha256 50056954…4D04BDA6）；
+- Harmony HAP：release 构建成功，CompileArkTS 0 ERROR；hap-sign-tool verify-app 通过；`release/StudyKit-Harmony-v1.0.0-active-user.hap`（268,445 B，sha256 2F636A24…570D5C）；
 - Android：assembleDebug BUILD SUCCESSFUL（8m13s）；APK `release/StudyKit-v3.21.0-active-user-debug.apk`（121,517,050 B，sha256 4bd8b8b4…37ed6ac）；
 - 真机：MatePad 当前未连接（USB 仅 WPD/MTP），恢复后补安装走查与截图。
 
@@ -33,3 +33,8 @@
 - [Android APK](../release/StudyKit-v3.21.0-active-user-debug.apk)
 - [HarmonyOS HAP](../release/StudyKit-Harmony-v1.0.0-active-user.hap)
 - [视觉稿首页](../design/active-user/home.png)、[完成态](../design/active-user/done.png)、[小测](../design/active-user/quiz.png)
+
+## 2026-11-12 真机修复
+
+- 真机发现首页任务行/指标在 Tab 间返回时不刷新（数字 3/3 但行仍显示“去完成”），已给任务卡、任务行、指标行加随 `viewVersion`/完成态变化的 `.id`，强制重建。
+- 重新构建、签名、安装到 MatePad 11.5 S；实测签到→复习 5 词→小测 5 题→3/3、正确率 100%，重启后数据仍在。
