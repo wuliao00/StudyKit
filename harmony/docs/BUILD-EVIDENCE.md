@@ -59,3 +59,47 @@ verify-app 校验：verify exit 0，“Digest verify result: true”，“verify
 
 - 旧版 24 示例词 MVP 曾用 OpenHarmony 本地证书签名（设备拒绝），后改用 AGC 调试证书安装成功；
 - 旧构建证据见 git 历史中的本文件。
+
+
+## 2026-11-12 第一眼价值版（task-8：四书/示例错题/海报/记忆曲线）
+
+构建命令不变（E:\dev\studykit-harmony，release）：
+
+    node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap --mode module -p product=default -p buildMode=release
+
+- 首次构建（全量）：BUILD SUCCESSFUL in 8 min 12 s，CompileArkTS 3m10s，0 ERROR；
+  日志：E:\dev\product-evidence\build-release-task8-1.log
+- 最终构建（清理文案后增量）：BUILD SUCCESSFUL in 2 min 25 s，CompileArkTS 1m20s，0 ERROR；
+  日志：E:\dev\product-evidence\build-release-task8-final.log
+
+签名（与之前一致：AGC 发布证书 + 发布 Profile localSign）：
+
+    java -jar E:/dev/ohos-sdk/sdk/15/toolchains/lib/hap-sign-tool.jar sign-app \
+      -mode localSign -keyAlias studykit-release -keyPwd 123456 \
+      -appCertFile E:/dev/studykit-release.cer \
+      -profileFile E:/dev/studykit-release-profile.p7b \
+      -inFile entry-default-unsigned.hap -signAlg SHA256withECDSA \
+      -keystoreFile E:/dev/studykit-release.p12 -keystorePwd 123456 \
+      -outFile StudyKit-Harmony-v1.0.0-task8-release.hap \
+      -compatibleVersion 15 -signCode 1
+
+- 结果：sign-app success；verify-app：Digest verify true / Verify success；
+- 最终 HAP：E:\dev\product-evidence\StudyKit-Harmony-v1.0.0-task8-release.hap
+  （349,133 B，sha256 B29728BDA33513B38E46E1F7A298D23B15F5A855D488B15D0172F73ED83D05FF）
+- 副本：E:\dev\StudyKit-Harmony-task8-final.hap
+- 未签名产物：E:\dev\product-evidence\StudyKit-Harmony-v1.0.0-task8-unsigned.hap（319,884 B）
+- 日志/校验/源码自检/内容扫描：E:\dev\product-evidence
+
+task-8 功能点（源码级自检见 source-feature-check.txt）：66 词分四本词书、3 道示例错题（60 秒倒计时）、
+Canvas 海报（OffscreenCanvas + toDataURL + Base64 解码 + fs 写 PNG）、“再复习 X 次解锁个人记忆曲线”、
+副标题“StudyKit · 错题本 · 背单词 · 打卡”；死入口/未完成关键词扫描为 0 命中。
+
+## 真机状态（2026-11-12 22:42）
+
+- 22:41 执行 `hdc list targets -v` 时曾短暂出现 `8ZQUN26602G03715 USB Offline`，
+  随后 hdc 重启（kill/start）后又只剩 COM3/COM4 UART Ready，设备未就绪，安装未执行；
+- 已放置自动衔接脚本：E:\dev\product-evidence\device-auto-install.ps1
+  （最多轮询 20 分钟，设备 Ready 后自动 install + 启动 + 截图 + dumpLayout + bm dump，
+  日志写 E:\dev\product-evidence\device-auto-install.log）；
+- 设备恢复后可继续按 E:\dev\harmony-evidence\device-walkthrough.md 做 5 tab 走查、示例 60 秒复习、
+  海报 PNG 生成、重启持久化验证。
