@@ -1,10 +1,15 @@
 import common from '@ohos.app.ability.common';
 import promptAction from '@ohos.promptAction';
+import fs from '@ohos.file.fs';
+import util from '@ohos.util';
 import { Theme } from '../common/Theme';
-import { WORD_BANK, WordItem, lookupWord } from '../model/Words';
+import {
+  BOOK_ALL, WORD_BANK, WORD_BOOKS, WordBook, WordItem, bookName, booksOf, bookWordCount, lookupWord, wordsOfBook
+} from '../model/Words';
 import { StudyStore } from '../model/Store';
 import { Srs, SrsCard } from '../model/Srs';
 import { QuizBuilder, QuizQuestion, QuizSession } from '../model/Quiz';
+import { DEMO_QUESTIONS, DEMO_SECONDS, DemoQuestion } from '../model/Demo';
 import { SignInCell, SignInDay, SignInMonth, SignInStats, SignInSummary } from '../model/SignIn';
 
 const TAB_HOME: number = 0;
@@ -16,10 +21,19 @@ const TAB_PROFILE: number = 4;
 const REVIEW_TARGET: number = 5;
 const QUIZ_TARGET: number = 3;
 const TASK_TOTAL: number = 3;
+const MEMORY_CURVE_TARGET: number = 100;
 
 const PRACTICE_MENU: number = 0;
 const PRACTICE_QUIZ: number = 1;
 const PRACTICE_RESULT: number = 2;
+const PRACTICE_DEMO_QUIZ: number = 3;
+const PRACTICE_DEMO_RESULT: number = 4;
+
+const POSTER_NONE: number = 0;
+const POSTER_REPORT: number = 1;
+const POSTER_SIGN: number = 2;
+const POSTER_WIDTH: number = 720;
+const POSTER_HEIGHT: number = 1040;
 
 @Entry
 @Component
@@ -30,6 +44,7 @@ struct Index {
   @State today: string = SignInStats.today();
 
   @State summary: SignInSummary = SignInStats.emptySummary();
+  @State selectedBook: string = 'cet4';
   @State dueCount: number = 0;
   @State masteredCount: number = 0;
   @State learningCount: number = 0;
@@ -40,6 +55,8 @@ struct Index {
   @State todayQuiz: number = 0;
   @State wrongNames: string[] = [];
   @State hasUndo: boolean = false;
+  @State reviewTotal: number = 0;
+  @State demoImported: boolean = false;
 
   @State wordRevealed: boolean = false;
   @State lastReviewedWord: string = '';
@@ -56,11 +73,26 @@ struct Index {
   @State resultTotal: number = 0;
   @State resultCorrect: number = 0;
 
+  @State demoIndex: number = 0;
+  @State demoSelected: number = -1;
+  @State demoCorrect: number = 0;
+  @State demoSeconds: number = DEMO_SECONDS;
+  @State demoUsed: number = 0;
+  @State demoTimedOut: boolean = false;
+
+  @State posterKind: number = POSTER_NONE;
+  @State posterData: string = '';
+  @State posterPath: string = '';
+  @State posterError: string = '';
+
   private store: StudyStore = StudyStore.get();
   private tabsController: TabsController = new TabsController();
+  private demoInterval: number = -1;
+  private filesDir: string = '';
 
   aboutToAppear(): void {
     const context = getContext(this) as common.UIAbilityContext;
+    this.filesDir = context.filesDir;
     this.store.init(context).then(() => {
       this.reload();
     }).catch(() => {
@@ -73,12 +105,15 @@ struct Index {
   async reload(): Promise<void> {
     this.today = SignInStats.today();
     const cards: SrsCard[] = this.store.cards;
+    this.selectedBook = this.store.bookId;
+    this.demoImported = this.store.demoImported;
+    this.reviewTotal = this.store.reviewTotalCount();
     this.summary = SignInStats.summary(this.store.signIns, this.today);
-    this.dueCount = Srs.dueCount(cards, this.today);
+    this.dueCount = this.scopedDueCount();
     this.masteredCount = Srs.masteredCount(cards);
     this.learningCount = cards.length;
-    const reviewTotal: number = Srs.totalCorrect(cards) + Srs.totalWrong(cards);
-    const attempts: number = reviewTotal + this.store.quizTotalCount();
+    const reviewTotalAttempts: number = Srs.totalCorrect(cards) + Srs.totalWrong(cards);
+    const attempts: number = reviewTotalAttempts + this.store.quizTotalCount();
     const hits: number = Srs.totalCorrect(cards) + this.store.quizCorrectCount();
     this.accuracy = attempts <= 0 ? -1 : Math.round(hits * 100 / attempts);
     this.streak = this.store.studyStreak(this.today);
@@ -96,8 +131,11 @@ struct Index {
   }
 
   private goTab(tab: number): void {
-    if (tab !== TAB_PRACTICE && this.practiceMode === PRACTICE_QUIZ) {
-      this.practiceMode = PRACTICE_MENU;
+    if (tab !== TAB_PRACTICE) {
+      this.stopDemoTimer();
+      if (this.practiceMode === PRACTICE_QUIZ) {
+        this.practiceMode = PRACTICE_MENU;
+      }
     }
     this.currentTab = tab;
     this.tabsController.changeIndex(tab);
@@ -108,6 +146,65 @@ struct Index {
     const now = new Date();
     const week: string[] = ['日', '一', '二', '三', '四', '五', '六'];
     return (now.getMonth() + 1).toString() + ' 月 ' + now.getDate().toString() + ' 日 · 周' + week[now.getDay()];
+  }
+
+  private productSubtitle(): string {
+    return 'StudyKit · 错题本 · 背单词 · 打卡';
+  }
+
+  // ---------- 词书 ----------
+
+  private bookPool(): WordItem[] {
+    return wordsOfBook(this.selectedBook);
+  }
+
+  private currentBookName(): string {
+    return bookName(this.selectedBook);
+  }
+
+  private poolHasWord(word: string): boolean {
+    if (this.selectedBook === BOOK_ALL) {
+      return lookupWord(word) !== null;
+    }
+    const item: WordItem | null = lookupWord(word);
+    return item !== null && item.book === this.selectedBook;
+  }
+
+  private scopedDueCount(): number {
+    let count: number = 0;
+    const due: SrsCard[] = Srs.dueCards(this.store.cards, this.today);
+    for (let i = 0; i < due.length; i++) {
+      if (this.poolHasWord(due[i].word)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private bookStats(bookId: string): string {
+    const total: number = bookWordCount(bookId);
+    let learned: number = 0;
+    let mastered: number = 0;
+    const pool: WordItem[] = wordsOfBook(bookId);
+    for (let i = 0; i < pool.length; i++) {
+      const card: SrsCard | null = Srs.findCard(this.store.cards, pool[i].word);
+      if (card !== null) {
+        learned++;
+        if (card.box >= Srs.MAX_BOX) {
+          mastered++;
+        }
+      }
+    }
+    return '已学 ' + learned.toString() + '/' + total.toString() + ' · 掌握 ' + mastered.toString();
+  }
+
+  async selectBook(book: string): Promise<void> {
+    this.lastReviewedWord = '';
+    this.wordRevealed = false;
+    this.selectedBook = book;
+    await this.store.setBook(book);
+    await this.reload();
+    this.toast('已切换到 ' + bookName(book) + '（' + bookWordCount(book).toString() + ' 词，离线可用）');
   }
 
   // ---------- 每日任务 ----------
@@ -152,9 +249,9 @@ struct Index {
   private reviewCaption(): string {
     const shown: number = this.todayReviewed > REVIEW_TARGET ? REVIEW_TARGET : this.todayReviewed;
     if (this.todayReviewed >= REVIEW_TARGET) {
-      return '今天已复习 ' + this.todayReviewed.toString() + ' 个词';
+      return this.currentBookName() + ' · 今天已复习 ' + this.todayReviewed.toString() + ' 个词';
     }
-    return '约 2 分钟 · 已复习 ' + shown.toString() + ' / ' + REVIEW_TARGET.toString();
+    return this.currentBookName() + ' · 已复习 ' + shown.toString() + ' / ' + REVIEW_TARGET.toString();
   }
 
   private quizCaption(): string {
@@ -169,6 +266,18 @@ struct Index {
     return this.accuracy < 0 ? '—' : this.accuracy.toString() + '%';
   }
 
+  private memoryRemaining(): number {
+    const left: number = MEMORY_CURVE_TARGET - this.reviewTotal;
+    return left > 0 ? left : 0;
+  }
+
+  private memoryPercent(): number {
+    if (this.reviewTotal >= MEMORY_CURVE_TARGET) {
+      return 100;
+    }
+    return Math.floor(this.reviewTotal * 100 / MEMORY_CURVE_TARGET);
+  }
+
   // ---------- 学习 tab ----------
 
   @Builder
@@ -179,16 +288,18 @@ struct Index {
           Row() {
             Column() {
               Text('学习').fontSize(34).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
-              Text(this.dateLabel()).fontSize(12).fontColor(Theme.secondaryText).margin({ top: 3 })
+              Text(this.productSubtitle()).fontSize(12).fontColor(Theme.secondaryText).margin({ top: 3 })
+              Text(this.dateLabel()).fontSize(11).fontColor(Theme.secondaryText).margin({ top: 2 })
             }.alignItems(HorizontalAlign.Start)
             Blank()
             Text(this.streak > 0 ? '连续 ' + this.streak.toString() + ' 天' : '今天开始')
               .fontSize(12).fontColor(Theme.goldInk)
               .backgroundColor(Theme.goldSoft).padding({ left: 10, right: 10, top: 6, bottom: 6 })
               .borderRadius(14)
-          }.width('100%').padding({ top: 6, bottom: 14 })
+          }.width('100%').padding({ top: 6, bottom: 12 })
 
           this.startCard()
+          this.bookSwitcher(false)
 
           Row() {
             this.metric('今日待复习', this.dueCount.toString() + ' 词')
@@ -198,10 +309,27 @@ struct Index {
             this.metric('正确率', this.accuracyText())
           }
           .width('100%').padding({ top: 14, bottom: 14 }).margin({ top: 12 })
-          .id('home-metrics-' + this.viewVersion.toString() + '-' + this.dueCount.toString() + '-' + this.masteredCount.toString() + '-' + this.accuracy.toString())
           .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
 
           this.signQuickCard()
+
+          Row() {
+            Text('60').fontSize(15).fontColor(Theme.goldInk).width(38).height(38)
+              .textAlign(TextAlign.Center).backgroundColor(Theme.goldSoft).borderRadius(19)
+            Column() {
+              Row() {
+                Text('示例错题 · 60 秒体验').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+                Text('示例').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+                  .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(8).margin({ left: 6 })
+              }.alignItems(VerticalAlign.Center)
+              Text('数学公式 / 英语 / 形近词 3 道示例，不计入学习统计').fontSize(11)
+                .fontColor(Theme.secondaryText).margin({ top: 3 })
+            }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
+            Text('去体验 ›').fontSize(12).fontColor(Theme.accentInk)
+          }
+          .width('100%').padding(14).margin({ top: 12 })
+          .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+          .onClick(() => { this.goTab(TAB_PRACTICE); })
 
           if (this.wrongNames.length > 0) {
             Row() {
@@ -209,7 +337,7 @@ struct Index {
                 .textAlign(TextAlign.Center).backgroundColor(Theme.dangerSoft).borderRadius(19)
               Column() {
                 Text('错题本').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
-                Text(this.wrongNames.length.toString() + ' 个词待重练 · 小测里答错会自动收进来').fontSize(12)
+                Text(this.wrongNames.length.toString() + ' 个词待重练 · 小测里答错会自动收进来').fontSize(11)
                   .fontColor(Theme.secondaryText).margin({ top: 3 })
               }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 10 })
               Text('去练习 ›').fontSize(12).fontColor(Theme.accentInk)
@@ -218,6 +346,22 @@ struct Index {
             .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
             .onClick(() => { this.goTab(TAB_PRACTICE); })
           }
+
+          Column() {
+            Row() {
+              Text('个人记忆曲线').fontSize(13).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+              Blank()
+              Text(this.memoryPercent().toString() + '%').fontSize(12).fontColor(Theme.goldInk)
+            }.width('100%')
+            Progress({ value: this.memoryPercent(), total: 100, type: ProgressType.Linear })
+              .color(Theme.gold).backgroundColor(Theme.goldSoft).width('100%').height(6).margin({ top: 8 })
+            Text(this.memoryRemaining() > 0
+              ? '再复习 ' + this.memoryRemaining().toString() + ' 次解锁个人记忆曲线'
+              : '个人记忆曲线已解锁：累计复习 ' + this.reviewTotal.toString() + ' 次')
+              .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 6 })
+          }
+          .width('100%').padding(14).margin({ top: 12 })
+          .backgroundColor(Theme.cardWarm).borderRadius(Theme.cardRadius)
 
           Text('所有数据只保存在这台设备 · 不需要账号，也不会上传')
             .fontSize(11).fontColor(Theme.secondaryText).width('100%')
@@ -264,13 +408,11 @@ struct Index {
       this.taskRow(2, '复习 ' + REVIEW_TARGET.toString() + ' 个词', this.reviewCaption(), this.taskReviewDone(), TAB_WORDS)
       this.taskRow(3, '做 ' + QUIZ_TARGET.toString() + ' 道小测', this.quizCaption(), this.taskQuizDone(), TAB_PRACTICE)
 
-      Text('做完一件是一件，不用按顺序。')
-        .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 12 })
+      Text('做完一件是一件，不用按顺序。').fontSize(11).fontColor(Theme.secondaryText).margin({ top: 12 })
     }
     .width('100%').alignItems(HorizontalAlign.Start)
     .padding(18).borderRadius(Theme.cardRadius)
     .linearGradient({ angle: 135, colors: [[Theme.accentSoft, 0.0], [Theme.card, 0.78]] })
-    .id('start-card-' + this.viewVersion.toString() + '-' + this.tasksDone().toString() + '-' + this.todayReviewed.toString() + '-' + this.todayQuiz.toString())
   }
 
   @Builder
@@ -300,8 +442,46 @@ struct Index {
     }
     .width('100%').padding({ top: 12, bottom: 12 })
     .border({ width: { top: 1 }, color: Theme.divider })
-    .id('task-row-' + step.toString() + '-' + (done ? '1' : '0') + '-' + this.viewVersion.toString())
     .onClick(() => { this.goTab(tab); })
+  }
+
+  @Builder
+  bookSwitcher(compact: boolean) {
+    Column() {
+      Row() {
+        Text('词书').fontSize(12).fontColor(Theme.secondaryText)
+        Text(this.selectedBook === BOOK_ALL ? '全部词书' : this.currentBookName()).fontSize(12)
+          .fontColor(Theme.accentInk).margin({ left: 6 })
+        Blank()
+        Text('离线 · 4 本内置').fontSize(10).fontColor(Theme.secondaryText)
+      }.width('100%').margin({ bottom: 8 })
+      Flex({ wrap: FlexWrap.Wrap }) {
+        this.bookChip(BOOK_ALL, '全部')
+        ForEach(booksOf(), (book: WordBook) => {
+          this.bookChip(book.id, book.name)
+        }, (book: WordBook) => book.id)
+      }.width('100%')
+      if (!compact) {
+        Text(this.selectedBook === BOOK_ALL
+          ? '当前显示全部 ' + WORD_BANK.length.toString() + ' 词'
+          : this.bookStats(this.selectedBook)).fontSize(11)
+          .fontColor(Theme.secondaryText).margin({ top: 8 })
+      }
+    }
+    .width('100%').alignItems(HorizontalAlign.Start)
+    .padding(14).margin({ top: 12 })
+    .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+  }
+
+  @Builder
+  bookChip(bookId: string, label: string) {
+    Text(label + ' ' + bookWordCount(bookId).toString())
+      .fontSize(12)
+      .fontColor(this.selectedBook === bookId ? Color.White : Theme.secondaryText)
+      .backgroundColor(this.selectedBook === bookId ? Theme.accentInk : Theme.cardWarm)
+      .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+      .borderRadius(12).margin({ right: 8, bottom: 6 })
+      .onClick(() => { this.selectBook(bookId); })
   }
 
   @Builder
@@ -451,7 +631,9 @@ struct Index {
               Text('连续、补签、里程碑都存在本机').fontSize(12).fontColor(Theme.secondaryText).margin({ top: 3 })
             }.alignItems(HorizontalAlign.Start)
             Blank()
-            Text('累计 ' + this.summary.totalDays.toString() + ' 天').fontSize(12).fontColor(Theme.goldInk)
+            Button('签到海报').height(32).fontSize(12)
+              .backgroundColor(Theme.goldSoft).fontColor(Theme.goldInk)
+              .onClick(() => { this.generatePoster(POSTER_SIGN); })
           }.width('100%').padding({ top: 6, bottom: 12 })
 
           Row() {
@@ -506,6 +688,8 @@ struct Index {
           Text('本月补签 ' + SignInStats.makeupUsed(this.currentMonthKey(), this.summary.makeupDays).toString() + ' / 3 次')
             .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 8 })
           Text('补签只允许最近 3 天；每个月最多 3 次，点已补签的格子可以撤销。')
+            .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 4 })
+          Text('不会自动上传任何签到数据；海报在本地生成。')
             .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 4, bottom: 30 })
         }
         .width('100%').constraintSize({ maxWidth: 760 })
@@ -596,23 +780,23 @@ struct Index {
   // ---------- 单词 tab ----------
 
   private currentReviewWord(): WordItem | null {
-    const cards: SrsCard[] = this.store.cards;
-    const due: SrsCard[] = Srs.dueCards(cards, this.today);
+    const due: SrsCard[] = Srs.dueCards(this.store.cards, this.today);
     for (let i = 0; i < due.length; i++) {
-      if (due[i].word !== this.lastReviewedWord) {
+      if (due[i].word !== this.lastReviewedWord && this.poolHasWord(due[i].word)) {
         const item: WordItem | null = lookupWord(due[i].word);
         if (item !== null) {
           return item;
         }
       }
     }
-    for (let i = 0; i < WORD_BANK.length; i++) {
-      const word: string = WORD_BANK[i].word;
+    const pool: WordItem[] = this.bookPool();
+    for (let i = 0; i < pool.length; i++) {
+      const word: string = pool[i].word;
       if (word === this.lastReviewedWord) {
         continue;
       }
-      if (Srs.findCard(cards, word) === null) {
-        return WORD_BANK[i];
+      if (Srs.findCard(this.store.cards, word) === null) {
+        return pool[i];
       }
     }
     return null;
@@ -625,7 +809,7 @@ struct Index {
   private reviewWordDisplay(): WordItem {
     const item: WordItem | null = this.currentReviewWord();
     if (item === null) {
-      return { word: '', phonetic: '', meaning: '', example: '' };
+      return { word: '', phonetic: '', meaning: '', example: '', book: '' };
     }
     return item;
   }
@@ -638,6 +822,14 @@ struct Index {
     return Srs.findCard(this.store.cards, item.word);
   }
 
+  private currentBookTag(): string {
+    const item: WordItem | null = this.currentReviewWord();
+    if (item === null) {
+      return '';
+    }
+    return bookName(item.book);
+  }
+
   private currentBoxLabel(): string {
     const card: SrsCard | null = this.currentReviewCard();
     if (card === null) {
@@ -648,10 +840,14 @@ struct Index {
 
   private currentWordAccuracy(): string {
     const card: SrsCard | null = this.currentReviewCard();
-    if (card === null || (card.correct + card.wrong) === 0) {
-      return '还没答过';
+    if (card === null) {
+      return '还没复习过';
     }
-    return '答对 ' + card.correct.toString() + ' 次 · 答错 ' + card.wrong.toString() + ' 次';
+    const attempts: number = card.correct + card.wrong;
+    if (attempts === 0) {
+      return '还没复习过';
+    }
+    return '已复习 ' + attempts.toString() + ' 次 · 答对 ' + card.correct.toString() + ' 次';
   }
 
   async reviewCurrent(remembered: boolean): Promise<void> {
@@ -690,13 +886,15 @@ struct Index {
           Row() {
             Column() {
               Text('单词').fontSize(34).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
-              Text('本地词库 ' + WORD_BANK.length.toString() + ' 词 · 待复习 ' + this.dueCount.toString()
-                + ' · 已掌握 ' + this.masteredCount.toString())
+              Text(this.currentBookName() + ' · 共 ' + this.bookPool().length.toString() + ' 词 · 待复习 '
+                + this.dueCount.toString() + ' · 已掌握 ' + this.masteredCount.toString())
                 .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 3 })
             }.alignItems(HorizontalAlign.Start)
             Blank()
             Text('已学 ' + this.learningCount.toString() + ' 词').fontSize(12).fontColor(Theme.secondaryText)
           }.width('100%').padding({ top: 6, bottom: 12 })
+
+          this.bookSwitcher(true)
 
           Column() {
             Row() {
@@ -709,7 +907,7 @@ struct Index {
               total: REVIEW_TARGET, type: ProgressType.Linear })
               .color(Theme.accent).backgroundColor(Theme.accentSoft).width('100%').height(6).margin({ top: 8 })
           }
-          .width('100%').padding(14).backgroundColor(Theme.card).borderRadius(14).margin({ bottom: 12 })
+          .width('100%').padding(14).backgroundColor(Theme.card).borderRadius(14).margin({ top: 12, bottom: 12 })
 
           if (this.hasReviewWord()) {
             this.reviewCard()
@@ -733,8 +931,8 @@ struct Index {
               .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 8 })
           } else {
             Column() {
-              Text('今天的复习完成了').fontSize(22).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
-              Text('待复习的词都清空了，新词会在明天继续出现。').fontSize(13)
+              Text('这本词书今天的复习完成了').fontSize(22).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
+              Text('待复习的词都清空了，新词会在明天继续出现。可以切换其他词书继续。').fontSize(13)
                 .fontColor(Theme.secondaryText).margin({ top: 8 })
               if (this.hasUndo) {
                 Button('撤销上一步复习').height(42).margin({ top: 16 })
@@ -750,7 +948,7 @@ struct Index {
             Text('复习是怎么安排的').fontSize(14).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
             Text('Leitner 5 盒：记住升一盒，下次间隔 1 / 2 / 4 / 7 天；再学一次退回第 1 盒，今天晚些时候再见。')
               .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 6 })
-            Text('“今日待复习”只统计到期日小于等于今天的词，不做假数据。')
+            Text('“今日待复习”只统计当前词书里到期日小于等于今天的词；复习次数是真实计数，不用任何算法校准冒充。')
               .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 4 })
           }
           .width('100%').alignItems(HorizontalAlign.Start)
@@ -770,7 +968,7 @@ struct Index {
   reviewCard() {
     Column() {
       Row() {
-        Text(this.currentBoxLabel()).fontSize(11).fontColor(Theme.goldInk)
+        Text(this.currentBookTag() + ' · ' + this.currentBoxLabel()).fontSize(11).fontColor(Theme.goldInk)
           .backgroundColor(Theme.goldSoft).padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
         Blank()
         Text(this.currentWordAccuracy()).fontSize(11).fontColor(Theme.secondaryText)
@@ -802,20 +1000,23 @@ struct Index {
   // ---------- 练习 tab ----------
 
   private startQuiz(fromWrong: boolean): void {
+    const pool: WordItem[] = fromWrong ? WORD_BANK : this.bookPool();
     const priority: string[] = [];
     if (fromWrong) {
       for (let i = 0; i < this.store.wrongs.length && priority.length < QuizBuilder.GROUP_SIZE; i++) {
         priority.push(this.store.wrongs[i].word);
       }
     } else {
-      const due: string[] = Srs.dueWordNames(this.store.cards, this.today);
+      const due: SrsCard[] = Srs.dueCards(this.store.cards, this.today);
       for (let i = 0; i < due.length && priority.length < QuizBuilder.GROUP_SIZE; i++) {
-        priority.push(due[i]);
+        if (this.poolHasWord(due[i].word)) {
+          priority.push(due[i].word);
+        }
       }
     }
-    const questions: QuizQuestion[] = QuizBuilder.build(QuizBuilder.GROUP_SIZE, priority);
+    const questions: QuizQuestion[] = QuizBuilder.build(QuizBuilder.GROUP_SIZE, priority, pool);
     if (questions.length === 0) {
-      this.toast('词库暂时没有可出题的词');
+      this.toast('这本词书暂时没有可出题的词');
       return;
     }
     this.quizQuestions = questions;
@@ -825,6 +1026,122 @@ struct Index {
     this.quizWrongWords = [];
     this.quizFromWrong = fromWrong;
     this.practiceMode = PRACTICE_QUIZ;
+  }
+
+  async importDemoSamples(): Promise<void> {
+    await this.store.importDemoSamples();
+    await this.reload();
+    this.toast('已导入 3 道示例错题，点开始复习即可');
+  }
+
+  async resetDemoSamples(): Promise<void> {
+    await this.store.resetDemoSamples();
+    await this.reload();
+    this.toast('示例错题已重置');
+  }
+
+  private startDemo(): void {
+    this.stopDemoTimer();
+    this.demoIndex = 0;
+    this.demoSelected = -1;
+    this.demoCorrect = 0;
+    this.demoSeconds = DEMO_SECONDS;
+    this.demoUsed = 0;
+    this.demoTimedOut = false;
+    this.practiceMode = PRACTICE_DEMO_QUIZ;
+    this.demoInterval = setInterval(() => {
+      if (this.practiceMode !== PRACTICE_DEMO_QUIZ) {
+        this.stopDemoTimer();
+        return;
+      }
+      this.demoSeconds = this.demoSeconds - 1;
+      if (this.demoSeconds <= 0) {
+        this.demoSeconds = 0;
+        this.demoTimedOut = true;
+        this.finishDemo();
+      }
+    }, 1000);
+  }
+
+  private stopDemoTimer(): void {
+    if (this.demoInterval >= 0) {
+      clearInterval(this.demoInterval);
+      this.demoInterval = -1;
+    }
+  }
+
+  private finishDemo(): void {
+    this.stopDemoTimer();
+    this.demoUsed = DEMO_SECONDS - this.demoSeconds;
+    this.practiceMode = PRACTICE_DEMO_RESULT;
+  }
+
+  private quitDemo(): void {
+    this.stopDemoTimer();
+    this.practiceMode = PRACTICE_MENU;
+  }
+
+  private currentDemo(): DemoQuestion {
+    return DEMO_QUESTIONS[this.demoIndex];
+  }
+
+  private chooseDemoOption(index: number): void {
+    if (this.demoSelected >= 0) {
+      return;
+    }
+    const question: DemoQuestion = this.currentDemo();
+    this.demoSelected = index;
+    if (index === question.answerIndex) {
+      this.demoCorrect = this.demoCorrect + 1;
+    }
+  }
+
+  private nextDemoQuestion(): void {
+    if (this.demoIndex + 1 < DEMO_QUESTIONS.length) {
+      this.demoIndex = this.demoIndex + 1;
+      this.demoSelected = -1;
+    } else {
+      this.finishDemo();
+    }
+  }
+
+  private demoOptionBg(index: number): string {
+    if (this.demoSelected < 0) {
+      return Theme.card;
+    }
+    if (index === this.currentDemo().answerIndex) {
+      return Theme.successSoft;
+    }
+    if (index === this.demoSelected) {
+      return Theme.dangerSoft;
+    }
+    return Theme.card;
+  }
+
+  private demoOptionBorder(index: number): string {
+    if (this.demoSelected < 0) {
+      return Theme.divider;
+    }
+    if (index === this.currentDemo().answerIndex) {
+      return Theme.successInk;
+    }
+    if (index === this.demoSelected) {
+      return Theme.dangerInk;
+    }
+    return Theme.divider;
+  }
+
+  private demoOptionInk(index: number): string {
+    if (this.demoSelected < 0) {
+      return Theme.primaryText;
+    }
+    if (index === this.currentDemo().answerIndex) {
+      return Theme.successInk;
+    }
+    if (index === this.demoSelected) {
+      return Theme.dangerInk;
+    }
+    return Theme.secondaryText;
   }
 
   private currentQuestion(): QuizQuestion {
@@ -945,6 +1262,10 @@ struct Index {
       this.quizView()
     } else if (this.practiceMode === PRACTICE_RESULT) {
       this.resultView()
+    } else if (this.practiceMode === PRACTICE_DEMO_QUIZ) {
+      this.demoQuizView()
+    } else if (this.practiceMode === PRACTICE_DEMO_RESULT) {
+      this.demoResultView()
     } else {
       this.practiceMenu()
     }
@@ -958,22 +1279,59 @@ struct Index {
           Text('练习').fontSize(34).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
           Text('4 选 1 · 5 题一组 · 答完立刻看答案和例句').fontSize(12)
             .fontColor(Theme.secondaryText).margin({ top: 3 })
+
           Column() {
             Row() {
-              Text(this.quizFromWrong ? '错题重练' : '今日小测').fontSize(16).fontWeight(FontWeight.Medium)
-                .fontColor(Theme.primaryText)
+              Text('示例错题 · 60 秒体验').fontSize(16).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+              Text('示例').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(8).margin({ left: 6 })
+              Blank()
+              Text('不计入统计').fontSize(10).fontColor(Theme.secondaryText)
+            }.width('100%').alignItems(VerticalAlign.Center)
+            Text('3 道预置示例：数学公式 / 英语 / 形近词。60 秒内可以复习完一次，用来看懂错题怎么练；不是扫描识别结果。')
+              .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 6 })
+            if (!this.demoImported) {
+              Button('导入 3 道示例错题').width('100%').height(46).margin({ top: 12 })
+                .backgroundColor(Theme.goldSoft).fontColor(Theme.goldInk)
+                .onClick(() => { this.importDemoSamples(); })
+            } else {
+              ForEach(DEMO_QUESTIONS, (question: DemoQuestion, index: number) => {
+                Row() {
+                  Text(question.kind).fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+                    .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(6).width(64)
+                  Text(question.prompt).fontSize(12).fontColor(Theme.primaryText)
+                    .layoutWeight(1).margin({ left: 8 }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                }.width('100%').padding({ top: 5, bottom: 5 })
+              }, (question: DemoQuestion, index: number) => question.id)
+              Row() {
+                Button('开始 60 秒示例复习').layoutWeight(1).height(46)
+                  .backgroundColor(Theme.goldInk).fontColor(Color.White)
+                  .onClick(() => { this.startDemo(); })
+                Button('重置').height(46).width(72).margin({ left: 10 })
+                  .backgroundColor(Theme.cardWarm).fontColor(Theme.secondaryText)
+                  .onClick(() => { this.resetDemoSamples(); })
+              }.width('100%').margin({ top: 10 })
+            }
+          }
+          .width('100%').alignItems(HorizontalAlign.Start).padding(16).margin({ top: 14 })
+          .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+
+          Column() {
+            Row() {
+              Text('今日小测').fontSize(16).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
               Blank()
               Text(this.todayQuiz.toString() + ' / ' + QUIZ_TARGET.toString() + ' 题').fontSize(12)
                 .fontColor(this.todayQuiz >= QUIZ_TARGET ? Theme.successInk : Theme.accentInk)
             }.width('100%')
-            Text('从 ' + WORD_BANK.length.toString() + ' 词库里随机出 5 题；答错的词自动进错题本，可以重练。')
+            Text('从「' + this.currentBookName() + '」的 ' + this.bookPool().length.toString()
+              + ' 个词里随机出 5 题；答错的词自动进错题本，可以重练。')
               .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 6 })
             Button(this.todayQuiz >= QUIZ_TARGET ? '再练一组 · 5 题' : '开始一组小测 · 5 题')
               .width('100%').height(50).margin({ top: 12 })
               .backgroundColor(Theme.accentInk).fontColor(Color.White)
               .onClick(() => { this.startQuiz(false); })
           }
-          .width('100%').padding(16).margin({ top: 14 })
+          .width('100%').padding(16).margin({ top: 12 })
           .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
 
           Column() {
@@ -983,7 +1341,7 @@ struct Index {
               Text(this.wrongNames.length.toString() + ' 个').fontSize(12).fontColor(Theme.secondaryText)
             }.width('100%')
             if (this.wrongNames.length === 0) {
-              Text('还没有错题。答错或拿不准的词会自动收集到这里。').fontSize(12)
+              Text('还没有真实错题。答错或拿不准的词会自动收集到这里。').fontSize(12)
                 .fontColor(Theme.secondaryText).margin({ top: 6 })
             } else {
               ForEach(this.wrongNames.slice(0, 4), (word: string) => {
@@ -1017,8 +1375,8 @@ struct Index {
             .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
           }
 
-          Text('小测只记录对错和错题，不排名、不罚分。').fontSize(11)
-            .fontColor(Theme.secondaryText).margin({ top: 18, bottom: 30 })
+          Text('小测只记录对错和错题，不排名、不罚分；示例错题单独演示，不写进统计。')
+            .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 18, bottom: 30 })
         }
         .width('100%').constraintSize({ maxWidth: 760 })
       }
@@ -1046,7 +1404,8 @@ struct Index {
 
           Column() {
             Row() {
-              Text(this.quizFromWrong ? '错题重练' : '词库随机').fontSize(11).fontColor(Theme.goldInk)
+              Text(this.quizFromWrong ? '错题重练' : '词库随机 · ' + this.currentBookName()).fontSize(11)
+                .fontColor(Theme.goldInk)
                 .backgroundColor(Theme.goldSoft).padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
               Blank()
               Text('本组答对 ' + this.quizCorrect.toString() + ' 题').fontSize(11).fontColor(Theme.secondaryText)
@@ -1170,6 +1529,138 @@ struct Index {
     .id('result-' + this.viewVersion.toString())
   }
 
+  @Builder
+  demoQuizView() {
+    Scroll() {
+      Row() {
+        Column() {
+          Row() {
+            Text('示例复习').fontSize(30).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
+            Text('第 ' + (this.demoIndex + 1).toString() + ' / ' + DEMO_QUESTIONS.length.toString() + ' 题')
+              .fontSize(13).fontColor(Theme.secondaryText).margin({ left: 10 }).margin({ top: 8 })
+            Blank()
+            Text('剩余 ' + this.demoSeconds.toString() + ' 秒').fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(this.demoSeconds <= 15 ? Theme.dangerInk : Theme.goldInk)
+            Button('退出').height(30).fontSize(11).margin({ left: 8 })
+              .backgroundColor(Theme.cardWarm).fontColor(Theme.secondaryText)
+              .onClick(() => { this.quitDemo(); })
+          }.width('100%').alignItems(VerticalAlign.Center).padding({ top: 6, bottom: 12 })
+
+          Column() {
+            Row() {
+              Text('示例').fontSize(11).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+              Text(this.currentDemo().kind).fontSize(11).fontColor(Theme.secondaryText).margin({ left: 8 })
+              Blank()
+              Text('不计入学习统计').fontSize(10).fontColor(Theme.secondaryText)
+            }.width('100%')
+            Text(this.currentDemo().prompt).fontSize(24).fontWeight(FontWeight.Medium)
+              .fontColor(Theme.primaryText).margin({ top: 18 })
+            Text('示例内容：数学公式 / 英语 / 形近词，用来演示错题复习流程。').fontSize(11)
+              .fontColor(Theme.secondaryText).margin({ top: 10 })
+          }
+          .width('100%').alignItems(HorizontalAlign.Start).padding(18)
+          .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+
+          ForEach(this.currentDemo().options, (option: string, index: number) => {
+            this.demoOptionRow(option, index)
+          }, (option: string, index: number) => this.demoIndex.toString() + '-' + index.toString() + '-' + option)
+
+          if (this.demoSelected >= 0) {
+            Column() {
+              Text(this.demoSelected === this.currentDemo().answerIndex ? '✓ 答对了'
+                : '✗ 正确答案：' + this.currentDemo().options[this.currentDemo().answerIndex])
+                .fontSize(15).fontWeight(FontWeight.Medium)
+                .fontColor(this.demoSelected === this.currentDemo().answerIndex
+                  ? Theme.successInk : Theme.dangerInk)
+              Text(this.currentDemo().explanation).fontSize(13).fontColor(Theme.secondaryText)
+                .margin({ top: 10 })
+              Button(this.demoIndex + 1 < DEMO_QUESTIONS.length ? '下一题' : '查看示例结果')
+                .width('100%').height(48).margin({ top: 14 })
+                .backgroundColor(Theme.goldInk).fontColor(Color.White)
+                .onClick(() => { this.nextDemoQuestion(); })
+            }
+            .width('100%').alignItems(HorizontalAlign.Start).padding(16).margin({ top: 12 })
+            .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+          }
+
+          Text('这是示例，不是扫描识别结果，也不会写进你的正确率/错题本。').fontSize(11)
+            .fontColor(Theme.secondaryText).margin({ top: 16, bottom: 30 })
+        }
+        .width('100%').constraintSize({ maxWidth: 760 })
+      }
+      .width('100%').justifyContent(FlexAlign.Center)
+      .padding({ left: Theme.pagePadding, right: Theme.pagePadding })
+    }
+    .backgroundColor(Theme.bg).width('100%').height('100%')
+    .id('demo-' + this.viewVersion.toString())
+  }
+
+  @Builder
+  demoOptionRow(option: string, index: number) {
+    Row() {
+      Text(this.optionLetter(index)).fontSize(13).fontWeight(FontWeight.Bold)
+        .fontColor(this.demoOptionInk(index)).width(24).height(24).textAlign(TextAlign.Center)
+        .backgroundColor(this.demoSelected >= 0 ? Theme.card : Theme.bg).borderRadius(12)
+      Text(option).fontSize(15).fontColor(this.demoOptionInk(index)).layoutWeight(1).margin({ left: 12 })
+    }
+    .width('100%').padding({ left: 14, right: 14, top: 15, bottom: 15 })
+    .backgroundColor(this.demoOptionBg(index)).borderRadius(14)
+    .border({ width: 1, color: this.demoOptionBorder(index) })
+    .margin({ top: 10 })
+    .onClick(() => { this.chooseDemoOption(index); })
+  }
+
+  @Builder
+  demoResultView() {
+    Scroll() {
+      Row() {
+        Column() {
+          Text(this.demoTimedOut ? '时间到' : '示例复习完成').fontSize(30).fontWeight(FontWeight.Bold)
+            .fontColor(Theme.primaryText).width('100%').textAlign(TextAlign.Center).margin({ top: 20 })
+
+          Column() {
+            Text(this.demoCorrect.toString() + ' / ' + DEMO_QUESTIONS.length.toString())
+              .fontSize(52).fontWeight(FontWeight.Bold).fontColor(Theme.goldInk)
+            Text('用时 ' + this.demoUsed.toString() + ' 秒 · 示例不计入学习统计').fontSize(13)
+              .fontColor(Theme.secondaryText).margin({ top: 6 })
+            Text(this.demoTimedOut ? '60 秒到了，没答完的题下次再来。' : '60 秒内完成了 3 道示例错题复习。')
+              .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 10 })
+          }
+          .width('100%').padding({ top: 26, bottom: 26 }).alignItems(HorizontalAlign.Center)
+          .backgroundColor(Theme.card).borderRadius(Theme.cardRadius).margin({ top: 16 })
+
+          Column() {
+            Text('示例说明了什么').fontSize(14).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+            Text('· 错题可以按“示例 → 逐题反馈 → 结果”的路径快速复习；').fontSize(12)
+              .fontColor(Theme.secondaryText).margin({ top: 8 })
+            Text('· 真实的错题来自你做小测时答错的词，会自动进错题本；').fontSize(12)
+              .fontColor(Theme.secondaryText).margin({ top: 6 })
+            Text('· 这不是扫描识别，也没有假装有相机识别能力。').fontSize(12)
+              .fontColor(Theme.secondaryText).margin({ top: 6 })
+          }
+          .width('100%').alignItems(HorizontalAlign.Start).padding(16).margin({ top: 12 })
+          .backgroundColor(Theme.cardWarm).borderRadius(Theme.cardRadius)
+
+          Button('再试一次 · 60 秒').width('100%').height(50).margin({ top: 16 })
+            .backgroundColor(Theme.goldInk).fontColor(Color.White)
+            .onClick(() => { this.startDemo(); })
+          Button('进入正式小测 · 5 题').width('100%').height(46).margin({ top: 10 })
+            .backgroundColor(Theme.accentSoft).fontColor(Theme.accentInk)
+            .onClick(() => { this.startQuiz(false); })
+          Button('返回练习').width('100%').height(46).margin({ top: 10 })
+            .backgroundColor(Color.Transparent).fontColor(Theme.secondaryText)
+            .onClick(() => { this.quitDemo(); })
+        }
+        .width('100%').constraintSize({ maxWidth: 760 })
+      }
+      .width('100%').justifyContent(FlexAlign.Center)
+      .padding({ left: Theme.pagePadding, right: Theme.pagePadding, bottom: 30 })
+    }
+    .backgroundColor(Theme.bg).width('100%').height('100%')
+    .id('demo-result-' + this.viewVersion.toString())
+  }
+
   // ---------- 我的 tab ----------
 
   private doReset(): void {
@@ -1177,6 +1668,7 @@ struct Index {
       this.wordRevealed = false;
       this.lastReviewedWord = '';
       this.practiceMode = PRACTICE_MENU;
+      this.stopDemoTimer();
       this.toast('学习数据已重置');
       this.reload();
     });
@@ -1216,13 +1708,21 @@ struct Index {
   }
 
   @Builder
+  reportMetric(label: string, value: string) {
+    Column() {
+      Text(value).fontSize(18).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
+      Text(label).fontSize(11).fontColor(Theme.secondaryText).margin({ top: 3 })
+    }.layoutWeight(1)
+  }
+
+  @Builder
   profilePage() {
     Scroll() {
       Row() {
         Column() {
           Text('我的').fontSize(34).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
             .width('100%').padding({ top: 6 })
-          Text('学习报告与本地数据').fontSize(12).fontColor(Theme.secondaryText)
+          Text(this.productSubtitle()).fontSize(12).fontColor(Theme.secondaryText)
             .width('100%').margin({ top: 3, bottom: 14 })
 
           Column() {
@@ -1240,6 +1740,26 @@ struct Index {
           .width('100%').padding(18).backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
 
           Column() {
+            Row() {
+              Text('个人记忆曲线').fontSize(16).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+              Blank()
+              Text(this.memoryPercent().toString() + ' %').fontSize(14).fontWeight(FontWeight.Medium)
+                .fontColor(Theme.goldInk)
+            }.width('100%')
+            Progress({ value: this.memoryPercent(), total: 100, type: ProgressType.Linear })
+              .color(Theme.gold).backgroundColor(Theme.goldSoft).width('100%').height(8).margin({ top: 10 })
+            Text(this.memoryRemaining() > 0
+              ? '再复习 ' + this.memoryRemaining().toString() + ' 次解锁个人记忆曲线'
+              : '已解锁：累计复习 ' + this.reviewTotal.toString() + ' 次')
+              .fontSize(13).fontColor(Theme.primaryText).margin({ top: 10 })
+            Text('进度按真实复习次数计算（每复习 1 个词记 1 次，满 ' + MEMORY_CURVE_TARGET.toString()
+              + ' 次解锁）；只按真实次数计数，不做算法校准。')
+              .fontSize(11).fontColor(Theme.secondaryText).margin({ top: 6 })
+          }
+          .width('100%').padding(18).margin({ top: 12 })
+          .backgroundColor(Theme.cardWarm).borderRadius(Theme.cardRadius)
+
+          Column() {
             Text('学习报告').fontSize(16).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
               .width('100%')
             Row() {
@@ -1253,12 +1773,36 @@ struct Index {
               this.reportMetric('签到累计', this.summary.totalDays.toString() + ' 天')
             }.width('100%').padding({ bottom: 8 })
             Divider().color(Theme.divider).margin({ top: 4, bottom: 4 })
-            this.reportRow('本地词库', WORD_BANK.length.toString() + ' 词')
+            this.reportRow('本地词库', WORD_BANK.length.toString() + ' 词 / ' + WORD_BOOKS.length.toString() + ' 本词书')
             this.reportRow('已开始学习', this.learningCount.toString() + ' 词')
-            this.reportRow('今日待复习', this.dueCount.toString() + ' 词')
+            this.reportRow('累计复习次数', this.reviewTotal.toString() + ' 次')
             this.reportRow('今日已复习 / 目标', this.todayReviewed.toString() + ' / ' + REVIEW_TARGET.toString() + ' 词')
             this.reportRow('今日已答小测', this.todayQuiz.toString() + ' 题')
             this.reportRow('错题本', this.wrongNames.length.toString() + ' 个')
+            Divider().color(Theme.divider).margin({ top: 4, bottom: 8 })
+            ForEach(booksOf(), (book: WordBook) => {
+              Row() {
+                Text(book.name).fontSize(13).fontColor(Theme.primaryText).width(56)
+                Text(this.bookStats(book.id)).fontSize(12).fontColor(Theme.secondaryText).layoutWeight(1)
+              }.width('100%').padding({ top: 5, bottom: 5 })
+            }, (book: WordBook) => book.id)
+          }
+          .width('100%').padding(18).margin({ top: 12 })
+          .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+
+          Column() {
+            Text('分享海报').fontSize(16).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+              .width('100%')
+            Text('用 Canvas 在本地生成 PNG 海报（带 StudyKit 水印），保存到应用 filesDir，不上传、不需要账号。')
+              .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 8 })
+            Row() {
+              Button('学习报告海报').layoutWeight(1).height(46)
+                .backgroundColor(Theme.accentInk).fontColor(Color.White)
+                .onClick(() => { this.generatePoster(POSTER_REPORT); })
+              Button('签到海报').layoutWeight(1).height(46).margin({ left: 10 })
+                .backgroundColor(Theme.goldSoft).fontColor(Theme.goldInk)
+                .onClick(() => { this.generatePoster(POSTER_SIGN); })
+            }.width('100%').margin({ top: 12 })
           }
           .width('100%').padding(18).margin({ top: 12 })
           .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
@@ -1268,9 +1812,11 @@ struct Index {
               .width('100%')
             Text('· 每天只推三件小事：签到、复习 5 词、小测 3 题，先做起来再懂。').fontSize(12)
               .fontColor(Theme.secondaryText).width('100%').margin({ top: 10 })
-            Text('· 复习用 Leitner 5 盒排期，今天该复习哪些词按到期日真实计算。').fontSize(12)
+            Text('· 66 个词分成 CET4 / CET6 / 考研 / 基础 四本离线词书，点一下就能切换。').fontSize(12)
               .fontColor(Theme.secondaryText).width('100%').margin({ top: 6 })
-            Text('· 小测 5 题一组，答完立刻看答案与例句，错题自动收集可重练。').fontSize(12)
+            Text('· 复习用 Leitner 5 盒排期；今日待复习按到期日真实计算。').fontSize(12)
+              .fontColor(Theme.secondaryText).width('100%').margin({ top: 6 })
+            Text('· 3 道示例错题（数学公式 / 英语 / 形近词）用于 60 秒看懂错题复习，不计入统计。').fontSize(12)
               .fontColor(Theme.secondaryText).width('100%').margin({ top: 6 })
             Text('· 签到可以补最近 3 天、每月 3 次；补签和上一步复习都能撤销。').fontSize(12)
               .fontColor(Theme.secondaryText).width('100%').margin({ top: 6 })
@@ -1307,12 +1853,261 @@ struct Index {
     .id('profile-' + this.viewVersion.toString())
   }
 
+  // ---------- 海报（Canvas -> PNG） ----------
+
+  private pad2(value: number): string {
+    return value < 10 ? '0' + value.toString() : value.toString();
+  }
+
+  private timestamp(): string {
+    const d = new Date();
+    return d.getFullYear().toString() + this.pad2(d.getMonth() + 1) + this.pad2(d.getDate())
+      + '-' + this.pad2(d.getHours()) + this.pad2(d.getMinutes()) + this.pad2(d.getSeconds());
+  }
+
+  private generatePoster(kind: number): void {
+    try {
+      const canvas = new OffscreenCanvas(POSTER_WIDTH, POSTER_HEIGHT);
+      const ctx = canvas.getContext('2d', new RenderingContextSettings(true));
+      this.drawPoster(ctx, kind);
+      const dataUrl: string = ctx.toDataURL('image/png');
+      this.posterKind = kind;
+      this.posterData = dataUrl;
+      this.posterPath = '';
+      this.posterError = '';
+      this.savePoster(dataUrl, kind);
+    } catch (e) {
+      this.posterKind = kind;
+      this.posterData = '';
+      this.posterPath = '';
+      this.posterError = '海报生成失败，请重试（' + JSON.stringify(e) + '）';
+    }
+  }
+
+  private savePoster(dataUrl: string, kind: number): void {
+    try {
+      const comma: number = dataUrl.indexOf(',');
+      if (comma < 0) {
+        this.posterError = '没有取到 PNG 图片数据';
+        return;
+      }
+      const base64: string = dataUrl.substring(comma + 1);
+      const helper = new util.Base64Helper();
+      const bytes: Uint8Array = helper.decodeSync(base64);
+      const name: string = (kind === POSTER_REPORT ? 'StudyKit-report-' : 'StudyKit-signin-')
+        + this.timestamp() + '.png';
+      const path: string = this.filesDir + '/' + name;
+      const file = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      try {
+        fs.writeSync(file.fd, bytes.buffer as ArrayBuffer);
+      } finally {
+        fs.closeSync(file);
+      }
+      this.posterPath = path;
+      this.toast('PNG 已保存：' + name);
+    } catch (e) {
+      this.posterError = 'PNG 保存失败，请重试';
+    }
+  }
+
+  private drawPoster(ctx: OffscreenCanvasRenderingContext2D, kind: number): void {
+    ctx.fillStyle = '#F7F2E8';
+    ctx.fillRect(0, 0, POSTER_WIDTH, POSTER_HEIGHT);
+    ctx.fillStyle = '#0A6F5C';
+    ctx.fillRect(0, 0, POSTER_WIDTH, 170);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FBF0D2';
+    ctx.font = 'bold 46px sans-serif';
+    ctx.fillText('StudyKit', 48, 82);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '24px sans-serif';
+    ctx.fillText(kind === POSTER_REPORT ? '学习报告 · 分享海报' : '签到打卡 · 分享海报', 48, 126);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#E1F3ED';
+    ctx.font = '18px sans-serif';
+    ctx.fillText(this.today, 672, 82);
+    ctx.textAlign = 'left';
+    if (kind === POSTER_REPORT) {
+      this.drawReportPoster(ctx);
+    } else {
+      this.drawSignPoster(ctx);
+    }
+    ctx.fillStyle = '#7C776B';
+    ctx.font = '16px sans-serif';
+    ctx.fillText('本地生成 · 数据只保存在这台设备 · StudyKit 水印', 48, 1002);
+    ctx.textAlign = 'left';
+  }
+
+  private drawMetricCard(ctx: OffscreenCanvasRenderingContext2D, x: number, y: number, w: number,
+    h: number, value: string, label: string): void {
+    ctx.fillStyle = '#FFFDF8';
+    ctx.fillRect(x, y, w, h);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText(value, x + w / 2, y + 62);
+    ctx.fillStyle = '#7C776B';
+    ctx.font = '18px sans-serif';
+    ctx.fillText(label, x + w / 2, y + 104);
+    ctx.textAlign = 'left';
+  }
+
+  private drawReportPoster(ctx: OffscreenCanvasRenderingContext2D): void {
+    this.drawMetricCard(ctx, 48, 205, 192, 140, this.masteredCount.toString() + ' 词', '已掌握');
+    this.drawMetricCard(ctx, 264, 205, 192, 140, this.dueCount.toString() + ' 词', '待复习');
+    this.drawMetricCard(ctx, 480, 205, 192, 140, this.accuracyText(), '正确率');
+    this.drawMetricCard(ctx, 48, 362, 192, 140, this.streak.toString() + ' 天', '连续学习');
+    this.drawMetricCard(ctx, 264, 362, 192, 140, this.totalDays.toString() + ' 天', '累计学习');
+    this.drawMetricCard(ctx, 480, 362, 192, 140, this.reviewTotal.toString() + ' 次', '累计复习');
+
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('个人记忆曲线进度（真实复习次数）', 48, 560);
+    ctx.fillStyle = '#E9E1D1';
+    ctx.fillRect(48, 582, 624, 24);
+    ctx.fillStyle = '#B8860B';
+    ctx.fillRect(48, 582, 624 * this.memoryPercent() / 100, 24);
+    ctx.fillStyle = '#7C776B';
+    ctx.font = '18px sans-serif';
+    ctx.fillText(this.memoryRemaining() > 0
+      ? '再复习 ' + this.memoryRemaining().toString() + ' 次解锁个人记忆曲线'
+      : '已解锁：累计复习 ' + this.reviewTotal.toString() + ' 次', 48, 636);
+
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('四本词书进度', 48, 692);
+    const books: WordBook[] = booksOf();
+    let y: number = 726;
+    for (let i = 0; i < books.length; i++) {
+      const pool: WordItem[] = wordsOfBook(books[i].id);
+      let learned: number = 0;
+      let mastered: number = 0;
+      for (let j = 0; j < pool.length; j++) {
+        const card: SrsCard | null = Srs.findCard(this.store.cards, pool[j].word);
+        if (card !== null) {
+          learned++;
+          if (card.box >= Srs.MAX_BOX) {
+            mastered++;
+          }
+        }
+      }
+      ctx.fillStyle = '#20241F';
+      ctx.font = '18px sans-serif';
+      ctx.fillText(books[i].name + '  已学 ' + learned.toString() + '/' + pool.length.toString()
+        + ' · 掌握 ' + mastered.toString(), 48, y);
+      ctx.fillStyle = '#E9E1D1';
+      ctx.fillRect(48, y + 10, 624, 14);
+      ctx.fillStyle = '#0F9C82';
+      ctx.fillRect(48, y + 10, pool.length === 0 ? 0 : 624 * learned / pool.length, 14);
+      y += 62;
+    }
+  }
+
+  private drawSignPoster(ctx: OffscreenCanvasRenderingContext2D): void {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 56px sans-serif';
+    ctx.fillText('连续签到 ' + this.summary.currentStreak.toString() + ' 天', 360, 300);
+    ctx.fillStyle = '#7C776B';
+    ctx.font = '22px sans-serif';
+    ctx.fillText('累计 ' + this.summary.totalDays.toString() + ' 天 · 最长连续 '
+      + this.summary.longestStreak.toString() + ' 天 · 本月 ' + this.currentMonthSigned().toString() + ' 天', 360, 352);
+    ctx.textAlign = 'left';
+
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('最近 14 天', 48, 430);
+    const last14: SignInDay[] = this.summary.last14;
+    for (let i = 0; i < last14.length; i++) {
+      const x: number = 48 + i * 44;
+      ctx.fillStyle = last14[i].signed ? (last14[i].makeup ? '#B8860B' : '#0F9C82') : '#E9E1D1';
+      ctx.fillRect(x, 452, 34, 34);
+    }
+
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('里程碑', 48, 560);
+    let mx: number = 48;
+    for (let i = 0; i < SignInStats.MILESTONES.length; i++) {
+      const reached: boolean = this.summary.longestStreak >= SignInStats.MILESTONES[i];
+      ctx.fillStyle = reached ? '#FBF0D2' : '#E9E1D1';
+      ctx.fillRect(mx, 584, 104, 44);
+      ctx.fillStyle = reached ? '#8A6500' : '#7C776B';
+      ctx.font = '18px sans-serif';
+      ctx.fillText(SignInStats.MILESTONES[i].toString() + ' 天', mx + 18, 614);
+      mx += 118;
+    }
+
+    ctx.fillStyle = '#20241F';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText('个人记忆曲线', 48, 716);
+    ctx.fillStyle = '#E9E1D1';
+    ctx.fillRect(48, 738, 624, 24);
+    ctx.fillStyle = '#B8860B';
+    ctx.fillRect(48, 738, 624 * this.memoryPercent() / 100, 24);
+    ctx.fillStyle = '#7C776B';
+    ctx.font = '18px sans-serif';
+    ctx.fillText('累计复习 ' + this.reviewTotal.toString() + ' 次 · 再复习 '
+      + this.memoryRemaining().toString() + ' 次解锁个人记忆曲线', 48, 794);
+  }
+
   @Builder
-  reportMetric(label: string, value: string) {
-    Column() {
-      Text(value).fontSize(18).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
-      Text(label).fontSize(11).fontColor(Theme.secondaryText).margin({ top: 3 })
-    }.layoutWeight(1)
+  posterView() {
+    Scroll() {
+      Row() {
+        Column() {
+          Row() {
+            Column() {
+              Text('分享海报').fontSize(30).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
+              Text(this.posterKind === POSTER_REPORT ? '学习报告 · PNG' : '签到打卡 · PNG').fontSize(12)
+                .fontColor(Theme.secondaryText).margin({ top: 3 })
+            }.alignItems(HorizontalAlign.Start)
+            Blank()
+            Button('关闭').height(34).fontSize(13)
+              .backgroundColor(Theme.cardWarm).fontColor(Theme.secondaryText)
+              .onClick(() => { this.posterKind = POSTER_NONE; })
+          }.width('100%').padding({ top: 6, bottom: 12 })
+
+          if (this.posterData.length > 0) {
+            Image(this.posterData).width('100%').height(460).objectFit(ImageFit.Contain)
+              .borderRadius(16).backgroundColor(Theme.card)
+          } else {
+            Column() {
+              Text('海报生成中').fontSize(13).fontColor(Theme.secondaryText)
+            }.width('100%').height(200).justifyContent(FlexAlign.Center)
+          }
+
+          if (this.posterPath.length > 0) {
+            Column() {
+              Text('PNG 已保存到应用本地').fontSize(13).fontColor(Theme.successInk)
+              Text(this.posterPath).fontSize(11).fontColor(Theme.secondaryText)
+                .margin({ top: 4 }).wordBreak(WordBreak.BREAK_ALL)
+            }.width('100%').alignItems(HorizontalAlign.Start).padding(14).margin({ top: 12 })
+            .backgroundColor(Theme.successSoft).borderRadius(12)
+          }
+          if (this.posterError.length > 0) {
+            Text(this.posterError).fontSize(12).fontColor(Theme.dangerInk).margin({ top: 12 })
+          }
+
+          Row() {
+            Button('重新生成').layoutWeight(1).height(46)
+              .backgroundColor(Theme.accentInk).fontColor(Color.White)
+              .onClick(() => { this.generatePoster(this.posterKind); })
+            Button('返回').layoutWeight(1).height(46).margin({ left: 10 })
+              .backgroundColor(Theme.cardWarm).fontColor(Theme.secondaryText)
+              .onClick(() => { this.posterKind = POSTER_NONE; })
+          }.width('100%').margin({ top: 16 })
+
+          Text('海报由 ArkUI Canvas 在本地绘制；文字和数据都来自本机，不会上传。').fontSize(11)
+            .fontColor(Theme.secondaryText).margin({ top: 14, bottom: 30 })
+        }
+        .width('100%').constraintSize({ maxWidth: 760 })
+      }
+      .width('100%').justifyContent(FlexAlign.Center)
+      .padding({ left: Theme.pagePadding, right: Theme.pagePadding })
+    }
+    .backgroundColor(Theme.bg).width('100%').height('100%')
+    .id('poster-' + this.viewVersion.toString())
   }
 
   // ---------- 框架 ----------
@@ -1330,7 +2125,9 @@ struct Index {
   }
 
   build() {
-    if (this.loading) {
+    if (this.posterKind !== POSTER_NONE) {
+      this.posterView()
+    } else if (this.loading) {
       Column() {
         LoadingProgress().width(44).height(44).color(Theme.accent)
         Text('正在读取本地数据').fontSize(12).fontColor(Theme.secondaryText).margin({ top: 10 })
@@ -1350,6 +2147,14 @@ struct Index {
       .barHeight(58)
       .onChange((index: number) => {
         this.currentTab = index;
+        if (index !== TAB_PRACTICE) {
+          this.stopDemoTimer();
+          if (this.practiceMode === PRACTICE_QUIZ || this.practiceMode === PRACTICE_DEMO_QUIZ) {
+            if (this.practiceMode === PRACTICE_DEMO_QUIZ) {
+              this.practiceMode = PRACTICE_MENU;
+            }
+          }
+        }
         this.reload();
       })
       .width('100%').height('100%').backgroundColor(Theme.bg)

@@ -33,28 +33,30 @@ export interface WrongWord {
 export class QuizBuilder {
   static readonly GROUP_SIZE: number = 5;
 
-  // priorityWords：错题优先；不够 5 题时用词库里其余词补满
-  static build(count: number, priorityWords: string[]): QuizQuestion[] {
+  // priorityWords：错题优先；不够 5 题时用当前词书其余词补满。
+  // pool：出题范围（某个词书的词），不传则用全部词库。
+  static build(count: number, priorityWords: string[], pool?: WordItem[]): QuizQuestion[] {
+    const bank: WordItem[] = (pool === undefined || pool.length === 0) ? WORD_BANK : pool;
     const targets: string[] = [];
     const used: Set<string> = new Set<string>();
     for (let i = 0; i < priorityWords.length && targets.length < count; i++) {
-      const item: WordItem | null = lookupWord(priorityWords[i]);
+      const item: WordItem | null = QuizBuilder.findIn(bank, priorityWords[i]);
       if (item !== null && !used.has(item.word)) {
         targets.push(item.word);
         used.add(item.word);
       }
     }
     if (targets.length < count) {
-      const pool: string[] = [];
-      for (let i = 0; i < WORD_BANK.length; i++) {
-        if (!used.has(WORD_BANK[i].word)) {
-          pool.push(WORD_BANK[i].word);
+      const rest: string[] = [];
+      for (let i = 0; i < bank.length; i++) {
+        if (!used.has(bank[i].word)) {
+          rest.push(bank[i].word);
         }
       }
-      QuizBuilder.shuffleStrings(pool);
-      for (let i = 0; i < pool.length && targets.length < count; i++) {
-        targets.push(pool[i]);
-        used.add(pool[i]);
+      QuizBuilder.shuffleStrings(rest);
+      for (let i = 0; i < rest.length && targets.length < count; i++) {
+        targets.push(rest[i]);
+        used.add(rest[i]);
       }
     }
     const questions: QuizQuestion[] = [];
@@ -63,18 +65,28 @@ export class QuizBuilder {
       if (item === null) {
         continue;
       }
-      questions.push(QuizBuilder.makeQuestion(item, priorityWords.indexOf(item.word) >= 0));
+      questions.push(QuizBuilder.makeQuestion(item, priorityWords.indexOf(item.word) >= 0, bank));
     }
     return questions;
   }
 
-  private static makeQuestion(item: WordItem, fromWrong: boolean): QuizQuestion {
+  private static findIn(bank: WordItem[], word: string): WordItem | null {
+    for (let i = 0; i < bank.length; i++) {
+      if (bank[i].word === word) {
+        return bank[i];
+      }
+    }
+    return null;
+  }
+
+  private static makeQuestion(item: WordItem, fromWrong: boolean, bank: WordItem[]): QuizQuestion {
     const options: string[] = [item.meaning];
     const taken: Set<string> = new Set<string>();
     taken.add(item.meaning);
-    const start: number = Math.floor(Math.random() * WORD_BANK.length);
-    for (let step = 0; step < WORD_BANK.length * 2 && options.length < 4; step++) {
-      const candidate: WordItem = WORD_BANK[(start + step * 7) % WORD_BANK.length];
+    const source: WordItem[] = bank.length >= 4 ? bank : WORD_BANK;
+    const start: number = Math.floor(Math.random() * source.length);
+    for (let step = 0; step < source.length * 2 && options.length < 4; step++) {
+      const candidate: WordItem = source[(start + step * 7) % source.length];
       if (candidate.word === item.word) {
         continue;
       }

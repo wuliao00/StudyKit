@@ -24,6 +24,9 @@ export interface AppData {
   quizSessions: QuizSession[];
   wrongs: WrongWord[];
   studyDays: string[];
+  book: string;
+  demoImported: boolean;
+  reviewCountTotal: number;
 }
 
 export class StudyStore {
@@ -44,7 +47,10 @@ export class StudyStore {
       quizAnswers: [],
       quizSessions: [],
       wrongs: [],
-      studyDays: []
+      studyDays: [],
+      book: 'cet4',
+      demoImported: false,
+      reviewCountTotal: 0
     };
   }
 
@@ -95,6 +101,17 @@ export class StudyStore {
     if (raw.studyDays !== undefined && raw.studyDays !== null) {
       out.studyDays = raw.studyDays;
     }
+    if (raw.book !== undefined && raw.book !== null && raw.book.length > 0) {
+      out.book = raw.book;
+    }
+    if (raw.demoImported !== undefined && raw.demoImported !== null) {
+      out.demoImported = raw.demoImported;
+    }
+    if (raw.reviewCountTotal !== undefined && raw.reviewCountTotal !== null) {
+      out.reviewCountTotal = raw.reviewCountTotal;
+    } else {
+      out.reviewCountTotal = out.reviews.length;
+    }
     return out;
   }
 
@@ -128,6 +145,33 @@ export class StudyStore {
 
   get studyDays(): string[] {
     return this.data.studyDays;
+  }
+
+  get bookId(): string {
+    return this.data.book;
+  }
+
+  async setBook(book: string): Promise<void> {
+    this.data.book = book;
+    await this.save();
+  }
+
+  get demoImported(): boolean {
+    return this.data.demoImported;
+  }
+
+  async importDemoSamples(): Promise<void> {
+    this.data.demoImported = true;
+    await this.save();
+  }
+
+  async resetDemoSamples(): Promise<void> {
+    this.data.demoImported = false;
+    await this.save();
+  }
+
+  reviewTotalCount(): number {
+    return this.data.reviewCountTotal;
   }
 
   get lastReviewInfo(): LastReview | null {
@@ -200,6 +244,7 @@ export class StudyStore {
     if (this.data.reviews.length > MAX_REVIEWS) {
       this.data.reviews = this.data.reviews.slice(this.data.reviews.length - MAX_REVIEWS);
     }
+    this.data.reviewCountTotal = this.data.reviewCountTotal + 1;
     this.lastReview = { word: word, prevCard: prevCard, date: todayIso };
     this.touchStudyDay(todayIso);
     await this.save();
@@ -231,6 +276,9 @@ export class StudyStore {
         this.data.reviews.splice(i, 1);
         break;
       }
+    }
+    if (this.data.reviewCountTotal > 0) {
+      this.data.reviewCountTotal = this.data.reviewCountTotal - 1;
     }
     this.lastReview = null;
     this.pruneStudyDay(last.date);
