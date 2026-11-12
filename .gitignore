@@ -35,7 +35,7 @@ _*.bin
 # Kotlin 分析插件的本地缓存（gradle 一跑就生成，8KB，不该入库）
 .kotlin/
 
-# superpowers ����ִ��ͨ����lane worktrees��
+# superpowers ����ִ��ͨ����lane worktrees��
 .worktrees/
 
 # 宣传片素材与合成产物（真机录屏、中间片段、字体副本，约 330MB，不入版本库）
@@ -48,3 +48,5 @@ __pycache__/
 
 # OCR photo-like eval images/outputs (23MB, reproducible)
 tools/ocr_eval/photo_like/
+
+keystore.properties
