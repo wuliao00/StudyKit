@@ -36,3 +36,9 @@
 - Android：StudyKit-v3.22.0-release.apk（正式 release 签名）
 - HarmonyOS：StudyKit-Harmony-v1.0.0-active-user.hap
 - 开源仓库：https://github.com/wuliao00/StudyKit
+
+## 下载
+
+- GitHub Release：https://github.com/wuliao00/StudyKit/releases/tag/v3.22.0
+- APK：https://github.com/wuliao00/StudyKit/releases/download/v3.22.0/StudyKit-v3.22.0-release.apk
+- HarmonyOS HAP：https://github.com/wuliao00/StudyKit/releases/download/v3.22.0/StudyKit-Harmony-v1.0.0-first-value.hap
