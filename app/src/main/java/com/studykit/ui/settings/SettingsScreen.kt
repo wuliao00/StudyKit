@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.studykit.BuildConfig
+import com.studykit.R
 import com.studykit.StudyKitApp
 import com.studykit.data.AppSettings
 import com.studykit.data.GlassLevel
@@ -337,6 +339,17 @@ fun SettingsScreen(
                 )
             }
         }
+
+        // task-7 D：应用内副标题；商店副标题用同一句，字符串资源只此一份（app_subtitle）。
+        Text(
+            text = stringResource(R.string.app_subtitle),
+            style = texts.caption,
+            color = colors.secondaryText,
+            modifier = Modifier.padding(
+                start = AppTheme.space.xl + AppTheme.space.xs,
+                top = AppTheme.space.xs,
+            ),
+        )
 
         if (message != null) {
             Spacer(modifier = Modifier.height(AppTheme.space.sm))

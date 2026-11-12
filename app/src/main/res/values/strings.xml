@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">StudyKit</string>
+    <!-- task-7 D：商店/应用内共用的副标题（桌面图标名仍保持短名 StudyKit） -->
+    <string name="app_subtitle">StudyKit · 错题本·背单词·打卡</string>
 </resources>

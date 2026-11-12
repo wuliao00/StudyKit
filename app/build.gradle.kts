@@ -1,9 +1,17 @@
 // 插件与依赖版本统一由 gradle/libs.versions.toml 管理
+import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+// 正式 release 签名：keystore 与口令只放仓库外/本机，不进版本库。
+// 迁移说明见 release/release-notes-v3.22.0.md：debug 包不能覆盖安装 release 包，先 zip 备份再卸载重装。
+val releaseKeystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.isFile) f.inputStream().use { load(it) }
 }
 
 /**
@@ -54,6 +62,14 @@ android {
     compileSdk = 35
 
     signingConfigs {
+        if (releaseKeystoreProps.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = file(releaseKeystoreProps.getProperty("storeFile"))
+                storePassword = releaseKeystoreProps.getProperty("storePassword")
+                keyAlias = releaseKeystoreProps.getProperty("keyAlias")
+                keyPassword = releaseKeystoreProps.getProperty("keyPassword")
+            }
+        }
         if (sharedDebugKeystoreFile != null) {
             create("sharedDebug") {
                 storeFile = sharedDebugKeystoreFile
@@ -70,8 +86,8 @@ android {
         applicationId = "com.studykit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "3.21.0"
+        versionCode = 44
+        versionName = "3.22.0"
         // instrumented test 的执行器。CI 里仍只有 `:app:assembleDebugAndroidTest` 这条「只编译」的闸；
         // 这些用例已于 2026-10-20 在真机（vivo V2156A / Android 11）上手工跑过一次，
         // 入口是 `:app:connectedDebugAndroidTest`（读数见 CHANGELOG 的 [3.0.0] 段）。
@@ -104,6 +120,9 @@ android {
             }
         }
         release {
+            if (releaseKeystoreProps.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             // 开启混淆与资源收缩；混淆后的 release 包需在本地真机完整回归验证（详见 CHANGELOG）
             isMinifyEnabled = true
             isShrinkResources = true

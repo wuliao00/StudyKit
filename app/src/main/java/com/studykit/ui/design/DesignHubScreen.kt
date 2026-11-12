@@ -74,7 +74,7 @@ fun DesignHubScreen(
     ) {
         item {
             Column {
-                Text(text = "学习设计", style = texts.pageTitle)
+                Text(text = "学习计划", style = texts.pageTitle)
                 Spacer(Modifier.height(AppTheme.space.xs))
                 Text(
                     text = "8 种模板 · 纯本地拼装 · 可保存、复制、分享。不是 AI 生成，填什么就写什么。",

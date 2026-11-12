@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -69,6 +70,7 @@ import com.studykit.ui.bulkimport.ImportViewModel
 import com.studykit.ui.bulkimport.QuestionPhotoRationale
 import com.studykit.ui.bulkimport.dispatchEntryAction
 import com.studykit.ui.bulkimport.rememberQuestionPhotoImport
+import com.studykit.ui.components.AppButton
 import com.studykit.ui.components.AppCard
 import com.studykit.ui.components.AppPill
 import com.studykit.ui.components.BouncyIconButton
@@ -104,6 +106,8 @@ fun StudyHomeScreen(
     onOpenStats: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenOcrReview: () -> Unit,
+    /** task-7 A：空词库时「去装四级词书」走现有词书商店（唯一联网界面），不新造网络入口 */
+    onOpenDictStore: () -> Unit,
     onNavigate: (String) -> Unit,
     onPreviewImport: () -> Unit,
     onPhotoNeedsFormatting: () -> Unit,
@@ -255,6 +259,19 @@ fun StudyHomeScreen(
                     },
                     onWhy = { showWhySheet = true },
                     onDismiss = { viewModel.dismissDailyStartCard() },
+                )
+            }
+        }
+
+        // task-7 A：空词库时的「60 秒开始」——先给一条 30 秒能做完的真实任务：
+        // 看首次建库预置的 3 道示例错题（review_at 已到期），或去词书商店装一本四级词书。
+        // 只在词库为空时出现；装了词就自动消失，不占老用户的首屏。
+        if (state.totalCount == 0) {
+            Spacer(Modifier.height(AppTheme.space.md))
+            StaggeredIn(index = 1) {
+                QuickStartCard(
+                    onOpenSampleMistakes = onOpenMistakes,
+                    onOpenDictStore = onOpenDictStore,
                 )
             }
         }
@@ -524,6 +541,65 @@ private fun FlameBadge(days: Int) {
                 contentDescription = "连续学习 $days 天"
             },
     )
+}
+
+/**
+ * task-7 A：空词库时的「60 秒开始」卡。
+ *
+ * 首次建库已经预置 3 道示例错题（[com.studykit.data.FirstRunSeeder]），且 review_at 已到期：
+ * 一个新用户不用先「设置」什么，点「先看示例错题」就能在 60 秒内完成一次真实重做。
+ * 另一条路是去词书商店装一本四级词书 —— 走现有 [com.studykit.ui.study.DictStoreScreen]，
+ * 不新造网络入口。词库一有词，这张卡就让位给正常的首页。
+ */
+@Composable
+private fun QuickStartCard(
+    onOpenSampleMistakes: () -> Unit,
+    onOpenDictStore: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(colors.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = colors.accentInk,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Spacer(Modifier.width(AppTheme.space.md))
+            Column(Modifier.weight(1f)) {
+                Text(text = "60 秒开始", style = texts.cardTitle)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "不用先设置。先看 3 道示例错题，或装一本四级词书。",
+                    style = texts.caption,
+                    color = colors.secondaryText,
+                )
+            }
+        }
+        Spacer(Modifier.height(AppTheme.space.md))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.space.sm)) {
+            AppButton(
+                text = "先看示例错题",
+                onClick = onOpenSampleMistakes,
+                modifier = Modifier.weight(1f),
+            )
+            AppButton(
+                text = "去装四级词书",
+                onClick = onOpenDictStore,
+                secondary = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
 
 /**

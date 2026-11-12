@@ -28,7 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -62,6 +65,7 @@ import com.studykit.ui.components.HeroSummaryCard
 import com.studykit.ui.motion.MotionSpec
 import com.studykit.ui.theme.AppTheme
 import com.studykit.util.MistakeImageStore
+import com.studykit.util.ShareExport
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -318,7 +322,40 @@ fun MistakeListScreen(
             .padding(horizontal = AppTheme.space.pageH),
     ) {
         Spacer(Modifier.height(AppTheme.space.sm))
-        Text(text = "错题本", style = texts.largeTitle)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "错题本", style = texts.largeTitle, modifier = Modifier.weight(1f))
+            // task-7 C：错题本导出 PDF（本地排版 → 系统分享；空列表给人话提示，不弹空文件）
+            IconButton(
+                onClick = {
+                    if (mistakes.isEmpty()) {
+                        Toast.makeText(context, "还没有错题可导出，先录一道吧", Toast.LENGTH_SHORT).show()
+                    } else {
+                        scope.launch {
+                            val result = runCatching {
+                                withContext(Dispatchers.IO) {
+                                    ShareExport.writeMistakesPdf(context, mistakes)
+                                }
+                            }
+                            result.onSuccess { file ->
+                                ShareExport.shareFile(context, file, ShareExport.MIME_PDF, "导出错题本 PDF")
+                            }.onFailure { error ->
+                                Toast.makeText(
+                                    context,
+                                    "PDF 导出失败：" + (error.message ?: "未知错误"),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    }
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Share,
+                    contentDescription = "导出错题本 PDF",
+                    tint = colors.accentInk,
+                )
+            }
+        }
 
         Spacer(Modifier.height(AppTheme.space.md))
         // 这一屏的第一等数字 = 当前那一侧（待复习 / 已掌握）的题数，也就是原来页头那行小字

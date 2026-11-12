@@ -646,6 +646,10 @@ abstract class AppDatabase : RoomDatabase() {
                 // 全新安装会被灌进 20 个演示单词、3 个演示习惯 + 打卡记录、题目、书、错题。
                 // 首启应当是干净的空库，用户看到的是自己的空白而不是别人的假数据。
                 if (BuildConfig.DEMO_SEED) DemoSeeder.seed(db)
+                // task-7 A：全新安装预置 3 道示例错题（公式 / 英语 / 形近词，review_at 已到期）。
+                // 与 DemoSeeder 分开：演示包默认不跑，但「第一眼有一道真实错题可复习」是产品默认行为。
+                // 幂等守卫在播种器内部（表里已有任何错题就跳过），且只在 onCreate 触发一次。
+                FirstRunSeeder.seedSampleMistakes(db)
             }
         }
     }

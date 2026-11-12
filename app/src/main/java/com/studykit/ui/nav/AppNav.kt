@@ -107,7 +107,7 @@ import kotlinx.coroutines.flow.StateFlow
 /** 底部 Tab 定义 */
 private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
     data object Study : Tab("study", "学习", Outlined.Create)
-    data object Design : Tab("design", "设计", Outlined.List)
+    data object Design : Tab("design", "计划", Outlined.List)
     data object Habit : Tab("habit", "习惯", Outlined.DateRange)
     data object Book : Tab("book", "读书", Outlined.Favorite)
     data object Mistake : Tab("mistake", "错题", Outlined.CheckCircle)
@@ -407,6 +407,10 @@ fun AppNav(
                     },
                     onOpenOcrReview = {
                         navController.navigate(StudyRoutes.OCR_REVIEW) { launchSingleTop = true }
+                    },
+                    // task-7 A：空词库时「去装四级词书」→ 现有词书商店（不新开网络通道）
+                    onOpenDictStore = {
+                        navController.navigate(DictRoutes.STORE) { launchSingleTop = true }
                     },
                     // 录入菜单：路由项都由决策表给出既有目的地（`BulkEntryTest` 钉着），这里只负责 navigate
                     onNavigate = { path ->

@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -28,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -51,8 +55,12 @@ import com.studykit.ui.components.SectionHeader
 import com.studykit.ui.components.StatTile
 import com.studykit.ui.theme.AppColors
 import com.studykit.ui.theme.AppTheme
+import com.studykit.util.ShareExport
 import com.studykit.util.signin.SignInStats
 import java.time.format.TextStyle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -80,6 +88,9 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
     val texts = AppTheme.texts
     val state by viewModel.state.collectAsStateWithLifecycle()
     val signIn by viewModel.signInSummary.collectAsStateWithLifecycle()
+    // task-7 C：学习海报的生成入口就在报告页头（本地画 PNG → 系统分享，数据不出设备）
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -97,7 +108,42 @@ fun StatsScreen(viewModel: StatsViewModel, onBack: () -> Unit) {
                 )
             }
             Spacer(Modifier.width(AppTheme.space.xs))
-            Text(text = "记忆看板", style = texts.pageTitle)
+            Text(text = "记忆看板", style = texts.pageTitle, modifier = Modifier.weight(1f))
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        val result = runCatching {
+                            withContext(Dispatchers.IO) {
+                                ShareExport.writeStudyPoster(
+                                    context = context,
+                                    stats = ShareExport.PosterStats(
+                                        totalWords = state.totalWords,
+                                        plannedWords = state.plannedCount,
+                                        reviewSamples = state.sampleCount,
+                                        streakDays = signIn.currentStreak,
+                                        signInDays = signIn.totalDays,
+                                    ),
+                                )
+                            }
+                        }
+                        result.onSuccess { file ->
+                            ShareExport.shareFile(context, file, ShareExport.MIME_PNG, "分享学习海报")
+                        }.onFailure { error ->
+                            Toast.makeText(
+                                context,
+                                "海报生成失败：" + (error.message ?: "未知错误"),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Share,
+                    contentDescription = "生成学习海报并分享",
+                    tint = colors.accentInk,
+                )
+            }
         }
         Spacer(Modifier.height(AppTheme.space.md))
 
