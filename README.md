@@ -1,4 +1,4 @@
-# StudyKit 学习助手
+# StudyKit · 错题本 · 背单词 · 打卡
 
 [简体中文](README.md) | [English](README.en.md) | [Русский](README.ru.md)
 
@@ -7,7 +7,11 @@
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84.svg?logo=android)
 ![API](https://img.shields.io/badge/API-26%2B-green.svg)
 
-> 一款纯本地存储的安卓学习管理应用：背单词 / 刷题、学习设计、习惯打卡、读书笔记、错题整理，五大模块 + 日历视图增强，所有数据都保存在你自己的手机上。
+> **拍一下错题，自动安排复习，完全离线、无广告、开源。**
+>
+> StudyKit 把错题本、间隔重复（FSRS）、背单词和打卡放在一个纯本地应用里：没有账号、没有上传、没有广告；所有数据都保存在你自己的手机上。
+
+**搜索关键词**：错题本 · 间隔重复 · FSRS · 离线背单词 · 打卡 · 学习报告
 
 ## ✨ 应用简介
 
