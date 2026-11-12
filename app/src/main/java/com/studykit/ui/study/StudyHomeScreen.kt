@@ -31,6 +31,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,8 +54,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.studykit.data.memory.ExamPolicy
@@ -111,6 +116,13 @@ fun StudyHomeScreen(
     val signInEvent by viewModel.signInEvent.collectAsStateWithLifecycle()
     val signInMilestone by viewModel.signInMilestone.collectAsStateWithLifecycle()
     var showSignInCalendar by rememberSaveable { mutableStateOf(false) }
+    // 「今天从哪开始」：真实题库是否为空（决定小测那步是「开始小测」还是「去录题」）
+    val quizSubjects by viewModel.quizSubjects.collectAsStateWithLifecycle()
+    var showWhySheet by rememberSaveable { mutableStateOf(false) }
+    // 渐近披露：「更多学习方式」默认折叠，只在本次页面停留内记住展开态
+    var moreWaysExpanded by rememberSaveable { mutableStateOf(false) }
+    // 每日重置：收起只收起当天，日期对不上就重新出现（写入点见 StudyViewModel.dismissDailyStartCard）
+    val guideDismissedToday = AppTheme.settings.dailyStartDismissedEpochDay == LocalDate.now().toEpochDay()
     LaunchedEffect(signInMilestone) {
         if (signInMilestone != null) {
             delay(2_600)
@@ -205,6 +217,45 @@ fun StudyHomeScreen(
                         modifier = Modifier.padding(horizontal = AppTheme.space.md, vertical = AppTheme.space.sm),
                     )
                 }
+            }
+        }
+
+        // 主动用户改版（docs/active-user-redesign.md）：首屏第一个东西不是教程，而是
+        // 「今天从哪开始」——三件 30~90 秒的小事，每行点一下就开始，做完立刻打勾。
+        // 放在 hero 之上是刻意的：先回答「我现在做什么」，再回答「我今天做了多少」。
+        if (!guideDismissedToday) {
+            Spacer(Modifier.height(AppTheme.space.md))
+            StaggeredIn(index = 0) {
+                DailyStartCard(
+                    plan = DailyStartPlanner.plan(
+                        signedToday = signInSummary.signedToday,
+                        currentStreak = signInSummary.currentStreak,
+                        reviewedToday = state.reviewedToday,
+                        dueCount = state.dueCount,
+                        wordTotal = state.totalCount,
+                        practicedToday = state.practicedToday,
+                        hasQuestions = quizSubjects.isNotEmpty(),
+                    ),
+                    onStepAction = { key ->
+                        when (key) {
+                            // 签到：没签就直接签（复用既有动作 → 既有的彩带/里程碑都会照常触发）；
+                            // 已签就打开签到日历 —— 完成之后仍有一条真实的路，不是死路。
+                            DailyStartPlanner.KEY_SIGN_IN ->
+                                if (signInSummary.signedToday) {
+                                    showSignInCalendar = true
+                                } else {
+                                    viewModel.signInToday()
+                                }
+                            DailyStartPlanner.KEY_REVIEW -> onOpenWords()
+                            // 题库为空时「去录题」走单条录入；有题才进练习页，不给死入口。
+                            DailyStartPlanner.KEY_QUIZ -> {
+                                if (quizSubjects.isEmpty()) onAddQuestion() else onStartQuiz()
+                            }
+                        }
+                    },
+                    onWhy = { showWhySheet = true },
+                    onDismiss = { viewModel.dismissDailyStartCard() },
+                )
             }
         }
 
@@ -310,46 +361,17 @@ fun StudyHomeScreen(
         }
         Spacer(Modifier.height(AppTheme.space.md))
 
-        AnimatedVisibility(
-            visible = pendingReview > 0,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
-        ) {
-            Column {
-                Spacer(Modifier.height(AppTheme.space.md))
-                StaggeredIn(index = 3) {
-                    EntryCard(
-                        icon = Icons.Outlined.CheckCircle,
-                        iconColor = colors.warning,
-                        iconContainerColor = colors.warningSoft,
-                        title = "待校对题目",
-                        caption = pendingReview.toString() + " 道 · 先核对再进复习",
-                        onClick = onOpenOcrReview,
-                    )
-                }
-            }
-        }
-        StaggeredIn(index = 3) {
-            EntryCard(
-                icon = Icons.Outlined.CheckCircle,
-                iconColor = colors.accent,
-                iconContainerColor = colors.accentSoft,
-                title = "模考",
-                caption = "一次作答整卷 · 交卷后才逐题看反馈",
-                onClick = onOpenMockExam,
-            )
-        }
-        Spacer(Modifier.height(AppTheme.space.md))
-        StaggeredIn(index = 4) {
-            EntryCard(
-                icon = Icons.Outlined.Close,
-                iconColor = colors.warning,
-                iconContainerColor = colors.warningSoft,
-                title = "错题本",
-                caption = "${state.mistakeCount} 道待掌握",
-                onClick = onOpenMistakes,
-            )
-        }
+        // 渐进披露（论文第 4 条）：首屏只留「题库练习」这一条主入口，模考 / 错题本 / 待校对
+        // 收进「更多学习方式」折叠区。功能一个都没删，只是不跟主入口抢第一屏。
+        MoreWaysSection(
+            expanded = moreWaysExpanded,
+            onToggle = { moreWaysExpanded = !moreWaysExpanded },
+            pendingReview = pendingReview,
+            mistakeCount = state.mistakeCount,
+            onOpenMockExam = onOpenMockExam,
+            onOpenMistakes = onOpenMistakes,
+            onOpenOcrReview = onOpenOcrReview,
+        )
             Spacer(Modifier.height(AppTheme.space.lg))
         }
         if (signInEvent > 0L) {
@@ -369,6 +391,11 @@ fun StudyHomeScreen(
                 showSignInCalendar = false
             },
         )
+    }
+
+    // 「为什么这样安排」：一张很轻的底部弹层（本地优先 / 可撤销 / 无账号），不是教程。
+    if (showWhySheet) {
+        WhyThisWorksSheet(onDismiss = { showWhySheet = false })
     }
 }
 
@@ -497,6 +524,109 @@ private fun FlameBadge(days: Int) {
                 contentDescription = "连续学习 $days 天"
             },
     )
+}
+
+/**
+ * 「更多学习方式」折叠区：模考 / 错题本 / 待校对从首屏收进这一条。
+ *
+ * 折叠而不是删除：这三件事都还在，只是第一屏只保留一个答案（题库练习）；
+ * 需要它们的人点一下就能展开，标题行顺带报出「模考 · 错题本 · 待校对 N 道」，
+ * 折叠态也不藏信息。展开/收起用既有 AnimatedVisibility（与里程碑横幅同一套动效）。
+ */
+@Composable
+private fun MoreWaysSection(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    pendingReview: Int,
+    mistakeCount: Int,
+    onOpenMockExam: () -> Unit,
+    onOpenMistakes: () -> Unit,
+    onOpenOcrReview: () -> Unit,
+) {
+    val colors = AppTheme.colors
+    val texts = AppTheme.texts
+    val summary = buildString {
+        append("模考 · 错题本")
+        if (pendingReview > 0) append(" · 待校对 ").append(pendingReview).append(" 道")
+    }
+    val stateText = if (expanded) "已展开，点按收起" else "点按展开"
+    AppCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "更多学习方式，" + stateText }
+            .clickable(role = Role.Button, onClick = onToggle),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(colors.divider.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.List,
+                    contentDescription = null,
+                    tint = colors.secondaryText,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(Modifier.width(AppTheme.space.md))
+            Column(Modifier.weight(1f)) {
+                Text(text = "更多学习方式", style = texts.cardTitle)
+                Spacer(Modifier.height(2.dp))
+                Text(text = summary, style = texts.caption)
+            }
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Outlined.KeyboardArrowUp
+                } else {
+                    Icons.Outlined.KeyboardArrowDown
+                },
+                contentDescription = null,
+                tint = colors.secondaryText,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
+        Column {
+            Spacer(Modifier.height(AppTheme.space.sm))
+            EntryCard(
+                icon = Icons.Outlined.CheckCircle,
+                iconColor = colors.accent,
+                iconContainerColor = colors.accentSoft,
+                title = "模考",
+                caption = "一次作答整卷 · 交卷后才逐题看反馈",
+                onClick = onOpenMockExam,
+            )
+            Spacer(Modifier.height(AppTheme.space.sm))
+            EntryCard(
+                icon = Icons.Outlined.Close,
+                iconColor = colors.warning,
+                iconContainerColor = colors.warningSoft,
+                title = "错题本",
+                caption = mistakeCount.toString() + " 道待掌握",
+                onClick = onOpenMistakes,
+            )
+            // 待校对是「有东西要处理」才出现的入口：0 道时整行不存在，与原来同一条纪律。
+            if (pendingReview > 0) {
+                Spacer(Modifier.height(AppTheme.space.sm))
+                EntryCard(
+                    icon = Icons.Outlined.CheckCircle,
+                    iconColor = colors.warning,
+                    iconContainerColor = colors.warningSoft,
+                    title = "待校对题目",
+                    caption = pendingReview.toString() + " 道 · 先核对再进复习",
+                    onClick = onOpenOcrReview,
+                )
+            }
+        }
+    }
 }
 
 /** 入口卡片：圆形图标（soft 底色）+ 标题 + 说明，可选尾部操作按钮；点击默认 ripple */

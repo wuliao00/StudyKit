@@ -1,52 +1,61 @@
-# HarmonyOS HAP 构建证据（2026-11-07）
+# HarmonyOS HAP 构建 / 签名证据（2026-11-12 功能完善版）
 
 ## 工具链
 
-- 本机路径限定：hvigor 拒绝含中文的工程路径，构建副本在 E:\dev\studykit-harmony；
-- 构建工具：hvigor 6.26.9 + @ohos/hvigor-ohos-plugin 6.26.9（HarmonyOS npm 源）；
-- SDK：OpenHarmony SDK 5.0.3.135（API 15），布局 sdk/15/{ets,js,native,previewer,toolchains}；
-- 编译命令：
-  node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap --mode module -p product=default -p buildMode=debug
+- 源码：E:\项目\studykit\harmony；构建副本：E:\dev\studykit-harmony（hvigor 拒绝含中文路径）
+- hvigor 6.26.9 + @ohos/hvigor-ohos-plugin 6.26.9
+- SDK：OpenHarmony SDK 5.0.3.135（API 15，E:\dev\ohos-sdk\sdk）
+- Node：v24.18.0
 
-## 产物
+## 构建命令
 
-- 未签名：entry/build/default/outputs/default/entry-default-unsigned.hap（223,250 B）
-- 签名：release/StudyKit-Harmony-v1.0.0-debug.hap（247653 B）
-  - sha256：fb666f91eed09a9a3445c9ec0b773cfdcd555451a8ae4fc3005f4e5a848e5f69
-  - profile 已加入 MatePad UDID A3B9958BC64F7AD33CDDF9B11646FE98D20A502A94560EC240E9ADC1961A16D3
-- 签名方式：OpenHarmony SDK 自带 hap-sign-tool；
-  - 生成 app 密钥/证书链（CA = OpenHarmony Application CA）；
-  - 用 OpenHarmonyProfileDebug.pem 签出 debug profile；
-  - sign-app localSign 签 HAP。
+    cd E:\dev\studykit-harmony
+    node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap --mode module -p product=default -p buildMode=release
 
-## 已验证
+结果：**BUILD SUCCESSFUL in 4 min 24 s 532 ms**（33 tasks）。
 
-- assembleHap BUILD SUCCESSFUL，33 tasks，ArkTS CompileArkTS 通过；
-- HAP 生成并可被 hap-sign-tool sign-app 签名成功。
+- 首次全量构建（18 min 20 s）日志：build-release-2.log（同 BUILD SUCCESSFUL）；
+- 最终增量构建日志：build-release-3.log / build-release-final.log；
+- ArkTS 编译（CompileArkTS）通过，日志中 0 条 ERROR，仅 “skip sign” 提示（本项目用 hap-sign-tool 单独签名）。
 
-## 真机安装结果（2026-11-08 07:50）
+## 未签名产物
 
-HDC 已恢复授权（删除主机 .hdc 旧密钥后重新生成；设备 udid 已读取）。
+    entry/build/default/outputs/default/entry-default-unsigned.hap
+    大小：244,500 B
 
-执行：
+## 签名（hap-sign-tool，AGC 发布证书 + 发布 Profile）
 
-    hdc -t 8ZQUN26602G03715 install -r entry-default-signed-udid.hap
+    E:/dev/jdk/bin/java.exe -jar E:/dev/ohos-sdk/sdk/15/toolchains/lib/hap-sign-tool.jar sign-app \
+      -mode localSign -keyAlias studykit-release -keyPwd 123456 \
+      -appCertFile E:/dev/studykit-release.cer \
+      -profileFile E:/dev/studykit-release-profile.p7b \
+      -inFile entry-default-unsigned.hap -signAlg SHA256withECDSA \
+      -keystoreFile E:/dev/studykit-release.p12 -keystorePwd 123456 \
+      -outFile StudyKit-Harmony-v1.0.0-release.hap \
+      -compatibleVersion 15 -signCode 1
 
-返回：
+- profile 内 bundle-name = com.studykit.study，type = release，distribution-type = app_gallery；
+- 证书：莫松钧(2079002878751576897) / Release（Huawei CBG Developer Relations CA G2 签发）；
+- 结果：sign-app success（sign-release-3.log）。
 
-    error: failed to install bundle. code:9568257 error: fail to verify pkcs7 file.
+## 最终 HAP
 
-说明：设备为 HarmonyOS 7.0.0.111（型号 SLG-W60），不信任 OpenHarmony 本地调试证书。
-这不是 HDC 授权问题，而是华为签名信任链问题。
+    E:\dev\studykit-harmony\release\StudyKit-Harmony-v1.0.0-release.hap
+    大小：268,867 B
+    sha256：50056954C07CF78A1D79D58F2F444378EFC4E651B30842E12DE94C60D6AD4F75
+    证据副本：E:\dev\harmony-evidence\StudyKit-Harmony-v1.0.0-release.hap
 
-## 未完成（阻塞）
+verify-app 校验：verify exit 0，“Digest verify result: true”，“verify: Verify success”
+（verify-app.log / verify-certchain.cer / verify-profile.p7b）。
 
-1. HarmonyOS 7 真机安装要求华为开发者签名；当前 OpenHarmony 本地证书被拒绝；
-2. 需要登录华为账号，在 DevEco Studio 5/6 中配置自动签名后重新签 HAP；
-3. 因此尚未安装、未截图、未做真机交互验证。
+## 真机状态（2026-11-12 19:50）
 
-## 下一步
+- 主机 hdc 此时看不到设备：USB 只有 WPD/MTP（VID_12D1&PID_1101），无 HDC Interface，
+  `hdc list targets` 为空（轮询日志 hdc-poll.log）；
+- 已通知 Lead 让用户重新插线并在平板允许调试；设备恢复后执行：
+  `hdc -t 8ZQUN26602G03715 install -r StudyKit-Harmony-v1.0.0-release.hap` 并走验收流程。
 
-- 用户在平板上允许 HDC 调试；
-- 若签名被拒：登录华为账号，在 DevEco Studio 配置自动签名后重新签名；
-- 安装后验证首页/签到/补签撤销/单词页/横竖屏，并补 docs/evidence。
+## 历史（2026-11-07/09，MVP 版本）
+
+- 旧版 24 示例词 MVP 曾用 OpenHarmony 本地证书签名（设备拒绝），后改用 AGC 调试证书安装成功；
+- 旧构建证据见 git 历史中的本文件。

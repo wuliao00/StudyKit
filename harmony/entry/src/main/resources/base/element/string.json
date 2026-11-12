@@ -1,7 +1,7 @@
 {
   "string": [
-    { "name": "module_desc", "value": "StudyKit HarmonyOS native MVP" },
-    { "name": "ability_desc", "value": "StudyKit learning assistant" },
+    { "name": "module_desc", "value": "StudyKit 本地学习助手（HarmonyOS 原生）" },
+    { "name": "ability_desc", "value": "StudyKit 学习助手：词库、复习、小测与签到" },
     { "name": "app_name", "value": "StudyKit" }
   ]
 }

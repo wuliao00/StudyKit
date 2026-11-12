@@ -203,6 +203,14 @@ data class AppSettings(
      */
     val excerptTipSeen: Boolean = false,
     /**
+     * 首页「今天从哪开始」卡被收起的日期，存 [LocalDate.toEpochDay]；0 = 今天还没收。
+     *
+     * 存**日期**而不是一个布尔：布尔一旦为真卡片就永远消失；存日期，跨过零点后
+     * [StudyViewModel.dismissDailyStartCard] 写下的那个数不再等于今天，卡片自动回来 ——
+     * 这就是需求里的「每日重置」。与「完成态」一样，重置不靠定时任务，靠每次读的时候现算。
+     */
+    val dailyStartDismissedEpochDay: Long = 0L,
+    /**
      * 端侧优化器训练出的**活跃 FSRS 参数**（21 项 v6 向量）（v2.9 计划 Task 5）。
      * null = 从没校准过（首装 / 恢复默认）→ [com.studykit.ui.study.KernelHub] 用
      * [com.studykit.data.memory.FsrsModel.DEFAULT_PARAMS]，行为与今天逐比特一致；
@@ -293,6 +301,8 @@ data class AppSettings(
         KEY_GAP_TIP_SEEN to gapTipSeen.toString(),
         KEY_CHAPTER_TIP_SEEN to chapterTipSeen.toString(),
         KEY_EXCERPT_TIP_SEEN to excerptTipSeen.toString(),
+        // 「今天从哪开始」卡的收起日期（epochDay）；0 = 没收起
+        KEY_DAILY_START_DISMISSED to dailyStartDismissedEpochDay.toString(),
         // 活跃参数：非 null 才拼串；null 写空串，fromMap 遇空串/脏串一律退回 null
         KEY_FSRS_ACTIVE_PARAMS to (fsrsActiveParams?.joinToString(",") ?: ""),
         // 干跑报告：只记不判的诊断文本，口径同 KEY_DICT_FAILURE
@@ -333,6 +343,7 @@ data class AppSettings(
         const val KEY_GAP_TIP_SEEN = "gap_tip_seen"
         const val KEY_CHAPTER_TIP_SEEN = "chapter_tip_seen"
         const val KEY_EXCERPT_TIP_SEEN = "excerpt_tip_seen"
+        const val KEY_DAILY_START_DISMISSED = "daily_start_dismissed_epoch_day"
         const val KEY_FSRS_ACTIVE_PARAMS = "fsrs_active_params"
         const val KEY_CALIBRATE_REPORT = "last_calibrate_report"
 
@@ -454,6 +465,9 @@ data class AppSettings(
                 // 书摘检索贴士：默认**没看过**，与 chapterTipSeen 分开的两枚布尔（镜像纪律）
                 excerptTipSeen = map[KEY_EXCERPT_TIP_SEEN]?.toBooleanStrictOrNull()
                     ?: defaults.excerptTipSeen,
+                // 「今天从哪开始」卡的收起日期：0 或落在考试日区间内才算数，其余脏值退回 0（= 没收起）
+                dailyStartDismissedEpochDay = map[KEY_DAILY_START_DISMISSED]?.toLongOrNull()
+                    ?.takeIf { it == 0L || it in EXAM_DAY_RANGE } ?: defaults.dailyStartDismissedEpochDay,
                 // 活跃 FSRS 参数：默认 null（走 DEFAULT_PARAMS）。逗号串必须是**恰好 21 项且全数字**，
                 // 否则一律当脏值退回 null——绝不允许把半截/含非数字的向量拼成残缺数组喂给调度器。
                 fsrsActiveParams = map[KEY_FSRS_ACTIVE_PARAMS]?.let { raw ->

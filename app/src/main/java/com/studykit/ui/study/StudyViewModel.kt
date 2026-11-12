@@ -82,6 +82,16 @@ data class StudyHomeUiState(
     val mistakeCount: Int = 0,
     val streakDays: Int = 0,
     val todayDone: Int = 0,
+    /**
+     * 今天已经复习了多少个词（按复习时间戳数，本地日切）。
+     *
+     * 与 [todayDone] 的差别只在分母：那个数是「复习 + 练习」的会话计数，这一步的卡只说
+     * 「复习」这一件事。三个字段都从**同一批时间戳**现算，所以跨过零点自然归零，
+     * 不需要任何「每日重置」的定时任务 —— 需求里的每日重置就是这条数据流的副作用。
+     */
+    val reviewedToday: Int = 0,
+    /** 今天已经作答了多少道题（按练习时间戳数；小测一步的真实进度） */
+    val practicedToday: Int = 0,
     val tomorrow: TomorrowLoad = TomorrowLoad(wordCount = 0, sampledCount = 0, predictedRecallPercent = 0),
 )
 
@@ -325,7 +335,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
-        val all = reviewTimestamps + practiceTimestamps
+        // 三个「今日」读数共用同一个日切区间（dayStart..now）：
+        // 复习 / 练习 / 合计各自数一次，合计不再重扫一遍拼接列表。
+        val reviewedToday = reviewTimestamps.count { it in dayStart..now }
+        val practicedToday = practiceTimestamps.count { it in dayStart..now }
         // 「明天」的区间按本地日切，不用 SQL 的 date()（不吃时区）；
         // 这一格只算一次，词数和保留率都从它来
         val tomorrow = TomorrowForecast.of(
@@ -339,8 +352,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             totalCount = words.size,
             masteredCount = words.count { it.status == Word.STATUS_MASTERED },
             mistakeCount = unmasteredMistakes,
-            streakDays = StudyStreak.streakDays(all, zone, today),
-            todayDone = all.count { it in dayStart..now },
+            streakDays = StudyStreak.streakDays(reviewTimestamps + practiceTimestamps, zone, today),
+            todayDone = reviewedToday + practicedToday,
+            reviewedToday = reviewedToday,
+            practicedToday = practicedToday,
             tomorrow = tomorrow,
         )
     }
@@ -380,6 +395,27 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             if (!added) return@launch
             _signInEvent.value = System.currentTimeMillis()
             publishMilestoneIfNeeded(today)
+        }
+    }
+
+    /**
+     * 收起首页「今天从哪开始」卡（只收起当天；第二天自动重新出现）。
+     *
+     * 写成「今天的 epochDay」而不是布尔：布尔的语义是「永远别再烦我」，而这个卡的设计是
+     * 「今天做完了、不想再看」——它明天还得回来。读点在 StudyHomeScreen，按
+     * AppTheme.settings.dailyStartDismissedEpochDay == LocalDate.now().toEpochDay() 判。
+     *
+     * 写失败不提示也不重投：后果只是「下次回到首页它还在这」，不该在用户想收拾首页的时候弹 toast。
+     */
+    fun dismissDailyStartCard() {
+        viewModelScope.launch {
+            runCatching {
+                settingsRepository.update {
+                    it.copy(
+                        dailyStartDismissedEpochDay = LocalDate.now(ZoneId.systemDefault()).toEpochDay(),
+                    )
+                }
+            }
         }
     }
 

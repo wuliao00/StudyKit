@@ -2,7 +2,7 @@
   "modelVersion": "5.0.0",
   "name": "studykit_harmony",
   "version": "1.0.0",
-  "description": "StudyKit HarmonyOS native MVP",
+  "description": "StudyKit 本地学习助手（HarmonyOS 原生）",
   "main": "",
   "author": "",
   "license": "",

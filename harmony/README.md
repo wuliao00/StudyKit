@@ -1,23 +1,26 @@
-# StudyKit HarmonyOS 原生版（MVP）
+# StudyKit HarmonyOS 原生版
 
 这是 StudyKit 的 HarmonyOS 5 / ArkTS + ArkUI 原生实现，不是 Android APK 的套壳。
-当前是一期 MVP：首页 + 每日签到 + 补签/撤销 + 里程碑 + 本地词表复习。
-
-> **构建状态（2026-11-09）**：已用 AGC 调试证书签名并安装在 MatePad 11.5 S（HarmonyOS 7），
-> 真机验证首页/签到/整月日历/补签/撤销/单词/我的，截图在 docs/evidence/harmony。
-> 应用市场（AGC）已创建 StudyKit APP ID、调试证书/设备/Profile、发布证书/Profile，并签出发布 HAP；
-> 商店应用信息仍是草稿，尚未提交审核。细节见 docs/AGC-SUBMISSION.md。
+当前版本把学习闭环做完整：66 词本地词库、Leitner 5 盒复习排期、4 选 1 小测与错题本、
+今日 0/3 任务卡、签到与补签、学习报告与本地数据重置。所有数据只存在本机。
 
 ## 已实现
 
-- 首页：暖纸感原生布局、今日待办卡、三项读数、签到卡、本周进度、入口卡；
-- 签到：整月日历（周一开始、42 格）、今天描边、已签/补签状态、月度签到率；
-- 补签：最近 3 天、每月最多 3 次；点补签格弹确认框；补签格金底金点；
-- 撤销：最近 3 天内的补签可撤销，连续/本月统计立即刷新；
-- 里程碑：3/7/14/30/66 天常亮徽章，首页显示已达成的最高里程碑；
-- 本地持久化：签到记录、已掌握词存 HarmonyOS Preferences，不上传；
-- 单词：24 个示例词、翻卡/再学/记住了、进度与重置；
-- 平板适配：自适应宽度、Tabs 底栏、滚动页面，不使用 Android 资源。
+- 词库：内置 66 个常用词，word / phonetic / meaning / example 四字段完整，完全离线；
+- 复习：Leitner 5 盒 SRS，记录每个词的 box、dueDate、lastReviewed、correct、wrong；
+  今日待复习按到期日真实计算；“记住了”升一盒（1/2/4/7 天后复习），“再学一次”退回第 1 盒；
+  单词页可以撤销上一步复习；
+- 小测：从词库生成 4 选 1，每组 5 题；作答后立刻反馈正确答案与例句；逐题落库，
+  结果记录当日答题数/正确数；答错自动进错题本，错题可以重练，答对后自动移出；
+- 今日任务卡：首页“今天从哪开始”按真实数据算 0/3（签到、复习 5 词、小测 3 题），
+  每一步可点、有完成态，全部完成显示“今日已起飞 3/3”和下一步鼓励；
+- 签到：整月日历（周一开始）、今天描边、已签/补签状态、月度签到率；
+  补签最近 3 天、每月最多 3 次；补签可撤销，撤销后连续/本月统计立即刷新；
+  里程碑 3/7/14/30/66 天常亮；
+- 学习报告：已掌握、待复习、正确率、连续学习、累计学习、签到累计；
+  本地数据可重置，二次确认后清空；
+- 导航：学习 / 签到 / 单词 / 练习 / 我的 共 5 个 Tab；暖纸感配色、ArkUI 原生组件；
+- 持久化：应用沙箱 `filesDir/studykit_data.json`，不需要账号，不联网。
 
 ## 目录
 
@@ -26,59 +29,56 @@
       entry/                    entry HAP 模块
         src/main/ets/
           entryability/         UIAbility 入口
-          model/                SignInStats / StudyStore / 示例词
-          common/               暖纸感主题令牌
-          pages/Index.ets       四个 Tab + 签到日历 + 单词页
+          common/Theme.ets      暖纸感主题令牌
+          model/
+            Words.ets           66 词词库（word/phonetic/meaning/example）
+            Srs.ets             Leitner 5 盒排期与统计
+            Quiz.ets            4 选 1 出题、错题记录
+            Store.ets           本地 JSON 持久化与撤销栈
+            SignIn.ets          签到/补签/连续/里程碑口径
+          pages/Index.ets       5 Tab 页面与全部交互
         src/main/resources/
         src/main/module.json5
-      build-profile.json5       HarmonyOS 5.0.0(12)
+      build-profile.json5
       hvigorfile.ts
       oh-package.json5
+      docs/                     架构、构建证据、AGC 上架记录
 
-## 构建 / 运行
+## 构建 / 签名
 
 前置条件：
 
-1. DevEco Studio 5.0+（支持 HarmonyOS 5.0.0 / API 12）；
-2. HarmonyOS SDK 5.0.0(12)（DevEco → Settings → SDK 下载）；
-3. 华为账号登录 DevEco，在 Project Structure → Signing Configs 勾选自动签名
-   （HarmonyOS 真机必须使用华为签名）。
+1. DevEco Studio 5.0+ 或 hvigor 6.26+；
+2. OpenHarmony / HarmonyOS SDK API 15（本机：E:\dev\ohos-sdk\sdk\15）；
+3. 华为签名材料（发布证书 .cer、Profile .p7b、私钥 .p12）。
 
-步骤：
+构建工程不能放在含中文的路径，本项目源码在 `harmony/`，构建副本在 `E:\dev\studykit-harmony`：
 
-1. DevEco Studio → Open → 选择本目录 harmony/；
-2. 等待 hvigor sync 完成（首次会下载 ohpm 依赖）；
-3. File → Project Structure → Signing Configs → 勾选 Automatically generate signature；
-4. 运行设备选择已开启开发者模式的 MatePad，Run entry。
+    cd E:\dev\studykit-harmony
+    node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap --mode module -p product=default -p buildMode=release
 
-命令行构建（SDK/签名配置好后）：
+产物：`entry/build/default/outputs/default/entry-default-unsigned.hap`
 
-    cd harmony
-    ohpm install
-    hvigorw assembleHap --mode module -p product=default -p buildMode=debug
+签名（hap-sign-tool，release 证书 + profile）：
 
-产物：entry/build/default/outputs/default/entry-default-signed.hap。
+    java -jar <SDK>/toolchains/lib/hap-sign-tool.jar sign-app \
+      -mode localSign -keyAlias studykit-release -keyPwd <p12密码> \
+      -appCertFile studykit-release.cer -profileFile studykit-release-profile.p7b \
+      -inFile entry-default-unsigned.hap -signAlg SHA256withECDSA \
+      -keystoreFile studykit-release.p12 -keystorePwd <p12密码> \
+      -outFile StudyKit-Harmony-v1.0.0-release.hap -compatibleVersion 15 -signCode 1
+
+具体构建/签名结果与哈希见 `docs/BUILD-EVIDENCE.md`。
 
 ## 与 Android 版的关系
 
 Android v3.21 的功能不会因为 HarmonyOS 版出现而停止维护。HarmonyOS 版按模块重写，
-签到算法口径与 Android 版一致：
-
-- 连续签到允许“今天未签但昨天签过”保留；
-- 补签窗口最近 3 天、每月 3 次；
-- 签到/补签都计入连续、累计、本月统计；
-- 里程碑按历史最长连续常亮。
-
-## 后续路线
-
-1. 词库导入 + FSRS 排期（对齐 Android 内存模型）；
-2. 题库练习 / 错题本；
-3. OCR 拍照识别（HarmonyOS 端侧模型/云侧可选）；
-4. 数据导入导出（与 Android Room 迁移格式兼容）；
-5. 习惯 / 读书 / 契约模块。
+签到算法口径与 Android 版一致。当前已覆盖：签到/补签/撤销、本地词库、Leitner 复习、小测与错题、
+今日任务卡、学习报告；数据模型集中在一个 JSON 文件里，后续可以按需迁移到 RelationalStore。
 
 ## 说明
 
-- SignIn.ets / StudyStore.ets 是纯 ArkTS，不依赖 Android；
-- Index.ets 是单页四 Tab，配色与 Android 暖纸感主题一致；
-- 项目按 HarmonyOS 5 Stage 模型组织，API 12；低版本设备需要改 compatibleSdkVersion 与 API 调用。
+- Words / Srs / Quiz / Store / SignIn 都是纯 ArkTS，不依赖 Android；
+- Index.ets 是单页 5 Tab，配色与 Android 暖纸感主题一致；
+- module.json5 的 deviceTypes 为上架设备类型 tablet（API 15 SDK 的 device-define 没有 phone，
+  加入 phone 会导致 syscap 校验失败）；页面内容按 maxWidth 760 居中，手机/平板宽度都能正常显示。
