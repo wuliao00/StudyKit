@@ -32,3 +32,12 @@
 4. 习惯/书籍/计划数据重启后仍在；
 5. 统计与备份可用；
 6. release HAP 构建/签名通过。
+
+
+## 2026-11-13 构建状态
+
+- 已新增并注册：QuestionPracticePage、MistakesPage、OcrPage、WordManagePage、HabitsPage、BooksPage、PlanPage、StatsPage、SettingsPage。
+- build-profile 改为 HarmonyOS runtimeOS / API 26，启用 HMS Core Vision OCR 动态导入；DEVECO_SDK_HOME=E:/dev/DevEcoStudio26b/sdk 构建。
+- release HAP BUILD SUCCESSFUL，ArkTS 0 ERROR（只有 deprecated/throws WARN）；HAP 已用 AGC release 证书 sign-app，verify-app 通过。
+- 未完成真机验证：当前 hdc 只有 COM3/COM4，无设备；API 26 兼容性/OCR 运行时/文件选择器/zlib/日历需真机走查。
+- 仍需说明：Android 的提醒通知、复杂考试/模考、完整 OCR 版面校正等边界功能是简化实现，不是逐像素/逐算法 1:1。
