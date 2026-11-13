@@ -1,4 +1,4 @@
-import { WORD_BANK, WordItem, lookupWord } from './Words';
+import { allWords, WordItem, lookupWord } from './Words';
 
 export interface QuizQuestion {
   word: string;
@@ -36,7 +36,7 @@ export class QuizBuilder {
   // priorityWords：错题优先；不够 5 题时用当前词书其余词补满。
   // pool：出题范围（某个词书的词），不传则用全部词库。
   static build(count: number, priorityWords: string[], pool?: WordItem[]): QuizQuestion[] {
-    const bank: WordItem[] = (pool === undefined || pool.length === 0) ? WORD_BANK : pool;
+    const bank: WordItem[] = (pool === undefined || pool.length === 0) ? allWords() : pool;
     const targets: string[] = [];
     const used: Set<string> = new Set<string>();
     for (let i = 0; i < priorityWords.length && targets.length < count; i++) {
@@ -83,7 +83,7 @@ export class QuizBuilder {
     const options: string[] = [item.meaning];
     const taken: Set<string> = new Set<string>();
     taken.add(item.meaning);
-    const source: WordItem[] = bank.length >= 4 ? bank : WORD_BANK;
+    const source: WordItem[] = bank.length >= 4 ? bank : allWords();
     const start: number = Math.floor(Math.random() * source.length);
     for (let step = 0; step < source.length * 2 && options.length < 4; step++) {
       const candidate: WordItem = source[(start + step * 7) % source.length];

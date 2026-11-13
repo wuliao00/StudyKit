@@ -1,16 +1,18 @@
 import common from '@ohos.app.ability.common';
 import promptAction from '@ohos.promptAction';
+import router from '@ohos.router';
 import fs from '@ohos.file.fs';
 import util from '@ohos.util';
 import { Theme } from '../common/Theme';
 import {
-  BOOK_ALL, WORD_BANK, WORD_BOOKS, WordBook, WordItem, bookName, booksOf, bookWordCount, lookupWord, wordsOfBook
+  BOOK_ALL, WORD_BANK, WORD_BOOKS, WordBook, WordItem, allWords, setUserWords, bookName, booksOf, bookWordCount, lookupWord, wordsOfBook
 } from '../model/Words';
 import { StudyStore } from '../model/Store';
 import { Srs, SrsCard } from '../model/Srs';
 import { QuizBuilder, QuizQuestion, QuizSession } from '../model/Quiz';
 import { DEMO_QUESTIONS, DEMO_SECONDS, DemoQuestion } from '../model/Demo';
 import { SignInCell, SignInDay, SignInMonth, SignInStats, SignInSummary } from '../model/SignIn';
+import { UserWordStore } from '../model/UserWordStore';
 
 const TAB_HOME: number = 0;
 const TAB_SIGN: number = 1;
@@ -94,7 +96,10 @@ struct Index {
     const context = getContext(this) as common.UIAbilityContext;
     this.filesDir = context.filesDir;
     this.store.init(context).then(() => {
-      this.reload();
+      UserWordStore.get().init(context).then(() => {
+        setUserWords(UserWordStore.get().toWordItems());
+        this.reload();
+      }).catch(() => { this.reload(); });
     }).catch(() => {
       this.loading = false;
       this.toast('本地数据读取失败，已从空白数据开始');
@@ -463,7 +468,7 @@ struct Index {
       }.width('100%')
       if (!compact) {
         Text(this.selectedBook === BOOK_ALL
-          ? '当前显示全部 ' + WORD_BANK.length.toString() + ' 词'
+          ? '当前显示全部 ' + allWords().length.toString() + ' 词'
           : this.bookStats(this.selectedBook)).fontSize(11)
           .fontColor(Theme.secondaryText).margin({ top: 8 })
       }
@@ -850,18 +855,18 @@ struct Index {
     return '已复习 ' + attempts.toString() + ' 次 · 答对 ' + card.correct.toString() + ' 次';
   }
 
-  async reviewCurrent(remembered: boolean): Promise<void> {
+  async reviewCurrent(rating: number): Promise<void> {
     const item: WordItem | null = this.currentReviewWord();
     if (item === null) {
       return;
     }
-    const card = await this.store.reviewWord(item.word, remembered, this.today);
+    const card = await this.store.reviewWordRating(item.word, rating, this.today);
     this.lastReviewedWord = item.word;
     this.wordRevealed = false;
-    if (remembered) {
-      this.toast('已记住 · ' + Srs.friendlyDue(card, this.today) + '再复习');
+    if (rating >= 2) {
+      this.toast('已记录 · ' + Srs.friendlyDue(card, this.today) + '再复习');
     } else {
-      this.toast('再学一次 · 这个词稍后会再出现');
+      this.toast('忘了 · 这个词稍后会再出现');
     }
     await this.reload();
   }
@@ -913,12 +918,15 @@ struct Index {
             this.reviewCard()
 
             Row() {
-              Button('再学一次').layoutWeight(1).height(52)
+              Button('忘记').layoutWeight(1).height(52)
                 .backgroundColor(Theme.warningSoft).fontColor(Theme.warningInk)
-                .onClick(() => { this.reviewCurrent(false); })
-              Button('记住了').layoutWeight(1).height(52).margin({ left: 12 })
+                .onClick(() => { this.reviewCurrent(1); })
+              Button('模糊').layoutWeight(1).height(52).margin({ left: 8 })
+                .backgroundColor(Theme.goldSoft).fontColor(Theme.goldInk)
+                .onClick(() => { this.reviewCurrent(2); })
+              Button('记住了').layoutWeight(1).height(52).margin({ left: 8 })
                 .backgroundColor(Theme.accentInk).fontColor(Color.White)
-                .onClick(() => { this.reviewCurrent(true); })
+                .onClick(() => { this.reviewCurrent(3); })
             }.width('100%').margin({ top: 14 })
 
             Button(this.hasUndo ? '撤销上一步复习' : '暂无可撤销的复习')
@@ -946,7 +954,7 @@ struct Index {
 
           Column() {
             Text('复习是怎么安排的').fontSize(14).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
-            Text('Leitner 5 盒：记住升一盒，下次间隔 1 / 2 / 4 / 7 天；再学一次退回第 1 盒，今天晚些时候再见。')
+            Text('FSRS：忘记 / 模糊 / 记住了三档评分会更新稳定度与难度，按目标 90% 召回率安排下一次复习；忘记会降低稳定度，但不会扣分。')
               .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 6 })
             Text('“今日待复习”只统计当前词书里到期日小于等于今天的词；复习次数是真实计数，不用任何算法校准冒充。')
               .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 4 })
@@ -1000,7 +1008,7 @@ struct Index {
   // ---------- 练习 tab ----------
 
   private startQuiz(fromWrong: boolean): void {
-    const pool: WordItem[] = fromWrong ? WORD_BANK : this.bookPool();
+    const pool: WordItem[] = fromWrong ? allWords() : this.bookPool();
     const priority: string[] = [];
     if (fromWrong) {
       for (let i = 0; i < this.store.wrongs.length && priority.length < QuizBuilder.GROUP_SIZE; i++) {
@@ -1716,6 +1724,20 @@ struct Index {
   }
 
   @Builder
+  featureNavRow(title: string, caption: string, url: string) {
+    Row() {
+      Column() {
+        Text(title).fontSize(14).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+        Text(caption).fontSize(11).fontColor(Theme.secondaryText).margin({ top: 3 })
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      Text('›').fontSize(22).fontColor(Theme.secondaryText)
+    }
+    .width('100%').padding({ top: 10, bottom: 10 })
+    .border({ width: { top: 1 }, color: Theme.divider })
+    .onClick(() => { router.pushUrl({ url: url }); })
+  }
+
+  @Builder
   profilePage() {
     Scroll() {
       Row() {
@@ -1738,6 +1760,24 @@ struct Index {
               .fontSize(12).fontColor(Theme.secondaryText).margin({ top: 12 })
           }
           .width('100%').padding(18).backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
+
+          Column() {
+            Text('完整功能').fontSize(16).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+              .width('100%')
+            Text('Android 五大模块的鸿蒙原生页面，全部本地保存。')
+              .fontSize(11).fontColor(Theme.secondaryText).width('100%').margin({ top: 5, bottom: 6 })
+            this.featureNavRow('学习计划', '模板 · 编辑 · 预览 · 本地保存', 'pages/PlanPage')
+            this.featureNavRow('习惯打卡', '每日 / 补卡 · 连续天数 · 月历', 'pages/HabitsPage')
+            this.featureNavRow('读书笔记', '书架 · 阅读进度 · 摘录笔记', 'pages/BooksPage')
+            this.featureNavRow('题库练习', '按学科刷题 · 错题自动入库', 'pages/QuestionPracticePage')
+            this.featureNavRow('错题本', '筛选 · 重做 · 掌握 · 导出', 'pages/MistakesPage')
+            this.featureNavRow('拍照 / 相册 OCR', '识别题目文字 · 校对导入 · 手动兜底', 'pages/OcrPage')
+            this.featureNavRow('自定义单词库', '增删改 · 批量粘贴 · 导出', 'pages/WordManagePage')
+            this.featureNavRow('学习统计', '记忆报告 · 分享海报', 'pages/StatsPage')
+            this.featureNavRow('设置与备份', '每日目标 · 提醒 · zip 导出/恢复', 'pages/SettingsPage')
+          }
+          .width('100%').padding(18).margin({ top: 12 })
+          .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
 
           Column() {
             Row() {
@@ -1773,7 +1813,7 @@ struct Index {
               this.reportMetric('签到累计', this.summary.totalDays.toString() + ' 天')
             }.width('100%').padding({ bottom: 8 })
             Divider().color(Theme.divider).margin({ top: 4, bottom: 4 })
-            this.reportRow('本地词库', WORD_BANK.length.toString() + ' 词 / ' + WORD_BOOKS.length.toString() + ' 本词书')
+            this.reportRow('本地词库', allWords().length.toString() + ' 词 / ' + WORD_BOOKS.length.toString() + ' 本词书')
             this.reportRow('已开始学习', this.learningCount.toString() + ' 词')
             this.reportRow('累计复习次数', this.reviewTotal.toString() + ' 次')
             this.reportRow('今日已复习 / 目标', this.todayReviewed.toString() + ' / ' + REVIEW_TARGET.toString() + ' 词')

@@ -21,6 +21,18 @@ export const WORD_BOOKS: WordBook[] = [
 ];
 
 export const BOOK_ALL: string = 'all';
+export const USER_BOOK_CUSTOM_ID: string = 'custom';
+
+// 用户自定义词库（Lead 集成：WordManagePage 写入后调用 setUserWords）。
+let USER_WORDS: WordItem[] = [];
+
+export function setUserWords(words: WordItem[]): void {
+  USER_WORDS = words;
+}
+
+export function allWords(): WordItem[] {
+  return WORD_BANK.concat(USER_WORDS);
+}
 
 export const WORD_BANK: WordItem[] = [
   { word: 'abandon', phonetic: '/əˈbændən/', meaning: 'v. 放弃；抛弃', example: 'He had to abandon the plan because of the storm.', book: 'cet4' },
@@ -92,12 +104,18 @@ export const WORD_BANK: WordItem[] = [
 ];
 
 export function booksOf(): WordBook[] {
-  return WORD_BOOKS;
+  if (USER_WORDS.length === 0) {
+    return WORD_BOOKS;
+  }
+  return WORD_BOOKS.concat([{ id: USER_BOOK_CUSTOM_ID, name: '自定义', caption: '我导入的词' }]);
 }
 
 export function bookName(bookId: string): string {
   if (bookId === BOOK_ALL) {
     return '全部词书';
+  }
+  if (bookId === USER_BOOK_CUSTOM_ID) {
+    return '自定义';
   }
   for (let i = 0; i < WORD_BOOKS.length; i++) {
     if (WORD_BOOKS[i].id === bookId) {
@@ -108,13 +126,14 @@ export function bookName(bookId: string): string {
 }
 
 export function wordsOfBook(bookId: string): WordItem[] {
+  const all: WordItem[] = allWords();
   if (bookId === BOOK_ALL || bookId.length === 0) {
-    return WORD_BANK;
+    return all;
   }
   const result: WordItem[] = [];
-  for (let i = 0; i < WORD_BANK.length; i++) {
-    if (WORD_BANK[i].book === bookId) {
-      result.push(WORD_BANK[i]);
+  for (let i = 0; i < all.length; i++) {
+    if (all[i].book === bookId) {
+      result.push(all[i]);
     }
   }
   return result;
@@ -125,9 +144,10 @@ export function bookWordCount(bookId: string): number {
 }
 
 export function lookupWord(target: string): WordItem | null {
-  for (let i = 0; i < WORD_BANK.length; i++) {
-    if (WORD_BANK[i].word === target) {
-      return WORD_BANK[i];
+  const all: WordItem[] = allWords();
+  for (let i = 0; i < all.length; i++) {
+    if (all[i].word === target) {
+      return all[i];
     }
   }
   return null;

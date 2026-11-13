@@ -1,8 +1,8 @@
-import { lookupWord, WORD_BANK, WordItem } from './Words';
+import { allWords, lookupWord, WordItem } from './Words';
 import { SignInStats } from './SignIn';
+import { Fsrs, FSRS_DEFAULT_PARAMS } from './Fsrs';
 
-// 每个词的学习状态：Leitner 5 盒
-// box 1：今天再见面；box 2：1 天后；box 3：2 天后；box 4：4 天后；box 5：7 天后（已掌握）
+// FSRS v6 卡片状态；box 仅为旧 UI 兼容保留。
 export interface SrsCard {
   word: string;
   box: number;
@@ -10,6 +10,11 @@ export interface SrsCard {
   lastReviewed: string;
   correct: number;
   wrong: number;
+  stability?: number;
+  difficulty?: number;
+  reps?: number;
+  lapses?: number;
+  lastRating?: number;
 }
 
 export interface ReviewLog {
@@ -24,68 +29,71 @@ export class Srs {
   static readonly BOX_INTERVALS: number[] = [0, 1, 2, 4, 7];
 
   static emptyCard(word: string, todayIso: string): SrsCard {
-    return {
-      word: word,
-      box: 1,
-      dueDate: todayIso,
-      lastReviewed: todayIso,
-      correct: 0,
-      wrong: 0
-    };
+    return { word: word, box: 1, dueDate: todayIso, lastReviewed: todayIso,
+      correct: 0, wrong: 0, stability: 0.212, difficulty: 5.0, reps: 0, lapses: 0, lastRating: 0 };
   }
 
   static intervalForBox(box: number): number {
-    let index: number = box - 1;
-    if (index < 0) {
-      index = 0;
-    }
-    if (index >= Srs.BOX_INTERVALS.length) {
-      index = Srs.BOX_INTERVALS.length - 1;
-    }
-    return Srs.BOX_INTERVALS[index];
+    const i: number = Math.max(0, Math.min(Srs.BOX_INTERVALS.length - 1, box - 1));
+    return Srs.BOX_INTERVALS[i];
   }
 
   static nextBox(current: number, remembered: boolean): number {
-    if (!remembered) {
-      return 1;
-    }
-    const next: number = current + 1;
-    return next > Srs.MAX_BOX ? Srs.MAX_BOX : next;
+    if (!remembered) return 1;
+    return current >= Srs.MAX_BOX ? Srs.MAX_BOX : current + 1;
   }
 
   static nextDueDate(box: number, todayIso: string): string {
     return SignInStats.addDays(todayIso, Srs.intervalForBox(box));
   }
 
-  static isDue(card: SrsCard, todayIso: string): boolean {
-    return card.dueDate <= todayIso;
+  // 4 档评分：1 Again / 2 Hard / 3 Good / 4 Easy；保留旧二档调用
+  static nextCard(current: SrsCard | null, rating: number, todayIso: string, word: string): SrsCard {
+    const w: number[] = FSRS_DEFAULT_PARAMS;
+    const g: number = Math.max(1, Math.min(4, Math.round(rating)));
+    const prev: SrsCard | null = current;
+    const reps: number = prev === null ? 0 : (prev.reps === undefined ? 0 : prev.reps);
+    const elapsed: number = prev === null ? 0 : Fsrs.elapsedDays(prev.lastReviewed, todayIso);
+    let s: number;
+    let d: number;
+    if (reps === 0 || prev === null) {
+      s = Fsrs.initStability(w, g);
+      d = Fsrs.initDifficulty(w, g);
+    } else {
+      const ps: number = prev.stability === undefined ? 0.212 : prev.stability;
+      const pd: number = prev.difficulty === undefined ? 5.0 : prev.difficulty;
+      const r: number = Fsrs.recall(w, ps, elapsed);
+      d = Fsrs.nextDifficulty(w, pd, g);
+      s = g === 1 ? Fsrs.forgetStability(w, ps, pd, r) : Fsrs.recallStability(w, ps, pd, r, g);
+    }
+    const interval: number = Fsrs.nextIntervalDays(w, s, 0.9);
+    const box: number = Math.max(1, Math.min(5, Math.max(1, Math.ceil(Math.log(Math.max(1, interval)) / Math.log(2.0)))));
+    return {
+      word: prev === null ? word : prev.word,
+      box: box,
+      dueDate: SignInStats.addDays(todayIso, Math.max(1, Math.round(interval))),
+      lastReviewed: todayIso,
+      correct: (prev === null ? 0 : prev.correct) + (g >= 2 ? 1 : 0),
+      wrong: (prev === null ? 0 : prev.wrong) + (g === 1 ? 1 : 0),
+      stability: s,
+      difficulty: d,
+      reps: reps + 1,
+      lapses: (prev === null ? 0 : (prev.lapses === undefined ? 0 : prev.lapses)) + (g === 1 ? 1 : 0),
+      lastRating: g
+    };
   }
+
+  static isDue(card: SrsCard, todayIso: string): boolean { return card.dueDate <= todayIso; }
 
   static dueCards(cards: SrsCard[], todayIso: string): SrsCard[] {
     const result: SrsCard[] = [];
-    for (let i = 0; i < cards.length; i++) {
-      if (Srs.isDue(cards[i], todayIso)) {
-        result.push(cards[i]);
-      }
-    }
-    result.sort((a: SrsCard, b: SrsCard): number => {
-      if (a.dueDate < b.dueDate) {
-        return -1;
-      }
-      if (a.dueDate > b.dueDate) {
-        return 1;
-      }
-      return 0;
-    });
+    for (let i = 0; i < cards.length; i++) if (Srs.isDue(cards[i], todayIso)) result.push(cards[i]);
+    result.sort((a: SrsCard, b: SrsCard): number => a.dueDate < b.dueDate ? -1 : (a.dueDate > b.dueDate ? 1 : 0));
     return result;
   }
 
   static findCard(cards: SrsCard[], word: string): SrsCard | null {
-    for (let i = 0; i < cards.length; i++) {
-      if (cards[i].word === word) {
-        return cards[i];
-      }
-    }
+    for (let i = 0; i < cards.length; i++) if (cards[i].word === word) return cards[i];
     return null;
   }
 
@@ -150,15 +158,16 @@ export class Srs {
         used.add(item.word);
       }
     }
-    for (let i = 0; i < WORD_BANK.length && result.length < limit; i++) {
-      const word: string = WORD_BANK[i].word;
+    const all: WordItem[] = allWords();
+    for (let i = 0; i < all.length && result.length < limit; i++) {
+      const word: string = all[i].word;
       if (used.has(word)) {
         continue;
       }
       if (Srs.findCard(cards, word) !== null) {
         continue;
       }
-      result.push(WORD_BANK[i]);
+      result.push(all[i]);
       used.add(word);
     }
     return result;

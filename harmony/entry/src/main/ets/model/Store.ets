@@ -227,20 +227,15 @@ export class StudyStore {
   // ---------- SRS 复习 ----------
 
   async reviewWord(word: string, remembered: boolean, todayIso: string): Promise<SrsCard> {
+    return this.reviewWordRating(word, remembered ? 3 : 1, todayIso);
+  }
+
+  async reviewWordRating(word: string, rating: number, todayIso: string): Promise<SrsCard> {
     const current: SrsCard | null = Srs.findCard(this.data.cards, word);
     const prevCard: SrsCard | null = current === null ? null : StudyStore.copyCard(current);
-    const baseBox: number = current === null ? 1 : current.box;
-    const box: number = Srs.nextBox(baseBox, remembered);
-    const next: SrsCard = {
-      word: word,
-      box: box,
-      dueDate: Srs.nextDueDate(box, todayIso),
-      lastReviewed: todayIso,
-      correct: (current === null ? 0 : current.correct) + (remembered ? 1 : 0),
-      wrong: (current === null ? 0 : current.wrong) + (remembered ? 0 : 1)
-    };
+    const next: SrsCard = Srs.nextCard(current, rating, todayIso, word);
     this.upsertCard(next);
-    this.data.reviews.push({ date: todayIso, word: word, remembered: remembered, at: Date.now() });
+    this.data.reviews.push({ date: todayIso, word: word, remembered: rating >= 2, at: Date.now() });
     if (this.data.reviews.length > MAX_REVIEWS) {
       this.data.reviews = this.data.reviews.slice(this.data.reviews.length - MAX_REVIEWS);
     }
@@ -303,7 +298,12 @@ export class StudyStore {
       dueDate: card.dueDate,
       lastReviewed: card.lastReviewed,
       correct: card.correct,
-      wrong: card.wrong
+      wrong: card.wrong,
+      stability: card.stability,
+      difficulty: card.difficulty,
+      reps: card.reps,
+      lapses: card.lapses,
+      lastRating: card.lastRating
     };
   }
 
