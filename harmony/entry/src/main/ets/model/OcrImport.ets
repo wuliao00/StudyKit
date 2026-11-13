@@ -1,6 +1,8 @@
 import image from '@ohos.multimedia.image';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
 
+declare function requireNapi(moduleName: string): HmsOcrModule;
+
 // HMS Core 文字识别模块名（HarmonyOS SDK 集成 HMS Core 后才可用）：
 //   '@hms.ai.ocr.textRecognition'
 // 当前构建使用 OpenHarmony SDK 5.0.3.135（API 15），SDK 内没有该模块（已用
@@ -31,6 +33,22 @@ export interface QuestionDraft {
   explanation: string;
 }
 
+interface NapiHost {
+  requireNapi?: (name: string) => HmsOcrModule;
+}
+
+interface HmsOcrApi {
+  recognizeText(pixelMap: image.PixelMap): Promise<HmsOcrResult>;
+}
+
+interface HmsOcrModule {
+  textRecognition?: HmsOcrApi;
+}
+
+interface HmsOcrResult {
+  value: string;
+}
+
 export class OcrImport {
   static readonly HMS_OCR_MODULE: string = '@hms.ai.ocr.textRecognition';
 
@@ -54,6 +72,16 @@ export class OcrImport {
     return pixelMap;
   }
 
+  // 运行期加载 HMS OCR：OpenHarmony API15 编译期没有该模块，但设备若装了 HMS Core，
+  // 可通过 requireNapi 动态取到；取不到就走手动粘贴。
+  private static loadHmsOcr(): HmsOcrModule | null {
+    try {
+      return requireNapi(OcrImport.HMS_OCR_MODULE);
+    } catch (e) {
+      return null;
+    }
+  }
+
   // 选图 + 解码：图片链路可用的证明；HMS OCR 不可用时返回 ok=false 让页面走手动粘贴
   static async recognizeFromImage(uri: string): Promise<OcrResult> {
     if (uri.length === 0) {
@@ -70,7 +98,19 @@ export class OcrImport {
         engine: ''
       };
     }
-    // 图片已经成功解码为 PixelMap；HMS OCR 模块未集成，释放后走手动粘贴兜底
+    // 图片已经成功解码为 PixelMap；尝试运行期 HMS OCR
+    try {
+      const ocr: HmsOcrModule | null = OcrImport.loadHmsOcr();
+      if (ocr !== null && ocr.textRecognition !== undefined) {
+        const result: HmsOcrResult = await ocr.textRecognition.recognizeText(pixelMap);
+        const lines: string[] = OcrImport.splitLines(result.value);
+        if (lines.length > 0) {
+          return { ok: true, message: 'HMS OCR 识别完成，共 ' + lines.length.toString() + ' 行', lines: lines, engine: 'HMS OCR' };
+        }
+      }
+    } catch (e) {
+      // 模块存在但识别失败，走手动粘贴
+    }
     try {
       await pixelMap.release();
     } catch (e) {
