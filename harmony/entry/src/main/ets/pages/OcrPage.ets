@@ -11,7 +11,7 @@ struct OcrPage {
   @State loading: boolean = true;
   @State busy: boolean = false;
   @State imageUri: string = '';
-  @State statusMessage: string = '当前工程未集成 HMS Core OCR：可先选图预览，然后把题目文字粘贴/输入到下方文本框导入。';
+  @State statusMessage: string = '选图预览；若设备提供 HMS Core OCR 会自动识别，不可用时把题目文字粘贴/输入到下方文本框导入。';
   @State fallbackMode: boolean = false;
   @State lines: string[] = [];
   @State checked: boolean[] = [];
@@ -226,7 +226,7 @@ struct OcrPage {
     Column() {
       Row() {
         Text('图片选图 / 预览').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
-        Text('HMS OCR 待集成').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+        Text('HMS OCR 运行时尝试').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(8).margin({ left: 6 })
         Blank()
         if (this.busy) {

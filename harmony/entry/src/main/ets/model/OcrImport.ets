@@ -1,7 +1,7 @@
 import image from '@ohos.multimedia.image';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
-
-declare function requireNapi(moduleName: string): HmsOcrModule;
+import fs from '@ohos.file.fs';
+import textRecognition from '@hms.ai.ocr.textRecognition';
 
 // HMS Core 文字识别模块名（HarmonyOS SDK 集成 HMS Core 后才可用）：
 //   '@hms.ai.ocr.textRecognition'
@@ -17,7 +17,7 @@ declare function requireNapi(moduleName: string): HmsOcrModule;
 //       return { ok: true, message: '识别完成', lines: splitLines(result.value), engine: 'HMS OCR' };
 
 export const OCR_FALLBACK_HINT: string =
-  '当前工程使用 OpenHarmony SDK，未集成 HMS Core OCR（@hms.ai.ocr.textRecognition），已自动切换为手动粘贴文本导入；图库选图功能仍可用。';
+  'HMS OCR 暂未返回文字，已保留图库选图，可手动粘贴题目文本导入；不会伪造识别结果。';
 
 export interface OcrResult {
   ok: boolean;
@@ -67,19 +67,26 @@ export class OcrImport {
   }
 
   static async loadPixelMap(uri: string): Promise<image.PixelMap> {
-    const source: image.ImageSource = image.createImageSource(uri);
-    const pixelMap: image.PixelMap = await source.createPixelMap();
-    return pixelMap;
+    // 图库 URI 在部分系统版本上不能直接被 createImageSource(uri) 打开，
+    // 再尝试用文件描述符方式打开；两种都失败才回到手动粘贴。
+    try {
+      const sourceByUri: image.ImageSource = image.createImageSource(uri);
+      return await sourceByUri.createPixelMap();
+    } catch (e1) {
+      const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      try {
+        const sourceByFd: image.ImageSource = image.createImageSource(file.fd);
+        return await sourceByFd.createPixelMap();
+      } finally {
+        fs.closeSync(file);
+      }
+    }
   }
 
-  // 运行期加载 HMS OCR：OpenHarmony API15 编译期没有该模块，但设备若装了 HMS Core，
-  // 可通过 requireNapi 动态取到；取不到就走手动粘贴。
-  private static loadHmsOcr(): HmsOcrModule | null {
-    try {
-      return requireNapi(OcrImport.HMS_OCR_MODULE);
-    } catch (e) {
-      return null;
-    }
+  // API26/HarmonyOS 构建：编译期静态集成 HMS Core OCR。
+  private static async hmsRecognize(pixelMap: image.PixelMap): Promise<string> {
+    const result = await textRecognition.recognizeText({ pixelMap: pixelMap });
+    return result.value;
   }
 
   // 选图 + 解码：图片链路可用的证明；HMS OCR 不可用时返回 ok=false 让页面走手动粘贴
@@ -98,18 +105,15 @@ export class OcrImport {
         engine: ''
       };
     }
-    // 图片已经成功解码为 PixelMap；尝试运行期 HMS OCR
+    // 图片已经成功解码为 PixelMap；调用 HMS Core Vision OCR
     try {
-      const ocr: HmsOcrModule | null = OcrImport.loadHmsOcr();
-      if (ocr !== null && ocr.textRecognition !== undefined) {
-        const result: HmsOcrResult = await ocr.textRecognition.recognizeText(pixelMap);
-        const lines: string[] = OcrImport.splitLines(result.value);
-        if (lines.length > 0) {
-          return { ok: true, message: 'HMS OCR 识别完成，共 ' + lines.length.toString() + ' 行', lines: lines, engine: 'HMS OCR' };
-        }
+      const value: string = await OcrImport.hmsRecognize(pixelMap);
+      const lines: string[] = OcrImport.splitLines(value);
+      if (lines.length > 0) {
+        return { ok: true, message: 'HMS OCR 识别完成，共 ' + lines.length.toString() + ' 行', lines: lines, engine: 'HMS OCR' };
       }
     } catch (e) {
-      // 模块存在但识别失败，走手动粘贴
+      // 识别失败，走手动粘贴
     }
     try {
       await pixelMap.release();

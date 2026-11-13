@@ -1,35 +1,36 @@
-# StudyKit 完全移植安装说明（2026-11-13）
+# StudyKit 完全移植安装说明（2026-11-13 真机验证）
 
-## 包选择
+## 推荐安装
 
-| 文件 | 适用 | OCR |
-|---|---|---|
-| StudyKit-Harmony-v1.0.0-full-parity-api15-ocr.hap | 当前 MatePad / HarmonyOS 5（API15+），推荐先装这个 | 运行时尝试加载 HMS Core OCR；不可用时页面自动切手动粘贴 |
-| StudyKit-Harmony-v1.0.0-full-parity-api26-ocr.hap | HarmonyOS API26 设备 | 编译期 HMS Core Vision OCR |
-| StudyKit-v3.22.0-release.apk | Android | Android 原生 PP-OCR |
+当前 MatePad 11.5 S（API 26 / HarmonyOS 7.0.0）真机已验证：
 
-## 网盘
+- 包：StudyKit-Harmony-v1.0.0-full-parity-api26-ocr-debug.hap
+- 真机结果：安装成功；完整功能入口可打开；习惯示例 + 打卡成功；题库答题 + 解析正常；拍照/相册选图后 HMS OCR 识别 61 行文本成功。
+- 发布签名包（同一份代码）：StudyKit-Harmony-v1.0.0-full-parity-api26-ocr.hap；本地 HDC 会因 AGC 发布证书“not trusted app source”拒绝，需走 AppGallery/正式签名渠道。
 
-夸克：https://pan.quark.cn/s/49651acdcc99
+## 夸克网盘
 
-GitHub：https://github.com/wuliao00/StudyKit/releases/tag/v3.22.0
+https://pan.quark.cn/s/62ae851310a0
 
-## 已移植模块
+包含：
+- 鸿蒙 API26 调试包（真机验证用）
+- 鸿蒙 API26 发布包
+- 鸿蒙 API15 调试包（旧设备兜底）
+- Android v3.22.0 release APK
 
-- 学习首页 / 60 秒开始 / 3 道示例错题 / 签到 / 词书 / 小测
-- FSRS v6 公式（21 参默认参数）与 忘记/模糊/记住了 三档评分
-- 自定义单词库（增删改、批量导入、导出）
-- 题库练习 → 判分 → 解析 → 错题自动入库 → 错题重做
-- 错题本：筛选、笔记、标记掌握、导出
-- 拍照/相册 OCR：HMS Core Vision（API26 编译期 / API15 运行期）+ 手动粘贴兜底
-- 习惯：CRUD、每日/补卡、连续天数、7 日/月历、数量型
-- 读书：书架、阅读进度、摘录/笔记
-- 学习计划：6 模板、编辑、实时预览、保存/删除
-- 统计：真实数据、记忆保持率、分享海报
-- 设置：每日目标、本地提醒、zip 导出/导入、清空二次确认
+GitHub：
+https://github.com/wuliao00/StudyKit/releases/tag/v3.22.0
 
-## 边界
+## 已验证
 
-- 当前没有 HDC 设备连接，未做真机点验；API26 包是否能在具体平板安装取决于设备 API 版本。
-- 提醒是页内本地提醒，不是系统通知；Android 的复杂模考/完整通知调度没有逐项复刻。
-- OCR 是否真的识别取决于设备是否带 HMS Core OCR；API15 包会失败回退手动粘贴，不伪造识别成功。
+- 首页、我的、完整功能入口
+- 学习计划页 6 模板
+- 习惯页：示例习惯、打卡、连续 1 天、月历/补卡入口
+- 题库练习：答题、即时判分、解析
+- 拍照/相册 OCR：真实 HMS Core OCR 返回 61 行
+
+## 仍有限制
+
+- 习惯打卡、题库只做了主流程真机点验；读书/统计/设置/备份尚未逐项点验。
+- 提醒仍是页内本地提醒，不是系统通知；Android 的复杂模考等边界功能未逐项复刻。
+- API15 包 OCR 依赖运行期 HMS Core 模块，当前设备未能加载，会回退手动粘贴；真正的 OCR 用 API26 包。
