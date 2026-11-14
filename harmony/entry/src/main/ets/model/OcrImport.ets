@@ -2,6 +2,7 @@ import image from '@ohos.multimedia.image';
 import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import fs from '@ohos.file.fs';
 import textRecognition from '@hms.ai.ocr.textRecognition';
+import { OcrCleaner, CleanedOcr } from './OcrCleaner';
 
 // HMS Core 文字识别模块名（HarmonyOS SDK 集成 HMS Core 后才可用）：
 //   '@hms.ai.ocr.textRecognition'
@@ -19,11 +20,56 @@ import textRecognition from '@hms.ai.ocr.textRecognition';
 export const OCR_FALLBACK_HINT: string =
   'HMS OCR 暂未返回文字，已保留图库选图，可手动粘贴题目文本导入；不会伪造识别结果。';
 
+// 逐行二次识别的两个硬上限：命中任意一个立即停止，剩余行保留首次识别结果。
+export const OCR_REFINE_MAX_LINES: number = 12;
+export const OCR_REFINE_BUDGET_MS: number = 12000;
+export const OCR_SUSPICIOUS_HINT: string = '识别可能不准，可逐行修改';
+
+export interface OcrOptions {
+  cropTop: number;
+  cropBottom: number;
+  cropLeft: number;
+  cropRight: number;
+  scale: number;
+  linePass: boolean;
+  enhance: boolean;
+}
+
+interface OcrPoint {
+  x: number;
+  y: number;
+}
+
+interface OcrLineBox {
+  value: string;
+  cornerPoints: OcrPoint[];
+}
+
+interface OcrBlockLike {
+  lines: OcrLineBox[];
+}
+
+interface OcrResultLike {
+  value: string;
+  blocks: OcrBlockLike[];
+}
+
 export interface OcrResult {
   ok: boolean;
   message: string;
   lines: string[];
+  rawLines: string[];
+  filtered: number;
+  suspicious: number;
   engine: string;
+}
+
+// 逐行二次识别的结果：lines 始终包含全部行；attempted/stoppedByTime 用于向页面说明耗时情况。
+interface OcrRefineOutcome {
+  lines: string[];
+  attempted: number;
+  stoppedByTime: boolean;
+  cancelled: boolean;
 }
 
 export interface QuestionDraft {
@@ -83,44 +129,288 @@ export class OcrImport {
     }
   }
 
+  // 扫描件/截图常偏灰；轻度提升对比度，不改文字结构。
+  private static async enhanceContrast(pixelMap: image.PixelMap): Promise<void> {
+    const info: image.ImageInfo = pixelMap.getImageInfoSync();
+    const pixels: number = info.size.width * info.size.height;
+    if (pixels <= 0 || pixels > 40000000) return;
+    const buffer: ArrayBuffer = new ArrayBuffer(pixels * 4);
+    await pixelMap.readPixelsToBuffer(buffer);
+    const bytes: Uint8Array = new Uint8Array(buffer);
+    for (let i = 0; i + 3 < bytes.length; i += 4) {
+      const r: number = bytes[i];
+      const g: number = bytes[i + 1];
+      const b: number = bytes[i + 2];
+      const luma: number = 0.299 * r + 0.587 * g + 0.114 * b;
+      let c: number = Math.round((luma - 128) * 1.22 + 128);
+      if (c < 0) c = 0;
+      if (c > 255) c = 255;
+      bytes[i] = c;
+      bytes[i + 1] = c;
+      bytes[i + 2] = c;
+    }
+    await pixelMap.writeAllPixelsFromBuffer(buffer);
+  }
+
+  private static clamp01(value: number): number {
+    if (value < 0) return 0;
+    if (value > 0.45) return 0.45;
+    return value;
+  }
+
+  // 先裁掉截图工具栏/页边，再放大；识别数学题/讲义时比整屏 OCR 稳很多。
+  static async preparePixelMap(uri: string, options: OcrOptions): Promise<image.PixelMap> {
+    const pixelMap: image.PixelMap = await OcrImport.loadPixelMap(uri);
+    const top: number = OcrImport.clamp01(options.cropTop);
+    const bottom: number = OcrImport.clamp01(options.cropBottom);
+    const left: number = OcrImport.clamp01(options.cropLeft);
+    const right: number = OcrImport.clamp01(options.cropRight);
+    if (top + bottom < 0.9 && left + right < 0.9) {
+      const info: image.ImageInfo = pixelMap.getImageInfoSync();
+      const width: number = info.size.width;
+      const height: number = info.size.height;
+      const px: number = Math.floor(width * left);
+      const py: number = Math.floor(height * top);
+      const pw: number = Math.max(24, Math.floor(width * (1 - left - right)));
+      const ph: number = Math.max(24, Math.floor(height * (1 - top - bottom)));
+      const region: image.Region = { size: { width: pw, height: ph }, x: px, y: py };
+      try { await pixelMap.crop(region); } catch (e) { /* 保持原图 */ }
+    }
+    const scale: number = Math.max(1, Math.min(3, options.scale));
+    if (scale > 1.01) {
+      try { await pixelMap.scale(scale, scale); } catch (e) { /* 保持原尺寸 */ }
+    }
+    if (options.enhance) {
+      try { await OcrImport.enhanceContrast(pixelMap); } catch (e) { /* 保持原图 */ }
+    }
+    return pixelMap;
+  }
+
   // API26/HarmonyOS 构建：编译期静态集成 HMS Core OCR。
   private static async hmsRecognize(pixelMap: image.PixelMap): Promise<string> {
     const result = await textRecognition.recognizeText({ pixelMap: pixelMap });
     return result.value;
   }
 
-  // 选图 + 解码：图片链路可用的证明；HMS OCR 不可用时返回 ok=false 让页面走手动粘贴
-  static async recognizeFromImage(uri: string): Promise<OcrResult> {
-    if (uri.length === 0) {
-      return { ok: false, message: '没有选择图片', lines: [], engine: '' };
+  private static async hmsRecognizeDetailed(pixelMap: image.PixelMap): Promise<OcrResultLike> {
+    const result = await textRecognition.recognizeText({ pixelMap: pixelMap });
+    return result as OcrResultLike;
+  }
+
+  private static boxesFromResult(result: OcrResultLike): OcrLineBox[] {
+    const boxes: OcrLineBox[] = [];
+    for (let b = 0; b < result.blocks.length; b++) {
+      const block: OcrBlockLike = result.blocks[b];
+      for (let l = 0; l < block.lines.length; l++) {
+        boxes.push(block.lines[l]);
+      }
     }
+    return boxes;
+  }
+
+  private static boxRegion(box: OcrLineBox, width: number, height: number): image.Region {
+    let minX: number = width; let minY: number = height; let maxX: number = 0; let maxY: number = 0;
+    for (let i = 0; i < box.cornerPoints.length; i++) {
+      const p: OcrPoint = box.cornerPoints[i];
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    const padX: number = Math.max(6, Math.floor((maxX - minX) * 0.04));
+    const padY: number = Math.max(5, Math.floor((maxY - minY) * 0.25));
+    const x: number = Math.max(0, Math.floor(minX) - padX);
+    const y: number = Math.max(0, Math.floor(minY) - padY);
+    const w: number = Math.max(12, Math.min(width - x, Math.ceil(maxX - minX) + padX * 2));
+    const h: number = Math.max(12, Math.min(height - y, Math.ceil(maxY - minY) + padY * 2));
+    return { size: { width: w, height: h }, x: x, y: y };
+  }
+
+  // 逐行二次识别：最多 12 行 / 总时限 12s；到达任一上限立即停止，剩余行保留首次结果。
+  // 任何异常都释放当前行的 PixelMap；cancel 返回 true 时也立即停止。
+  private static async refineByLines(pixelMap: image.PixelMap, result: OcrResultLike,
+    fallbackLines: string[], cancel?: () => boolean): Promise<OcrRefineOutcome> {
+    const boxes: OcrLineBox[] = OcrImport.boxesFromResult(result);
+    const outcome: OcrRefineOutcome = {
+      lines: fallbackLines.slice(),
+      attempted: 0,
+      stoppedByTime: false,
+      cancelled: false
+    };
+    if (boxes.length === 0) return outcome;
+    const info: image.ImageInfo = pixelMap.getImageInfoSync();
+    const width: number = info.size.width;
+    const height: number = info.size.height;
+    const startAt: number = Date.now();
+    const out: string[] = [];
+    const maxLines: number = Math.min(boxes.length, OCR_REFINE_MAX_LINES);
+    for (let i = 0; i < maxLines; i++) {
+      if (OcrImport.isCancelled(cancel)) {
+        outcome.cancelled = true;
+        break;
+      }
+      if (Date.now() - startAt >= OCR_REFINE_BUDGET_MS) {
+        outcome.stoppedByTime = true;
+        break;
+      }
+      const box: OcrLineBox = boxes[i];
+      const original: string = box.value.trim();
+      if (original.length < 2 || original.length > 160) {
+        if (original.length > 0) out.push(original);
+        continue;
+      }
+      const region: image.Region = OcrImport.boxRegion(box, width, height);
+      if (region.size.width < 20 || region.size.height < 12) {
+        out.push(original);
+        continue;
+      }
+      let refined: string = original;
+      let linePm: image.PixelMap | null = null;
+      try {
+        linePm = await pixelMap.clone();
+        await linePm.crop(region);
+        await linePm.scale(2, 2);
+        if (OcrImport.isCancelled(cancel)) {
+          outcome.cancelled = true;
+          break;
+        }
+        const text: string = (await OcrImport.hmsRecognize(linePm)).trim();
+        if (text.length > 0 && text.length >= Math.floor(original.length * 0.65)) {
+          refined = text;
+        }
+        outcome.attempted++;
+      } catch (e) {
+        // 失败行保留原行，不影响整体识别
+        refined = original;
+      } finally {
+        if (linePm !== null) {
+          try { await linePm.release(); } catch (e) {}
+        }
+      }
+      out.push(refined);
+    }
+    if (outcome.cancelled) {
+      outcome.lines = out;
+      return outcome;
+    }
+    // 达到行数/时间上限后，未 refine 的行保持首次识别结果，避免漏内容
+    for (let i = out.length; i < fallbackLines.length; i++) out.push(fallbackLines[i]);
+    outcome.lines = out;
+    return outcome;
+  }
+
+  // 选图 + 解码 + OCR；cancel 返回 true 时尽快停止。无论成败/取消都释放 PixelMap。
+  static async recognizeFromImage(uri: string, options?: OcrOptions,
+    cancel?: () => boolean): Promise<OcrResult> {
+    if (uri.length === 0) {
+      return { ok: false, message: '没有选择图片', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+    }
+    const opts: OcrOptions = options === undefined ? { cropTop: 0, cropBottom: 0, cropLeft: 0, cropRight: 0, scale: 1, linePass: true, enhance: true } : options;
     let pixelMap: image.PixelMap | null = null;
     try {
-      pixelMap = await OcrImport.loadPixelMap(uri);
-    } catch (e) {
-      return {
-        ok: false,
-        message: '图片读取失败，请重新选择图片或手动粘贴文本。',
-        lines: [],
-        engine: ''
-      };
-    }
-    // 图片已经成功解码为 PixelMap；调用 HMS Core Vision OCR
-    try {
-      const value: string = await OcrImport.hmsRecognize(pixelMap);
-      const lines: string[] = OcrImport.splitLines(value);
-      if (lines.length > 0) {
-        return { ok: true, message: 'HMS OCR 识别完成，共 ' + lines.length.toString() + ' 行', lines: lines, engine: 'HMS OCR' };
+      try {
+        pixelMap = await OcrImport.preparePixelMap(uri, opts);
+      } catch (e) {
+        return {
+          ok: false,
+          message: '图片读取失败，请重新选择图片或手动粘贴文本。',
+          lines: [], rawLines: [], filtered: 0, suspicious: 0,
+          engine: ''
+        };
       }
-    } catch (e) {
-      // 识别失败，走手动粘贴
+      if (pixelMap === null || OcrImport.isCancelled(cancel)) {
+        return { ok: false, message: '已取消识别', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+      }
+      const pm: image.PixelMap = pixelMap;
+      // 图片已经成功解码为 PixelMap；调用 HMS Core Vision OCR
+      try {
+        const detail: OcrResultLike = await OcrImport.hmsRecognizeDetailed(pm);
+        let rawLines: string[] = OcrImport.splitLines(detail.value);
+        let refineNote: string = '';
+        if (opts.linePass && rawLines.length > 1) {
+          const outcome: OcrRefineOutcome = await OcrImport.refineByLines(pm, detail, rawLines, cancel);
+          if (outcome.cancelled) {
+            return { ok: false, message: '已取消识别', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+          }
+          rawLines = outcome.lines;
+          if (outcome.attempted > 0) {
+            refineNote = '，逐行二次识别 ' + outcome.attempted.toString() + ' 行（上限 '
+              + OCR_REFINE_MAX_LINES.toString() + ' 行 / '
+              + Math.floor(OCR_REFINE_BUDGET_MS / 1000).toString() + ' 秒）';
+          }
+          if (outcome.stoppedByTime) {
+            refineNote += '，已达时间上限，其余行保留首次结果';
+          }
+        }
+        if (OcrImport.isCancelled(cancel)) {
+          return { ok: false, message: '已取消识别', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+        }
+        if (rawLines.length > 0) {
+          const cleaned: CleanedOcr = OcrCleaner.clean(rawLines);
+          const suspicious: number = OcrImport.countSuspiciousLines(cleaned.usable);
+          return {
+            ok: true,
+            message: 'HMS OCR 识别完成：保留 ' + cleaned.usable.length.toString() + ' 行，过滤 '
+              + cleaned.filtered.toString() + ' 行工具栏/噪声' + refineNote
+              + (suspicious > 0 ? '；可疑行 ' + suspicious.toString() + ' 行（' + OCR_SUSPICIOUS_HINT + '）' : ''),
+            lines: cleaned.usable,
+            rawLines: cleaned.all,
+            filtered: cleaned.filtered,
+            suspicious: suspicious,
+            engine: 'HMS OCR'
+          };
+        }
+      } catch (e) {
+        // 识别失败，走手动粘贴
+      }
+      return { ok: false, message: OCR_FALLBACK_HINT, lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+    } finally {
+      // 成功、失败、取消任一分支都释放 PixelMap，避免解码占用的内存泄漏
+      if (pixelMap !== null) {
+        try { await pixelMap.release(); } catch (e) {}
+      }
     }
+  }
+
+  private static isCancelled(cancel?: () => boolean): boolean {
+    if (cancel === undefined) return false;
     try {
-      await pixelMap.release();
+      return cancel();
     } catch (e) {
-      // 忽略释放异常
+      return true;
     }
-    return { ok: false, message: OCR_FALLBACK_HINT, lines: [], engine: '' };
+  }
+
+  // 长度异常（极短碎片/超长粘连）或连续异常符号，视为「可疑行」，仅提示不改解析逻辑。
+  static isSuspiciousLine(line: string): boolean {
+    const s: string = line.trim();
+    if (s.length === 0) return false;
+    if (s.length < 2 || s.length > 120) return true;
+    if (/[?？]{3,}|[□■▯▮]{2,}|[_#*~^|\\\/]{3,}|[·．.]{4,}/.test(s)) return true;
+    let run: number = 1;
+    for (let i = 1; i < s.length; i++) {
+      const ch: string = s.charAt(i);
+      if (ch === s.charAt(i - 1) && !OcrImport.isPlainChar(ch)) {
+        run++;
+        if (run >= 4) return true;
+      } else {
+        run = 1;
+      }
+    }
+    return false;
+  }
+
+  static countSuspiciousLines(lines: string[]): number {
+    let count: number = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (OcrImport.isSuspiciousLine(lines[i])) count++;
+    }
+    return count;
+  }
+
+  private static isPlainChar(ch: string): boolean {
+    if (ch.length === 0) return false;
+    return /[0-9A-Za-z\u4e00-\u9fa5]/.test(ch);
   }
 
   static splitLines(text: string): string[] {

@@ -3,7 +3,8 @@ import promptAction from '@ohos.promptAction';
 import router from '@ohos.router';
 import { Theme } from '../common/Theme';
 import { QuestionStore, QUESTION_SUBJECTS } from '../model/QuestionStore';
-import { OcrImport, QuestionDraft } from '../model/OcrImport';
+import { OcrImport, QuestionDraft, OcrOptions, OcrResult } from '../model/OcrImport';
+import { OcrCorrectionStore } from '../model/OcrCorrectionStore';
 
 @Entry
 @Component
@@ -29,16 +30,51 @@ struct OcrPage {
   @State mistakeAnswer: string = '';
   @State mistakeNote: string = '';
   @State mistakeSubject: string = '数学';
+  @State cropTop: number = 0.0;
+  @State cropBottom: number = 0.0;
+  @State cropLeft: number = 0.0;
+  @State cropRight: number = 0.0;
+  @State scaleMode: boolean = true;
+  @State linePass: boolean = true;
+  @State enhance: boolean = true;
+  @State filteredCount: number = 0;
+  @State showAllLines: boolean = false;
+  @State correctionCount: number = 0;
+  @State ocrBaseLines: string[] = [];
+  @State ocrRawLines: string[] = [];
+  @State suspiciousCount: number = 0;
+  @State cropPreset: number = 0;
 
   private store: QuestionStore = QuestionStore.get();
+  private corrections: OcrCorrectionStore = OcrCorrectionStore.get();
+  // 生命周期/请求令牌：页面销毁或重选图片后令牌自增，旧识别结果一律丢弃，不再写 @State。
+  private destroyed: boolean = false;
+  private runToken: number = 0;
 
   aboutToAppear(): void {
     const context = getContext(this) as common.UIAbilityContext;
     this.store.init(context).then(() => {
-      this.loading = false;
+      this.corrections.init(context).then(() => {
+        if (!this.destroyed) this.correctionCount = this.corrections.count();
+      }).catch(() => {});
+      if (!this.destroyed) this.loading = false;
     }).catch(() => {
-      this.loading = false;
+      if (!this.destroyed) this.loading = false;
     });
+  }
+
+  // 页面销毁（返回/路由切换）时取消进行中的识别；后续 await 返回后一律不再 setState。
+  aboutToDisappear(): void {
+    this.destroyed = true;
+    this.runToken++;
+  }
+
+  private isCancelled(token: number): boolean {
+    return this.destroyed || token !== this.runToken;
+  }
+
+  private percent(value: number): string {
+    return Math.round(value * 100).toString() + '%';
   }
 
   private toast(message: string): void {
@@ -46,9 +82,8 @@ struct OcrPage {
   }
 
   private async chooseImage(): Promise<void> {
-    if (this.busy) {
-      return;
-    }
+    // 重选图片 = 取消进行中的识别：旧令牌立即失效，旧结果返回后不会写回 UI。
+    const token: number = ++this.runToken;
     this.busy = true;
     this.fallbackMode = false;
     this.statusMessage = '已打开图片选择器…';
@@ -56,50 +91,144 @@ struct OcrPage {
     try {
       uri = await OcrImport.pickSingleImage();
     } catch (e) {
+      if (this.isCancelled(token)) return;
       this.busy = false;
       this.fallbackMode = true;
       this.statusMessage = '图片选择失败（可能取消了选择），仍可手动粘贴文本导入。';
       return;
     }
+    if (this.isCancelled(token)) return;
+    this.busy = false;
     if (uri.length === 0) {
-      this.busy = false;
       this.statusMessage = '没有选择图片，可重试或直接手动粘贴文本。';
       return;
     }
     this.imageUri = uri;
-    this.statusMessage = '正在读取图片…';
-    const result = await OcrImport.recognizeFromImage(uri);
+    this.lines = [];
+    this.ocrBaseLines = [];
+    this.checked = [];
+    this.ocrRawLines = [];
+    this.filteredCount = 0;
+    this.suspiciousCount = 0;
+    this.cropPreset = 0;
+    this.rawText = '';
+    this.statusMessage = '图片已选择：先裁掉工具栏/页边，再点「裁剪并识别」；默认会放大 2 倍。';
+  }
+
+  private presetCrop(mode: number): void {
+    this.cropPreset = mode;
+    if (mode === 0) {
+      this.cropTop = 0;
+      this.cropBottom = 0;
+      this.cropLeft = 0;
+      this.cropRight = 0;
+    } else if (mode === 1) {
+      this.cropTop = 0.08;
+      this.cropBottom = 0.08;
+      this.cropLeft = 0.02;
+      this.cropRight = 0.02;
+    } else {
+      this.cropTop = 0.12;
+      this.cropBottom = 0.10;
+      this.cropLeft = 0.06;
+      this.cropRight = 0.06;
+    }
+    // 预设点击后立即刷新百分比文本（直接绑定 @State）
+    this.statusMessage = '选区已更新：上 ' + this.percent(this.cropTop) + ' · 下 '
+      + this.percent(this.cropBottom) + ' · 左 ' + this.percent(this.cropLeft)
+      + ' · 右 ' + this.percent(this.cropRight) + '，点「裁剪并识别」查看效果。';
+  }
+
+  private async recognizeImage(): Promise<void> {
+    if (this.imageUri.length === 0) {
+      this.toast('先选择一张题目图片');
+      return;
+    }
+    if (this.busy) {
+      return;
+    }
+    const token: number = ++this.runToken;
+    this.busy = true;
+    this.fallbackMode = false;
+    this.statusMessage = '正在裁剪、放大并识别…';
+    const options: OcrOptions = {
+      cropTop: this.cropTop,
+      cropBottom: this.cropBottom,
+      cropLeft: this.cropLeft,
+      cropRight: this.cropRight,
+      scale: this.scaleMode ? 2 : 1,
+      linePass: this.linePass,
+      enhance: this.enhance
+    };
+    let result: OcrResult = { ok: false, message: '', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+    try {
+      result = await OcrImport.recognizeFromImage(this.imageUri, options, () => this.isCancelled(token));
+    } catch (e) {
+      if (this.isCancelled(token)) return;
+      this.busy = false;
+      this.fallbackMode = true;
+      this.statusMessage = '识别失败，可重试或手动粘贴文本。';
+      return;
+    }
+    // 页面已销毁或用户已重选图片：丢弃本次结果，绝不更新 @State
+    if (this.isCancelled(token)) return;
     this.busy = false;
     if (result.ok) {
-      this.fallbackMode = false;
-      this.lines = result.lines;
+      this.ocrBaseLines = result.lines;
+      this.lines = this.corrections.applyLines(result.lines);
+      this.ocrRawLines = result.rawLines;
+      this.filteredCount = result.filtered;
+      this.suspiciousCount = result.suspicious;
       const flags: boolean[] = [];
-      for (let i = 0; i < result.lines.length; i++) {
-        flags.push(true);
-      }
+      for (let i = 0; i < this.lines.length; i++) flags.push(true);
       this.checked = flags;
-      this.rawText = result.lines.join('\n');
-      this.statusMessage = result.message + '（可勾选行或直接编辑下方文本）';
+      this.rawText = this.corrections.applyText(result.lines.join('\n'));
+      this.statusMessage = result.message + (this.corrections.count() > 0
+        ? '；已套用 ' + this.corrections.count().toString() + ' 条本机纠错记忆' : '');
+      this.mode = 0;
     } else {
       this.fallbackMode = true;
+      this.suspiciousCount = 0;
       this.statusMessage = result.message;
     }
   }
 
+  private displayLines(): string[] {
+    return this.showAllLines ? this.ocrRawLines : this.lines;
+  }
+
+  private async learnCorrections(): Promise<void> {
+    if (this.ocrBaseLines.length === 0 || this.rawText.trim().length === 0) {
+      return;
+    }
+    const learned: number = await this.corrections.learn(this.ocrBaseLines, this.rawText);
+    if (this.destroyed) return;
+    if (learned > 0) {
+      this.correctionCount = this.corrections.count();
+      this.toast('已学习 ' + learned.toString() + ' 条 OCR 纠错，下次自动应用');
+    }
+  }
+
+  private reRecognize(): void {
+    this.recognizeImage();
+  }
+
   private rebuildRawText(): void {
     const selected: string[] = [];
-    for (let i = 0; i < this.lines.length; i++) {
+    const active: string[] = this.displayLines();
+    for (let i = 0; i < active.length; i++) {
       if (i < this.checked.length && this.checked[i]) {
-        selected.push(this.lines[i]);
+        selected.push(active[i]);
       }
     }
-    this.rawText = selected.join('\n');
+    this.rawText = this.corrections.applyText(selected.join('\n'));
   }
 
   private toggleLine(index: number): void {
     const next: boolean[] = [];
-    for (let i = 0; i < this.checked.length; i++) {
-      next.push(i === index ? !this.checked[i] : this.checked[i]);
+    const active: string[] = this.displayLines();
+    for (let i = 0; i < active.length; i++) {
+      next.push(i === index ? !(i < this.checked.length ? this.checked[i] : true) : (i < this.checked.length ? this.checked[i] : true));
     }
     this.checked = next;
     this.rebuildRawText();
@@ -107,14 +236,14 @@ struct OcrPage {
 
   private setAllChecked(value: boolean): void {
     const next: boolean[] = [];
-    for (let i = 0; i < this.lines.length; i++) {
-      next.push(value);
-    }
+    const active: string[] = this.displayLines();
+    for (let i = 0; i < active.length; i++) next.push(value);
     this.checked = next;
     this.rebuildRawText();
   }
 
   private toQuestionForm(): void {
+    this.learnCorrections();
     if (this.rawText.trim().length === 0) {
       this.toast('先粘贴或识别一段题目文本');
       return;
@@ -132,6 +261,7 @@ struct OcrPage {
   }
 
   private toMistakeForm(): void {
+    this.learnCorrections();
     if (this.rawText.trim().length === 0) {
       this.toast('先粘贴或识别一段错题文本');
       return;
@@ -180,6 +310,7 @@ struct OcrPage {
     const source: string = this.imageUri.length > 0 ? '拍照/OCR 导入' : '手动导入';
     this.store.addQuestion(this.subject, this.stem.trim(), options, newAnswer,
       this.explanation.trim(), source).then(() => {
+        if (this.destroyed) return;
         this.toast('已保存到题库（答案 ' + answerLetter + '）');
         this.mode = 0;
         this.stem = '';
@@ -199,6 +330,7 @@ struct OcrPage {
     }
     this.store.addManualMistake(this.mistakeSubject, this.mistakeContent.trim(),
       this.mistakeAnswer.trim(), this.mistakeNote.trim()).then(() => {
+        if (this.destroyed) return;
         this.toast('已加入错题本');
         this.mode = 0;
         this.mistakeContent = '';
@@ -210,8 +342,9 @@ struct OcrPage {
   @Builder
   header() {
     Row() {
-      Button('←').width(40).height(40).fontSize(20)
+      Button('←').width(48).height(48).fontSize(20)
         .backgroundColor(Theme.cardWarm).fontColor(Theme.primaryText)
+        .accessibilityText('返回')
         .onClick(() => { router.back(); })
       Column() {
         Text('拍照 / 粘贴导入').fontSize(26).fontWeight(FontWeight.Bold).fontColor(Theme.primaryText)
@@ -221,12 +354,21 @@ struct OcrPage {
     }.width('100%').alignItems(VerticalAlign.Center).padding({ top: 8, bottom: 10 })
   }
 
+  private toggleShowAll(): void {
+    this.showAllLines = !this.showAllLines;
+    const active: string[] = this.displayLines();
+    const flags: boolean[] = [];
+    for (let i = 0; i < active.length; i++) flags.push(true);
+    this.checked = flags;
+    this.rebuildRawText();
+  }
+
   @Builder
   ocrCard() {
     Column() {
       Row() {
-        Text('图片选图 / 预览').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
-        Text('HMS OCR 运行时尝试').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+        Text('拍照 / 相册识别').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+        Text('HMS OCR · 本机纠错').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(8).margin({ left: 6 })
         Blank()
         if (this.busy) {
@@ -236,26 +378,135 @@ struct OcrPage {
       Text(this.statusMessage).fontSize(12).fontColor(Theme.secondaryText).margin({ top: 8 }).width('100%')
 
       if (this.imageUri.length > 0) {
-        Image(this.imageUri).width('100%').height(180).objectFit(ImageFit.Contain)
+        Image(this.imageUri).width('100%').height(190).objectFit(ImageFit.Contain)
           .borderRadius(12).backgroundColor(Theme.cardWarm).margin({ top: 10 })
+
+        Row() {
+          Text('识别选区').fontSize(12).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
+          Blank()
+          Button('整张').height(32).fontSize(11)
+            .backgroundColor(this.cropPreset === 0 ? Theme.accentInk : Theme.cardWarm)
+            .fontColor(this.cropPreset === 0 ? Color.White : Theme.secondaryText)
+            .onClick(() => { this.presetCrop(0); })
+          Button('去工具栏').height(32).fontSize(11).margin({ left: 6 })
+            .backgroundColor(this.cropPreset === 1 ? Theme.accentInk : Theme.accentSoft)
+            .fontColor(this.cropPreset === 1 ? Color.White : Theme.accentInk)
+            .onClick(() => { this.presetCrop(1); })
+          Button('紧一点').height(32).fontSize(11).margin({ left: 6 })
+            .backgroundColor(this.cropPreset === 2 ? Theme.accentInk : Theme.cardWarm)
+            .fontColor(this.cropPreset === 2 ? Color.White : Theme.secondaryText)
+            .onClick(() => { this.presetCrop(2); })
+        }.width('100%').margin({ top: 10 }).alignItems(VerticalAlign.Center)
+
+        // 选区百分比直接绑定 @State：点预设或拖动滑杆后立即刷新
+        Text('当前选区：上 ' + this.percent(this.cropTop) + ' · 下 ' + this.percent(this.cropBottom)
+          + ' · 左 ' + this.percent(this.cropLeft) + ' · 右 ' + this.percent(this.cropRight))
+          .fontSize(11).fontColor(Theme.accentInk).width('100%').margin({ top: 6 })
+          .accessibilityText('当前选区百分比')
+
+        Row() {
+          Text('上边距').fontSize(11).fontColor(Theme.secondaryText).width(54)
+          Slider({ value: this.cropTop * 100, min: 0, max: 35, step: 1, style: SliderStyle.OutSet })
+            .layoutWeight(1).selectedColor(Theme.accent).blockColor(Theme.accentInk)
+            .onChange((v: number) => { this.cropTop = v / 100; this.cropPreset = -1; })
+          Text(this.percent(this.cropTop)).fontSize(11).fontColor(Theme.primaryText).width(44)
+            .textAlign(TextAlign.End)
+        }.width('100%').height(30).alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text('下边距').fontSize(11).fontColor(Theme.secondaryText).width(54)
+          Slider({ value: this.cropBottom * 100, min: 0, max: 35, step: 1, style: SliderStyle.OutSet })
+            .layoutWeight(1).selectedColor(Theme.accent).blockColor(Theme.accentInk)
+            .onChange((v: number) => { this.cropBottom = v / 100; this.cropPreset = -1; })
+          Text(this.percent(this.cropBottom)).fontSize(11).fontColor(Theme.primaryText).width(44)
+            .textAlign(TextAlign.End)
+        }.width('100%').height(30).alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text('左边距').fontSize(11).fontColor(Theme.secondaryText).width(54)
+          Slider({ value: this.cropLeft * 100, min: 0, max: 35, step: 1, style: SliderStyle.OutSet })
+            .layoutWeight(1).selectedColor(Theme.accent).blockColor(Theme.accentInk)
+            .onChange((v: number) => { this.cropLeft = v / 100; this.cropPreset = -1; })
+          Text(this.percent(this.cropLeft)).fontSize(11).fontColor(Theme.primaryText).width(44)
+            .textAlign(TextAlign.End)
+        }.width('100%').height(30).alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text('右边距').fontSize(11).fontColor(Theme.secondaryText).width(54)
+          Slider({ value: this.cropRight * 100, min: 0, max: 35, step: 1, style: SliderStyle.OutSet })
+            .layoutWeight(1).selectedColor(Theme.accent).blockColor(Theme.accentInk)
+            .onChange((v: number) => { this.cropRight = v / 100; this.cropPreset = -1; })
+          Text(this.percent(this.cropRight)).fontSize(11).fontColor(Theme.primaryText).width(44)
+            .textAlign(TextAlign.End)
+        }.width('100%').height(30).alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text('识别前放大 2 倍').fontSize(12).fontColor(Theme.primaryText)
+          Blank()
+          Toggle({ type: ToggleType.Switch, isOn: this.scaleMode })
+            .selectedColor(Theme.accent)
+            .onChange((isOn: boolean) => { this.scaleMode = isOn; })
+        }.width('100%').margin({ top: 4 }).alignItems(VerticalAlign.Center)
+
+        Row() {
+          Column() {
+            Text('逐行二次识别').fontSize(12).fontColor(Theme.primaryText)
+            Text('对每个文本行再放大识别一次，公式/小字更稳，耗时约多 2–4 秒').fontSize(10).fontColor(Theme.secondaryText)
+          }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.linePass })
+            .selectedColor(Theme.accent)
+            .onChange((isOn: boolean) => { this.linePass = isOn; })
+        }.width('100%').margin({ top: 4 }).alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text('增强对比度（扫描件）').fontSize(12).fontColor(Theme.primaryText)
+          Blank()
+          Toggle({ type: ToggleType.Switch, isOn: this.enhance })
+            .selectedColor(Theme.accent)
+            .onChange((isOn: boolean) => { this.enhance = isOn; })
+        }.width('100%').margin({ top: 4 }).alignItems(VerticalAlign.Center)
+
+        Button(this.busy ? '识别中…' : '裁剪并识别').width('100%').height(48).margin({ top: 10 })
+          .backgroundColor(Theme.accentInk).fontColor(Color.White)
+          .enabled(!this.busy)
+          .accessibilityText('裁剪并识别')
+          .onClick(() => { this.recognizeImage(); })
       }
 
       Row() {
-        Button(this.busy ? '处理中…' : '选择图片').layoutWeight(1).height(44)
-          .backgroundColor(Theme.accentInk).fontColor(Color.White)
-          .enabled(!this.busy)
+        Button(this.imageUri.length > 0 ? '重新选择图片' : '选择图片').layoutWeight(1).height(48)
+          .backgroundColor(Theme.accentSoft).fontColor(Theme.accentInk)
+          .accessibilityText(this.imageUri.length > 0 ? '重新选择图片' : '选择图片')
           .onClick(() => { this.chooseImage(); })
-        Button('清空图片').height(44).width(88).margin({ left: 10 })
+        Button('清空').height(48).width(74).margin({ left: 8 })
           .backgroundColor(Theme.cardWarm).fontColor(Theme.secondaryText)
           .onClick(() => {
+            this.runToken++;
+            this.busy = false;
             this.imageUri = '';
+            this.lines = [];
+            this.ocrRawLines = [];
+            this.checked = [];
+            this.rawText = '';
+            this.filteredCount = 0;
+            this.suspiciousCount = 0;
             this.statusMessage = '已清空图片，仍可手动粘贴文本。';
           })
       }.width('100%').margin({ top: 10 })
 
+      if (this.filteredCount > 0 || this.correctionCount > 0) {
+        Text('已过滤 ' + this.filteredCount.toString() + ' 行工具栏/噪声；本机纠错记忆 '
+          + this.correctionCount.toString() + ' 条。')
+          .fontSize(11).fontColor(Theme.successInk).width('100%').margin({ top: 8 })
+      }
       if (this.fallbackMode) {
-        Text('HMS OCR 未集成时：在下方文本框里粘贴或手打题目文字，照样可以整理成题目或错题。')
+        Text('OCR 未返回结果时：下方可直接粘贴/手打题目文字，仍可整理成题目或错题。')
           .fontSize(11).fontColor(Theme.warningInk).width('100%').margin({ top: 8 })
+      }
+      if (this.suspiciousCount > 0) {
+        Text('可疑行 ' + this.suspiciousCount.toString() + ' 行：识别可能不准，可逐行修改')
+          .fontSize(11).fontColor(Theme.warningInk).width('100%').margin({ top: 8 })
+          .accessibilityText('可疑行提示')
       }
     }
     .width('100%').alignItems(HorizontalAlign.Start).padding(16).margin({ top: 10 })
@@ -268,7 +519,7 @@ struct OcrPage {
       Row() {
         Text('识别文本 / 手动粘贴').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
         Blank()
-        if (this.lines.length > 0) {
+        if (this.lines.length > 0 || this.ocrRawLines.length > 0) {
           Text('全选').fontSize(11).fontColor(Theme.accentInk).margin({ right: 10 })
             .onClick(() => { this.setAllChecked(true); })
           Text('全不选').fontSize(11).fontColor(Theme.secondaryText)
@@ -276,9 +527,19 @@ struct OcrPage {
         }
       }.width('100%').alignItems(VerticalAlign.Center)
 
-      if (this.lines.length > 0) {
+      if (this.lines.length > 0 || this.ocrRawLines.length > 0) {
+        Row() {
+          Text('只保留疑似题目行').fontSize(11).fontColor(Theme.primaryText)
+          Blank()
+          Text(this.showAllLines ? '显示全部 ' + this.ocrRawLines.length.toString() + ' 行' : '已过滤 ' + this.filteredCount.toString() + ' 行')
+            .fontSize(11).fontColor(Theme.secondaryText)
+          Toggle({ type: ToggleType.Switch, isOn: this.showAllLines })
+            .selectedColor(Theme.gold).margin({ left: 8 })
+            .onChange((isOn: boolean) => { if (isOn !== this.showAllLines) this.toggleShowAll(); })
+        }.width('100%').margin({ top: 6 }).alignItems(VerticalAlign.Center)
+
         Column() {
-          ForEach(this.lines, (line: string, index: number) => {
+          ForEach(this.displayLines(), (line: string, index: number) => {
             Row() {
               Text(index < this.checked.length && this.checked[index] ? '☑' : '☐')
                 .fontSize(16).fontColor(Theme.accentInk).width(24)
@@ -291,7 +552,7 @@ struct OcrPage {
       }
 
       TextArea({ text: this.rawText, placeholder: '在这里粘贴或输入题目文本…' })
-        .width('100%').height(this.lines.length > 0 ? 110 : 160).margin({ top: 10 })
+        .width('100%').height(this.lines.length > 0 || this.ocrRawLines.length > 0 ? 110 : 160).margin({ top: 10 })
         .backgroundColor(Theme.cardWarm).fontColor(Theme.primaryText)
         .onChange((value: string) => { this.rawText = value; })
 
@@ -303,6 +564,8 @@ struct OcrPage {
           .backgroundColor(Theme.warningSoft).fontColor(Theme.warningInk)
           .onClick(() => { this.toMistakeForm(); })
       }.width('100%').margin({ top: 10 })
+      Text('整理/导入时会把你改过的文本记成本机纠错，下次同一行自动替换；只保存在设备文件里。')
+        .fontSize(10).fontColor(Theme.secondaryText).margin({ top: 8 })
     }
     .width('100%').alignItems(HorizontalAlign.Start).padding(16).margin({ top: 10 })
     .backgroundColor(Theme.card).borderRadius(Theme.cardRadius)
