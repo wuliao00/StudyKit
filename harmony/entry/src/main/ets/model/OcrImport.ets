@@ -3,6 +3,12 @@ import photoAccessHelper from '@ohos.file.photoAccessHelper';
 import fs from '@ohos.file.fs';
 import textRecognition from '@hms.ai.ocr.textRecognition';
 import { OcrCleaner, CleanedOcr } from './OcrCleaner';
+import hilog from '@ohos.hilog';
+import { PpOcrEngine, PpOcrOutcome } from './PpOcrEngine';
+
+// 交给 PP-OCR native 的图像长边上限：大截图放大 2x 后 RGBA 缓冲会到 60MB+，
+// 既容易触发 readPixelsToBuffer/native 拷贝失败，也没有精度收益（det 内部还会缩到 736 短边）。
+export const OCR_MAX_SIDE: number = 2000;
 
 // HMS Core 文字识别模块名（HarmonyOS SDK 集成 HMS Core 后才可用）：
 //   '@hms.ai.ocr.textRecognition'
@@ -115,14 +121,16 @@ export class OcrImport {
   static async loadPixelMap(uri: string): Promise<image.PixelMap> {
     // 图库 URI 在部分系统版本上不能直接被 createImageSource(uri) 打开，
     // 再尝试用文件描述符方式打开；两种都失败才回到手动粘贴。
+    // 统一解码成 RGBA_8888：native 侧按 RGBA 字节序取像素，避免不同解码路径的格式差异。
+    const decodeOpts: image.DecodingOptions = { desiredPixelFormat: image.PixelMapFormat.RGBA_8888 };
     try {
       const sourceByUri: image.ImageSource = image.createImageSource(uri);
-      return await sourceByUri.createPixelMap();
+      return await sourceByUri.createPixelMap(decodeOpts);
     } catch (e1) {
       const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       try {
         const sourceByFd: image.ImageSource = image.createImageSource(file.fd);
-        return await sourceByFd.createPixelMap();
+        return await sourceByFd.createPixelMap(decodeOpts);
       } finally {
         fs.closeSync(file);
       }
@@ -176,9 +184,20 @@ export class OcrImport {
       const region: image.Region = { size: { width: pw, height: ph }, x: px, y: py };
       try { await pixelMap.crop(region); } catch (e) { /* 保持原图 */ }
     }
-    const scale: number = Math.max(1, Math.min(3, options.scale));
-    if (scale > 1.01) {
-      try { await pixelMap.scale(scale, scale); } catch (e) { /* 保持原尺寸 */ }
+    // 先按上限算缩放：小图仍按用户选择放大（2x），大图（相册截图/照片）限制长边 ≤2000。
+    const afterCrop: image.ImageInfo = pixelMap.getImageInfoSync();
+    const longSide: number = Math.max(afterCrop.size.width, afterCrop.size.height);
+    let scale: number = Math.max(1, Math.min(3, options.scale));
+    if (longSide > 0 && longSide * scale > OCR_MAX_SIDE) {
+      scale = OCR_MAX_SIDE / longSide;
+    }
+    if (scale > 1.01 || scale < 0.99) {
+      try {
+        await pixelMap.scale(scale, scale);
+      } catch (e) {
+        hilog.warn(0x3201, 'OCRPREP', 'scale(%{public}s) failed: %{public}s', scale.toFixed(3),
+          PpOcrEngine.describeError(e));
+      }
     }
     if (options.enhance) {
       try { await OcrImport.enhanceContrast(pixelMap); } catch (e) { /* 保持原图 */ }
@@ -311,9 +330,11 @@ export class OcrImport {
       try {
         pixelMap = await OcrImport.preparePixelMap(uri, opts);
       } catch (e) {
+        const detail: string = PpOcrEngine.describeError(e);
+        hilog.error(0x3201, 'OCRPATH', 'preparePixelMap failed: %{public}s', detail);
         return {
           ok: false,
-          message: '图片读取失败，请重新选择图片或手动粘贴文本。',
+          message: '图片读取失败（' + detail + '），请重新选择图片或手动粘贴文本。',
           lines: [], rawLines: [], filtered: 0, suspicious: 0,
           engine: ''
         };
@@ -322,7 +343,42 @@ export class OcrImport {
         return { ok: false, message: '已取消识别', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
       }
       const pm: image.PixelMap = pixelMap;
-      // 图片已经成功解码为 PixelMap；调用 HMS Core Vision OCR
+      // 路线 B：默认走端侧 PP-OCR（native ORT，完全离线）；仅当引擎不可用才回退 HMS。
+      const engine: PpOcrEngine = PpOcrEngine.get();
+      let ppError: string = '';
+      if (engine.isReady()) {
+        try {
+          const pp: PpOcrOutcome = await engine.recognize(pm, opts.linePass);
+          if (pp.ok && pp.lines.length > 0) {
+            if (OcrImport.isCancelled(cancel)) {
+              return { ok: false, message: '已取消识别', lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: 'PP-OCR' };
+            }
+            const cleanedPp: CleanedOcr = OcrCleaner.clean(pp.lines);
+            const suspiciousPp: number = OcrImport.countSuspiciousLines(cleanedPp.usable);
+            return {
+              ok: true,
+              message: 'PP-OCR 识别完成：保留 ' + cleanedPp.usable.length.toString() + ' 行，过滤 '
+                + cleanedPp.filtered.toString() + ' 行工具栏/噪声（det ' + pp.detMs.toString() + ' ms / rec '
+                + pp.recMs.toString() + ' ms / 合计 ' + pp.totalMs.toString() + ' ms'
+                + (pp.retried > 0 ? '，低分重识别 ' + pp.retried.toString() + ' 行' : '') + '）'
+                + (suspiciousPp > 0 ? '；可疑行 ' + suspiciousPp.toString() + ' 行（' + OCR_SUSPICIOUS_HINT + '）' : ''),
+              lines: cleanedPp.usable,
+              rawLines: cleanedPp.all,
+              filtered: cleanedPp.filtered,
+              suspicious: suspiciousPp,
+              engine: 'PP-OCR'
+            };
+          }
+          ppError = pp.error.length > 0 ? pp.error : ('返回 0 行（lineCount=' + pp.lines.length.toString() + '）');
+        } catch (e) {
+          const detail: string = PpOcrEngine.describeError(e);
+          hilog.error(0x3201, 'OCRPATH', 'PP-OCR gallery path failed: %{public}s', detail);
+          ppError = 'PP-OCR 调用异常：' + detail;
+        }
+      } else {
+        ppError = engine.initError().length > 0 ? engine.initError() : 'PP-OCR 未初始化';
+      }
+      // 回退：HMS Core Vision OCR（原有能力，不删除）。
       try {
         const detail: OcrResultLike = await OcrImport.hmsRecognizeDetailed(pm);
         let rawLines: string[] = OcrImport.splitLines(detail.value);
@@ -350,8 +406,9 @@ export class OcrImport {
           const suspicious: number = OcrImport.countSuspiciousLines(cleaned.usable);
           return {
             ok: true,
-            message: 'HMS OCR 识别完成：保留 ' + cleaned.usable.length.toString() + ' 行，过滤 '
-              + cleaned.filtered.toString() + ' 行工具栏/噪声' + refineNote
+            message: 'HMS 回退识别完成（PP-OCR 不可用：' + ppError + '）：保留 '
+              + cleaned.usable.length.toString() + ' 行，过滤 ' + cleaned.filtered.toString()
+              + ' 行工具栏/噪声' + refineNote
               + (suspicious > 0 ? '；可疑行 ' + suspicious.toString() + ' 行（' + OCR_SUSPICIOUS_HINT + '）' : ''),
             lines: cleaned.usable,
             rawLines: cleaned.all,
@@ -363,7 +420,8 @@ export class OcrImport {
       } catch (e) {
         // 识别失败，走手动粘贴
       }
-      return { ok: false, message: OCR_FALLBACK_HINT, lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
+      const reason: string = ppError.length > 0 ? ('PP-OCR 不可用：' + ppError + '；') : '';
+      return { ok: false, message: reason + OCR_FALLBACK_HINT, lines: [], rawLines: [], filtered: 0, suspicious: 0, engine: '' };
     } finally {
       // 成功、失败、取消任一分支都释放 PixelMap，避免解码占用的内存泄漏
       if (pixelMap !== null) {

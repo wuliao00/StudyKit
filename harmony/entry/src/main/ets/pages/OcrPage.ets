@@ -5,6 +5,7 @@ import { Theme } from '../common/Theme';
 import { QuestionStore, QUESTION_SUBJECTS } from '../model/QuestionStore';
 import { OcrImport, QuestionDraft, OcrOptions, OcrResult } from '../model/OcrImport';
 import { OcrCorrectionStore } from '../model/OcrCorrectionStore';
+import { PpOcrEngine } from '../model/PpOcrEngine';
 
 @Entry
 @Component
@@ -12,7 +13,10 @@ struct OcrPage {
   @State loading: boolean = true;
   @State busy: boolean = false;
   @State imageUri: string = '';
-  @State statusMessage: string = '选图预览；若设备提供 HMS Core OCR 会自动识别，不可用时把题目文字粘贴/输入到下方文本框导入。';
+  @State statusMessage: string = '选图预览；默认使用端侧 PP-OCR（离线）识别，引擎不可用时回退 HMS/手动粘贴。';
+  @State engineTag: string = 'PP-OCR · 加载中';
+  @State engineReady: boolean = false;
+  @State engineNote: string = '';
   @State fallbackMode: boolean = false;
   @State lines: string[] = [];
   @State checked: boolean[] = [];
@@ -53,6 +57,7 @@ struct OcrPage {
 
   aboutToAppear(): void {
     const context = getContext(this) as common.UIAbilityContext;
+    this.initPpOcr(context);
     this.store.init(context).then(() => {
       this.corrections.init(context).then(() => {
         if (!this.destroyed) this.correctionCount = this.corrections.count();
@@ -60,6 +65,25 @@ struct OcrPage {
       if (!this.destroyed) this.loading = false;
     }).catch(() => {
       if (!this.destroyed) this.loading = false;
+    });
+  }
+
+  // 异步初始化端侧 PP-OCR：不阻塞首屏；失败时记录原因供回退提示。
+  private initPpOcr(context: common.UIAbilityContext): void {
+    const engine: PpOcrEngine = PpOcrEngine.get();
+    engine.init(context).then((ok: boolean) => {
+      if (this.destroyed) return;
+      this.engineReady = ok;
+      this.engineTag = ok ? 'PP-OCR · 本机推理' : 'PP-OCR 不可用 · 回退 HMS';
+      this.engineNote = ok ? '' : engine.initError();
+      if (!ok && this.engineNote.length > 0) {
+        this.statusMessage = 'PP-OCR 初始化失败：' + this.engineNote + '；将回退 HMS/手动粘贴，不影响导入。';
+      }
+    }).catch((e: Error) => {
+      if (this.destroyed) return;
+      this.engineReady = false;
+      this.engineTag = 'PP-OCR 不可用 · 回退 HMS';
+      this.engineNote = JSON.stringify(e);
     });
   }
 
@@ -368,7 +392,7 @@ struct OcrPage {
     Column() {
       Row() {
         Text('拍照 / 相册识别').fontSize(15).fontWeight(FontWeight.Medium).fontColor(Theme.primaryText)
-        Text('HMS OCR · 本机纠错').fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
+        Text(this.engineTag).fontSize(10).fontColor(Theme.goldInk).backgroundColor(Theme.goldSoft)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(8).margin({ left: 6 })
         Blank()
         if (this.busy) {
@@ -376,6 +400,11 @@ struct OcrPage {
         }
       }.width('100%').alignItems(VerticalAlign.Center)
       Text(this.statusMessage).fontSize(12).fontColor(Theme.secondaryText).margin({ top: 8 }).width('100%')
+      if (!this.engineReady && this.engineNote.length > 0) {
+        Text('PP-OCR 不可用原因：' + this.engineNote + '（已自动回退 HMS/手动粘贴）')
+          .fontSize(11).fontColor(Theme.warningInk).margin({ top: 4 }).width('100%')
+          .accessibilityText('PP-OCR 不可用原因')
+      }
 
       if (this.imageUri.length > 0) {
         Image(this.imageUri).width('100%').height(190).objectFit(ImageFit.Contain)
@@ -478,6 +507,10 @@ struct OcrPage {
           .backgroundColor(Theme.accentSoft).fontColor(Theme.accentInk)
           .accessibilityText(this.imageUri.length > 0 ? '重新选择图片' : '选择图片')
           .onClick(() => { this.chooseImage(); })
+        Button('PP-OCR 自检').height(48).width(112).margin({ left: 8 })
+          .backgroundColor(Theme.goldSoft).fontColor(Theme.goldInk)
+          .accessibilityText('PP-OCR 自检')
+          .onClick(() => { router.pushUrl({ url: 'pages/PpOcrSelfTestPage' }); })
         Button('清空').height(48).width(74).margin({ left: 8 })
           .backgroundColor(Theme.cardWarm).fontColor(Theme.secondaryText)
           .onClick(() => {

@@ -5,5 +5,7 @@
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "libppocr.so": "file:./src/main/cpp/types/libppocr"
+  }
 }

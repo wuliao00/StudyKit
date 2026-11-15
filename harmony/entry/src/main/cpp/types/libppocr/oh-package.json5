@@ -1,0 +1,6 @@
+{
+  "name": "libppocr.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "PP-OCRv6 det+rec native engine (ONNX Runtime C API)"
+}

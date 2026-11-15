@@ -12,6 +12,7 @@
     "pages/MockExamPage",
     "pages/ExamResultPage",
     "pages/OcrPage",
+    "pages/PpOcrSelfTestPage",
     "pages/WordManagePage",
     "pages/StatsPage",
     "pages/SettingsPage"
